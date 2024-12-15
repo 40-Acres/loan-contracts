@@ -1,9 +1,9 @@
 pragma solidity ^0.8.28;
 
-// 0x16613524e02ad97edfef371bc883f2f5d6c480a5
+// 0x9c7305eb78a432ced5C4D14Cac27E8Ed569A2e26
 
 
-contract AerodromeLoan {
+contract VelodromeLoan {
     function CreateLoan() public {
         // create a loan
     }

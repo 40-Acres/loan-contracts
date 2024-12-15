@@ -1,46 +1,43 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.27;
-
+import {console} from "forge-std/console.sol";
 import "./interfaces/IVoter.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import  "./libraries/LoanLibrary.sol";
-import { IModule } from "./interfaces/IModule.sol";
+import { ILoanModule } from "./interfaces/ILoanModule.sol";
 
 contract Loan is Ownable {
     using LoanLibrary for LoanLibrary.LoanInfo;
+    IERC20 public usdc;
     
-    // mapping of token address to module address
-    mapping(address => address) public tokenModules;
+    mapping(address => mapping(uint256 => address)) public tokenModules;
+    mapping(address => uint256) public latestModuleVersion;
 
+    constructor(address _usdc) Ownable(msg.sender) {
+        usdc = IERC20(_usdc);
+    }
 
-    mapping(address => mapping(uint256 => LoanLibrary.LoanInfo)) public tokenLoans;
-
-    constructor() Ownable(msg.sender) {}
-
-    function RegisterModule(address tokenAddress, address moduleAddress) public onlyOwner {
+    function RegisterModule(address tokenAddress, address moduleAddress, uint256 version) public onlyOwner {
         // ensure module exists
         require(moduleAddress != address(0), "Module address cannot be 0x0");
         // ensure module is not already registered
         require(
-            tokenModules[moduleAddress] == address(0),
+            tokenModules[moduleAddress][version] == address(0),
             "Module already registered"
         );
 
-        tokenModules[tokenAddress] = moduleAddress;
+        tokenModules[tokenAddress][version] = moduleAddress;
+        latestModuleVersion[tokenAddress] = version;
     }
 
     function RequestLoan(
         address tokenAddress,
         uint256 tokenId,
         uint256 amount,
-        uint256 expiration,
-        bytes32 signedMessage, 
-        uint8 _v, 
-        bytes32 _r, 
-        bytes32 _s
+        bytes32 signedMessage
     ) public {
         // require the msg.sender to be the owner of the token
         require(
@@ -48,48 +45,28 @@ contract Loan is Ownable {
             "Only the owner of the token can request a loan"
         );
 
+        require(_getLoanModule(tokenAddress, latestModuleVersion[tokenAddress]) != address(0), "Module not registered");
 
-        // require a signed message from the owner of the contract
-        require(
-            verifySignature(
-                signedMessage,
-                _v,
-                _r,
-                _s
-            ) == owner(),
-            "Invalid signature"
-        );
-
-        // ensure signed message is valid
-        require(
-            keccak256(abi.encodePacked(tokenAddress, tokenId, amount, expiration)) == signedMessage,
-            "Invalid signed message"
-        );
-
-        // require current time to be less than expiration
-        require(block.timestamp < expiration, "Loan request expired");
-
-        require(tokenModules[tokenAddress] != address(0), "Module not registered");
-
-        LoanLibrary.LoanInfo memory loan = IModule(tokenModules[tokenAddress]).createLoan(tokenAddress, tokenId, msg.sender, expiration);
-
-        tokenLoans[tokenAddress][tokenId] = loan;
+        address module = _getLoanModule(tokenAddress, latestModuleVersion[tokenAddress]);
+        
+        IERC721(tokenAddress).transferFrom(msg.sender, module, tokenId);
+        IERC20(usdc).transfer(msg.sender, amount);
+        
+        ILoanModule(module).create(tokenAddress, tokenId, amount, msg.sender);
     }
 
-    function getLoanDetails(address tokenAddress, uint256 tokenId) public view returns (uint256 amountPaid, uint256 startTime, uint256 endTime, address borrower, bool active) {
-        LoanLibrary.LoanInfo memory loan = tokenLoans[tokenAddress][tokenId];
-        return (loan.amountPaid, loan.startTime, loan.endTime, loan.borrower, loan.active);
+    function getLoanDetails(address tokenAddress, uint256 tokenId, uint256 version) public view returns (uint256 balance, address borrower) {
+        LoanLibrary.LoanInfo memory loan = ILoanModule(_getLoanModule(tokenAddress, version)).getLoanDetails(tokenId);
+        return (loan.balance, loan.borrower);
     }
 
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes calldata
-    ) external pure returns (bytes4) {
-        return IERC721Receiver.onERC721Received.selector;
+    function advance(address tokenAddress, uint256 tokenId, uint256 version) public {
+        ILoanModule(_getLoanModule(tokenAddress, version)).advance(tokenId);
     }
-    function verifySignature(bytes32 message, uint8 v, bytes32 r, bytes32 s) public pure returns (address) {
-        return ECDSA.recover(message, v, r, s);
+
+
+    function _getLoanModule(address tokenAddress, uint256 version) internal view returns (address) {
+        require(tokenModules[tokenAddress][version] != address(0), "Module not registered");
+        return tokenModules[tokenAddress][version];
     }
 }
