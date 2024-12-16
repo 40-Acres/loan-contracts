@@ -2,6 +2,12 @@ pragma solidity ^0.8.13;
 
 interface IVotingEscrow {
 
+    struct LockedBalance {
+        int128 amount;
+        uint256 end;
+        bool isPermanent;
+    }
+
     struct Point {
         int128 bias;
         int128 slope; // # -dweight / dt
@@ -33,4 +39,8 @@ interface IVotingEscrow {
     function totalSupply() external view returns (uint);
 
     function locked__end(uint _tokenId) external view returns (uint);
+
+    function lockPermanent(uint256 _tokenId) external;
+    function locked(uint256 _tokenId) external view returns (LockedBalance memory);
+    
 }

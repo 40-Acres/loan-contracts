@@ -4,17 +4,13 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {Loan} from "../src/Loan.sol";
 import { AerodromeVenft } from "../src/modules/base/AerodromeVenft.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockVotingEscrow} from "./mocks/MockVotingEscrow.sol";
 import { MockVoter } from "./mocks/MockVoter.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
-import "../src/libraries/LoanLibrary.sol";
+import { Vault } from "src/Vault.sol";
 
 contract LoanTest is Test {
-    using ECDSA for bytes32;
-    using LoanLibrary for LoanLibrary.LoanInfo;
-
     Loan public loan;
     MockVotingEscrow public votingEscrow;
     ERC20Mock public mockUsdc;
@@ -24,28 +20,31 @@ contract LoanTest is Test {
 
     address owner;
     address user;
-    address vault;
+    Vault vault;
     uint256 internal userPrivateKey;
     uint256 internal ownerPrivateKey;
     uint256 internal vaultPrivateKey;
+    uint256 version;
 
     function setUp() public {
         userPrivateKey = 0xdeadbeef;
-        vaultPrivateKey = 0x2;
         ownerPrivateKey = 0x123;
+        version = 0;
 
-        vault = vm.addr(vaultPrivateKey);
         owner = vm.addr(ownerPrivateKey);
         user = vm.addr(userPrivateKey);
         votingEscrow = new MockVotingEscrow(user, 1);
         mockUsdc = new ERC20Mock();
         mockWeth = new ERC20Mock();
+
         loan = new Loan(address(mockUsdc));
+        vault = new Vault(address(mockUsdc), address(loan));
         voter = new MockVoter(address(votingEscrow), address(mockUsdc), address(mockWeth));
-        module = new AerodromeVenft(address(mockUsdc), address(0), address(loan), address(votingEscrow), address(voter));
+        module = new AerodromeVenft(address(mockUsdc), address(0), address(loan), address(votingEscrow), address(voter), address(vault));
         mockUsdc.mint(address(voter), 100e18);
-        mockUsdc.mint(address(loan), 100e18);
-        loan.RegisterModule(address(votingEscrow), address(module));
+        mockUsdc.mint(address(vault), 100e18);
+        loan.registerModule(address(votingEscrow), address(module), version);
+        loan.setVault(address(vault));
         loan.transferOwnership(owner);
     }
 
@@ -54,17 +53,9 @@ contract LoanTest is Test {
         assertEq(o, owner);
     }
 
-    function testValidSignature() public {
+    function testNftOwner() public {
         uint256 tokenId = 1;
-        uint256 amount = 50e18;
-        
-        bytes32 message = keccak256(abi.encodePacked(votingEscrow, tokenId, amount));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, message);
-        
-
-        // verify the signature
-        assertEq(owner, loan.verifySignature(message, v, r, s));
-
+        assertEq(votingEscrow.ownerOf(tokenId), address(user));
     }
 
     function testLoanRequest() public {
@@ -72,24 +63,18 @@ contract LoanTest is Test {
         uint256 amount = .5e18;
         uint256 expiration = block.timestamp + 1000;
         uint256 endTimestamp = block.timestamp + 1000;
-        uint256 interestRate = 10 * 52;
-
-        bytes32 message = keccak256(abi.encodePacked(votingEscrow, tokenId, amount, expiration, endTimestamp));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, message);
 
         assertEq(mockUsdc.balanceOf(address(user)), 0);
-        assertEq(mockUsdc.balanceOf(address(loan)), 100e18);
+        assertEq(mockUsdc.balanceOf(address(vault)), 100e18);
         vm.startPrank(user);
-        loan.RequestLoan(address(votingEscrow), tokenId, amount, interestRate, expiration, endTimestamp, message, v, r, s);
+        loan.requestLoan(address(votingEscrow), tokenId, amount);
         vm.stopPrank();
         assertEq(mockUsdc.balanceOf(address(user)), .5e18);
-        assertEq(mockUsdc.balanceOf(address(loan)), 99.5e18);
+        assertEq(mockUsdc.balanceOf(address(vault)), 99.5e18);
 
-        (uint256 balance, uint256 endTime, address borrower, uint256 fees) = loan.getLoanDetails(address(votingEscrow), tokenId);
-        assertEq(balance, .5e18);
-        assertEq(endTime, expiration);
+        (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
+        assertEq(balance, .5004e18);
         assertEq(borrower, user);
-        assertEq(fees, .05e18);
 
 
         // owner of token should be the module
@@ -102,85 +87,111 @@ contract LoanTest is Test {
         uint256 amount = 50e18;
         uint256 expiration = block.timestamp + 1000;
         uint256 endTimestamp = block.timestamp + 1000;
-        uint256 interestRate = 10 * 52;
-
-        bytes32 message = keccak256(abi.encodePacked(votingEscrow, tokenId, amount, expiration, endTimestamp));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, message);
 
         assertEq(mockUsdc.balanceOf(address(user)), 0);
-        assertEq(mockUsdc.balanceOf(address(loan)), 100e18);
-        assertEq(mockUsdc.balanceOf(address(0x2)), 0);
+        assertEq(mockUsdc.balanceOf(address(vault)), 100e18);
         vm.startPrank(user);
-        loan.RequestLoan(address(votingEscrow), tokenId, amount, interestRate, expiration, endTimestamp, message, v, r, s);
+        loan.requestLoan(address(votingEscrow), tokenId, amount);
         vm.stopPrank();
         assertEq(mockUsdc.balanceOf(address(user)), 50e18, "User should have 50e18");
-        assertEq(mockUsdc.balanceOf(address(loan)), 50e18, "Loan should have 50e18");
+        assertEq(mockUsdc.balanceOf(address(vault)), 50e18, "Loan should have 50e18");
 
-        (uint256 balance, uint256 endTime, address borrower, uint256 fees) = loan.getLoanDetails(address(votingEscrow), tokenId);
-        assertEq(balance, 50e18, "Balance should be 50e18");
-        assertEq(endTime, expiration);
+        (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
+        assertEq(balance, 50.04e18, "Balance should be 50e18");
         assertEq(borrower, user);
-        assertEq(fees, 5e18, "Fees should be 5e18");
 
 
         // owner of token should be the module
         assertEq(votingEscrow.ownerOf(tokenId), address(module));
 
-        loan.advance(address(votingEscrow), tokenId);
-        assertEq(mockUsdc.balanceOf(address(0x2)), .75e18, "Vault should have .1e18");
-        assertEq(mockUsdc.balanceOf(address(0x1)), .25e18, "Voter should have .2e18");
-        assertEq(mockUsdc.balanceOf(address(loan)), 50e18, "Loan should have 50e18+.7e18");
+        assertEq(mockUsdc.balanceOf(address(vault)), 50e18, "Vault should have 50e18");
+        loan.advance(address(votingEscrow), tokenId, version);
+        assertEq(mockUsdc.balanceOf(address(owner)), .25e18, "owner should have .25e18");
+        assertEq(mockUsdc.balanceOf(address(vault)), 50.75e18, "Vault should have 50.75e18");
     }
 
 
-    function testLoanAdvance() public {
+
+    function testIncreaseLoan() public {
+        uint256 tokenId = 1;
+        uint256 amount = 50e18;
+        uint256 expiration = block.timestamp + 1000;
+        uint256 endTimestamp = block.timestamp + 1000;
+
+        assertEq(mockUsdc.balanceOf(address(user)), 0);
+        assertEq(mockUsdc.balanceOf(address(vault)), 100e18);
+        assertEq(loan.activeAssets(),0, "ff");
+        vm.startPrank(user);
+        loan.requestLoan(address(votingEscrow), tokenId, amount);
+        vm.stopPrank();
+        assertEq(mockUsdc.balanceOf(address(user)), 50e18, "User should have 50e18");
+        assertEq(mockUsdc.balanceOf(address(vault)), 50e18, "Loan should have 50e18");
+
+        assertEq(loan.activeAssets(),50e18, "ff");
+        (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
+        assertEq(balance, 50.04e18, "Balance should be 50e18");
+        assertEq(borrower, user);
+
+        vm.startPrank(user);
+        loan.increaseLoan(address(votingEscrow), tokenId, amount);
+        vm.stopPrank();
+
+        (balance, borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
+        assertEq(balance, 100.08e18, "Balance should be 50e18");
+        assertEq(borrower, user);
+
+        assertEq(mockUsdc.balanceOf(address(user)), 100e18, "User should have 50e18");
+        assertEq(mockUsdc.balanceOf(address(vault)), 0e18, "Loan should have 50e18");
+        
+    }
+
+
+    function testLoanPayoff() public {
         uint256 tokenId = 1;
         uint256 amount = 3e18;
         uint256 expiration = block.timestamp + 1000;
         uint256 endTimestamp = block.timestamp + 1000;
-        uint256 interestRate = 1 * 52;
 
-        bytes32 message = keccak256(abi.encodePacked(votingEscrow, tokenId, amount, expiration, endTimestamp));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, message);
 
         assertEq(mockUsdc.balanceOf(address(user)), 0, "User should have 0");
-        assertEq(mockUsdc.balanceOf(address(loan)), 100e18);
-        assertEq(mockUsdc.balanceOf(address(0x2)), 0, "Vault should have 0");
+        assertEq(mockUsdc.balanceOf(address(vault)), 100e18);
         vm.startPrank(user);
-        loan.RequestLoan(address(votingEscrow), tokenId, amount, interestRate, expiration, endTimestamp, message, v, r, s);
+        loan.requestLoan(address(votingEscrow), tokenId, amount);
         vm.stopPrank();
         assertEq(mockUsdc.balanceOf(address(user)), 3e18, "User should have 3e18");
-        assertEq(mockUsdc.balanceOf(address(loan)), 97e18, "Loan should have 97e18");
+        assertEq(mockUsdc.balanceOf(address(vault)), 97e18, "Loan should have 97e18");
 
-        (uint256 balance, uint256 endTime, address borrower, uint256 fees) = loan.getLoanDetails(address(votingEscrow), tokenId);
-        assertEq(balance, amount, "Balance should be 3e18");
-        assertEq(fees, .0027e18, "Fees should be 3e18*.01e18");
-        assertEq(endTime, expiration);
+        (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
+        assertEq(balance, 3.0024e18, "Balance should be 3e18");
         assertEq(borrower, user);
+        assertEq(mockUsdc.balanceOf(address(vault)), 97e18, "ff");
+        assertEq(loan.activeAssets(), 3e18, "ff");
 
 
         // owner of token should be the module
         assertEq(votingEscrow.ownerOf(tokenId), address(module));
 
-        loan.advance(address(votingEscrow), tokenId);
-        assertEq(mockUsdc.balanceOf(address(0x2)), .002025e18, "ff");
-        assertEq(mockUsdc.balanceOf(address(0x1)), .000675e18, "ff");
-        assertEq(mockUsdc.balanceOf(address(loan)), 97e18+ .9973e18, "ffsd");
+        loan.advance(address(votingEscrow), tokenId, version);
+        assertEq(mockUsdc.balanceOf(address(vault)), 97.75e18, "ff");
+        assertEq(mockUsdc.balanceOf(address(owner)), .25e18, "ff");
+        assertEq(loan.activeAssets(), 3e18- 0.75e18, "ff");
 
 
-        loan.advance(address(votingEscrow), tokenId);
-        assertEq(mockUsdc.balanceOf(address(0x2)), .0225e18 + .002025e18, "eef");
-        assertEq(mockUsdc.balanceOf(address(0x1)), .0075e18 + 0.00675e18, "eeff");
-        assertEq(mockUsdc.balanceOf(address(loan)), 97e18 + .97e18 * 2, "eefff");
-        loan.advance(address(votingEscrow), tokenId);
-        assertEq(mockUsdc.balanceOf(address(0x2)), .0225e18 * 3, "dd");
-        assertEq(mockUsdc.balanceOf(address(0x1)), .0075e18 * 3, "dd");
-        assertEq(mockUsdc.balanceOf(address(loan)), 97e18 + .97e18 * 3, "dd");
-        loan.advance(address(votingEscrow), tokenId);
-        assertEq(mockUsdc.balanceOf(address(0x2)), .0225e18 * 4, "Vault should have .1e18");
-        assertEq(mockUsdc.balanceOf(address(0x1)), .0075e18 * 4, "Voter should have .2e18");
-        assertEq(mockUsdc.balanceOf(address(loan)), 100e18);
-        loan.advance(address(votingEscrow), tokenId);
+        loan.advance(address(votingEscrow), tokenId, version);
+        assertEq(mockUsdc.balanceOf(address(vault)), 98.5e18, "eef");
+        assertEq(mockUsdc.balanceOf(address(owner)), .5e18, "eeff");
+        loan.advance(address(votingEscrow), tokenId, version);
+
+        assertEq(mockUsdc.balanceOf(address(vault)), 99.25e18, "dd");
+        assertEq(mockUsdc.balanceOf(address(owner)), .75e18, "dd");
+        loan.advance(address(votingEscrow), tokenId, version);
+        assertEq(mockUsdc.balanceOf(address(vault)), 100e18, "Vault should have .1e18");
+        assertEq(mockUsdc.balanceOf(address(owner)), 1e18, "Voter should have .2e18");
+        loan.advance(address(votingEscrow), tokenId, version);
+        assertEq(mockUsdc.balanceOf(address(vault)), 100.0024e18, "Vault should have .1e18");
+        assertEq(mockUsdc.balanceOf(address(owner)), 1.0006e18, "Voter should have .2e18");
+        loan.advance(address(votingEscrow), tokenId, version);
+        assertEq(loan.activeAssets(),0, "ff");
 
     }
 }

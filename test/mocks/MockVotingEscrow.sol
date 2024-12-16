@@ -155,4 +155,13 @@ contract MockVotingEscrow is IVotingEscrow {
         return 1763525791;
     }
 
+
+    function locked(uint256 _tokenId) external view returns (LockedBalance memory) {
+        return LockedBalance(1000,0, false);
+    }
+
+
+    function lockPermanent(uint256 _tokenId) external {
+        return;
+    }
 }
