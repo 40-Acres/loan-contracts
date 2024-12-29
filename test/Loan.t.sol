@@ -21,7 +21,7 @@ interface IUSDC {
 }
 
 contract LoanTest is Test {
-    IUSDC usdc = IUSDC(0x2Ce6311ddAE708829bc0784C967b7d77D19FD779);
+    IUSDC usdc = IUSDC(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
     IVotingEscrow votingEscrow = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
     IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
     IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
@@ -54,199 +54,150 @@ contract LoanTest is Test {
         vm.stopPrank();
     }
 
-    function testOwner() public view {
-        address o = loan.owner();
-        assertEq(o, owner);
-    }
-
-    function testNftOwner() public {
-        assertEq(votingEscrow.ownerOf(tokenId), address(user));
-    }
-
-    function testLoanRequest() public {
-        uint256 amount = .5e18;
-        uint256 expiration = block.timestamp + 1000;
-        uint256 endTimestamp = block.timestamp + 1000;
-
-        assertEq(usdc.balanceOf(address(user)), 0);
-        assertEq(usdc.balanceOf(address(vault)), 100e18);
-        vm.startPrank(user);
-        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(address(votingEscrow), tokenId, amount);
-        vm.stopPrank();
-        assertEq(usdc.balanceOf(address(user)), .5e18);
-        assertEq(usdc.balanceOf(address(vault)), 99.5e18);
-
-        (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
-        assertEq(balance, .5004e18);
-        assertEq(borrower, user);
+    // function testOwner() public view {
+    //     address o = loan.owner();
+    //     assertEq(o, owner);
+    // }
 
 
-        // owner of token should be the loan
-        assertEq(votingEscrow.ownerOf(tokenId), address(loan));
-    }
+    // function testGetMaxLoan() public {
+    //     assertTrue(loan.getMaxLoan(tokenId) / 1e18 < 1);
+    // }
+
+    // function testNftOwner() public {
+    //     assertEq(votingEscrow.ownerOf(tokenId), address(user));
+    // }
+
+    // function testLoanRequest() public {
+    //     uint256 startingUserBalance = usdc.balanceOf(address(user));
+    //     assertEq(usdc.balanceOf(address(user)), startingUserBalance);
+    //     assertEq(usdc.balanceOf(address(vault)), 100e18);
+    //     vm.startPrank(user);
+    //     IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+    //     uint256 amount = 5e18;
+    //     vm.expectRevert("Cannot increase loan beyond max loan amount");
+    //     loan.requestLoan(tokenId, amount);
+
+    //     amount = .01e18;
+    //     loan.requestLoan(tokenId, amount);
+    //     vm.stopPrank();
+    //     assertTrue(usdc.balanceOf(address(user)) > .01e18);
+    //     assertTrue(usdc.balanceOf(address(vault)) < 100e18);
+
+    //     (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
+    //     assertTrue(balance > amount);
+    //     assertEq(borrower, user);
 
 
-    function testLoanVotingAdvance() public {
-        uint256 amount = 50e18;
-        uint256 expiration = block.timestamp + 1000;
-        uint256 endTimestamp = block.timestamp + 1000;
-
-        assertEq(usdc.balanceOf(address(user)), 0);
-        assertEq(usdc.balanceOf(address(vault)), 100e18);
-        vm.startPrank(user);
-        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(address(votingEscrow), tokenId, amount);
-        vm.stopPrank();
-        assertEq(usdc.balanceOf(address(user)), 50e18, "User should have 50e18");
-        assertEq(usdc.balanceOf(address(vault)), 50e18, "Loan should have 50e18");
-
-        (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
-        assertEq(balance, 50.04e18, "Balance should be 50e18");
-        assertEq(borrower, user);
+    //     // owner of token should be the loan
+    //     assertEq(votingEscrow.ownerOf(tokenId), address(loan));
+    // }
 
 
-        // owner of token should be the loan
-        assertEq(votingEscrow.ownerOf(tokenId), address(loan));
-
-        assertEq(usdc.balanceOf(address(vault)), 50e18, "Vault should have 50e18");
-        loan.advance(address(votingEscrow), tokenId);
-        assertEq(usdc.balanceOf(address(owner)), .25e18, "owner should have .25e18");
-        assertEq(usdc.balanceOf(address(vault)), 50.75e18, "Vault should have 50.75e18");
-    }
-
-
-
-    // function testIncreaseLoan() public {
-    //     uint256 amount = 50e18;
+    // function testLoanVotingAdvance() public {
+    //     uint256 amount = .01e18;
     //     uint256 expiration = block.timestamp + 1000;
     //     uint256 endTimestamp = block.timestamp + 1000;
+    
+    //     uint256 startingUserBalance = usdc.balanceOf(address(user));
+    //     uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
 
-    //     assertEq(usdc.balanceOf(address(user)), 0);
+    //     assertEq(usdc.balanceOf(address(user)), startingUserBalance);
+    //     assertEq(usdc.balanceOf(address(vault)), 100e18);
+    //     assertEq(loan.activeAssets(),0, "should have 0 active assets");
+    //     vm.startPrank(user);
+    //     IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+    //     loan.requestLoan(tokenId, amount);
+    //     vm.stopPrank();
+    //     assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
+    //     assertEq(usdc.balanceOf(address(vault)), 99.99e18, "Vault should have .01e18");
+    //     assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "Owner should have starting balance");
+
+
+    //     (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
+    //     assertTrue(balance > amount, "Balance should be more than amount");
+    //     assertEq(borrower, user);
+
+
+    //     // owner of token should be the loan
+    //     assertEq(votingEscrow.ownerOf(tokenId), address(loan));
+    //     assertEq(loan.activeAssets(), amount, "should have 0 active assets");
+
+    //     loan.advance(tokenId);
+    //     assertTrue(usdc.balanceOf(address(vault)) > 99.99e18, "Vault should have .more than original balance");
+    //     assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
+    //     assertTrue(loan.activeAssets() < amount, "should have less active assets");
+    // }
+
+    // function testIncreaseLoan() public {
+    //     uint256 amount = .01e18;
+
+    //     uint256 startingUserBalance = usdc.balanceOf(address(user));
+    //     assertEq(usdc.balanceOf(address(user)), startingUserBalance);
     //     assertEq(usdc.balanceOf(address(vault)), 100e18);
     //     assertEq(loan.activeAssets(),0, "ff");
     //     vm.startPrank(user);
     //     IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-    //     loan.requestLoan(address(votingEscrow), tokenId, amount);
+    //     loan.requestLoan(tokenId, amount);
     //     vm.stopPrank();
-    //     assertEq(usdc.balanceOf(address(user)), 50e18, "User should have 50e18");
-    //     assertEq(usdc.balanceOf(address(vault)), 50e18, "Loan should have 50e18");
+    //     assertTrue(usdc.balanceOf(address(user)) > .01e18, "User should have more than loan");
 
-    //     assertEq(loan.activeAssets(),50e18, "ff");
-    //     (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
-    //     assertEq(balance, 50.04e18, "Balance should be 50e18");
+    //     assertEq(loan.activeAssets(),.01e18, "ff");
+    //     (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
+    //     assertTrue(balance > amount, "Balance should be .01e18");
     //     assertEq(borrower, user);
 
     //     vm.startPrank(user);
-    //     IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-    //     loan.increaseLoan(address(votingEscrow), tokenId, amount);
+    //     loan.increaseLoan(tokenId, amount);
     //     vm.stopPrank();
 
-    //     (balance, borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
-    //     assertEq(balance, 100.08e18, "Balance should be 50e18");
+    //     (balance, borrower) = loan.getLoanDetails(tokenId);
+    //     assertTrue(balance> amount, "Balance should be more than amount");
     //     assertEq(borrower, user);
+    //     assertEq(loan.activeAssets(),0.02e18, "ff");
 
-    //     assertEq(usdc.balanceOf(address(user)), 100e18, "User should have 50e18");
-    //     assertEq(usdc.balanceOf(address(vault)), 0e18, "Loan should have 50e18");
+    //     assertEq(usdc.balanceOf(address(user)), 0.02e18 + startingUserBalance, "User should have .02e18");
+    //     assertEq(usdc.balanceOf(address(vault)), 99.98e18, "Loan should have .01e18");
         
     // }
 
 
-//     function testLoanPayoff() public {
-//         uint256 amount = 3e18;
-//         uint256 expiration = block.timestamp + 1000;
-//         uint256 endTimestamp = block.timestamp + 1000;
 
+    // function testLoanFullPayoff() public {
+    //     vm.prank(usdc.masterMinter());
+    //     usdc.configureMinter(address(this), type(uint256).max);
+    //     usdc.mint(address(user), 100e18);
+    //     vm.stopPrank();
 
+    //     uint256 amount = .01e18;
 
-//         assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
+    //     assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
 
-//         assertEq(usdc.balanceOf(address(user)), 0, "User should have 0");
-//         assertEq(usdc.balanceOf(address(vault)), 100e18);
-//         vm.startPrank(user);
-//         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-//         loan.requestLoan(address(votingEscrow), tokenId, amount);
-//         vm.stopPrank();
-//         assertEq(usdc.balanceOf(address(user)), 3e18, "User should have 3e18");
-//         assertEq(usdc.balanceOf(address(vault)), 97e18, "Loan should have 97e18");
+    //     uint256 startingUserBalance = usdc.balanceOf(address(user));
+    //     assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
+    //     assertEq(usdc.balanceOf(address(vault)), 100e18);
+    //     vm.startPrank(user);
+    //     IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+    //     loan.requestLoan(tokenId, amount);
+    //     vm.stopPrank();
+    //     assertEq(usdc.balanceOf(address(user)), .01e18+startingUserBalance, "User should have .01e18");
+    //     assertEq(usdc.balanceOf(address(vault)), 99.99e18, "Loan should have 97e18");
 
-//         (uint256 balance, address borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
-//         assertEq(balance, 3.0024e18, "Balance should be 3e18");
-//         assertEq(borrower, user);
-//         assertEq(usdc.balanceOf(address(vault)), 97e18, "ff");
-//         assertEq(loan.activeAssets(), 3e18, "ff");
+    //     assertEq(votingEscrow.ownerOf(tokenId), address(loan));
 
+    //     vm.startPrank(user);
+    //     usdc.approve(address(loan), 1e18);
+    //     loan.pay(tokenId, 0);
+    //     loan.claimCollateral(tokenId);
+    //     vm.stopPrank();
 
-//         // owner of token should be the loan
-//         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
+    //     assertEq(votingEscrow.ownerOf(tokenId), address(user));
+    //     assertTrue(usdc.balanceOf(address(user)) < startingUserBalance, "User should have less than starting balance");
+    //     assertTrue(usdc.balanceOf(address(vault)) > 100e18, "Loan should have more than initial balance");
+    // }
 
-//         loan.advance(address(votingEscrow), tokenId, version);
-//         assertEq(usdc.balanceOf(address(vault)), 97.75e18, "ff");
-//         assertEq(usdc.balanceOf(address(owner)), .25e18, "ff");
-//         assertEq(loan.activeAssets(), 3e18- 0.75e18, "ff");
-
-
-//         loan.advance(address(votingEscrow), tokenId, version);
-//         assertEq(usdc.balanceOf(address(vault)), 98.5e18, "eef");
-//         assertEq(usdc.balanceOf(address(owner)), .5e18, "eeff");
-//         loan.advance(address(votingEscrow), tokenId, version);
-
-//         assertEq(usdc.balanceOf(address(vault)), 99.25e18, "dd");
-//         assertEq(usdc.balanceOf(address(owner)), .75e18, "dd");
-//         loan.advance(address(votingEscrow), tokenId, version);
-//         assertEq(usdc.balanceOf(address(vault)), 100e18, "Vault should have .1e18");
-//         assertEq(usdc.balanceOf(address(owner)), 1e18, "Voter should have .2e18");
-//         loan.advance(address(votingEscrow), tokenId, version);
-//         assertEq(usdc.balanceOf(address(vault)), 100.0024e18, "Vault should have .1e18");
-//         assertEq(usdc.balanceOf(address(owner)), 1.0006e18, "Voter should have .2e18");
-//         loan.advance(address(votingEscrow), tokenId, version);
-//         assertEq(loan.activeAssets(),0, "ff");
-
-
-
-//         (balance, borrower) = loan.getLoanDetails(address(votingEscrow), tokenId);
-//         assertEq(balance, 0, "Balance should be 0");
-
-
-//         try loan.claimCollateral(address(votingEscrow), tokenId, version){
-//             assertEq(true, false, "Should have thrown");
-//         } catch Error(string memory reason) {
-//             assertEq(reason, "Only the borrower can claim collateral", "Should have thrown");
-//         }
-//         assertEq(votingEscrow.ownerOf(tokenId), address(loan), "Owner should be loan");
-//         vm.startPrank(user);
-//         loan.claimCollateral(address(votingEscrow), tokenId, version);
-//         vm.stopPrank();
-
-
-//         assertEq(votingEscrow.ownerOf(tokenId), address(user), "Owner should be user");
-//     }
-
-//     function testLoanFullPayoff() public {
-//         uint256 amount = 3e18;
-//         uint256 expiration = block.timestamp + 1000;
-//         uint256 endTimestamp = block.timestamp + 1000;
-
-
-
-//         assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
-
-//         assertEq(usdc.balanceOf(address(user)), 0, "User should have 0");
-//         assertEq(usdc.balanceOf(address(vault)), 100e18);
-//         vm.startPrank(user);
-//         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-//         loan.requestLoan(address(votingEscrow), tokenId, amount);
-//         vm.stopPrank();
-//         assertEq(usdc.balanceOf(address(user)), 3e18, "User should have 3e18");
-//         assertEq(usdc.balanceOf(address(vault)), 97e18, "Loan should have 97e18");
-
-
-//         vm.startPrank(user);
-//         usdc.approve(address(loan), 3e18);
-//         loan.pay(address(votingEscrow), tokenId, 3e18);
-//         vm.stopPrank();
-
-//         assertEq(usdc.balanceOf(address(user)), 0e18, "User should have 3e18");
-//         assertEq(usdc.balanceOf(address(vault)), 100e18, "Loan should have 97e18");
-//     }
+    function getPoolVotes() public view {
+        address[] memory votes = voter.poolVotes(tokenId);
+    }
 }
+

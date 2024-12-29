@@ -30,17 +30,15 @@ contract Loan is Ownable {
     address public _vault;
     
     IERC20 public usdc;
-    uint256 _interestRate = 8;
     bool public paused;
     uint256 activelyBorrowedAssets;
     AggregatorV3Interface internal dataFeed;
 
 
-    mapping(address => mapping(uint256 => LoanInfo)) public _loanDetails;
+    mapping(uint256 => LoanInfo) public _loanDetails;
 
 
     struct LoanInfo {
-        address tokenAddress;
         uint256 tokenId;
         uint256 balance;
         address borrower;
@@ -59,14 +57,14 @@ contract Loan is Ownable {
 
 
     function requestLoan(
-        address tokenAddress,
         uint256 tokenId,
         uint256 amount
     ) public whenNotPaused {
+        require(amount >  100, "Amount must be greater than 100");
         require(confirmUsdcPrice(), "Price of USDC is not $1");
         // require the msg.sender to be the owner of the token
         require(
-            IERC721(tokenAddress).ownerOf(tokenId) == msg.sender,
+            _ve.ownerOf(tokenId) == msg.sender,
             "Only the owner of the token can request a loan"
         );
         
@@ -85,25 +83,24 @@ contract Loan is Ownable {
 
         _voter.vote(tokenId, pools, amounts);
 
-        _loanDetails[tokenAddress][tokenId] = LoanInfo({
+        _loanDetails[tokenId] = LoanInfo({
             balance: amount + originationFee,
             borrower: msg.sender,
             timestamp: block.timestamp,
-            tokenAddress: tokenAddress,
             outstandingCapital: amount,
             tokenId: tokenId
         });
 
-        activelyBorrowedAssets += amount;
-        IERC721(tokenAddress).transferFrom(msg.sender, address(this), tokenId);
-        IERC20(usdc).transferFrom(_vault, msg.sender, amount);
+        _ve.transferFrom(msg.sender, address(this), tokenId);
+        increaseLoan(tokenId, amount);
     }
 
-    function increaseLoan(address tokenAddress, uint256 tokenId, uint256 amount) public whenNotPaused {
+    function increaseLoan(uint256 tokenId, uint256 amount) public whenNotPaused {
+        require(amount >  100, "Amount must be greater than 100");
         require(confirmUsdcPrice(), "Price of USDC is not $1");
-        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
+        LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender, "Only the borrower can increase the loan");
-        uint256 maxLoan = getMaxLoan(tokenAddress, tokenId);
+        uint256 maxLoan = getMaxLoan(tokenId);
         require(loan.balance + amount <= maxLoan, "Cannot increase loan beyond max loan amount");
         uint256 originationFee = amount * 8 / 10000; // 0.8%
         loan.balance += amount + originationFee;
@@ -113,14 +110,18 @@ contract Loan is Ownable {
     }
 
 
-    function payMultiple(address[] memory tokenAddresses, uint256[] memory tokenIds) public {
-        for(uint256 i = 0; i < tokenAddresses.length; i++) {
-            pay(tokenAddresses[i], tokenIds[i], 0);
+    function payMultiple(uint256[] memory tokenIds) public {
+        for(uint256 i = 0; i < tokenIds.length; i++) {
+            pay(tokenIds[i], 0);
         }
     }
     
-// VENFT METHODS
 
+    function poolVotes(uint256 tokenId) public returns (address[] memory) {
+        return _voter.poolVotes(tokenId);
+    }
+
+// VENFT METHODS
     function getRewards(uint256 tokenId) public returns (uint256 payment) {
         address[] memory voters = new address[](1);
         voters[0] = address(_voter);
@@ -130,20 +131,18 @@ contract Loan is Ownable {
         // uint256 prebalanceToken = IERC20(_pairedToken).balanceOf(address(this));
 
         address[][] memory tokens = new address[][](2);
-        address[] memory poolTokens = new address[](4);
-        poolTokens[0] = address(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
+        address[] memory poolTokens = new address[](2);
+        poolTokens[0] = address(0x4200000000000000000000000000000000000006);
         poolTokens[1] = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-        poolTokens[2] = address(0x4200000000000000000000000000000000000006);
-        poolTokens[2] = address(0x2d25a5edFd27e1F71652477E1a204726883ba402);
-        poolTokens[2] = address(usdc);
+        address[] memory pool2Tokens = new address[](1);
+        pool2Tokens[0] = address(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
         
         tokens[0] = poolTokens;
-        tokens[1] = poolTokens;
+        tokens[1] = pool2Tokens;
 
         address[] memory rewardsContract = new address[](2);
-        rewardsContract[0] = _votingRewards;
-        rewardsContract[1] = _bribeRewards;
-        _voter.claimFees(rewardsContract, tokens, tokenId);
+        rewardsContract[0] = address(0x765d935C2F47a06EdA55D07a9b9aE4108F4BBF85);
+        rewardsContract[1] = address(0x685b5173e002B2eC55A8cd02C74d5ee77043Eb1e);
         _voter.claimBribes(rewardsContract, tokens, tokenId);
         // swap paired token to usdc
         uint256 postBalanceToken = IERC20(_asset).balanceOf(address(this));
@@ -177,9 +176,9 @@ contract Loan is Ownable {
 
 // TODO LOAN GOES TO BALANCE/BORROWER PREMIUM/AND PROTOCOL FEE
 // 75/20/5
-    function pay(address tokenAddress, uint256 tokenId, uint256 amount) public {
-        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
-        uint256 balance = _getCurrentLoanBalance(tokenAddress, tokenId);
+    function pay(uint256 tokenId, uint256 amount) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        uint256 balance = _getCurrentLoanBalance(tokenId);
         if(amount == 0 || amount > balance) {
             amount = loan.balance;
         }
@@ -195,11 +194,11 @@ contract Loan is Ownable {
         }
     }
 
-    function advance(address tokenAddress, uint256 tokenId) public {
+    function advance(uint256 tokenId) public {
         uint256 amount = getRewards(tokenId);
 
-        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
-        loan.balance = _getCurrentLoanBalance(tokenAddress, tokenId);
+        LoanInfo storage loan = _loanDetails[tokenId];
+        loan.balance = _getCurrentLoanBalance(tokenId);
 
         uint256 protocolFee = amount * 25 / 100;
         amount -= protocolFee;
@@ -224,14 +223,14 @@ contract Loan is Ownable {
     // TODO CAN ALLOW ENTRY IF THEY ALREQDY VOTED FOR POOL
     // ALLOW ALL POOLS SWITCH IF NOT
 
-    function advanceMultiple(address[] memory tokenAddresses, uint256[] memory tokenIds, uint256[] memory amounts) public {
-        for(uint256 i = 0; i < tokenAddresses.length; i++) {
-            advance(tokenAddresses[i], tokenIds[i]);
+    function advanceMultiple(uint256[] memory tokenIds) public {
+        for(uint256 i = 0; i < tokenIds.length; i++) {
+            advance(tokenIds[i]);
         }
     }   
 
-    function claimCollateral(address tokenAddress, uint256 tokenId, uint256 version) public {
-        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
+    function claimCollateral(uint256 tokenId) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender, "Only the borrower can claim collateral");
         if(loan.balance > 0) {
             revert("Cannot claim collateral while loan is active");
@@ -241,13 +240,11 @@ contract Loan is Ownable {
     }
 
 
-    function _getCurrentLoanBalance(address tokenAddress, uint256 tokenId) internal  view returns (uint256) {
-        uint256 timeSinceLastCalculation = block.timestamp - _loanDetails[tokenAddress][tokenId].timestamp;
-        uint256 interest = _loanDetails[tokenAddress][tokenId].balance * _interestRate * timeSinceLastCalculation / 100;
-        return _loanDetails[tokenAddress][tokenId].balance + interest;
+    function _getCurrentLoanBalance(uint256 tokenId) internal  view returns (uint256) {
+        return _loanDetails[tokenId].balance;
     }
 
-    function getMaxLoan(address tokenAddress, uint256 tokenId) public view returns (uint256) {
+    function getMaxLoan(uint256 tokenId) public view returns (uint256) {
         // Max loan is max of USDC balance of _vault or 100 USDC or .0113 * veNFT balance of token * 8
         uint256 maxLoan = 1000e18;
         uint256 _vaultBalance = IERC20(_asset).balanceOf(_vault);
@@ -257,7 +254,7 @@ contract Loan is Ownable {
 
         uint256 veBalance = _ve.balanceOfNFTAt(tokenId, block.timestamp);
         uint256 veBalanceUSD = veBalance * 113 / 10000 * 8; // 0.0113 * veNFT balance of token
-        if (veBalanceUSD > maxLoan) {
+        if (veBalanceUSD < maxLoan) {
             maxLoan = veBalanceUSD;
         }
         return maxLoan;
@@ -269,9 +266,9 @@ contract Loan is Ownable {
     }
 
     /* VIEW FUNCTIONS */
-    function getLoanDetails(address tokenAddress, uint256 tokenId) public returns (uint256 balance, address borrower) {
-        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
-        loan.balance = _getCurrentLoanBalance(tokenAddress, tokenId);
+    function getLoanDetails(uint256 tokenId) public returns (uint256 balance, address borrower) {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        loan.balance = _getCurrentLoanBalance(tokenId);
         return (loan.balance, loan.borrower);
     }
 
@@ -318,6 +315,6 @@ contract Loan is Ownable {
         ) = dataFeed.latestRoundData();
 
         // confirm price of usdc is $1
-        return answer / 1e6 == 100;
+        return answer  >= 99000000;
     }
 }

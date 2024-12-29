@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 interface IVoter {
+
     error AlreadyVotedOrDeposited();
     error DistributeWindow();
     error FactoryPathNotApproved();
@@ -144,6 +145,8 @@ interface IVoter {
     // /// @dev Utility to distribute to gauges of pools in array.
     // /// @param _gauges Array of gauges to distribute to.
     // function distribute(address[] memory _gauges) external;
+
+    function poolVotes(uint256 tokenId) external returns (address[] memory);
 
     // /// @notice Called by users to update voting balances in voting rewards contracts.
     // /// @param _tokenId Id of veNFT whose balance you wish to update.
