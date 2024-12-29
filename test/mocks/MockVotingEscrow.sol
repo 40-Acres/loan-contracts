@@ -147,6 +147,10 @@ contract MockVotingEscrow is IVotingEscrow {
         return 10000;
     }
 
+    function balanceOfNFTAt(uint tokenId, uint _t) external view returns (uint) {
+        return 10000;
+    }
+
     function totalSupply() external view returns (uint) {
         return 10000;
     }

@@ -46,4 +46,23 @@ contract MockVoter is IVoter {
             }
         }
     }
+
+
+    function claimBribes(
+        address[] memory _fees,
+        address[][] memory _tokens,
+        uint256 _tokenId
+    ) external {
+        for (uint256 i = 0; i < _fees.length; i++) {
+            for (uint256 j = 0; j < _tokens[i].length; j++) {
+                // send 50 tokens to the token owner
+                address tokenOwner = IERC721(ve).ownerOf(_tokenId);
+                // send 50*10^18 tokens to the token owner
+                IERC20(token0).transfer(
+                    tokenOwner,
+                    1 * 10 ** 18
+                );
+            }
+        }
+    }
 }

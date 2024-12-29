@@ -2,30 +2,30 @@
 pragma solidity ^0.8.0;
 
 interface IVoter {
-    // error AlreadyVotedOrDeposited();
-    // error DistributeWindow();
-    // error FactoryPathNotApproved();
-    // error GaugeAlreadyKilled();
-    // error GaugeAlreadyRevived();
-    // error GaugeExists();
-    // error GaugeDoesNotExist(address _pool);
-    // error GaugeNotAlive(address _gauge);
-    // error InactiveManagedNFT();
-    // error MaximumVotingNumberTooLow();
-    // error NonZeroVotes();
-    // error NotAPool();
-    // error NotApprovedOrOwner();
-    // error NotGovernor();
-    // error NotEmergencyCouncil();
-    // error NotMinter();
-    // error NotWhitelistedNFT();
-    // error NotWhitelistedToken();
-    // error SameValue();
-    // error SpecialVotingWindow();
-    // error TooManyPools();
-    // error UnequalLengths();
-    // error ZeroBalance();
-    // error ZeroAddress();
+    error AlreadyVotedOrDeposited();
+    error DistributeWindow();
+    error FactoryPathNotApproved();
+    error GaugeAlreadyKilled();
+    error GaugeAlreadyRevived();
+    error GaugeExists();
+    error GaugeDoesNotExist(address _pool);
+    error GaugeNotAlive(address _gauge);
+    error InactiveManagedNFT();
+    error MaximumVotingNumberTooLow();
+    error NonZeroVotes();
+    error NotAPool();
+    error NotApprovedOrOwner();
+    error NotGovernor();
+    error NotEmergencyCouncil();
+    error NotMinter();
+    error NotWhitelistedNFT();
+    error NotWhitelistedToken();
+    error SameValue();
+    error SpecialVotingWindow();
+    error TooManyPools();
+    error UnequalLengths();
+    error ZeroBalance();
+    error ZeroAddress();
 
     // event GaugeCreated(
     //     address indexed poolFactory,
@@ -190,7 +190,7 @@ interface IVoter {
     // /// @param _bribes  Array of BribeVotingReward contracts to collect from.
     // /// @param _tokens  Array of tokens that are used as bribes.
     // /// @param _tokenId Id of veNFT that you wish to claim bribes for.
-    // function claimBribes(address[] memory _bribes, address[][] memory _tokens, uint256 _tokenId) external;
+    function claimBribes(address[] memory _bribes, address[][] memory _tokens, uint256 _tokenId) external;
 
     /// @notice Claim fees for a given NFT.
     /// @dev Utility to help batch fee claims.

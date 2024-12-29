@@ -6,17 +6,36 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { ILoanModule } from "./interfaces/ILoanModule.sol";
+import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
+import {IVoter} from "./interfaces/IVoter.sol";
+import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
+import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
+	
 
 contract Loan is Ownable {
+    // deployed contract addressed
+    address dataFeedAddress = address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B);
+    IVoter public _voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
+    address public _votingRewards = 0x765d935C2F47a06EdA55D07a9b9aE4108F4BBF85; // USDC/WETH
+    address public _bribeRewards = 0x685b5173e002B2eC55A8cd02C74d5ee77043Eb1e; // USDC/WETH
+    address public _rewardsDistributor = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // USDC/WETH
+    address private _pool; // pool to vote on to receive fees
+    address private _asset; // USDC
+    IERC20 private _pairedToken; // Paired token to USDC in the voted pool
+    IVotingEscrow private _ve = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+    IAerodromeRouter private _aeroRouter = IAerodromeRouter(0x9c7305eb78a432ced5C4D14Cac27E8Ed569A2e26);
+    address private _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
+
+
+    address public _vault;
+    
     IERC20 public usdc;
     uint256 _interestRate = 8;
-    address _vault;
     bool public paused;
     uint256 activelyBorrowedAssets;
+    AggregatorV3Interface internal dataFeed;
 
-    mapping(address => mapping(uint256 => address)) public tokenModules;
-    mapping(address => uint256) public latestModuleVersion;
+
     mapping(address => mapping(uint256 => LoanInfo)) public _loanDetails;
 
 
@@ -29,8 +48,13 @@ contract Loan is Ownable {
         uint256 outstandingCapital;
     }
 
-    constructor(address _usdc) Ownable(msg.sender) {
+    constructor(address _usdc,
+        address pool) Ownable(msg.sender) {
         usdc = IERC20(_usdc);
+        _asset = _usdc;
+        _pool = pool;
+
+        dataFeed = AggregatorV3Interface(dataFeedAddress);
     }
 
 
@@ -39,20 +63,27 @@ contract Loan is Ownable {
         uint256 tokenId,
         uint256 amount
     ) public whenNotPaused {
+        require(confirmUsdcPrice(), "Price of USDC is not $1");
         // require the msg.sender to be the owner of the token
         require(
             IERC721(tokenAddress).ownerOf(tokenId) == msg.sender,
             "Only the owner of the token can request a loan"
         );
-
-        address module = _getLoanModule(tokenAddress, latestModuleVersion[tokenAddress]);
         
         uint256 originationFee = amount * 8 / 10000; // 0.8%
 
+        address[] memory pools = new address[](1);
+        pools[0] = _pool;
 
-        IERC20(usdc).transferFrom(_vault, msg.sender, amount);
-        IERC721(tokenAddress).transferFrom(msg.sender, module, tokenId);
-        ILoanModule(module).initializeLoan(amount);
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100e18;
+
+        // ensure the token is locked permanently
+        if (!_ve.locked(tokenId).isPermanent) {
+            _ve.lockPermanent(tokenId);
+        }
+
+        _voter.vote(tokenId, pools, amounts);
 
         _loanDetails[tokenAddress][tokenId] = LoanInfo({
             balance: amount + originationFee,
@@ -64,9 +95,12 @@ contract Loan is Ownable {
         });
 
         activelyBorrowedAssets += amount;
+        IERC721(tokenAddress).transferFrom(msg.sender, address(this), tokenId);
+        IERC20(usdc).transferFrom(_vault, msg.sender, amount);
     }
 
     function increaseLoan(address tokenAddress, uint256 tokenId, uint256 amount) public whenNotPaused {
+        require(confirmUsdcPrice(), "Price of USDC is not $1");
         LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
         require(loan.borrower == msg.sender, "Only the borrower can increase the loan");
         uint256 maxLoan = getMaxLoan(tokenAddress, tokenId);
@@ -79,9 +113,90 @@ contract Loan is Ownable {
     }
 
 
-    function advance(address tokenAddress, uint256 tokenId, uint256 version) public {
-        address module = _getLoanModule(tokenAddress, version);
-        uint256 amount = ILoanModule(module).repay(tokenId);
+    function payMultiple(address[] memory tokenAddresses, uint256[] memory tokenIds) public {
+        for(uint256 i = 0; i < tokenAddresses.length; i++) {
+            pay(tokenAddresses[i], tokenIds[i], 0);
+        }
+    }
+    
+// VENFT METHODS
+
+    function getRewards(uint256 tokenId) public returns (uint256 payment) {
+        address[] memory voters = new address[](1);
+        voters[0] = address(_voter);
+
+        // get beginning balance of token before claiming fees
+        uint256 prebalanceAsset = IERC20(_asset).balanceOf(address(this));
+        // uint256 prebalanceToken = IERC20(_pairedToken).balanceOf(address(this));
+
+        address[][] memory tokens = new address[][](2);
+        address[] memory poolTokens = new address[](4);
+        poolTokens[0] = address(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
+        poolTokens[1] = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+        poolTokens[2] = address(0x4200000000000000000000000000000000000006);
+        poolTokens[2] = address(0x2d25a5edFd27e1F71652477E1a204726883ba402);
+        poolTokens[2] = address(usdc);
+        
+        tokens[0] = poolTokens;
+        tokens[1] = poolTokens;
+
+        address[] memory rewardsContract = new address[](2);
+        rewardsContract[0] = _votingRewards;
+        rewardsContract[1] = _bribeRewards;
+        _voter.claimFees(rewardsContract, tokens, tokenId);
+        _voter.claimBribes(rewardsContract, tokens, tokenId);
+        // swap paired token to usdc
+        uint256 postBalanceToken = IERC20(_asset).balanceOf(address(this));
+        // swapToUsdc(postBalanceToken - prebalanceToken);
+
+        // get ending balance of token after claiming fees
+        uint256 postBalanceAsset = IERC20(_asset).balanceOf(address(this));
+
+        // calculate the amount of fees claimed
+        payment = postBalanceAsset - prebalanceAsset;
+
+        IERC20(_asset).transfer(address(this), payment);
+    }
+
+
+    // swap paired token to usdc using aeroRouter
+    function swapToUsdc(uint256 amountIn) internal returns(uint256 amountOut)  {
+        _pairedToken.approve(address(_aeroRouter),_pairedToken.balanceOf(address(this)));
+        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
+        routes[0] = IAerodromeRouter.Route(address(_pairedToken),_asset,false, _aeroFactory);
+        uint256[] memory returnAmounts = _aeroRouter.getAmountsOut(amountIn,routes);
+        uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(//swap usdc back to eth
+            amountIn,
+            returnAmounts[1],
+            routes,
+            address(this),
+            block.timestamp
+        ); 
+        return amounts[0];
+    }
+
+// TODO LOAN GOES TO BALANCE/BORROWER PREMIUM/AND PROTOCOL FEE
+// 75/20/5
+    function pay(address tokenAddress, uint256 tokenId, uint256 amount) public {
+        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
+        uint256 balance = _getCurrentLoanBalance(tokenAddress, tokenId);
+        if(amount == 0 || amount > balance) {
+            amount = loan.balance;
+        }
+        IERC20(usdc).transferFrom(msg.sender, _vault, amount);
+        loan.balance -= amount;
+        loan.outstandingCapital = 0;
+        if(amount > loan.outstandingCapital) {
+            activelyBorrowedAssets -= loan.outstandingCapital;
+            loan.outstandingCapital = 0;
+        } else {
+            loan.outstandingCapital -= amount;
+            activelyBorrowedAssets -= amount;
+        }
+    }
+
+    function advance(address tokenAddress, uint256 tokenId) public {
+        uint256 amount = getRewards(tokenId);
 
         LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
         loan.balance = _getCurrentLoanBalance(tokenAddress, tokenId);
@@ -106,29 +221,51 @@ contract Loan is Ownable {
         IERC20(usdc).transfer(_vault, amount);
     }
 
-    function _getLoanModule(address tokenAddress, uint256 version) internal view returns (address) {
-        require(tokenModules[tokenAddress][version] != address(0), "Module not registered");
-        return tokenModules[tokenAddress][version];
+    // TODO CAN ALLOW ENTRY IF THEY ALREQDY VOTED FOR POOL
+    // ALLOW ALL POOLS SWITCH IF NOT
+
+    function advanceMultiple(address[] memory tokenAddresses, uint256[] memory tokenIds, uint256[] memory amounts) public {
+        for(uint256 i = 0; i < tokenAddresses.length; i++) {
+            advance(tokenAddresses[i], tokenIds[i]);
+        }
+    }   
+
+    function claimCollateral(address tokenAddress, uint256 tokenId, uint256 version) public {
+        LoanInfo storage loan = _loanDetails[tokenAddress][tokenId];
+        require(loan.borrower == msg.sender, "Only the borrower can claim collateral");
+        if(loan.balance > 0) {
+            revert("Cannot claim collateral while loan is active");
+        }
+
+        _ve.transferFrom(address(this), loan.borrower, tokenId);
     }
 
-    function _getCurrentLoanBalance(address tokenAddress, uint256 tokenId) internal  returns (uint256) {
+
+    function _getCurrentLoanBalance(address tokenAddress, uint256 tokenId) internal  view returns (uint256) {
         uint256 timeSinceLastCalculation = block.timestamp - _loanDetails[tokenAddress][tokenId].timestamp;
         uint256 interest = _loanDetails[tokenAddress][tokenId].balance * _interestRate * timeSinceLastCalculation / 100;
         return _loanDetails[tokenAddress][tokenId].balance + interest;
     }
 
     function getMaxLoan(address tokenAddress, uint256 tokenId) public view returns (uint256) {
-        ILoanModule module = ILoanModule(_getLoanModule(tokenAddress, latestModuleVersion[tokenAddress]));
-        return module.getMaxLoan(tokenId);
+        // Max loan is max of USDC balance of _vault or 100 USDC or .0113 * veNFT balance of token * 8
+        uint256 maxLoan = 1000e18;
+        uint256 _vaultBalance = IERC20(_asset).balanceOf(_vault);
+        if (_vaultBalance > maxLoan) {
+            maxLoan = _vaultBalance;
+        }
+
+        uint256 veBalance = _ve.balanceOfNFTAt(tokenId, block.timestamp);
+        uint256 veBalanceUSD = veBalance * 113 / 10000 * 8; // 0.0113 * veNFT balance of token
+        if (veBalanceUSD > maxLoan) {
+            maxLoan = veBalanceUSD;
+        }
+        return maxLoan;
     }
 
     /* RESCUE FUNCTIONS */
     function rescueERC20(address token, uint256 amount) public onlyOwner {
         IERC20(token).transfer(owner(), amount);
-    }
-
-    function rescueERC721(address token, uint256 tokenId) public onlyOwner {
-        IERC721(token).transferFrom(address(this), owner(), tokenId);
     }
 
     /* VIEW FUNCTIONS */
@@ -151,23 +288,11 @@ contract Loan is Ownable {
     /* OWNER FUNCTIONS */
     function setVault(address vault) public onlyOwner {
         if(_vault != address(0)) {
-           revert("Vault can only be set once");
+           revert("vault can only be set once");
         }
         _vault = vault;
     }
 
-    function registerModule(address tokenAddress, address moduleAddress, uint256 version) public onlyOwner {
-        // ensure module exists
-        require(moduleAddress != address(0), "Module address cannot be 0x0");
-        // ensure module is not already registered
-        require(
-            tokenModules[moduleAddress][version] == address(0),
-            "Module already registered"
-        );
-
-        tokenModules[tokenAddress][version] = moduleAddress;
-        latestModuleVersion[tokenAddress] = version;
-    }
 
     function pause() public onlyOwner {
         paused = true;
@@ -177,5 +302,22 @@ contract Loan is Ownable {
         paused = false;
     }
 
+    function getAllNfts() external returns (address[] memory) {
+        address[] memory nfts = new address[](1);
+        nfts[0] = address(0x0);
+        return nfts;
+    }
 
+    function confirmUsdcPrice() internal  returns (bool) {
+        (
+            /* uint80 roundID */,
+            int answer,
+            /*uint startedAt*/,
+            /*uint timeStamp*/,
+            /*uint80 answeredInRound*/
+        ) = dataFeed.latestRoundData();
+
+        // confirm price of usdc is $1
+        return answer / 1e6 == 100;
+    }
 }
