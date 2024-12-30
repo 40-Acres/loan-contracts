@@ -90,25 +90,25 @@ interface IVoter {
 
     // // mappings
     // /// @dev Pool => Gauge
-    // function gauges(address pool) external view returns (address);
+    function gauges(address pool) external view returns (address);
 
     // /// @dev Gauge => Pool
     // function poolForGauge(address gauge) external view returns (address);
 
     // /// @dev Gauge => Fees Voting Reward
-    // function gaugeToFees(address gauge) external view returns (address);
+    function gaugeToFees(address gauge) external view returns (address);
 
     // /// @dev Gauge => Bribes Voting Reward
-    // function gaugeToBribe(address gauge) external view returns (address);
+    function gaugeToBribe(address gauge) external view returns (address);
 
     // /// @dev Pool => Weights
     // function weights(address pool) external view returns (uint256);
 
     // /// @dev NFT => Pool => Votes
-    // function votes(uint256 tokenId, address pool) external view returns (uint256);
+    function votes(uint256 tokenId, address pool) external view returns (uint256);
 
     // /// @dev NFT => Total voting weight of NFT
-    // function usedWeights(uint256 tokenId) external view returns (uint256);
+    function usedWeights(uint256 tokenId) external view returns (uint256);
 
     // /// @dev Nft => Timestamp of last vote (ensures single vote per epoch)
     // function lastVoted(uint256 tokenId) external view returns (uint256);
@@ -146,8 +146,7 @@ interface IVoter {
     // /// @param _gauges Array of gauges to distribute to.
     // function distribute(address[] memory _gauges) external;
 
-    function poolVotes(uint256 tokenId) external returns (address[] memory);
-
+    function poolVote(uint256 tokenId, uint256 id) external returns (address[] memory);
     // /// @notice Called by users to update voting balances in voting rewards contracts.
     // /// @param _tokenId Id of veNFT whose balance you wish to update.
     // function poke(uint256 _tokenId) external;
