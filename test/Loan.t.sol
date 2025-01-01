@@ -55,6 +55,7 @@ contract LoanTest is Test {
         vm.stopPrank();
     }
 
+    // FOR ON FRIDAY DONT APPROVE
     function testOwner() public view {
         address o = loan.owner();
         assertEq(o, owner);
@@ -99,6 +100,7 @@ contract LoanTest is Test {
         // tokenId = 8223;
         // tokenId = 16223; expired
         // tokenId = 60151;
+        tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
         uint256 amount = .01e18;

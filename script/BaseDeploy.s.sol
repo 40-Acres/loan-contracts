@@ -6,6 +6,7 @@ import {Loan} from "../src/Loan.sol";
 import { AerodromeVenft } from "../src/modules/base/AerodromeVenft.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
+import { RateCalculator } from "src/RateCalculator.sol";
 
 // AERO = 0x940181a94A35A4569E4529A3CDfB74e38FD98631
 // VOTER = 0x16613524e02ad97edfef371bc883f2f5d6c480a5 
@@ -16,6 +17,7 @@ import { Vault } from "src/Vault.sol";
 contract BaseDeploy is Script {
     Loan public loan;
     AerodromeVenft public module;
+    RateCalculator public rateCalculator;
     IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
     address aero = address(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     address usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
@@ -28,9 +30,11 @@ contract BaseDeploy is Script {
     function run() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         uint256 version = 0;
-        Loan loan = new Loan(address(usdc), address(pool));
+        Loan loan = new Loan();
         Vault vault = new Vault(address(usdc), address(loan));
         loan.setVault(address(vault));
+        rateCalculator = new RateCalculator(address(loan));
+        loan.setRateCalculator(address(rateCalculator));
 
         vm.stopBroadcast();
     }
