@@ -63,6 +63,11 @@ contract Loan is Ownable {
     address[] public defaultPools;
     uint256[] public defaultWeights;
 
+
+    event CollateralAdded(uint256 tokenId, address owner);
+    event CollateralWithdrawn(uint256 tokenId, address owner);
+    event FundsBorrowed(uint256 tokenId, uint256 amount);
+
     constructor() Ownable(msg.sender) {
         address[] memory pools = new address[](1);
         pools[0] = 0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59;
@@ -129,6 +134,8 @@ contract Loan is Ownable {
             increaseLoan(tokenId, amount);
         }
         _ve.transferFrom(msg.sender, address(this), tokenId);
+
+        emit CollateralAdded(tokenId, msg.sender);
     }
 
     function increaseLoan(
@@ -136,7 +143,6 @@ contract Loan is Ownable {
         uint256 amount
     ) public whenNotPaused {
         require(confirmUsdcPrice(), "Price of USDC is not $1");
-        require(amount > 1e6, "Amount must be greater than 1 cent");
         LoanInfo storage loan = _loanDetails[tokenId];
 
         if (!loan.votedOnDefaultPool) {
@@ -159,7 +165,6 @@ contract Loan is Ownable {
             }
         }
 
-        require(amount >  1e18, "Amount must be greater than $1");
         require(
             loan.borrower == msg.sender,
             "Only the borrower can increase the loan"
@@ -174,33 +179,29 @@ contract Loan is Ownable {
         loan.outstandingCapital += amount;
         outstandingCapital += amount;
         usdc.transferFrom(_vault, msg.sender, amount);
+        emit FundsBorrowed(tokenId, amount);
     }
 
     function payMultiple(uint256[] memory tokenIds) public {
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            _pay(tokenIds[i], 0);
+            pay(tokenIds[i], 0);
         }
     }
     function getRewards(uint256 tokenId) public returns (uint256 payment) {
         LoanInfo storage loan = _loanDetails[tokenId];
         address[] memory pools = loan.pools;
-        require(msg.sender==tx.origin, "No Contracts allowed.");
         uint256 assetBalancePre = usdc.balanceOf(address(this));
         address[][] memory tokens = new address[][](2);
         address[] memory rewards = new address[](2);
-        console.log("pools %s", pools.length);
         for (uint256 i = 0; i < pools.length; i++) {
             address[] memory token = new address[](2);
             address gauge = _voter.gauges(pools[i]);
             rewards[0] = _voter.gaugeToFees(gauge);
             rewards[1] = _voter.gaugeToBribe(gauge);
-            console.log("rewards %s", rewards[0]);
             token[0] = ICLGauge(address(pools[0])).token0();
             token[1] = ICLGauge(address(pools[0])).token1();
             tokens[0] = token;
             tokens[1] = token;
-            console.log("token0  %s", token[0]);
-            console.log("token1  %s", token[1]);
             _voter.claimFees(rewards, tokens, tokenId);
         }
 
@@ -251,7 +252,6 @@ contract Loan is Ownable {
                 address(this),
                 block.timestamp
             );
-        console.log("swapped %s %s to %s", token, amounts[0], amounts[1]);
         return amounts[0];
     }
 
@@ -266,11 +266,11 @@ contract Loan is Ownable {
     }
 
     function _pay(uint256 tokenId, uint256 amount) internal {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        uint256 balance = _getCurrentLoanBalance(tokenId);
         if (amount == 0) {
             return;
         }
-        LoanInfo storage loan = _loanDetails[tokenId];
-        uint256 balance = _getCurrentLoanBalance(tokenId);
         uint256 excess = 0;
         if (amount > balance) {
             amount = loan.balance;
@@ -291,7 +291,9 @@ contract Loan is Ownable {
     }
 
     function advance(uint256 tokenId) public {
-        _rewardsDistributor.claim(tokenId);
+        if(_rewardsDistributor.claimable(tokenId) > 0) {
+            _rewardsDistributor.claim(tokenId);
+        }
 
         LoanInfo storage loan = _loanDetails[tokenId];
         if (!loan.votedOnDefaultPool) {
@@ -314,9 +316,6 @@ contract Loan is Ownable {
         _pay(tokenId, remaining);
     }
 
-    // TODO CAN ALLOW ENTRY IF THEY ALREQDY VOTED FOR POOL
-    // ALLOW ALL POOLS SWITCH IF NOT
-
     function advanceMultiple(uint256[] memory tokenIds) public {
         for (uint256 i = 0; i < tokenIds.length; i++) {
             advance(tokenIds[i]);
@@ -334,6 +333,7 @@ contract Loan is Ownable {
         }
 
         _ve.transferFrom(address(this), loan.borrower, tokenId);
+        emit CollateralWithdrawn(tokenId, msg.sender);
     }
 
     function _getCurrentLoanBalance(

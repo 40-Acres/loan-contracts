@@ -41,7 +41,7 @@ contract LoanTest is Test {
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
 
-        loan = new Loan(address(usdc), pool);
+        loan = new Loan();
         vault = new Vault(address(usdc), address(loan));
         rateCalculator = new RateCalculator(address(loan));
         loan.setVault(address(vault));
