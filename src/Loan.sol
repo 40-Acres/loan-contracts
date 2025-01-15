@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.27;
-import {console} from "forge-std/console.sol";
+
 import "./interfaces/IVoter.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
@@ -13,8 +11,10 @@ import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRateCalculator} from "./interfaces/IRateCalculator.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
 import {ICLGauge} from "./interfaces/ICLGauge.sol";
+import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
+import { ReentrancyGuard } from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 
-contract Loan is Ownable {
+contract Loan is Ownable, ReentrancyGuard {
     // deployed contract addressed
     address dataFeedAddress =
         address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B);
@@ -22,7 +22,7 @@ contract Loan is Ownable {
     IRewardsDistributor public _rewardsDistributor =
         IRewardsDistributor(0x227f65131A261548b057215bB1D5Ab2997964C7d);
     address private _pool; // pool to vote on to receive fees
-    IERC20 public usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+    IERC20 public _usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
     IERC20 private _pairedToken; // Paired token to USDC in the voted pool
     IVotingEscrow private _ve =
         IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
@@ -30,17 +30,21 @@ contract Loan is Ownable {
         IAerodromeRouter(0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43);
     address private _aeroFactory =
         address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
-    IRateCalculator public rateCalculator;
+    IRateCalculator public _rateCalculator;
 
     address public _vault;
 
-    bool public paused;
-    uint256 outstandingCapital;
-    AggregatorV3Interface internal dataFeed;
-    uint256 multiplier = 8;
+    bool public _paused;
+    uint256 _outstandingCapital;
+    AggregatorV3Interface internal _dataFeed;
+    uint256 _multiplier = 8;
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedTokens;
+
+
+    mapping(uint256 => uint256) public _rewardsPerEpoch;
+    uint256 public _lastEpochPaid;
 
     enum ZeroBalanceOption {
         PayToOwner,
@@ -60,8 +64,8 @@ contract Loan is Ownable {
         bool votedOnDefaultPool;
     }
 
-    address[] public defaultPools;
-    uint256[] public defaultWeights;
+    address[] public _defaultPools;
+    uint256[] public _defaultWeights;
 
 
     event CollateralAdded(uint256 tokenId, address owner);
@@ -71,13 +75,13 @@ contract Loan is Ownable {
     constructor() Ownable(msg.sender) {
         address[] memory pools = new address[](1);
         pools[0] = 0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59;
-        defaultPools = pools;
+        _defaultPools = pools;
 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = 100e18;
-        defaultWeights = amounts;
+        _defaultWeights = amounts;
 
-        dataFeed = AggregatorV3Interface(dataFeedAddress);
+        _dataFeed = AggregatorV3Interface(dataFeedAddress);
     }
 
     function requestLoan(uint256 tokenId, uint256 amount) public whenNotPaused {
@@ -106,14 +110,14 @@ contract Loan is Ownable {
         bytes memory data = abi.encodeWithSelector(
             selector,
             tokenId,
-            defaultPools,
-            defaultWeights
+            _defaultPools,
+            _defaultWeights
         );
 
         (bool success, bytes memory returnData) = address(_voter).call(data);
 
         _loanDetails[tokenId] = LoanInfo({
-            balance: amount + originationFee,
+            balance: 0,
             borrower: msg.sender,
             timestamp: block.timestamp,
             outstandingCapital: 0,
@@ -125,11 +129,10 @@ contract Loan is Ownable {
         });
 
         if (success) {
-            _loanDetails[tokenId].pools = defaultPools;
-            _loanDetails[tokenId].weights = defaultWeights;
+            _loanDetails[tokenId].pools = _defaultPools;
+            _loanDetails[tokenId].weights = _defaultWeights;
         }
 
-        // try to vote on pool
         if(amount > 0) {
             increaseLoan(tokenId, amount);
         }
@@ -152,16 +155,16 @@ contract Loan is Ownable {
             bytes memory data = abi.encodeWithSelector(
                 selector,
                 tokenId,
-                defaultPools,
-                defaultWeights
+                _defaultPools,
+                _defaultWeights
             );
 
             (bool success, bytes memory returnData) = address(_voter).call(
                 data
             );
             if (success) {
-                loan.pools = defaultPools;
-                loan.weights = defaultWeights;
+                loan.pools = _defaultPools;
+                loan.weights = _defaultWeights;
             }
         }
 
@@ -169,7 +172,7 @@ contract Loan is Ownable {
             loan.borrower == msg.sender,
             "Only the borrower can increase the loan"
         );
-        uint256 maxLoan = getMaxLoan(tokenId);
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(tokenId);
         require(
             loan.balance + amount <= maxLoan,
             "Cannot increase loan beyond max loan amount"
@@ -177,20 +180,15 @@ contract Loan is Ownable {
         uint256 originationFee = (amount * 8) / 10000; // 0.8%
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
-        outstandingCapital += amount;
-        usdc.transferFrom(_vault, msg.sender, amount);
+        _outstandingCapital += amount;
+        _usdc.transferFrom(_vault, msg.sender, amount);
         emit FundsBorrowed(tokenId, amount);
     }
 
-    function payMultiple(uint256[] memory tokenIds) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            pay(tokenIds[i], 0);
-        }
-    }
     function getRewards(uint256 tokenId) public returns (uint256 payment) {
         LoanInfo storage loan = _loanDetails[tokenId];
         address[] memory pools = loan.pools;
-        uint256 assetBalancePre = usdc.balanceOf(address(this));
+        uint256 assetBalancePre = _usdc.balanceOf(address(this));
         address[][] memory tokens = new address[][](2);
         address[] memory rewards = new address[](2);
         for (uint256 i = 0; i < pools.length; i++) {
@@ -207,7 +205,7 @@ contract Loan is Ownable {
 
         for (uint256 i = 0; i < tokens.length; i++) {
             for (uint256 j = 0; j < tokens[i].length; j++) {
-                if (tokens[i][j] != address(usdc)) {
+                if (tokens[i][j] != address(_usdc)) {
                     uint256 tokenBalance = IERC20(tokens[i][j]).balanceOf(
                         address(this)
                     );
@@ -217,13 +215,10 @@ contract Loan is Ownable {
                 }
             }
         }
-        uint256 assetBalancePost = usdc.balanceOf(address(this));
+        uint256 assetBalancePost = _usdc.balanceOf(address(this));
 
-        console.log("assetBalancePre %s", assetBalancePre);
-        console.log("assetBalancePost %s", assetBalancePost);
         // calculate the amount of fees claimed
         payment = assetBalancePost - assetBalancePre;
-        console.log("payment %s", payment);
     }
 
     // swap paired token to usdc using aeroRouter
@@ -237,7 +232,7 @@ contract Loan is Ownable {
         );
         routes[0] = IAerodromeRouter.Route(
             address(token),
-            address(usdc),
+            address(_usdc),
             false,
             _aeroFactory
         );
@@ -255,14 +250,18 @@ contract Loan is Ownable {
         return amounts[0];
     }
 
-    // TODO LOAN GOES TO BALANCE/BORROWER PREMIUM/AND PROTOCOL FEE
-    // 75/20/5
     function pay(uint256 tokenId, uint256 amount) public {
         if (amount == 0) {
             amount = _getCurrentLoanBalance(tokenId);
         }
-        usdc.transferFrom(msg.sender, address(this), amount);
+        _usdc.transferFrom(msg.sender, address(this), amount);
         _pay(tokenId, amount);
+    }
+
+    function payMultiple(uint256[] memory tokenIds) public {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            pay(tokenIds[0], 0);
+        }
     }
 
     function _pay(uint256 tokenId, uint256 amount) internal {
@@ -278,26 +277,36 @@ contract Loan is Ownable {
         }
         loan.balance -= amount;
         if (amount > loan.outstandingCapital) {
-            outstandingCapital -= loan.outstandingCapital;
+            _outstandingCapital -= loan.outstandingCapital;
             loan.outstandingCapital = 0;
         } else {
             loan.outstandingCapital -= amount;
-            outstandingCapital -= amount;
+            _outstandingCapital -= amount;
         }
-        usdc.transfer(_vault, amount);
+        _usdc.transfer(_vault, amount);
         if (excess > 0) {
-            usdc.transfer(msg.sender, excess);
+            _usdc.transfer(msg.sender, excess);
         }
     }
 
-    function advance(uint256 tokenId) public {
+    function advance(uint256 tokenId) nonReentrant recordRewards public {
+        _advance(tokenId);
+    }
+
+    function advanceMultiple(uint256[] memory tokenIds) nonReentrant recordRewards public {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            _advance(tokenIds[i]);
+        }
+    }
+
+    function _advance(uint256 tokenId)  public {
         if(_rewardsDistributor.claimable(tokenId) > 0) {
             _rewardsDistributor.claim(tokenId);
         }
 
         LoanInfo storage loan = _loanDetails[tokenId];
         if (!loan.votedOnDefaultPool) {
-            _voter.vote(tokenId, defaultPools, defaultWeights);
+            _voter.vote(tokenId, _defaultPools, _defaultWeights);
         }
 
         loan.balance = _getCurrentLoanBalance(tokenId);
@@ -306,20 +315,14 @@ contract Loan is Ownable {
         (
             uint256 protocolFeePercentage,
             uint256 lenderPremiumPercentage
-        ) = rateCalculator.getInterestRate();
+        ) = _rateCalculator.getInterestRate();
         uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
         uint256 remaining = amount - protocolFee - lenderPremium;
 
-        usdc.transfer(owner(), protocolFee);
-        usdc.transfer(_vault, protocolFee);
+        _usdc.transfer(owner(), protocolFee);
+        _usdc.transfer(_vault, protocolFee);
         _pay(tokenId, remaining);
-    }
-
-    function advanceMultiple(uint256[] memory tokenIds) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            advance(tokenIds[i]);
-        }
     }
 
     function claimCollateral(uint256 tokenId) public {
@@ -342,16 +345,17 @@ contract Loan is Ownable {
         return _loanDetails[tokenId].balance;
     }
 
-    function getMaxLoan(uint256 tokenId) public view returns (uint256) {
+    function getMaxLoan(uint256 tokenId) public view returns (uint256, uint256) {
         // max amount loanable is the usdc in the vault
-        uint256 maxLoan = usdc.balanceOf(_vault);
 
         uint256 veBalance = _ve.balanceOfNFTAt(tokenId, block.timestamp);
-        uint256 veBalanceUSD = ((veBalance * 113) / 10000) * multiplier; // 0.0113 * veNFT balance of token
-        if (veBalanceUSD < maxLoan) {
-            maxLoan = veBalanceUSD;
+        uint256 maxLoanIgnoreSupply = ((veBalance * 113) / 10000) * _multiplier / 1e12; // 0.0113 * veNFT balance of token
+        uint256 maxLoan = maxLoanIgnoreSupply;
+        uint256 vaultSupply = _usdc.balanceOf(_vault);
+        if(maxLoan > vaultSupply) {
+            maxLoan = vaultSupply;
         }
-        return maxLoan;
+        return (maxLoan, maxLoanIgnoreSupply);
     }
 
     /* RESCUE FUNCTIONS */
@@ -369,13 +373,28 @@ contract Loan is Ownable {
     }
 
     function activeAssets() public view returns (uint256) {
-        return outstandingCapital;
+        return _outstandingCapital;
+    }
+
+    function lastEpochReward() public view returns (uint256) {
+        return _rewardsPerEpoch[_lastEpochPaid];
     }
 
     /* MODIFIERS */
     modifier whenNotPaused() {
-        require(!paused, "Contract is paused");
+        require(!_paused, "Contract is paused");
         _;
+    }
+
+    modifier recordRewards() {
+        uint256 beginningBalance = _usdc.balanceOf(address(this));
+        _;
+        uint256 endingBalance = _usdc.balanceOf(address(this));
+        uint256 change = endingBalance - beginningBalance;
+        if(change > 0) {
+            _rewardsPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] += change;
+            _lastEpochPaid = ProtocolTimeLibrary.epochStart(block.timestamp);
+        }
     }
 
     /* OWNER FUNCTIONS */
@@ -387,27 +406,21 @@ contract Loan is Ownable {
     }
 
     function pause() public onlyOwner {
-        paused = true;
+        _paused = true;
     }
 
     function unpause() public onlyOwner {
-        paused = false;
-    }
-
-    function getAllNfts() external returns (address[] memory) {
-        address[] memory nfts = new address[](1);
-        nfts[0] = address(0x0);
-        return nfts;
+        _paused = false;
     }
 
     function getInterestRate() public view returns (uint256, uint256) {
-        return rateCalculator.getInterestRate();
+        return _rateCalculator.getInterestRate();
     }
 
-    function setRateCalculator(address _rateCalculator) public onlyOwner {
-        rateCalculator = IRateCalculator(_rateCalculator);
+    function setRateCalculator(address rateCalculator) public onlyOwner {
+        _rateCalculator = IRateCalculator(rateCalculator);
 
-        (uint256 protocolFee, uint256 lenderPremium) = rateCalculator
+        (uint256 protocolFee, uint256 lenderPremium) = _rateCalculator
             .getInterestRate();
         require(
             protocolFee + lenderPremium <= 5000,
@@ -417,7 +430,7 @@ contract Loan is Ownable {
             protocolFee + lenderPremium > 0,
             "Sum of protocol fee and lender premium must be > 0%"
         );
-        rateCalculator.confirm();
+        _rateCalculator.confirm();
     }
 
     function approveTokens(address[] calldata token) public onlyOwner {
@@ -430,19 +443,17 @@ contract Loan is Ownable {
         address[] memory pools,
         uint256[] memory weights
     ) public onlyOwner {
-        defaultPools = pools;
-        defaultWeights = weights;
+        // TODO: ensure weightd are 100%
+        _defaultPools = pools;
+        _defaultWeights = weights;
     }
 
 
-    function setMultiplier(uint256 _multiplier) public onlyOwner {
-        multiplier = _multiplier;
+    function setMultiplier(uint256 multiplier) public onlyOwner {
+        _multiplier = multiplier;
     }
 
     /* USER METHODS */
-
-    // vote on ppol only when balance is 0
-    function votePool(address pool) public {}
 
     /* ORACLE */
     function confirmUsdcPrice() internal returns (bool) {
@@ -453,7 +464,7 @@ contract Loan is Ownable {
             ,
 
         ) = /*uint startedAt*/ /*uint timeStamp*/ /*uint80 answeredInRound*/
-            dataFeed.latestRoundData();
+            _dataFeed.latestRoundData();
 
         // confirm price of usdc is $1
         return answer >= 99900000;

@@ -50,7 +50,7 @@ contract VaultTest is Test {
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(this), 2000e18);
+        usdc.mint(address(this), 2000e6);
         vm.stopPrank();
     }
 
@@ -61,7 +61,7 @@ contract VaultTest is Test {
     }
 
     function testDepositWithdrawal() public {
-        uint256 amount = 100e18;
+        uint256 amount = 100e6;
         usdc.approve(address(vault), amount);
         console.log("user", address(this));
         console.log("amount", amount);
@@ -74,7 +74,7 @@ contract VaultTest is Test {
     }
 
     function testDepositWithdrawalPlus() public {
-        uint256 amount = 100e18;
+        uint256 amount = 100e6;
         usdc.approve(address(vault), amount);
         console.log("user", address(this));
         console.log("amount", amount);
@@ -83,18 +83,18 @@ contract VaultTest is Test {
         vault.deposit(amount, address(this));
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(vault), 50e18);
+        usdc.mint(address(vault), 50e6);
         vm.stopPrank();
 
-        assertEq(ERC4626(vault).maxWithdraw(address(this)), 149999999999999999999);
-        assertEq(vault.totalAssets(), 150e18);
+        assertEq(ERC4626(vault).maxWithdraw(address(this)), 149999999);
+        assertEq(vault.totalAssets(), 150e6);
         vault.withdraw(ERC4626(vault).maxWithdraw(address(this)), address(this), address(this));
         assertEq(vault.totalAssets(), 1);
     }
 
 
     function testDepositWithdrawalLoan() public {
-        uint256 amount = 100e18;
+        uint256 amount = 100e6;
         usdc.approve(address(vault), amount);
         console.log("user", address(this));
         console.log("amount", amount);
@@ -103,20 +103,20 @@ contract VaultTest is Test {
         vault.deposit(amount, address(this));
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(vault), 50e18);
+        usdc.mint(address(vault), 50e6);
         vm.stopPrank();
 
-        assertEq(ERC4626(vault).maxWithdraw(address(this)), 149999999999999999999);
-        assertEq(vault.totalAssets(), 150e18);
+        assertEq(ERC4626(vault).maxWithdraw(address(this)), 149999999);
+        assertEq(vault.totalAssets(), 150e6);
 
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, .01e18);
+        loan.requestLoan(tokenId, .01e6);
         vm.stopPrank();
 
 
-        vault.withdraw(ERC4626(vault).maxWithdraw(address(this))-.01e18, address(this), address(this));
-        assertEq(vault.totalAssets(), .01e18+1);
+        vault.withdraw(ERC4626(vault).maxWithdraw(address(this))-.01e6, address(this), address(this));
+        assertEq(vault.totalAssets(), .01e6+1);
     }
 }
 

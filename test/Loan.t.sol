@@ -9,6 +9,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IVotingEscrow } from "../src/interfaces/IVotingEscrow.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { RateCalculator } from "src/RateCalculator.sol";
+import { ProtocolTimeLibrary } from "src/libraries/ProtocolTimeLibrary.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -46,12 +47,13 @@ contract LoanTest is Test {
         rateCalculator = new RateCalculator(address(loan));
         loan.setVault(address(vault));
         loan.setRateCalculator(address(rateCalculator));
+        loan.setMultiplier(100000000000);
         loan.transferOwnership(owner);
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(voter), 100e18);
-        usdc.mint(address(vault), 100e18);
+        usdc.mint(address(voter), 100e6);
+        usdc.mint(address(vault), 100e6);
         vm.stopPrank();
     }
 
@@ -63,7 +65,9 @@ contract LoanTest is Test {
 
 
     function testGetMaxLoan() public {
-        assertTrue(loan.getMaxLoan(tokenId) / 1e18 < 1);
+        (uint256 maxLoan,  uint256 maxLoanIgnreSupply) = loan.getMaxLoan(tokenId);
+        assertTrue(maxLoan / 1e6 > 10);
+        console.log("maxLoan", maxLoan);
     }
 
     function testNftOwner() public {
@@ -73,18 +77,18 @@ contract LoanTest is Test {
     function testLoanRequest() public {
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance);
-        assertEq(usdc.balanceOf(address(vault)), 100e18);
+        assertEq(usdc.balanceOf(address(vault)), 100e6);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
         vm.expectRevert("Cannot increase loan beyond max loan amount");
         loan.requestLoan(tokenId, amount);
 
-        amount = .01e18;
+        amount = .01e6;
         loan.requestLoan(tokenId, amount);
         vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) > .01e18);
-        assertTrue(usdc.balanceOf(address(vault)) < 100e18);
+        assertTrue(usdc.balanceOf(address(user)) > .01e6);
+        assertTrue(usdc.balanceOf(address(vault)) < 100e6);
 
         (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount);
@@ -103,7 +107,7 @@ contract LoanTest is Test {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
-        uint256 amount = .01e18;
+        uint256 amount = .01e6;
         uint256 expiration = block.timestamp + 1000;
         uint256 endTimestamp = block.timestamp + 1000;
     
@@ -111,14 +115,14 @@ contract LoanTest is Test {
         uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
 
         assertEq(usdc.balanceOf(address(user)), startingUserBalance);
-        assertEq(usdc.balanceOf(address(vault)), 100e18);
+        assertEq(usdc.balanceOf(address(vault)), 100e6);
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
-        assertEq(usdc.balanceOf(address(vault)), 99.99e18, "Vault should have .01e18");
+        assertEq(usdc.balanceOf(address(vault)), 99.99e6, "Vault should have .01e6");
         assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "Owner should have starting balance");
 
 
@@ -132,27 +136,34 @@ contract LoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         loan.advance(tokenId);
-        assertTrue(usdc.balanceOf(address(vault)) > 99.99e18, "Vault should have .more than original balance");
+        assertTrue(usdc.balanceOf(address(vault)) > 99.99e6, "Vault should have .more than original balance");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
+
+
+        uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
+        assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
+        assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
+
+        assertEq(vault.epochRewardsLocked(), 166727821);
     }
 
     function testIncreaseLoan() public {
-        uint256 amount = .01e18;
+        uint256 amount = .01e6;
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance);
-        assertEq(usdc.balanceOf(address(vault)), 100e18);
+        assertEq(usdc.balanceOf(address(vault)), 100e6);
         assertEq(loan.activeAssets(),0, "ff");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount);
         vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) > .01e18, "User should have more than loan");
+        assertTrue(usdc.balanceOf(address(user)) > .01e6, "User should have more than loan");
 
-        assertEq(loan.activeAssets(),.01e18, "ff");
+        assertEq(loan.activeAssets(),.01e6, "ff");
         (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount, "Balance should be .01e18");
+        assertTrue(balance > amount, "Balance should be .01e6");
         assertEq(borrower, user);
 
         vm.startPrank(user);
@@ -162,10 +173,10 @@ contract LoanTest is Test {
         (balance, borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance> amount, "Balance should be more than amount");
         assertEq(borrower, user);
-        assertEq(loan.activeAssets(),0.02e18, "ff");
+        assertEq(loan.activeAssets(),0.02e6, "ff");
 
-        assertEq(usdc.balanceOf(address(user)), 0.02e18 + startingUserBalance, "User should have .02e18");
-        assertEq(usdc.balanceOf(address(vault)), 99.98e18, "Loan should have .01e18");
+        assertEq(usdc.balanceOf(address(user)), 0.02e6 + startingUserBalance, "User should have .02e6");
+        assertEq(usdc.balanceOf(address(vault)), 99.98e6, "Loan should have .01e6");
         
     }
 
@@ -174,34 +185,34 @@ contract LoanTest is Test {
     function testLoanFullPayoff() public {
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(user), 100e18);
+        usdc.mint(address(user), 100e6);
         vm.stopPrank();
 
-        uint256 amount = .01e18;
+        uint256 amount = .01e6;
 
         assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
-        assertEq(usdc.balanceOf(address(vault)), 100e18);
+        assertEq(usdc.balanceOf(address(vault)), 100e6);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount);
         vm.stopPrank();
-        assertEq(usdc.balanceOf(address(user)), .01e18+startingUserBalance, "User should have .01e18");
-        assertEq(usdc.balanceOf(address(vault)), 99.99e18, "Loan should have 97e18");
+        assertEq(usdc.balanceOf(address(user)), .01e6+startingUserBalance, "User should have .01e6");
+        assertEq(usdc.balanceOf(address(vault)), 99.99e6, "Loan should have 97e6");
 
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
 
         vm.startPrank(user);
-        usdc.approve(address(loan), 1e18);
+        usdc.approve(address(loan), 1e6);
         loan.pay(tokenId, 0);
         loan.claimCollateral(tokenId);
         vm.stopPrank();
 
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         assertTrue(usdc.balanceOf(address(user)) < startingUserBalance, "User should have less than starting balance");
-        assertTrue(usdc.balanceOf(address(vault)) > 100e18, "Loan should have more than initial balance");
+        assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 
         rateCalculator.setInterestRate(100, 100);
     }
