@@ -399,10 +399,15 @@ contract Loan is Ownable, ReentrancyGuard {
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 10000) *
             _multiplier) / 1e12; // 0.0113 * veNFT balance of token
         uint256 maxLoan = maxLoanIgnoreSupply;
+
+        // max utilization ratio is 80%
         uint256 vaultSupply = _usdc.balanceOf(_vault);
-        if (maxLoan > vaultSupply) {
-            maxLoan = vaultSupply;
+        uint256 maxUtilization = (vaultSupply * 8) / 10;
+
+        if (maxLoan > maxUtilization) {
+            maxLoan = maxUtilization;
         }
+
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
