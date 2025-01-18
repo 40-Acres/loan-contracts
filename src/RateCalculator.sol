@@ -10,11 +10,12 @@ interface IOwnable {
 contract RateCalculator is Ownable {
     uint256 public protocolFee = 500; // 5%
     uint256 public lenderPremium = 2000 ; // 20%
-    address public _loanContract;
+    uint256 public rewardsRate = 113; // .0113%
+    address public loanContract;
 
-    constructor(address loan) Ownable(msg.sender) {
-        _loanContract = loan;
-        transferOwnership(IOwnable(loan).owner());
+    constructor(address _loan) Ownable(msg.sender) {
+        loanContract = _loan;
+        transferOwnership(IOwnable(_loan).owner());
     }
 
     function setInterestRate(uint256 _protocolFee, uint256 _lenderPremium) onlyOwner  public {
@@ -22,13 +23,21 @@ contract RateCalculator is Ownable {
         lenderPremium = _lenderPremium;
     }
 
+    function setRewardsRate(uint256 _rewardsRate) onlyOwner  public {
+        rewardsRate = _rewardsRate;
+    }
+
     function getInterestRate() public view returns (uint256, uint256) {
         return (protocolFee, lenderPremium);
     }
 
-
-    function confirm() public {
-        require(msg.sender == _loanContract, "Only loan contract can call this function");
+    function getRewardsRate() public view returns (uint256) {
+        return rewardsRate;
     }
+
+    function confirm() external  view {
+        require(msg.sender == loanContract, "Only loan contract can call this function");
+    }
+    
     
 }

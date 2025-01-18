@@ -26,9 +26,10 @@ contract VaultTest is Test {
     IVotingEscrow votingEscrow = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
     IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
     IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
-    address pool = address(0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d);
+    address[] pool = [address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59)];
 
     // deployed contracts
+    uint256 fork;
     Vault vault;
     Loan public loan;
     RateCalculator rateCalculator;
@@ -37,6 +38,9 @@ contract VaultTest is Test {
     uint256 tokenId = 64196;
 
     function setUp() public {
+        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        vm.selectFork(fork);
+        vm.rollFork(24353746);
 
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
@@ -63,9 +67,6 @@ contract VaultTest is Test {
     function testDepositWithdrawal() public {
         uint256 amount = 100e6;
         usdc.approve(address(vault), amount);
-        console.log("user", address(this));
-        console.log("amount", amount);
-        console.log("vault", address(vault));
         console.log(usdc.balanceOf(address(this)));
         vault.deposit(amount, address(this));
         assertEq(vault.totalAssets(), amount);
@@ -76,9 +77,6 @@ contract VaultTest is Test {
     function testDepositWithdrawalPlus() public {
         uint256 amount = 100e6;
         usdc.approve(address(vault), amount);
-        console.log("user", address(this));
-        console.log("amount", amount);
-        console.log("vault", address(vault));
         console.log(usdc.transfer(address(this), amount));
         vault.deposit(amount, address(this));
         vm.prank(usdc.masterMinter());
@@ -96,9 +94,6 @@ contract VaultTest is Test {
     function testDepositWithdrawalLoan() public {
         uint256 amount = 100e6;
         usdc.approve(address(vault), amount);
-        console.log("user", address(this));
-        console.log("amount", amount);
-        console.log("vault", address(vault));
         console.log(usdc.transfer(address(this), amount));
         vault.deposit(amount, address(this));
         vm.prank(usdc.masterMinter());
@@ -111,7 +106,7 @@ contract VaultTest is Test {
 
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, .01e6);
+        loan.requestLoan(tokenId, .01e6, pool);
         vm.stopPrank();
 
 
@@ -119,4 +114,5 @@ contract VaultTest is Test {
         assertEq(vault.totalAssets(), .01e6+1);
     }
 }
+
 
