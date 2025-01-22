@@ -90,7 +90,8 @@ contract Loan is Ownable, ReentrancyGuard {
     function requestLoan(
         uint256 tokenId,
         uint256 amount,
-        address[] calldata poolVotes
+        address[] calldata poolVotes,
+        ZeroBalanceOption zeroBalanceOption
     ) public whenNotPaused {
         require(confirmUsdcPrice(), "Price of USDC is not $1");
         // require the msg.sender to be the owner of the token
@@ -102,20 +103,13 @@ contract Loan is Ownable, ReentrancyGuard {
         // ensure the token is locked permanently
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
 
-        if (!lockedBalance.isPermanent) {
-            if (lockedBalance.end <= block.timestamp) {
-                revert("Token lock expired");
-            }
-            _ve.lockPermanent(tokenId);
-        }
-
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
             borrower: msg.sender,
             timestamp: block.timestamp,
             outstandingCapital: 0,
             tokenId: tokenId,
-            zeroBalanceOption: ZeroBalanceOption.DoNothing,
+            zeroBalanceOption: zeroBalanceOption,
             pools: new address[](0),
             voteTimestamp: 0,
             claimTimestamp: 0
@@ -141,6 +135,13 @@ contract Loan is Ownable, ReentrancyGuard {
             increaseLoan(tokenId, amount);
         }
         _ve.transferFrom(msg.sender, address(this), tokenId);
+
+        if (!lockedBalance.isPermanent) {
+            if (lockedBalance.end <= block.timestamp) {
+                revert("Token lock expired");
+            }
+            _ve.lockPermanent(tokenId);
+        }
 
         emit CollateralAdded(tokenId, msg.sender);
     }

@@ -106,7 +106,31 @@ contract VaultTest is Test {
 
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, .01e6, pool);
+        loan.requestLoan(tokenId, .01e6, pool, Loan.ZeroBalanceOption.DoNothing);
+        vm.stopPrank();
+
+
+        vault.withdraw(ERC4626(vault).maxWithdraw(address(this))-.01e6, address(this), address(this));
+        assertEq(vault.totalAssets(), .01e6+1);
+    }
+    
+    function testDepositWithdrawalLoanWithLoandsOut() public {
+        uint256 amount = 100e6;
+        usdc.approve(address(vault), amount);
+        console.log(usdc.transfer(address(this), amount));
+        vault.deposit(amount, address(this));
+        vm.prank(usdc.masterMinter());
+        usdc.configureMinter(address(this), type(uint256).max);
+        usdc.mint(address(vault), 50e6);
+        vm.stopPrank();
+
+        assertEq(ERC4626(vault).maxWithdraw(address(this)), 149999999);
+        assertEq(vault.totalAssets(), 150e6);
+
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, .01e6, pool, Loan.ZeroBalanceOption.DoNothing);
+        assertEq(ERC4626(vault).maxWithdraw(address(this)), 149999999);
         vm.stopPrank();
 
 
