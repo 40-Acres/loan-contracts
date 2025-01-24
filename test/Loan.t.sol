@@ -86,10 +86,10 @@ contract LoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
         vm.expectRevert("Cannot increase loan beyond max loan amount");
-        loan.requestLoan(tokenId, amount, pool);
+        loan.requestLoan(tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
 
         amount = .01e6;
-        loan.requestLoan(tokenId, amount, pool);
+        loan.requestLoan(tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > .01e6);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
@@ -120,7 +120,7 @@ contract LoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, pool);
+        loan.requestLoan(tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
         assertEq(usdc.balanceOf(address(vault)), 99.99e6, "Vault should have .01e6");
@@ -157,7 +157,7 @@ contract LoanTest is Test {
         assertEq(loan.activeAssets(),0, "ff");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, pool);
+        loan.requestLoan(tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > .01e6, "User should have more than loan");
 
@@ -197,7 +197,7 @@ contract LoanTest is Test {
         assertEq(usdc.balanceOf(address(vault)), 100e6);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, pool);
+        loan.requestLoan(tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
         assertEq(usdc.balanceOf(address(user)), .01e6+startingUserBalance, "User should have .01e6");
         assertEq(usdc.balanceOf(address(vault)), 99.99e6, "Loan should have 97e6");
@@ -281,7 +281,7 @@ contract LoanEpochFlipTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, pool);
+        loan.requestLoan(_tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
         assertEq(usdc.balanceOf(address(vault)), 99.99e6, "Vault should have .01e6");
@@ -324,7 +324,7 @@ contract LoanEpochFlipTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, pool);
+        loan.requestLoan(_tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         loan.setZeroBalanceOption(_tokenId, Loan.ZeroBalanceOption.PayToOwner);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
@@ -372,7 +372,7 @@ contract LoanEpochFlipTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, pool);
+        loan.requestLoan(_tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         loan.setZeroBalanceOption(_tokenId, Loan.ZeroBalanceOption.ReturnNft);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
@@ -418,7 +418,7 @@ contract LoanEpochFlipTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, pool);
+        loan.requestLoan(_tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         loan.setZeroBalanceOption(_tokenId, Loan.ZeroBalanceOption.InvestToVault);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
@@ -465,7 +465,7 @@ contract LoanEpochFlipTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, pool);
+        loan.requestLoan(_tokenId, amount, pool, Loan.ZeroBalanceOption.DoNothing);
         loan.setZeroBalanceOption(_tokenId, Loan.ZeroBalanceOption.ReinvestVeNft);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
