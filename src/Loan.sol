@@ -2,7 +2,8 @@
 pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
@@ -15,7 +16,7 @@ import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 
-contract Loan is Ownable, ReentrancyGuard {
+contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
     // deployed contract addressed
     address dataFeedAddress =
         address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B);
@@ -70,11 +71,12 @@ contract Loan is Ownable, ReentrancyGuard {
     uint256[] public _defaultWeights;
     uint256 public _defaultPoolChangeTime;
 
-    event CollateralAdded(uint256 tokenId, address owner);
+    event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
+    event ZeroBalanceOptionSet(uint256 tokenId, ZeroBalanceOption option);
     event CollateralWithdrawn(uint256 tokenId, address owner);
-    event FundsBorrowed(uint256 tokenId, uint256 amount);
+    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
 
-    constructor() Ownable(msg.sender) {
+    function initialize() initializer public {
         address[] memory pools = new address[](1);
         pools[0] = 0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59;
         _defaultPools = pools;
@@ -87,10 +89,15 @@ contract Loan is Ownable, ReentrancyGuard {
         _defaultPoolChangeTime = block.timestamp;
     }
 
+    modifier initializer() {
+        require (owner == address(0), "already initialized");
+        _;
+    }
+
+
     function requestLoan(
         uint256 tokenId,
         uint256 amount,
-        address[] calldata poolVotes,
         ZeroBalanceOption zeroBalanceOption
     ) public whenNotPaused {
         require(confirmUsdcPrice(), "Price of USDC is not $1");
@@ -117,18 +124,6 @@ contract Loan is Ownable, ReentrancyGuard {
 
         if (canVoteOnPool(tokenId)) {
             voteOnDefaultPool(tokenId);
-        } else {
-            uint256 usedWeights = _voter.usedWeights(tokenId);
-            uint256 weights = 0;
-            for (uint256 i = 0; i < poolVotes.length; i++) {
-                uint256 weight = _voter.votes(tokenId, poolVotes[i]);
-                weights += weight;
-            }
-            require(
-                weights == usedWeights,
-                "Weights must be equal to used weights"
-            );
-            _loanDetails[tokenId].pools = poolVotes;
         }
 
         if (amount > 0) {
@@ -143,7 +138,7 @@ contract Loan is Ownable, ReentrancyGuard {
             _ve.lockPermanent(tokenId);
         }
 
-        emit CollateralAdded(tokenId, msg.sender);
+        emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
     }
 
     function increaseLoan(
@@ -171,7 +166,7 @@ contract Loan is Ownable, ReentrancyGuard {
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
         _usdc.transferFrom(_vault, msg.sender, amount);
-        emit FundsBorrowed(tokenId, amount);
+        emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
     function getRewards(uint256 tokenId) public returns (uint256 payment) {
@@ -214,6 +209,34 @@ contract Loan is Ownable, ReentrancyGuard {
         payment = assetBalancePost - assetBalancePre;
     }
 
+    function claimBribes(uint256 tokenId, address[] rewards, address[] tokens) public returns (uint256 payment) {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        address[] memory pools = loan.pools;
+        IERC20 asset;
+        if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
+            asset = _aero;
+        } else {
+            asset = _usdc;
+        }
+        uint256 assetBalancePre = asset.balanceOf(address(this));
+        _voter.claimFees(rewards, tokens, tokenId);
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            for (uint256 j = 0; j < tokens[i].length; j++) {
+                uint256 tokenBalance = IERC20(tokens[i][j]).balanceOf(
+                    address(this)
+                );
+                if(tokenBalance > 0) {
+                    swapToToken(tokenBalance, tokens[i][j], address(asset));
+                }
+            }
+        }
+        uint256 assetBalancePost = asset.balanceOf(address(this));
+
+        // calculate the amount of fees claimed
+        payment = assetBalancePost - assetBalancePre;
+    }
+    
     function canVoteOnPool(uint256 tokenId) internal view returns (bool) {
         return _voter.lastVoted(tokenId) < ProtocolTimeLibrary.epochStart(block.timestamp);
     }
@@ -306,7 +329,8 @@ contract Loan is Ownable, ReentrancyGuard {
         if (loan.zeroBalanceOption == ZeroBalanceOption.ReturnNft) {
             _usdc.transfer(loan.borrower, excessAfterFee);
             _ve.transferFrom(address(this), loan.borrower, tokenId);
-            emit CollateralWithdrawn(tokenId, msg.sender);
+            emit CollateralWithdrawn(tokenId, loan.borrower);
+            delete _loanDetails[tokenId];
             return;
         }
         _usdc.transfer(loan.borrower, excessAfterFee);
@@ -389,6 +413,7 @@ contract Loan is Ownable, ReentrancyGuard {
 
         _ve.transferFrom(address(this), loan.borrower, tokenId);
         emit CollateralWithdrawn(tokenId, msg.sender);
+        delete _loanDetails[tokenId];
     }
 
     function getMaxLoan(
@@ -514,6 +539,7 @@ contract Loan is Ownable, ReentrancyGuard {
             "Only the borrower can set the zero balance option"
         );
         loan.zeroBalanceOption = option;
+        emit ZeroBalanceOptionSet(tokenId, option);
     }
     
     /* ORACLE */
