@@ -20,26 +20,21 @@ import { console} from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgradeable {
     // deployed contract addressed
-    IVoter public _voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
-    IRewardsDistributor public _rewardsDistributor =
-        IRewardsDistributor(0x227f65131A261548b057215bB1D5Ab2997964C7d);
+    IVoter public _voter;
+    IRewardsDistributor public _rewardsDistributor;
     address private _pool; // pool to vote on to receive fees
-    IERC20 public _usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-    IERC20 public _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
-    IVotingEscrow private _ve =
-        IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
-    IAerodromeRouter private _aeroRouter =
-        IAerodromeRouter(0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43);
-    address private _aeroFactory =
-        address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
+    IERC20 public _usdc;
+    IERC20 public _aero;
+    IVotingEscrow private _ve;
+    IAerodromeRouter private _aeroRouter;
+    address private _aeroFactory;
     IRateCalculator public _rateCalculator;
 
     address public _vault;
 
     bool public _paused;
     uint256 _outstandingCapital;
-    AggregatorV3Interface internal _dataFeed = AggregatorV3Interface(address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B));
-    uint256 _multiplier = 8;
+    uint256 _multiplier;
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedTokens;
@@ -94,7 +89,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
 
         _defaultPoolChangeTime = block.timestamp;
         _vault = vault;
-        console.log("owner is", owner());
+        _voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
+        _rewardsDistributor = IRewardsDistributor(0x227f65131A261548b057215bB1D5Ab2997964C7d);
+        _usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+        _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
+        _ve = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+        _aeroRouter = IAerodromeRouter(0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43);
+        _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
+        _multiplier = 8;
     }
 
 
@@ -545,7 +547,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
             ,
             ,
 
-        ) = _dataFeed.latestRoundData();
+        ) = AggregatorV3Interface(address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B)).latestRoundData();
 
         // confirm price of usdc is $1
         return answer >= 99900000;

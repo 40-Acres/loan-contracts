@@ -60,6 +60,7 @@ contract LoanTest is Test {
         vm.startPrank(address(deployer));
         loan.setMultiplier(100000000000);
         IOwnable(address(loan)).transferOwnership(owner);
+        IOwnable(address(rateCalculator)).transferOwnership(owner);
         vm.stopPrank();
 
         // allow this test contract to mint USDC
@@ -223,6 +224,7 @@ contract LoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 
+        vm.prank(owner);
         rateCalculator.setInterestRate(100, 100, 100);
     }
 
