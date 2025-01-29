@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -15,11 +16,10 @@ import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
+import { console} from "forge-std/console.sol";
 
-contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
+contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgradeable {
     // deployed contract addressed
-    address dataFeedAddress =
-        address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B);
     IVoter public _voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
     IRewardsDistributor public _rewardsDistributor =
         IRewardsDistributor(0x227f65131A261548b057215bB1D5Ab2997964C7d);
@@ -38,7 +38,7 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
 
     bool public _paused;
     uint256 _outstandingCapital;
-    AggregatorV3Interface internal _dataFeed;
+    AggregatorV3Interface internal _dataFeed = AggregatorV3Interface(address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B));
     uint256 _multiplier = 8;
 
     mapping(uint256 => LoanInfo) public _loanDetails;
@@ -76,7 +76,14 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
     event CollateralWithdrawn(uint256 tokenId, address owner);
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
 
-    function initialize() initializer public {
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address vault) initializer public {
+        __Ownable_init(msg.sender); //set owner to msg.sender
+        __UUPSUpgradeable_init();
         address[] memory pools = new address[](1);
         pools[0] = 0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59;
         _defaultPools = pools;
@@ -85,16 +92,18 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
         amounts[0] = 100e18;
         _defaultWeights = amounts;
 
-        _dataFeed = AggregatorV3Interface(dataFeedAddress);
         _defaultPoolChangeTime = block.timestamp;
-    }
-
-    modifier initializer() {
-        require (owner == address(0), "already initialized");
-        _;
+        _vault = vault;
+        console.log("owner is", owner());
     }
 
 
+    function version() public pure virtual returns (uint256) {
+        return 1;
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    
     function requestLoan(
         uint256 tokenId,
         uint256 amount,
@@ -209,9 +218,8 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
         payment = assetBalancePost - assetBalancePre;
     }
 
-    function claimBribes(uint256 tokenId, address[] rewards, address[] tokens) public returns (uint256 payment) {
+    function claimBribes(uint256 tokenId, address[] calldata rewards, address[][] calldata tokens) public returns (uint256 payment) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        address[] memory pools = loan.pools;
         IERC20 asset;
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
             asset = _aero;
@@ -285,7 +293,7 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
 
     function payMultiple(uint256[] memory tokenIds) public {
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            pay(tokenIds[0], 0);
+            pay(tokenIds[i], 0);
         }
     }
 
@@ -473,14 +481,6 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
         }
     }
 
-    /* OWNER FUNCTIONS */
-    function setVault(address vault) public onlyOwner {
-        if (_vault != address(0)) {
-            revert("vault can only be set once");
-        }
-        _vault = vault;
-    }
-
     function pause() public onlyOwner {
         _paused = true;
     }
@@ -499,14 +499,9 @@ contract Loan is OwnableUpgradeable, ReentrancyGuard, Initializable {
         (uint256 protocolFee, uint256 lenderPremium) = _rateCalculator
             .getInterestRate();
         require(
-            protocolFee + lenderPremium <= 5000,
-            "Sum of protocol fee and lender premium must be 50%"
-        );
-        require(
             protocolFee + lenderPremium > 0,
             "Sum of protocol fee and lender premium must be > 0%"
         );
-        _rateCalculator.confirm();
     }
 
     function approveTokens(address[] calldata token) public onlyOwner {

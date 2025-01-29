@@ -13,6 +13,7 @@ import { ProtocolTimeLibrary } from "src/libraries/ProtocolTimeLibrary.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -22,6 +23,11 @@ interface IUSDC {
     function approve(address spender, uint256 amount) external returns (bool);
 
 }
+interface IOwnable {
+    function owner() external view returns (address);
+    function  transferOwnership(address) external;
+}
+
 
 contract LoanTest is Test {
     uint256 fork;
@@ -40,29 +46,21 @@ contract LoanTest is Test {
     RateCalculator rateCalculator;
     address owner;
     address user;
-    uint256 version;
     uint256 tokenId = 64196;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(24353746);
-        version = 0;
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
-        admin = new ProxyAdmin(address(this));
+        BaseDeploy deployer = new BaseDeploy();
+        (loan, vault, rateCalculator) = deployer.deployLoan();
 
-        loan = new Loan();
-        rateCalculator = new RateCalculator(address(loan));
-        loanProxy = new TransparentUpgradeableProxy(address(loan), address(admin), "");
-        loan = Loan(address(loanProxy));
-        vault = new Vault(address(usdc), address(loan));
-        console.log(loan.owner());
-        console.log(address(this));
-        loan.setVault(address(vault));
-        loan.setRateCalculator(address(rateCalculator));
+        vm.startPrank(address(deployer));
         loan.setMultiplier(100000000000);
-        loan.transferOwnership(owner);
+        IOwnable(address(loan)).transferOwnership(owner);
+        vm.stopPrank();
 
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
@@ -225,7 +223,7 @@ contract LoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 
-        rateCalculator.setInterestRate(100, 100);
+        rateCalculator.setInterestRate(100, 100, 100);
     }
 
 

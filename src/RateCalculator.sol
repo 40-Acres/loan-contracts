@@ -5,12 +5,14 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IOwnable {
     function owner() external view returns (address);
+    function  transferOwnership(address) external;
 }
 
 contract RateCalculator is Ownable {
     uint256 public protocolFee = 500; // 5%
     uint256 public lenderPremium = 2000 ; // 20%
     uint256 public rewardsRate = 113; // .0113%
+    uint256 public zeroBalanceFee = 100; // 1%
     address public loanContract;
 
     constructor(address _loan) Ownable(msg.sender) {
@@ -18,7 +20,7 @@ contract RateCalculator is Ownable {
         transferOwnership(IOwnable(_loan).owner());
     }
 
-    function setInterestRate(uint256 _protocolFee, uint256 _lenderPremium) onlyOwner  public {
+    function setInterestRate(uint256 _protocolFee, uint256 _lenderPremium, uint256 _zeroBalanceFee) onlyOwner  public {
         protocolFee = _protocolFee;
         lenderPremium = _lenderPremium;
     }
@@ -31,13 +33,16 @@ contract RateCalculator is Ownable {
         return (protocolFee, lenderPremium);
     }
 
+    function getZeroBalanceFee() public view returns (uint256) {
+        return zeroBalanceFee;
+    }
+
+    function setZeroBalanceFee(uint256 _zeroBalanceFee) onlyOwner  public {
+        zeroBalanceFee = _zeroBalanceFee;
+    }
+    
     function getRewardsRate() public view returns (uint256) {
         return rewardsRate;
     }
 
-    function confirm() external  view {
-        require(msg.sender == loanContract, "Only loan contract can call this function");
-    }
-    
-    
 }

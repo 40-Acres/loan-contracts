@@ -6,34 +6,31 @@ import {Loan} from "../src/Loan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
 import { RateCalculator } from "src/RateCalculator.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-// AERO = 0x940181a94A35A4569E4529A3CDfB74e38FD98631
-// VOTER = 0x16613524e02ad97edfef371bc883f2f5d6c480a5 
-// VOTING ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4
-// AERODROME/USDC = 0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d
-// REWARDS DISTRIBUTOR = 0x227f65131a261548b057215bb1d5ab2997964c7d
 
 contract BaseDeploy is Script {
-    Loan public loan;
-    RateCalculator public rateCalculator;
-    IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
-    address aero = address(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     address usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-    address votingEscrow = address(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
-    address rewardsDistributor = address(0x227f65131A261548b057215bB1D5Ab2997964C7d);
-    address pool = address(0x6cDcb1C4A4D1C3C6d054b27AC5B77e89eAFb971d);
 
-    function setUp() public {}
-
-    function run() public {
+    
+    function run() external  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        loan = new Loan();
-        Vault vault = new Vault(address(usdc), address(loan));
-        loan.setVault(address(vault));
-        rateCalculator = new RateCalculator(address(loan));
-        loan.setRateCalculator(address(rateCalculator));
-
+        deployLoan();
         vm.stopBroadcast();
     }
-}
 
+    function deployLoan() public returns (Loan, Vault, RateCalculator) {
+        Loan loan = new Loan();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
+        Vault vault = new Vault(address(usdc), address(loan));
+        console.log("Vault deployed at: ", address(vault));
+        Loan(address(proxy)).initialize(address(vault));
+        console.log("Loan deployed at: ", address(proxy));
+        console.log(Loan(address(proxy)).owner());
+        RateCalculator rateCalculator = new RateCalculator(address(proxy));
+        Loan(address(proxy)).setRateCalculator(address(rateCalculator));
+        return (Loan(address(proxy)), vault, rateCalculator);
+    }
+
+
+}
