@@ -7,4 +7,5 @@ interface IRateCalculator {
     function setRewardsRate(uint256 _rewardsRate) external;
     function getRewardsRate() external view returns (uint256);
     function confirm() external;
+    function getZeroBalanceFee() external view returns (uint256);
 }

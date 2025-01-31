@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import "./interfaces/IVoter.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
@@ -18,16 +19,16 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import { console} from "forge-std/console.sol";
 
-contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgradeable {
+contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable {
     // deployed contract addressed
     IVoter public _voter;
     IRewardsDistributor public _rewardsDistributor;
-    address private _pool; // pool to vote on to receive fees
+    address public _pool; // pool to vote on to receive fees
     IERC20 public _usdc;
     IERC20 public _aero;
-    IVotingEscrow private _ve;
-    IAerodromeRouter private _aeroRouter;
-    address private _aeroFactory;
+    IVotingEscrow public _ve;
+    IAerodromeRouter public _aeroRouter;
+    address public _aeroFactory;
     IRateCalculator public _rateCalculator;
 
     address public _vault;
@@ -76,7 +77,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
         _disableInitializers();
     }
 
-    function initialize(address vault) initializer public {
+    function initialize(address vault) initializer virtual public {
         __Ownable_init(msg.sender); //set owner to msg.sender
         __UUPSUpgradeable_init();
         address[] memory pools = new address[](1);
@@ -98,14 +99,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
         _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
         _multiplier = 8;
     }
-
-
-    function version() public pure virtual returns (uint256) {
-        return 1;
-    }
-
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
     
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
     function requestLoan(
         uint256 tokenId,
         uint256 amount,
@@ -156,6 +152,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
         uint256 tokenId,
         uint256 amount
     ) public whenNotPaused {
+        require(amount > .01e6, "Amount must be greater than .01 USDC");
         require(confirmUsdcPrice(), "Price of USDC is not $1");
         LoanInfo storage loan = _loanDetails[tokenId];
 
@@ -247,7 +244,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
         payment = assetBalancePost - assetBalancePre;
     }
     
-    function canVoteOnPool(uint256 tokenId) internal view returns (bool) {
+    function canVoteOnPool(uint256 tokenId) internal virtual view returns (bool) {
         return _voter.lastVoted(tokenId) < ProtocolTimeLibrary.epochStart(block.timestamp);
     }
 
@@ -300,11 +297,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
     }
 
     function _pay(uint256 tokenId, uint256 amount) internal {
-        LoanInfo storage loan = _loanDetails[tokenId];
         if (amount == 0) {
             return;
         }
+        LoanInfo storage loan = _loanDetails[tokenId];
         uint256 excess = 0;
+        if (loan.balance == 0) {
+            _handleExcess(tokenId, amount, true);
+            return;
+        }
         if (amount > loan.balance) {
             excess = amount - loan.balance;
             amount = loan.balance;
@@ -319,31 +320,33 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
         }
         _usdc.transfer(_vault, amount);
         if (excess > 0) {
-            _handleExcess(tokenId, excess);
+            _handleExcess(tokenId, excess, false);
         }
     }
 
-    function _handleExcess(uint256 tokenId, uint256 excess) internal {
+    function _handleExcess(uint256 tokenId, uint256 excess, bool takeFee) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
         (
-            uint256 protocolFeePercentage,
-        ) = _rateCalculator.getInterestRate();
-        uint256 protocolFee = (excess * protocolFeePercentage) / 10000;
-        uint256 excessAfterFee = excess - protocolFee;
-        _usdc.transfer(owner(), protocolFee);
+            uint256 zeroBalanceFee
+        ) = _rateCalculator.getZeroBalanceFee();
+        if (takeFee) {
+            uint256 protocolFee = (excess * zeroBalanceFee) / 10000;
+            _usdc.transfer(owner(), protocolFee);
+            excess -= protocolFee;
+        }
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault) {
-            _usdc.approve(_vault, excessAfterFee);
-            IERC4626(_vault).deposit(excessAfterFee, loan.borrower);
+            _usdc.approve(_vault, excess);
+            IERC4626(_vault).deposit(excess, loan.borrower);
             return;
         }
         if (loan.zeroBalanceOption == ZeroBalanceOption.ReturnNft) {
-            _usdc.transfer(loan.borrower, excessAfterFee);
+            _usdc.transfer(loan.borrower, excess);
             _ve.transferFrom(address(this), loan.borrower, tokenId);
             emit CollateralWithdrawn(tokenId, loan.borrower);
             delete _loanDetails[tokenId];
             return;
         }
-        _usdc.transfer(loan.borrower, excessAfterFee);
+        _usdc.transfer(loan.borrower, excess);
     }
     
     function claimRewards(uint256 tokenId) public nonReentrant  {
@@ -540,7 +543,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, OwnableUpgrade
     }
     
     /* ORACLE */
-    function confirmUsdcPrice() internal view returns (bool) {
+    function confirmUsdcPrice() virtual internal view returns (bool) {
         (
             ,
             /* uint80 roundID */ int answer /*uint startedAt*/ /*uint timeStamp*/ /*uint80 answeredInRound*/,

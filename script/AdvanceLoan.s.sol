@@ -17,18 +17,18 @@ import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 // REWARDS DISTRIBUTOR = 0x227f65131a261548b057215bb1d5ab2997964c7d
 
 contract AdvanceLoan is Script {
-    Loan public loan = Loan(0xFdB2620738168e45233Ad16D62CF024ae0bC7489);
-    address usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+    Loan public loan = Loan(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
     IVotingEscrow votingEscrow = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
 
     function setUp() public {}
-
+    
     function run() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        uint256[] memory tokenIds = new uint256[](2);
-        tokenIds[0] = 66852;
-        tokenIds[1] = 64279;
-        loan.claimRewardsMultiple(tokenIds);
+        uint256[] memory tokenIds = new uint256[](3);
+        tokenIds[0] = 64196;
+        // tokenIds[1] = 68509;
+        // tokenIds[2] = 68510;
+        loan.claimCollateral(tokenIds[0]);
         vm.stopBroadcast();
     }
 }

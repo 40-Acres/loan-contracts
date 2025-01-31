@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Loan} from "../src/Loan.sol";
+import {Loan} from "../src/VeloLoan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
@@ -14,8 +14,8 @@ import { ProtocolTimeLibrary } from "src/libraries/ProtocolTimeLibrary.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import {BaseDeploy} from "../script/BaseDeploy.s.sol";
-import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
+import {OpDeploy} from "../script/OpDeploy.s.sol";
+import {OpUpgrade} from "../script/OpUpgrade.s.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -32,14 +32,13 @@ interface IOwnable {
 }
 
 
-contract LoanTest is Test {
+contract VeloLoanTest is Test {
     uint256 fork;
 
-    IUSDC usdc = IUSDC(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-    IVotingEscrow votingEscrow = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
-    IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
-    IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
-    address[] pool = [address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59)];
+    IUSDC usdc = IUSDC(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
+    IVotingEscrow votingEscrow = IVotingEscrow(0xFAf8FD17D9840595845582fCB047DF13f006787d);
+    IVoter public voter = IVoter(0xFAf8FD17D9840595845582fCB047DF13f006787d);
+    address[] pool = [address(0xa0A215dE234276CAc1b844fD58901351a50fec8A)];
     ProxyAdmin admin;
 
     // deployed contracts
@@ -48,19 +47,19 @@ contract LoanTest is Test {
     RateCalculator rateCalculator;
     address owner;
     address user;
-    uint256 tokenId = 64196;
+    uint256 tokenId = 2087;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(24353746);
+        vm.rollFork(131349873);
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
-        BaseDeploy deployer = new BaseDeploy();
+        OpDeploy deployer = new OpDeploy();
         (loan, vault, rateCalculator) = deployer.deployLoan();
 
         vm.startPrank(address(deployer));
-        loan.setMultiplier(100000000000);
+        loan.setMultiplier(10000000000000);
         IOwnable(address(loan)).transferOwnership(owner);
         IOwnable(address(rateCalculator)).transferOwnership(owner);
         vm.stopPrank();
@@ -121,7 +120,6 @@ contract LoanTest is Test {
 
 
     function testLoanVotingAdvance() public {
-        tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
         uint256 amount = 1e6;

@@ -23,7 +23,7 @@ contract RateCalculator is Ownable {
         console.log("Rate Owner is: ", owner());
     }
 
-    function setInterestRate(uint256 _protocolFee, uint256 _lenderPremium, uint256 _zeroBalanceFee) onlyOwner  public {
+    function setInterestRate(uint256 _protocolFee, uint256 _lenderPremium) onlyOwner  public {
         protocolFee = _protocolFee;
         lenderPremium = _lenderPremium;
     }
