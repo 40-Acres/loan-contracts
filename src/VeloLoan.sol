@@ -34,7 +34,7 @@ contract VeloLoan is Loan {
 
         _defaultPoolChangeTime = block.timestamp;
         _vault = vault;
-        _voter = IVoter(0xFAf8FD17D9840595845582fCB047DF13f006787d);
+        _voter = IVoter(0x09236cfF45047DBee6B921e00704bed6D6B8Cf7e);
         _rewardsDistributor = IRewardsDistributor(0x9D4736EC60715e71aFe72973f7885DCBC21EA99b);
         _usdc = IERC20(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
         _aero = IERC20(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
@@ -45,10 +45,10 @@ contract VeloLoan is Loan {
     }
 
     
-    function canVoteOnPool(uint256 tokenId) internal override view returns (bool) {
-        return _voter.voted(tokenId) == false;
-    }
 
+    function canVoteOnPool(uint256 tokenId) internal override view returns (bool) {
+        return _ve.voted(tokenId) == false;
+    }
         /* ORACLE */
     function confirmUsdcPrice() internal view override returns (bool) {
         (

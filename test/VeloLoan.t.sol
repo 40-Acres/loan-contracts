@@ -37,8 +37,8 @@ contract VeloLoanTest is Test {
 
     IUSDC usdc = IUSDC(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
     IVotingEscrow votingEscrow = IVotingEscrow(0xFAf8FD17D9840595845582fCB047DF13f006787d);
-    IVoter public voter = IVoter(0xFAf8FD17D9840595845582fCB047DF13f006787d);
-    address[] pool = [address(0xa0A215dE234276CAc1b844fD58901351a50fec8A)];
+    address[] pools = [address(0xa0A215dE234276CAc1b844fD58901351a50fec8A)];
+    uint256[] weights = [100e18];
     ProxyAdmin admin;
 
     // deployed contracts
@@ -52,7 +52,7 @@ contract VeloLoanTest is Test {
     function setUp() public {
         fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(131349873);
+        vm.rollFork(131349850);
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
         OpDeploy deployer = new OpDeploy();
@@ -70,13 +70,11 @@ contract VeloLoanTest is Test {
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(voter), 100e6);
         usdc.mint(address(vault), 100e6);
 
         vm.stopPrank();
     }
 
-    // FOR ON FRIDAY DONT APPROVE
     function testOwner() public view {
         address o = loan.owner();
         assertEq(o, owner);
@@ -146,6 +144,7 @@ contract VeloLoanTest is Test {
         assertEq(borrower, user);
 
 
+        console.log('ffff');
         // owner of token should be the loan
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");

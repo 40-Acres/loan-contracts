@@ -113,7 +113,6 @@ interface IVoter {
     // /// @dev Nft => Timestamp of last vote (ensures single vote per epoch)
     function lastVoted(uint256 tokenId) external view returns (uint256);
 
-    function voted(uint256 tokenId) external view returns (bool);
 
     // /// @dev Address => Gauge
     // function isGauge(address) external view returns (bool);

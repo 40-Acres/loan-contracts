@@ -114,8 +114,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             "Only the owner of the token can request a loan"
         );
 
-        // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
 
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -138,6 +136,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         _ve.transferFrom(msg.sender, address(this), tokenId);
 
+        // ensure the token is locked permanently
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
         if (!lockedBalance.isPermanent) {
             if (lockedBalance.end <= block.timestamp) {
                 revert("Token lock expired");
@@ -177,7 +177,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
-    function getRewards(uint256 tokenId) public returns (uint256 payment) {
+    function getRewards(uint256 tokenId) internal returns (uint256 payment) {
         LoanInfo storage loan = _loanDetails[tokenId];
         address[] memory pools = loan.pools;
         IERC20 asset;
@@ -217,32 +217,32 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         payment = assetBalancePost - assetBalancePre;
     }
 
-    function claimBribes(uint256 tokenId, address[] calldata rewards, address[][] calldata tokens) public returns (uint256 payment) {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        IERC20 asset;
-        if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
-            asset = _aero;
-        } else {
-            asset = _usdc;
-        }
-        uint256 assetBalancePre = asset.balanceOf(address(this));
-        _voter.claimFees(rewards, tokens, tokenId);
+    // function claimBribes(uint256 tokenId, address[] calldata rewards, address[][] calldata tokens) public returns (uint256 payment) {
+    //     LoanInfo storage loan = _loanDetails[tokenId];
+    //     IERC20 asset;
+    //     if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
+    //         asset = _aero;
+    //     } else {
+    //         asset = _usdc;
+    //     }
+    //     uint256 assetBalancePre = asset.balanceOf(address(this));
+    //     _voter.claimFees(rewards, tokens, tokenId);
 
-        for (uint256 i = 0; i < tokens.length; i++) {
-            for (uint256 j = 0; j < tokens[i].length; j++) {
-                uint256 tokenBalance = IERC20(tokens[i][j]).balanceOf(
-                    address(this)
-                );
-                if(tokenBalance > 0) {
-                    swapToToken(tokenBalance, tokens[i][j], address(asset));
-                }
-            }
-        }
-        uint256 assetBalancePost = asset.balanceOf(address(this));
+    //     for (uint256 i = 0; i < tokens.length; i++) {
+    //         for (uint256 j = 0; j < tokens[i].length; j++) {
+    //             uint256 tokenBalance = IERC20(tokens[i][j]).balanceOf(
+    //                 address(this)
+    //             );
+    //             if(tokenBalance > 0) {
+    //                 swapToToken(tokenBalance, tokens[i][j], address(asset));
+    //             }
+    //         }
+    //     }
+    //     uint256 assetBalancePost = asset.balanceOf(address(this));
 
-        // calculate the amount of fees claimed
-        payment = assetBalancePost - assetBalancePre;
-    }
+    //     // calculate the amount of fees claimed
+    //     payment = assetBalancePost - assetBalancePre;
+    // }
     
     function canVoteOnPool(uint256 tokenId) internal virtual view returns (bool) {
         return _voter.lastVoted(tokenId) < ProtocolTimeLibrary.epochStart(block.timestamp);
@@ -395,7 +395,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
-        if (loan.voteTimestamp < _defaultPoolChangeTime) {
+        // if user has returned token do not vote on token
+        if (loan.voteTimestamp < _defaultPoolChangeTime && _ve.ownerOf(tokenId) == address(this)) {
             voteOnDefaultPool(tokenId);
         }
     }

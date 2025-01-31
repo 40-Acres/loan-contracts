@@ -86,5 +86,7 @@ interface IVotingEscrow {
     function reset(uint256 _tokenId) external;
 
     function increaseAmount(uint256 _tokenId, uint256 _value) external;
+    function voted(uint256 tokenId) external view returns (bool);
+
     
 }
