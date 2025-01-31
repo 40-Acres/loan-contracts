@@ -24,7 +24,6 @@ contract BaseDeploy is Script {
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
         Vault vault = new Vault(address(usdc), address(proxy));
         Loan(address(proxy)).initialize(address(vault));
-        console.log(Loan(address(proxy)).owner());
         RateCalculator rateCalculator = new RateCalculator(address(proxy));
         Loan(address(proxy)).setRateCalculator(address(rateCalculator));
         return (Loan(address(proxy)), vault, rateCalculator);

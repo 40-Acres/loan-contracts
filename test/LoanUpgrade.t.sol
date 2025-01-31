@@ -83,7 +83,6 @@ contract LoanUpgradeTest is Test {
 
     function testGetMaxLoan() public view {
         (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
-        console.log("maxLoan", maxLoan);
         assertTrue(maxLoan / 1e6 > 10);
     }
 
@@ -111,8 +110,6 @@ contract LoanUpgradeTest is Test {
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
 
 
-        IVotingEscrow.LockedBalance memory lockedBalance = votingEscrow.locked(tokenId);
-        console.log("isPermanent", lockedBalance.isPermanent);
         amount = 1e6;
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();

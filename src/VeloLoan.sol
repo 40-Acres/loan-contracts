@@ -3,21 +3,12 @@ pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
-import {IRateCalculator} from "./interfaces/IRateCalculator.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
-import {ICLGauge} from "./interfaces/ICLGauge.sol";
-import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
-import { console} from "forge-std/console.sol";
 import {Loan } from "./Loan.sol";
 
 contract VeloLoan is Loan {
@@ -34,7 +25,7 @@ contract VeloLoan is Loan {
 
         _defaultPoolChangeTime = block.timestamp;
         _vault = vault;
-        _voter = IVoter(0x09236cfF45047DBee6B921e00704bed6D6B8Cf7e);
+        _voter = IVoter(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
         _rewardsDistributor = IRewardsDistributor(0x9D4736EC60715e71aFe72973f7885DCBC21EA99b);
         _usdc = IERC20(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
         _aero = IERC20(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);

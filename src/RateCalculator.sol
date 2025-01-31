@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { console } from "forge-std/console.sol";
 
 interface IOwnable {
     function owner() external view returns (address);
@@ -20,7 +19,6 @@ contract RateCalculator is Ownable {
     constructor(address _loan) Ownable(msg.sender) {
         loanContract = _loan;
         transferOwnership(IOwnable(_loan).owner());
-        console.log("Rate Owner is: ", owner());
     }
 
     function setInterestRate(uint256 _protocolFee, uint256 _lenderPremium) onlyOwner  public {

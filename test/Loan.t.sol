@@ -87,7 +87,6 @@ contract LoanTest is Test {
     function testGetMaxLoan() public view {
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
         assertTrue(maxLoan / 1e6 > 10);
-        console.log("maxLoan", maxLoan);
     }
 
     function testNftOwner() public view {
@@ -236,7 +235,6 @@ contract LoanTest is Test {
 
     function testUpgradeLoan() public {
         vm.startPrank(loan.owner());
-        console.log("owner", owner);
         Loan loanV2 = new Loan();
         loan.upgradeToAndCall(address(loanV2), new bytes(0));
         vm.stopPrank();

@@ -64,9 +64,11 @@ contract VeloLoanTest is Test {
         IOwnable(address(rateCalculator)).transferOwnership(owner);
         vm.stopPrank();
 
-        vm.prank(owner);
+        vm.startPrank(owner);
         IOwnable(address(loan)).acceptOwnership();
-
+        loan.setDefaultPools(pools, weights);
+        vm.stopPrank();
+        
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
@@ -84,7 +86,6 @@ contract VeloLoanTest is Test {
     function testGetMaxLoan() public view {
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
         assertTrue(maxLoan / 1e6 > 10);
-        console.log("maxLoan", maxLoan);
     }
 
     function testNftOwner() public view {
@@ -144,7 +145,6 @@ contract VeloLoanTest is Test {
         assertEq(borrower, user);
 
 
-        console.log('ffff');
         // owner of token should be the loan
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
@@ -158,7 +158,7 @@ contract VeloLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 37051653);
+        assertEq(vault.epochRewardsLocked(), 298261);
     }
 
     function testIncreaseLoan() public {
@@ -233,7 +233,6 @@ contract VeloLoanTest is Test {
 
     function testUpgradeLoan() public {
         vm.startPrank(loan.owner());
-        console.log("owner", owner);
         Loan loanV2 = new Loan();
         loan.upgradeToAndCall(address(loanV2), new bytes(0));
         vm.stopPrank();

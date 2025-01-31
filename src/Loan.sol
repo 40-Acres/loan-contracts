@@ -17,7 +17,6 @@ import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
-import { console} from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable {
     // deployed contract addressed
@@ -180,6 +179,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function getRewards(uint256 tokenId) internal returns (uint256 payment) {
         LoanInfo storage loan = _loanDetails[tokenId];
         address[] memory pools = loan.pools;
+        if(pools.length == 0) {
+            pools = _defaultPools;
+        }
         IERC20 asset;
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
             asset = _aero;
