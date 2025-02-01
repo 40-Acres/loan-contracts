@@ -9,7 +9,6 @@ import { Vault } from "src/Vault.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IVotingEscrow } from "../src/interfaces/IVotingEscrow.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { RateCalculator } from "src/RateCalculator.sol";
 import { ProtocolTimeLibrary } from "src/libraries/ProtocolTimeLibrary.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
@@ -44,7 +43,6 @@ contract VeloLoanTest is Test {
     // deployed contracts
     Vault vault;
     Loan public loan;
-    RateCalculator rateCalculator;
     address owner;
     address user;
     uint256 tokenId = 2087;
@@ -56,12 +54,11 @@ contract VeloLoanTest is Test {
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
         OpDeploy deployer = new OpDeploy();
-        (loan, vault, rateCalculator) = deployer.deployLoan();
+        (loan, vault) = deployer.deployLoan();
 
         vm.startPrank(address(deployer));
         loan.setMultiplier(10000000000000);
         IOwnable(address(loan)).transferOwnership(owner);
-        IOwnable(address(rateCalculator)).transferOwnership(owner);
         vm.stopPrank();
 
         vm.startPrank(owner);
@@ -226,8 +223,10 @@ contract VeloLoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 
-        vm.prank(owner);
-        rateCalculator.setInterestRate(100, 100);
+        vm.startPrank(owner);
+        loan.setProtocolFee(100);
+        loan.setLenderPremium(100);
+        vm.stopPrank();
     }
 
 

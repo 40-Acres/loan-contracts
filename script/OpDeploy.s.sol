@@ -5,7 +5,6 @@ import {Script, console} from "forge-std/Script.sol";
 import {Loan, VeloLoan} from "../src/VeloLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
-import { RateCalculator } from "src/RateCalculator.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 
@@ -18,13 +17,11 @@ contract OpDeploy is Script {
         vm.stopBroadcast();
     }
 
-    function deployLoan() public returns (Loan, Vault, RateCalculator) {
+    function deployLoan() public returns (Loan, Vault) {
         Loan loan = new VeloLoan();
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
         Vault vault = new Vault(address(usdc), address(proxy));
         Loan(address(proxy)).initialize(address(vault));
-        RateCalculator rateCalculator = new RateCalculator(address(proxy));
-        Loan(address(proxy)).setRateCalculator(address(rateCalculator));
-        return (Loan(address(proxy)), vault, rateCalculator);
+        return (Loan(address(proxy)), vault);
     }
 }

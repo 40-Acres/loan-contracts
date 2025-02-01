@@ -5,7 +5,6 @@ import {Script, console} from "forge-std/Script.sol";
 import {Loan} from "../src/Loan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
-import { RateCalculator } from "src/RateCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IVotingEscrow } from "../src/interfaces/IVotingEscrow.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";

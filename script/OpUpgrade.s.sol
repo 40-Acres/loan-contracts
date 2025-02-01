@@ -5,7 +5,6 @@ import {Script, console} from "forge-std/Script.sol";
 import {Loan} from "../src/VeloLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
-import { RateCalculator } from "src/RateCalculator.sol";
 
 
 contract OpUpgrade is Script {

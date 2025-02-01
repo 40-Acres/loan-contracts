@@ -49,7 +49,6 @@
 //         vault = new Vault(address(usdc), address(loan));
 //         rateCalculator = new RateCalculator(address(loan));
 //         loan.setVault(address(vault));
-//         loan.setRateCalculator(address(rateCalculator));
 //         loan.transferOwnership(owner);
 //         // allow this test contract to mint USDC
 //         vm.prank(usdc.masterMinter());

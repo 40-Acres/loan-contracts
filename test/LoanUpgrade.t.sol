@@ -9,7 +9,6 @@ import {Vault} from "src/Vault.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../src/interfaces/IVotingEscrow.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {RateCalculator} from "src/RateCalculator.sol";
 import {ProtocolTimeLibrary} from "src/libraries/ProtocolTimeLibrary.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
@@ -48,7 +47,6 @@ contract LoanUpgradeTest is Test {
     Vault vault;
     Loan public loan =
         Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
-    RateCalculator rateCalculator;
     address owner;
     address user;
     uint256 tokenId = 64196;
@@ -62,6 +60,7 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(owner);
         Loan loanV2 = new Loan();
         vault = Vault(loan._vault());
+        console.log("vault3", address(vault));
         loan.upgradeToAndCall(address(loanV2), new bytes(0));
 
         loan.setMultiplier(100000000000);
@@ -83,6 +82,7 @@ contract LoanUpgradeTest is Test {
 
     function testGetMaxLoan() public view {
         (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
+        console.log("max loan", maxLoan / 1e6);
         assertTrue(maxLoan / 1e6 > 10);
     }
 
