@@ -5,7 +5,6 @@ import "./interfaces/IVoter.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
@@ -40,7 +39,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     mapping(address => bool) public _approvedTokens;
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
-    uint256 public _lastEpochPaid;
 
     enum ZeroBalanceOption {
         DoNothing,
@@ -471,7 +469,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function lastEpochReward() public view returns (uint256) {
-        return _rewardsPerEpoch[_lastEpochPaid];
+        return _rewardsPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)];
     }
 
     /* MODIFIERS */
@@ -485,7 +483,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _rewardsPerEpoch[
                 ProtocolTimeLibrary.epochStart(block.timestamp)
             ] += rewards;
-            _lastEpochPaid = ProtocolTimeLibrary.epochStart(block.timestamp);
         }
     }
 
