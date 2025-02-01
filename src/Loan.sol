@@ -394,11 +394,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             revert("Cannot claim collateral while loan is active");
         }
 
-        // if rewards have not been claimed, claim them
-        if(loan.claimTimestamp < ProtocolTimeLibrary.epochStart(block.timestamp)) {
-            _claimRewards(tokenId);
-        }
-
         _ve.transferFrom(address(this), loan.borrower, tokenId);
         emit CollateralWithdrawn(tokenId, msg.sender);
         delete _loanDetails[tokenId];
