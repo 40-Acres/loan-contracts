@@ -60,7 +60,6 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(owner);
         Loan loanV2 = new Loan();
         vault = Vault(loan._vault());
-        console.log("vault3", address(vault));
         loan.upgradeToAndCall(address(loanV2), new bytes(0));
 
         loan.setMultiplier(100000000000);

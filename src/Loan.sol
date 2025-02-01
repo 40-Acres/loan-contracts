@@ -47,7 +47,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         DoNothing,
         InvestToVault,
         PayToOwner,
-        ReturnNft,
         ReinvestVeNft
     }
 
@@ -71,6 +70,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event ZeroBalanceOptionSet(uint256 tokenId, ZeroBalanceOption option);
     event CollateralWithdrawn(uint256 tokenId, address owner);
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
+    event RewardsReceived(uint256 epoch, uint256 amount);
 
 
     constructor() {
@@ -119,6 +119,21 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         );
 
 
+        if (canVoteOnPool(tokenId)) {
+            voteOnDefaultPool(tokenId);
+        }
+
+        _ve.transferFrom(msg.sender, address(this), tokenId);
+
+        // ensure the token is locked permanently
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        if (!lockedBalance.isPermanent) {
+            if (lockedBalance.end <= block.timestamp) {
+                revert("Token lock expired");
+            }
+            _ve.lockPermanent(tokenId);
+        }
+
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
             borrower: msg.sender,
@@ -131,24 +146,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             claimTimestamp: 0
         });
 
-        if (canVoteOnPool(tokenId)) {
-            voteOnDefaultPool(tokenId);
-        }
-
         if (amount > 0) {
             increaseLoan(tokenId, amount);
         }
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-
-        // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
-        if (!lockedBalance.isPermanent) {
-            if (lockedBalance.end <= block.timestamp) {
-                revert("Token lock expired");
-            }
-            _ve.lockPermanent(tokenId);
-        }
-
+        
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
     }
 
@@ -322,13 +323,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             IERC4626(_vault).deposit(excess, loan.borrower);
             return;
         }
-        if (loan.zeroBalanceOption == ZeroBalanceOption.ReturnNft) {
-            _usdc.transfer(loan.borrower, excess);
-            _ve.transferFrom(address(this), loan.borrower, tokenId);
-            emit CollateralWithdrawn(tokenId, loan.borrower);
-            delete _loanDetails[tokenId];
-            return;
-        }
         _usdc.transfer(loan.borrower, excess);
     }
     
@@ -438,6 +432,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _rewardsPerEpoch[
                 ProtocolTimeLibrary.epochStart(block.timestamp)
             ] += rewards;
+            emit RewardsReceived(
+                ProtocolTimeLibrary.epochStart(block.timestamp),
+                rewards
+            );
         }
     }
 
@@ -535,6 +533,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _multiplier = multiplier;
     }
 
+    function renounceOwnership() public view override onlyOwner {
+        revert("Cannot renounce ownership");
+    }
 
     /* RESCUE FUNCTIONS */
     function rescueERC20(address token, uint256 amount) public onlyOwner {
