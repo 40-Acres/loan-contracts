@@ -33,16 +33,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     uint256 public _outstandingCapital;
     uint256 public  _multiplier;
 
-
-    uint256 public _protocolFee = 500;
-    uint256 public _lenderPremium = 2000;
-    uint256 public _rewardsRate = 113;
-    uint256 public _zeroBalanceFee = 100; 
-
     mapping(uint256 => LoanInfo) public _loanDetails;
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
 
+    uint256 public _protocolFee;
+    uint256 public _lenderPremium;
+    uint256 public _rewardsRate;
+    uint256 public _zeroBalanceFee; 
+    
     enum ZeroBalanceOption {
         DoNothing,
         InvestToVault,
@@ -149,7 +148,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (amount > 0) {
             increaseLoan(tokenId, amount);
         }
-        
+
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
     }
 
