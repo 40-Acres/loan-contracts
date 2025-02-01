@@ -37,10 +37,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
 
-    uint256 public _protocolFee;
-    uint256 public _lenderPremium;
-    uint256 public _rewardsRate;
-    uint256 public _zeroBalanceFee; 
     
     enum ZeroBalanceOption {
         DoNothing,
@@ -65,6 +61,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     uint256[] public _defaultWeights;
     uint256 public _defaultPoolChangeTime;
 
+
+    uint256 public _protocolFee;
+    uint256 public _lenderPremium;
+    uint256 public _rewardsRate;
+    uint256 public _zeroBalanceFee; 
+    
     event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
     event ZeroBalanceOptionSet(uint256 tokenId, ZeroBalanceOption option);
     event CollateralWithdrawn(uint256 tokenId, address owner);

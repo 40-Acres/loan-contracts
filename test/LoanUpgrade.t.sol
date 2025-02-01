@@ -75,6 +75,18 @@ contract LoanUpgradeTest is Test {
         vm.stopPrank();
     }
 
+
+    function testGetMaxloan() public {
+        vm.prank(owner);
+        tokenId = 10131;
+        loan.setMultiplier(8);
+        vm.stopPrank();
+        (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
+        console.log("vault balance", usdc.balanceOf(loan._vault()));
+        console.log("max loan", maxLoan / 1e6);
+        assertTrue(maxLoan / 1e6 > 8000);
+    }
+
     function testOwner() public view {
         address o = loan.owner();
         assertEq(o, owner);
