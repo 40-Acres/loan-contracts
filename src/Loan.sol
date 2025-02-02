@@ -127,9 +127,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             voteOnDefaultPool(tokenId);
         }
 
-        if (amount > 0) {
-            increaseLoan(tokenId, amount);
-        }
         
         _ve.transferFrom(msg.sender, address(this), tokenId);
         require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
@@ -144,6 +141,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
+
+        if (amount > 0) {
+            increaseLoan(tokenId, amount);
+        }
     }
 
     function increaseLoan(
@@ -151,6 +152,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount
     ) public whenNotPaused {
         require(amount > .01e6, "Amount must be greater than .01 USDC");
+        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
         require(confirmUsdcPrice(), "Price of USDC is not $1");
         LoanInfo storage loan = _loanDetails[tokenId];
 
@@ -480,7 +482,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] memory pools,
         uint256[] memory weights
     ) public onlyOwner {
-        // TODO: ensure weightd are 100%
         _defaultPools = pools;
         _defaultWeights = weights;
     }
