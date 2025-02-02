@@ -34,8 +34,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     uint256 public  _multiplier;
 
     mapping(uint256 => LoanInfo) public _loanDetails;
+    mapping(address => bool) public _approvedTokens; // deprecated
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
+    uint256 public _lastEpochPaid; // deprecated
 
     
     enum ZeroBalanceOption {
@@ -61,11 +63,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     uint256[] public _defaultWeights;
     uint256 public _defaultPoolChangeTime;
 
-
-    uint256 public _protocolFee;
-    uint256 public _lenderPremium;
-    uint256 public _rewardsRate;
-    uint256 public _zeroBalanceFee; 
     
     event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
     event ZeroBalanceOptionSet(uint256 tokenId, ZeroBalanceOption option);
@@ -98,11 +95,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
         _aeroRouter = IAerodromeRouter(0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43);
         _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
-        _multiplier = 8;
-        _protocolFee = 500;
-        _lenderPremium = 2000;
-        _rewardsRate = 113;
-        _zeroBalanceFee = 100; 
     }
     
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -119,22 +111,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             "Only the owner of the token can request a loan"
         );
 
-
-        if (canVoteOnPool(tokenId)) {
-            voteOnDefaultPool(tokenId);
-        }
-
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-
-        // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
-        if (!lockedBalance.isPermanent) {
-            if (lockedBalance.end <= block.timestamp) {
-                revert("Token lock expired");
-            }
-            _ve.lockPermanent(tokenId);
-        }
-
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
             borrower: msg.sender,
@@ -147,8 +123,23 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             claimTimestamp: 0
         });
 
+        if (canVoteOnPool(tokenId)) {
+            voteOnDefaultPool(tokenId);
+        }
+
         if (amount > 0) {
             increaseLoan(tokenId, amount);
+        }
+        _ve.transferFrom(msg.sender, address(this), tokenId);
+        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
+
+        // ensure the token is locked permanently
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        if (!lockedBalance.isPermanent) {
+            if (lockedBalance.end <= block.timestamp) {
+                revert("Token lock expired");
+            }
+            _ve.lockPermanent(tokenId);
         }
 
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
@@ -436,29 +427,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /* Rate Methods */
-
-    function getZeroBalanceFee() public view returns (uint256) {
-        uint256 zeroBalanceFee = _zeroBalanceFee;
-        if (zeroBalanceFee == 0) {
-            zeroBalanceFee = 100; // 1%
-        }
-        return zeroBalanceFee;
+    function getZeroBalanceFee() public pure returns (uint256) {
+        return 100; // 1%
     }
 
-    function getRewardsRate() public view returns (uint256) {
-        uint256 rewardsRate = _rewardsRate;
-        if (rewardsRate == 0) {
-            rewardsRate = 113;  // .0113%
-        }
-        return rewardsRate;
+    function getRewardsRate() public pure returns (uint256) {
+        return 113;  // .0113%
     }
 
-    function getLenderPremium() public view returns (uint256) {
-        uint256 lenderPremium = _lenderPremium;
-        if (lenderPremium == 0) {
-            lenderPremium = 2000; // 20%
-        }
-        return lenderPremium;
+    function getLenderPremium() public pure returns (uint256) {
+        return 2000; // 20%
+    }
+
+    function getProtocolFee() public pure returns (uint256) {
+        return  500;  // 5%
     }
 
     /* VIEW FUNCTIONS */
@@ -484,29 +466,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /* OWNER METHODS */
-    function setProtocolFee(uint256 protocolFee) onlyOwner  public {
-        _protocolFee = protocolFee;
-    }
-
-    function setLenderPremium(uint256 lenderPremium) onlyOwner  public {
-        _lenderPremium = lenderPremium;
-    }
-
-    function setRewardsRate(uint256 rewardsRate) onlyOwner  public {
-        _rewardsRate = rewardsRate;
-    }
-
-    function setZeroBalanceFee(uint256 zeroBalanceFee) onlyOwner  public {
-        _zeroBalanceFee = zeroBalanceFee;
-    }
-
-    function getProtocolFee() public view returns (uint256) {
-        uint256 protocolFee = _protocolFee;
-        if (protocolFee == 0) {
-            protocolFee = 500;  // 5%
-        }
-        return protocolFee;
-    }
 
     function pause() public onlyOwner {
         _paused = true;

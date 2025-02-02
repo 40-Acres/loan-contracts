@@ -226,10 +226,6 @@ contract LoanTest is Test {
         assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 
 
-        vm.startPrank(owner);
-        loan.setProtocolFee(100);
-        loan.setLenderPremium(100);
-        vm.stopPrank();
     }
 
 

@@ -8,6 +8,8 @@ import { Vault } from "src/Vault.sol";
 
 
 contract BaseUpgrade is Script {
+    address[] pool = [address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59)];
+
     function run() external  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         address proxy = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
@@ -19,6 +21,9 @@ contract BaseUpgrade is Script {
         Loan loan = new Loan();
         Loan proxy = Loan(payable(_proxy));
         proxy.upgradeToAndCall(address(loan), new bytes(0));
+        uint256[] memory _weights = new uint256[](1);
+        _weights[0] = 100e18;
+        proxy.setDefaultPools(pool, _weights);
     }
 
 }

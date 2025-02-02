@@ -54,7 +54,7 @@ contract LoanUpgradeTest is Test {
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(25819757);
+        vm.rollFork(25841091);
         owner = address(loan.owner());
         user = votingEscrow.ownerOf(tokenId);
 
@@ -165,6 +165,16 @@ contract LoanUpgradeTest is Test {
         loan.claimCollateral(_tokenId);
         vm.stopPrank();
         assertEq(votingEscrow.ownerOf(_tokenId), _user);
+    }
+
+    function testRequestLoan() public {
+        uint256 _tokenId = 65204;
+        uint256 amount = 1e6;
+        address _user = votingEscrow.ownerOf(_tokenId);
+        vm.startPrank(_user);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.stopPrank();
     }
 
 }
