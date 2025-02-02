@@ -130,6 +130,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (amount > 0) {
             increaseLoan(tokenId, amount);
         }
+        
         _ve.transferFrom(msg.sender, address(this), tokenId);
         require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
 

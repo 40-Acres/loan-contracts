@@ -21,9 +21,6 @@ contract BaseUpgrade is Script {
         Loan loan = new Loan();
         Loan proxy = Loan(payable(_proxy));
         proxy.upgradeToAndCall(address(loan), new bytes(0));
-        uint256[] memory _weights = new uint256[](1);
-        _weights[0] = 100e18;
-        proxy.setDefaultPools(pool, _weights);
     }
 
 }
