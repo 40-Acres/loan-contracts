@@ -15,7 +15,6 @@ import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
-import { console } from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable {
     // deployed contract addressed
