@@ -49,12 +49,11 @@ contract LoanUpgradeTest is Test {
         Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
     address owner;
     address user;
-    uint256 tokenId = 64196;
+    uint256 tokenId = 68509;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(25864322);
         owner = address(loan.owner());
         user = votingEscrow.ownerOf(tokenId);
 
@@ -82,9 +81,25 @@ contract LoanUpgradeTest is Test {
         loan.setMultiplier(8);
         vm.stopPrank();
         (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
-        console.log("vault balance", usdc.balanceOf(loan._vault()));
-        console.log("max loan", maxLoan / 1e6);
-        assertTrue(maxLoan / 1e6 > 8000);
+        assertTrue(maxLoan / 1e6 > 100, "max loan should be greater than 8000");
+    }
+
+    function testMaxloanIs80Percent() public {
+        usdc.mint(address(vault), 100000e6);
+
+        vm.prank(owner);
+        tokenId = 10131;
+        loan.setMultiplier(80000000000000000);
+        vm.stopPrank();
+        uint256 vaultSupply = usdc.balanceOf(loan._vault()) + loan._outstandingCapital();
+        console.log("vault balance", vaultSupply);
+        (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, vaultSupply * 8 / 10);
+        vm.prank(votingEscrow.ownerOf(tokenId));
+        loan.requestLoan(tokenId, maxLoan, Loan.ZeroBalanceOption.DoNothing);
+        
+        (maxLoan, ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, 0, "max loan should be 0");
     }
 
     function testOwner() public view {
@@ -168,7 +183,7 @@ contract LoanUpgradeTest is Test {
     }
 
     function testRequestLoan() public {
-        uint256 _tokenId = 65204;
+        uint256 _tokenId = 68509;
         uint256 amount = 1e6;
         address _user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(_user);

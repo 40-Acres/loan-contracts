@@ -15,6 +15,7 @@ import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
+import { console } from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable {
     // deployed contract addressed
@@ -406,16 +407,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 maxLoan = maxLoanIgnoreSupply;
 
         // max utilization ratio is 80%
-        uint256 vaultSupply = _usdc.balanceOf(_vault);
+        uint256 availableBalance = _usdc.balanceOf(_vault);
+        uint256 vaultSupply =  availableBalance + _outstandingCapital;
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;
-
+        if(_outstandingCapital > maxUtilization) {
+            return (0, maxLoanIgnoreSupply);
+        }
         if (maxLoan > maxUtilization) {
             maxLoan = maxUtilization;
         }
 
+        if (maxLoan > availableBalance) {
+            maxLoan = availableBalance;
+        }
+
         return (maxLoan, maxLoanIgnoreSupply);
     }
-
 
     function recordRewards(uint256 rewards) internal  {
         if (rewards > 0) {
