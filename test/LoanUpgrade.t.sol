@@ -25,6 +25,7 @@ interface IUSDC {
     ) external;
     function masterMinter() external view returns (address);
     function approve(address spender, uint256 amount) external returns (bool);
+    function transfer(address to, uint256 amount) external returns (bool);
 }
 interface IOwnable {
     function owner() external view returns (address);
@@ -85,20 +86,65 @@ contract LoanUpgradeTest is Test {
     }
 
     function testMaxloanIs80Percent() public {
-        usdc.mint(address(vault), 100000e6);
+        vm.startPrank(loan._vault());
+        usdc.approve(address(this), usdc.balanceOf(loan._vault()));
+        usdc.transfer(address(this), usdc.balanceOf(loan._vault()));
+        vm.stopPrank();
+
+
+        usdc.mint(address(loan._vault()), loan._outstandingCapital()  * 10);
 
         vm.prank(owner);
         tokenId = 10131;
         loan.setMultiplier(80000000000000000);
         vm.stopPrank();
         uint256 vaultSupply = usdc.balanceOf(loan._vault()) + loan._outstandingCapital();
-        console.log("vault balance", vaultSupply);
         (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, vaultSupply * 8 / 10);
+        assertEq(maxLoan + loan._outstandingCapital(), vaultSupply * 8 /10, "should be $80");
         vm.prank(votingEscrow.ownerOf(tokenId));
         loan.requestLoan(tokenId, maxLoan, Loan.ZeroBalanceOption.DoNothing);
         
         (maxLoan, ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, 0, "max loan should be 0");
+        assertEq(loan._outstandingCapital(), vaultSupply * 8 /10);
+    }
+
+
+
+
+    function testMaxLoanVaultUnderfunded() public {
+        vm.startPrank(loan._vault());
+        usdc.approve(address(this), usdc.balanceOf(loan._vault()));
+        usdc.transfer(address(this), usdc.balanceOf(loan._vault()));
+        vm.stopPrank();
+
+        vm.prank(owner);
+        tokenId = 10131;
+        loan.setMultiplier(80000000000000000);
+        vm.stopPrank();
+        (uint256 maxLoan,) = loan.getMaxLoan(tokenId);
+
+        
+        assertEq(maxLoan, 0, "max loan should be 0");
+        assertEq(loan._outstandingCapital(), loan._outstandingCapital());
+    }
+
+
+    function testMaxLoanVault90Percent() public {
+        vm.startPrank(loan._vault());
+        usdc.approve(address(this), usdc.balanceOf(loan._vault()));
+        usdc.transfer(address(this), usdc.balanceOf(loan._vault()));
+        vm.stopPrank();
+
+        usdc.mint(address(loan._vault()), loan._outstandingCapital() / 10 );
+
+
+        vm.prank(owner);
+        tokenId = 10131;
+        loan.setMultiplier(80000000000000000);
+        vm.stopPrank();
+        (uint256 maxLoan,) = loan.getMaxLoan(tokenId);
+
         assertEq(maxLoan, 0, "max loan should be 0");
     }
 
@@ -161,7 +207,7 @@ contract LoanUpgradeTest is Test {
     }
 
     function testCurrentOwnerCanIncreaaseLoan() public {
-        uint256 _tokenId = 3835;
+        uint256 _tokenId = 68510;
         uint256 amount = 1e6;
         (, address _user) = loan.getLoanDetails(_tokenId);
         vm.startPrank(_user);
@@ -170,7 +216,7 @@ contract LoanUpgradeTest is Test {
     }
 
     function testcurrentOwnerCanPayLoan() public  {
-        uint256 _tokenId = 3835;
+        uint256 _tokenId = 68510;
         (uint256 balance, address _user) = loan.getLoanDetails(_tokenId);
 
         usdc.mint(address(_user), 100e6);

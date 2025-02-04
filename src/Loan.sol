@@ -406,18 +406,23 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 maxLoan = maxLoanIgnoreSupply;
 
         // max utilization ratio is 80%
-        uint256 availableBalance = _usdc.balanceOf(_vault);
-        uint256 vaultSupply =  availableBalance + _outstandingCapital;
+        uint256 vaultBalance = _usdc.balanceOf(_vault);
+        uint256 vaultSupply =  vaultBalance + _outstandingCapital;
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;
+
+        // if the vault is over utilized, no loans can be made
         if(_outstandingCapital > maxUtilization) {
             return (0, maxLoanIgnoreSupply);
         }
-        if (maxLoan > maxUtilization) {
-            maxLoan = maxUtilization;
+
+        // can only loan up to the max utilization amount
+        uint256 vaultAvailableSupply = maxUtilization - _outstandingCapital;
+        if (maxLoan > vaultAvailableSupply) {
+            maxLoan = vaultAvailableSupply;
         }
 
-        if (maxLoan > availableBalance) {
-            maxLoan = availableBalance;
+        if (maxLoan > vaultBalance) {
+            maxLoan = vaultBalance;
         }
 
         return (maxLoan, maxLoanIgnoreSupply);
