@@ -371,6 +371,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
+
     function voteOnDefaultPool(uint256 tokenId) internal {
         if(canVoteOnPool(tokenId)) {
             LoanInfo storage loan = _loanDetails[tokenId];
@@ -402,7 +403,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 veBalance = _ve.balanceOfNFTAt(tokenId, block.timestamp);
         uint256 rewardsRate =  getRewardsRate();
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 10000) *
-            _multiplier) / 1e12; // 0.0113 * veNFT balance of token
+            _multiplier) / 1e12; // rewardsRate * veNFT balance of token
         uint256 maxLoan = maxLoanIgnoreSupply;
 
         // max utilization ratio is 80%
@@ -446,7 +447,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function getRewardsRate() public pure returns (uint256) {
-        return 113;  // .0113%
+        return 120;  // .0120%
     }
 
     function getLenderPremium() public pure returns (uint256) {
