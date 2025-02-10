@@ -15,6 +15,7 @@ import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transp
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
+import { console} from "forge-std/console.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -189,7 +190,7 @@ contract LoanUpgradeTest is Test {
         assertTrue(usdc.balanceOf(address(user)) > 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < startingVaultBalance);
 
-        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount);
         assertEq(borrower, user);
 
@@ -209,7 +210,7 @@ contract LoanUpgradeTest is Test {
     function testCurrentOwnerCanIncreaaseLoan() public {
         uint256 _tokenId = 68510;
         uint256 amount = 1e6;
-        (, address _user) = loan.getLoanDetails(_tokenId);
+        (, address _user,) = loan.getLoanDetails(_tokenId);
         vm.startPrank(_user);
         loan.increaseLoan(_tokenId, amount);
         vm.stopPrank();
@@ -217,7 +218,7 @@ contract LoanUpgradeTest is Test {
 
     function testcurrentOwnerCanPayLoan() public  {
         uint256 _tokenId = 68510;
-        (uint256 balance, address _user) = loan.getLoanDetails(_tokenId);
+        (uint256 balance, address _user,) = loan.getLoanDetails(_tokenId);
 
         usdc.mint(address(_user), 100e6);
         vm.startPrank(_user);
@@ -237,5 +238,72 @@ contract LoanUpgradeTest is Test {
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
     }
+
+
+    function testRates() public {
+        vm.startPrank(0x0000000000000000000000000000000000000000);
+        vm.expectRevert();
+        loan.setZeroBalanceFee(1e6);
+        vm.stopPrank();
+
+
+        vm.assertEq(loan.getZeroBalanceFee(), 100);
+        vm.assertEq(loan.getRewardsRate(), 113);
+        vm.assertEq(loan.getLenderPremium(), 2000);
+        vm.assertEq(loan.getProtocolFee(), 500);
+
+        vm.startPrank(owner);
+        loan.setZeroBalanceFee(1e6);
+        loan.setRewardsRate(1e6);
+        loan.setLenderPremium(1e6);
+        loan.setProtocolFee(1e6);
+        vm.stopPrank();
+
+        vm.assertEq(loan.getZeroBalanceFee(), 1e6);
+        vm.assertEq(loan.getRewardsRate(), 1e6);
+        vm.assertEq(loan.getLenderPremium(), 1e6);
+        vm.assertEq(loan.getProtocolFee(), 1e6);
+    }
+
+    function transferToMultiSig() public {
+        vm.startPrank(owner);
+        loan.transferOwnership(0x0000000000000000000000000000000000000000);
+        vm.stopPrank();
+
+        assertEq(loan.owner(), owner);
+        vm.startPrank(0x0000000000000000000000000000000000000000);
+        loan.acceptOwnership();
+        vm.stopPrank();
+
+        assertEq(loan.owner(), 0x0000000000000000000000000000000000000000);
+    }   
+
+
+    // function testTokenAleadyVoted() public {
+    //     vm.rollFork(26165537);
+
+    //     vm.startPrank(owner);
+    //     Loan loanV2 = new Loan();
+    //     vault = Vault(loan._vault());
+    //     loan.upgradeToAndCall(address(loanV2), new bytes(0));
+    //     vm.stopPrank();
+
+    //     uint256 _tokenId = 1992;
+    //     address _owner = votingEscrow.ownerOf(_tokenId);
+    //     vm.startPrank(_owner);
+    //     IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+    //     loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.DoNothing);
+    //     vm.stopPrank();
+
+    //     address[] memory pools = new address[](1);
+    //     pools[0] = 0x139E9f235588A9720e7Eab045da29dC781c4b658;
+    //     loan.setVotedPools(_tokenId, pools);
+
+
+    //     (,, address[] memory votedPools) = loan.getLoanDetails(_tokenId);
+    //     assertEq(votedPools[0], pools[0]);
+
+    //     loan.claimRewards(_tokenId);
+    // }
 
 }

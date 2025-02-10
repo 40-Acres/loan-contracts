@@ -40,6 +40,7 @@ interface IVotingEscrow {
     error ZeroAddress();
     error ZeroAmount();
     error ZeroBalance();
+
     
     struct LockedBalance {
         int128 amount;
