@@ -38,7 +38,7 @@ contract VeloLoan is Loan {
     
 
     function canVoteOnPool(uint256 tokenId) internal override view returns (bool) {
-        return _ve.voted(tokenId) == false;
+        return _ve.voted(tokenId) == false; // TODO FIX
     }
         /* ORACLE */
     function confirmUsdcPrice() internal view override returns (bool) {
