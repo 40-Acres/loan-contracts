@@ -15,8 +15,10 @@ import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
+import {RateStorage} from "./RateStorage.sol";
+import {console} from "forge-std/console.sol";
 
-contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable {
+contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage {
     // deployed contract addressed
     IVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
@@ -169,7 +171,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.balance + amount <= maxLoan,
             "Cannot increase loan beyond max loan amount"
         );
-        uint256 originationFee = (amount * 8) / 10000; // 0.8%
+        uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
@@ -201,7 +203,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             token[1] = ICLGauge(address(pools[0])).token1();
             tokens[0] = token;
             tokens[1] = token;
-            _voter.claimFees(rewards, tokens, tokenId);
+           _voter.claimFees(rewards, tokens, tokenId);
         }
 
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -220,8 +222,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         payment = assetBalancePost - assetBalancePre;
     }
 
-    // function claimBribes(uint256 tokenId, address[] calldata rewards, address[][] calldata tokens) public returns (uint256 payment) {
-    // }
     
     function canVoteOnPool(uint256 tokenId) internal virtual view returns (bool) {
         return _voter.lastVoted(tokenId) < ProtocolTimeLibrary.epochStart(block.timestamp);
@@ -233,7 +233,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address fromToken,
         address toToken
     ) internal returns (uint256 amountOut) {
-        if (fromToken == toToken) {
+        if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
@@ -250,6 +250,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amountIn,
             routes
         );
+        if (returnAmounts[1] == 0) {
+            return 0;
+        }
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
                 returnAmounts[1],
@@ -334,11 +337,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function _claimRewards(uint256 tokenId) internal {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if(loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
+            return;
+        }
+        
         if (_rewardsDistributor.claimable(tokenId) > 0) {
-            _rewardsDistributor.claim(tokenId);
+            try _rewardsDistributor.claim(tokenId) {
+            } catch {
+                // unable to claim
+            }
         }
 
-        LoanInfo storage loan = _loanDetails[tokenId];
+
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
             return;
         }
@@ -371,7 +382,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-
+    
     function voteOnDefaultPool(uint256 tokenId) internal {
         if(canVoteOnPool(tokenId)) {
             LoanInfo storage loan = _loanDetails[tokenId];
@@ -380,6 +391,25 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.pools = _defaultPools;
         }
     }
+
+    // function setVotedPools(uint256 tokenId, address[] memory pools) public {
+    //     LoanInfo storage loan = _loanDetails[tokenId];
+    //     uint256 usedWeights = _voter.usedWeights(tokenId);
+    //     uint256 weights = 0;
+    //     for (uint256 i = 0; i < pools.length; i++) {
+    //         uint256 weight = _voter.votes(tokenId, pools[i]);
+    //         weights += weight;
+    //     }
+
+    //     console.log("weights", weights);
+    //     console.log("usedWeights", usedWeights);
+    //     require(
+    //         weights == usedWeights,
+    //         "Weights must be equal to used weights"
+    //     );
+    //     loan.pools = pools;
+    // }
+
 
     function claimCollateral(uint256 tokenId) public {
         LoanInfo storage loan = _loanDetails[tokenId];
@@ -442,28 +472,44 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /* Rate Methods */
-    function getZeroBalanceFee() public pure returns (uint256) {
-        return 100; // 1%
+    function getZeroBalanceFee() public view override returns (uint256) {
+        uint256 zeroBalanceFee = RateStorage.getZeroBalanceFee();
+        if (zeroBalanceFee == 0) {
+            return 100; // 1%
+        }
+        return zeroBalanceFee;
     }
 
-    function getRewardsRate() public pure returns (uint256) {
-        return 120;  // .0120%
+    function getRewardsRate() public view override returns (uint256) {
+        uint256 rewardsRate = RateStorage.getRewardsRate();
+        if (rewardsRate == 0) {
+            return 113; 
+        }
+        return rewardsRate;
     }
 
-    function getLenderPremium() public pure returns (uint256) {
-        return 2000; // 20%
+    function getLenderPremium() public view override returns (uint256) {
+        uint256 lenderPremium = RateStorage.getLenderPremium();
+        if (lenderPremium == 0) {
+            return 2000; // 20%
+        }
+        return lenderPremium;
     }
 
-    function getProtocolFee() public pure returns (uint256) {
-        return  500;  // 5%
+    function getProtocolFee() public view override returns (uint256) {
+        uint256 protocolFee = RateStorage.getProtocolFee();
+        if (protocolFee == 0) {
+            return  500;  // 5%
+        }
+        return protocolFee;
     }
 
     /* VIEW FUNCTIONS */
     function getLoanDetails(
         uint256 tokenId
-    ) public view returns (uint256 balance, address borrower) {
+    ) public view returns (uint256 balance, address borrower, address[] memory pools) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        return (loan.balance, loan.borrower);
+        return (loan.balance, loan.borrower, loan.pools);
     }
 
     function activeAssets() public view returns (uint256) {
