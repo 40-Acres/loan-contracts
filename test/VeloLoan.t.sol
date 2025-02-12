@@ -32,7 +32,7 @@ interface IOwnable {
 
 
 contract VeloLoanTest is Test {
-    uint256 fork;
+    uint256  fork;
 
     IUSDC usdc = IUSDC(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
     IVotingEscrow votingEscrow = IVotingEscrow(0xFAf8FD17D9840595845582fCB047DF13f006787d);
@@ -50,8 +50,8 @@ contract VeloLoanTest is Test {
     function setUp() public {
         fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(2616554);
-        owner = vm.addr(0x123);
+        vm.rollFork(131270259);
+        owner = vm.addr(0x1234);
         user = votingEscrow.ownerOf(tokenId);
         OpDeploy deployer = new OpDeploy();
         (loan, vault) = deployer.deployLoan();
@@ -155,7 +155,7 @@ contract VeloLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 298261);
+        assertEq(vault.epochRewardsLocked(), 33266);
     }
 
     function testIncreaseLoan() public {

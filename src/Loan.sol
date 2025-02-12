@@ -16,7 +16,6 @@ import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
-import {console} from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage {
     // deployed contract addressed
@@ -446,11 +445,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return (0, maxLoanIgnoreSupply);
         }
 
-        // can only loan up to the max utilization amount
-        uint256 vaultAvailableSupply = maxUtilization - _outstandingCapital;
-        if (maxLoan > vaultAvailableSupply) {
-            maxLoan = vaultAvailableSupply;
-        }
 
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.balance > maxLoan) {
@@ -459,7 +453,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         maxLoan = maxLoan - loan.balance;
 
-
+        // can only loan up to the max utilization amount
+        uint256 vaultAvailableSupply = maxUtilization - _outstandingCapital;
+        if (maxLoan > vaultAvailableSupply) {
+            maxLoan = vaultAvailableSupply;
+        }
 
         if (maxLoan > vaultBalance) {
             maxLoan = vaultBalance;

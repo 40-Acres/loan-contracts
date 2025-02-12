@@ -81,9 +81,36 @@ contract LoanTest is Test {
     }
 
 
-    function testGetMaxLoan() public view {
+    function testGetMaxLoan() public {
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertTrue(maxLoan / 1e6 > 10);
+        assertEq(maxLoan, 80e6);
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        uint256 amount = 5e6;
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+
+
+        (maxLoan,  ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, 75e6);
+
+        loan.increaseLoan(tokenId, 70e6);
+        (maxLoan,  ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, 5e6);
+
+        loan.increaseLoan(tokenId, 5e6);
+        (maxLoan,  ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, 0);
+        vm.stopPrank();
+
+    }
+
+
+    function testIncreseLoanMaxLoan() public {
+        vm.startPrank(owner);
+        loan.setMultiplier(8);
+        vm.stopPrank();
+        (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
+        assertEq(maxLoan, 90538);
     }
 
     function testNftOwner() public view {
