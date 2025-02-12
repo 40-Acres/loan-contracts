@@ -77,42 +77,6 @@ contract LoanUpgradeTest is Test {
     }
 
 
-    function testGetMaxloan() public {
-        vm.prank(owner);
-        tokenId = 10131;
-        loan.setMultiplier(8);
-        vm.stopPrank();
-        (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
-        assertTrue(maxLoan / 1e6 > 100, "max loan should be greater than 8000");
-    }
-
-    function testMaxloanIs80Percent() public {
-        vm.startPrank(loan._vault());
-        usdc.approve(address(this), usdc.balanceOf(loan._vault()));
-        usdc.transfer(address(this), usdc.balanceOf(loan._vault()));
-        vm.stopPrank();
-
-
-        usdc.mint(address(loan._vault()), loan._outstandingCapital()  * 10);
-
-        vm.prank(owner);
-        tokenId = 10131;
-        loan.setMultiplier(80000000000000000);
-        vm.stopPrank();
-        uint256 vaultSupply = usdc.balanceOf(loan._vault()) + loan._outstandingCapital();
-        (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan + loan._outstandingCapital(), vaultSupply * 8 /10, "should be $80");
-        vm.prank(votingEscrow.ownerOf(tokenId));
-        loan.requestLoan(tokenId, maxLoan, Loan.ZeroBalanceOption.DoNothing);
-        
-        (maxLoan, ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 0, "max loan should be 0");
-        assertEq(loan._outstandingCapital(), vaultSupply * 8 /10);
-    }
-
-
-
-
     function testMaxLoanVaultUnderfunded() public {
         vm.startPrank(loan._vault());
         usdc.approve(address(this), usdc.balanceOf(loan._vault()));

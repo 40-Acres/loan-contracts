@@ -168,7 +168,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         );
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(
-            loan.balance + amount <= maxLoan,
+            amount <= maxLoan,
             "Cannot increase loan beyond max loan amount"
         );
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
@@ -451,6 +451,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (maxLoan > vaultAvailableSupply) {
             maxLoan = vaultAvailableSupply;
         }
+
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if(loan.balance > maxLoan) {
+            return (0, maxLoanIgnoreSupply);
+        }
+
+        maxLoan = maxLoan - loan.balance;
+
+
 
         if (maxLoan > vaultBalance) {
             maxLoan = vaultBalance;
