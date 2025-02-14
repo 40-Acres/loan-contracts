@@ -23,11 +23,7 @@ contract AdvanceLoan is Script {
     
     function run() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 65204;
-        // tokenIds[1] = 68509;
-        // tokenIds[2] = 68510;
-        loan.requestLoan(65204, 0, Loan.ZeroBalanceOption.InvestToVault);
+        // loan.claimRewards();
         vm.stopBroadcast();
     }
 }

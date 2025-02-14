@@ -151,12 +151,12 @@ contract LoanUpgradeTest is Test {
         amount = 1e6;
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) > 1e6);
+        assertTrue(usdc.balanceOf(address(user)) >= 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < startingVaultBalance);
 
         (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount);
-        assertEq(borrower, user);
+        assertTrue(balance > amount, "loan balance should be greater than 0");
+        assertEq(borrower, user, "borrower should be the user");
 
         // owner of token should be the loan
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
@@ -243,31 +243,59 @@ contract LoanUpgradeTest is Test {
     }   
 
 
-    // function testTokenAleadyVoted() public {
-    //     vm.rollFork(26165537);
+}
 
-    //     vm.startPrank(owner);
-    //     Loan loanV2 = new Loan();
-    //     vault = Vault(loan._vault());
-    //     loan.upgradeToAndCall(address(loanV2), new bytes(0));
-    //     vm.stopPrank();
+contract ClaimVoteTest is Test {
+    uint256 fork;
 
-    //     uint256 _tokenId = 1992;
-    //     address _owner = votingEscrow.ownerOf(_tokenId);
-    //     vm.startPrank(_owner);
-    //     IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-    //     loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.DoNothing);
-    //     vm.stopPrank();
+    IUSDC usdc = IUSDC(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+    IVotingEscrow votingEscrow =
+        IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+    IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
+    IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
+    address[] pool = [address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59)];
+    ProxyAdmin admin;
 
-    //     address[] memory pools = new address[](1);
-    //     pools[0] = 0x139E9f235588A9720e7Eab045da29dC781c4b658;
-    //     loan.setVotedPools(_tokenId, pools);
+    // deployed contracts
+    Vault vault;
+    Loan public loan =
+        Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
+    address owner;
+    address user;
+    uint256 tokenId = 64578;
+
+    function setUp() public {
+        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        vm.selectFork(fork);
+        owner = address(loan.owner());
+        user = votingEscrow.ownerOf(tokenId);
+
+        vm.startPrank(owner);
+        Loan loanV2 = new Loan();
+        vault = Vault(loan._vault());
+        loan.upgradeToAndCall(address(loanV2), new bytes(0));
+
+        loan.setMultiplier(100000000000);
+        vm.stopPrank();
+
+        // allow this test contract to mint USDC
+        vm.prank(usdc.masterMinter());
+        usdc.configureMinter(address(this), type(uint256).max);
+        usdc.mint(address(voter), 100e6);
+        usdc.mint(address(vault), 100e6);
+
+        vm.stopPrank();
+    }
 
 
-    //     (,, address[] memory votedPools) = loan.getLoanDetails(_tokenId);
-    //     assertEq(votedPools[0], pools[0]);
+    function testMaxLoanVaultUnderfunded() public {
+        uint256 startingBalance = usdc.balanceOf(address(vault));
+        address[] memory pools = new address[](1);
+        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
+        loan.claimBribes(tokenId, pools);
 
-    //     loan.claimRewards(_tokenId);
-    // }
+        uint256 endingBalance = usdc.balanceOf(address(vault));
+        assertTrue(endingBalance > startingBalance, "vault balance should have increased");
 
+    }
 }

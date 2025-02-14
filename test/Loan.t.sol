@@ -201,7 +201,9 @@ contract LoanTest is Test {
         assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
 
         assertEq(loan.activeAssets(),1e6, "ff");
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower, address[] memory pools) = loan.getLoanDetails(tokenId);
+        assertEq(pools.length, 1, "should have 1 pool");
+        assertEq(pools[0], pool[0], "should be in pool");
         assertTrue(balance > amount, "Balance should be 1e6");
         assertEq(borrower, user);
 
