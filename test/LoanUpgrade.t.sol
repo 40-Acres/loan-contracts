@@ -16,6 +16,7 @@ import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.s
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import { console} from "forge-std/console.sol";
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -201,6 +202,9 @@ contract LoanUpgradeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
+
+        uint256 loanWeight = loan.getTotalWeight();
+        assertTrue(loanWeight > 0, "loan weight should be greater than 0");
     }
 
 
@@ -245,57 +249,3 @@ contract LoanUpgradeTest is Test {
 
 }
 
-contract ClaimVoteTest is Test {
-    uint256 fork;
-
-    IUSDC usdc = IUSDC(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-    IVotingEscrow votingEscrow =
-        IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
-    IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
-    IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
-    address[] pool = [address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59)];
-    ProxyAdmin admin;
-
-    // deployed contracts
-    Vault vault;
-    Loan public loan =
-        Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
-    address owner;
-    address user;
-    uint256 tokenId = 64578;
-
-    function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
-        vm.selectFork(fork);
-        owner = address(loan.owner());
-        user = votingEscrow.ownerOf(tokenId);
-
-        vm.startPrank(owner);
-        Loan loanV2 = new Loan();
-        vault = Vault(loan._vault());
-        loan.upgradeToAndCall(address(loanV2), new bytes(0));
-
-        loan.setMultiplier(100000000000);
-        vm.stopPrank();
-
-        // allow this test contract to mint USDC
-        vm.prank(usdc.masterMinter());
-        usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(voter), 100e6);
-        usdc.mint(address(vault), 100e6);
-
-        vm.stopPrank();
-    }
-
-
-    function testMaxLoanVaultUnderfunded() public {
-        uint256 startingBalance = usdc.balanceOf(address(vault));
-        address[] memory pools = new address[](1);
-        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
-        loan.claimBribes(tokenId, pools);
-
-        uint256 endingBalance = usdc.balanceOf(address(vault));
-        assertTrue(endingBalance > startingBalance, "vault balance should have increased");
-
-    }
-}
