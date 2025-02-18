@@ -3,19 +3,21 @@ pragma solidity ^0.8.0;
 
 import {IRouter} from "./IRouter.sol";
 
-interface IOptimizerBase {
+interface IOptimizer {
     error NotEnoughPoints();
 
     function usdc() external view returns (address);
 
     function weth() external view returns (address);
 
-    function aero() external view returns (address);
+    function op() external view returns (address);
+
+    function velo() external view returns (address);
 
     function factory() external view returns (address);
 
-    /// @notice Given a token and the amountIn, return the route to return the most token1 given 5 potential routes
-    ///             of Aerodrome pools
+    /// @notice Given a token and the amountIn, return the route to return the most token1 given 7 potential routes
+    ///             of v2 Velodrome pools
     ///         If all potential routes return an amountOut of 0, returns 0
     /// @dev The potential routes are stored in the Optimizer
     /// @param token0    Address of token to swap from

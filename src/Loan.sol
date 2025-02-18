@@ -9,7 +9,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
-import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
 import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
@@ -18,6 +17,9 @@ import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import { console } from "forge-std/console.sol";
+import {IOptimizerBase} from "./interfaces/IOptimizerBase.sol";
+import { IAerodromeRouter } from "./interfaces/IAerodromeRouter.sol";
+import {IRouter} from "./interfaces/IRouter.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // deployed contract addressed
@@ -213,7 +215,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                     address(this)
                 );
                 if(tokenBalance > 0) {
-                    swapToToken(tokenBalance, tokens[i][j], address(asset));
+                    swapToToken(tokenBalance, tokens[i][j], address(asset), loan.borrower);
                 }
             }
         }
@@ -232,39 +234,34 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function swapToToken(
         uint256 amountIn,
         address fromToken,
-        address toToken
-    ) internal returns (uint256 amountOut) {
+        address toToken,
+        address tokenOwner
+    ) internal virtual returns (uint256 amountOut) {
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
-        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](
-            1
+        IOptimizerBase optimizer = IOptimizerBase(0x79CF636530790602e74500ae560047c98A6990d3);
+        IRouter.Route[] memory routes = optimizer.getOptimalTokenToTokenRoute(
+            fromToken,
+            toToken,
+            amountIn
         );
-        routes[0] = IAerodromeRouter.Route(
-            address(fromToken),
-            address(toToken),
-            false,
-            _aeroFactory
-        );
-        uint256[] memory returnAmounts = _aeroRouter.getAmountsOut(
-            amountIn,
-            routes
-        );
-        if (returnAmounts[1] == 0) {
-            // if unable to swap, return to user
+        uint256 amountOutMin = optimizer.getOptimalAmountOutMin(routes, amountIn, 3, 1000);
+        if(amountOutMin == 0) {
+            // return tokens to the user
+            IERC20(fromToken).transfer(tokenOwner, amountIn);
             return 0;
         }
+
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
-        console.log("amountIn", amountIn);
-        console.log("returnAmounts[1]", returnAmounts[1]);
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
-                returnAmounts[1],
+                amountOutMin,
                 routes,
                 address(this),
                 block.timestamp
             );
-        return amounts[0];
+        return amounts[amounts.length - 1];
     }
 
     function pay(uint256 tokenId, uint256 amount) public {

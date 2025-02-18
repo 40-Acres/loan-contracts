@@ -56,7 +56,6 @@ contract ClaimVoteTest is Test {
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(26384470);
         vm.rollFork(26384470);
@@ -98,7 +97,7 @@ contract ClaimVoteTest is Test {
         assertEq(virtualBalance, 0, "virtual balance should be 0");
     }
 
-    function testDefaultPools() public {
+    function testDefaultPools() public { 
         address pool = loan._defaultPools(0);
         assertTrue(pool != address(0), "default pool should not be 0");
 
@@ -127,6 +126,7 @@ contract ClaimVoteTest is Test {
     }
 
     function testLoanWeight() public {
+        vm.rollFork(26384470);
         uint256[] memory tokenIds = new uint256[](3);
         tokenIds[0] = 25309;
         tokenIds[1] = 271;

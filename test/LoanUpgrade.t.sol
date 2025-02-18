@@ -52,7 +52,7 @@ contract LoanUpgradeTest is Test {
         Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
     address owner;
     address user;
-    uint256 tokenId = 68509;
+    uint256 tokenId = 68510;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -177,7 +177,7 @@ contract LoanUpgradeTest is Test {
 
     function testCurrentOwnerCanIncreaaseLoan() public {
         usdc.mint(address(vault), 10000e6);
-        uint256 _tokenId = 68510;
+        uint256 _tokenId = 64196;
         uint256 amount = 1e6;
         (, address _user,) = loan.getLoanDetails(_tokenId);
         assertTrue(_user != address(0), "should be a valid user");
@@ -187,7 +187,7 @@ contract LoanUpgradeTest is Test {
     }
 
     function testcurrentOwnerCanPayLoan() public  {
-        uint256 _tokenId = 68510;
+        uint256 _tokenId = 64196;
         (uint256 balance, address _user,) = loan.getLoanDetails(_tokenId);
         assertTrue(_user != address(0), "should be a valid user");
 
@@ -202,7 +202,7 @@ contract LoanUpgradeTest is Test {
     }
 
     function testRequestLoan() public {
-        uint256 _tokenId = 68509;
+        uint256 _tokenId = 68510;
         usdc.mint(address(vault), 10000e6);
         uint256 amount = 1e6;
         address _user = votingEscrow.ownerOf(_tokenId);

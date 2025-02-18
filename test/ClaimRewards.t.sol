@@ -51,7 +51,7 @@ contract ClaimRewardsTest is Test {
         Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
     address owner;
     address user;
-    uint256 tokenId = 68509;
+    uint256 tokenId = 68510;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
