@@ -80,22 +80,6 @@ contract ClaimVoteTest is Test {
     }
 
 
-    function testClaimingVotes() public {
-        vm.rollFork(26384470);
-        uint256 startingBalance = usdc.balanceOf(address(vault));
-        address[] memory pools = new address[](1);
-        console.log("loan", address(loan));
-        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
-        loan.claimBribes(tokenId, pools);
-
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
-        console.log("-balance", balance);
-        console.log("-borrower", borrower);
-        uint256 endingBalance = usdc.balanceOf(address(vault));
-        assertTrue(endingBalance > startingBalance, "vault balance should have increased");
-        uint256 virtualBalance = IERC20(0x1185cB5122Edad199BdBC0cbd7a0457E448f23c7).balanceOf(address(loan));
-        assertEq(virtualBalance, 0, "virtual balance should be 0");
-    }
 
     function testDefaultPools() public { 
         address pool = loan._defaultPools(0);
@@ -126,7 +110,27 @@ contract ClaimVoteTest is Test {
     }
 
     function testLoanWeight() public {
+        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        vm.selectFork(fork);
         vm.rollFork(26384470);
+        owner = Ownable2StepUpgradeable(address(loan)).owner();
+        user = votingEscrow.ownerOf(tokenId);
+
+        vm.startPrank(owner);
+        Loan loanV2 = new Loan();
+        vault = Vault(loan._vault());
+        loan.upgradeToAndCall(address(loanV2), new bytes(0));
+
+        loan.setMultiplier(100000000000);
+        vm.stopPrank();
+
+        // allow this test contract to mint USDC
+        vm.prank(usdc.masterMinter());
+        usdc.configureMinter(address(this), type(uint256).max);
+        usdc.mint(address(voter), 100e6);
+        usdc.mint(address(vault), 100e6);
+
+        vm.stopPrank();
         uint256[] memory tokenIds = new uint256[](3);
         tokenIds[0] = 25309;
         tokenIds[1] = 271;

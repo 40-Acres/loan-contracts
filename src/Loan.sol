@@ -248,7 +248,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amountOutMin = optimizer.getOptimalAmountOutMin(routes, amountIn, 3, 1000);
         if(amountOutMin == 0) {
             // return tokens to the user
-            IERC20(fromToken).transfer(tokenOwner, amountIn);
+            require(IERC20(fromToken).transfer(tokenOwner, amountIn));
             return 0;
         }
 
@@ -313,7 +313,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         ) = getZeroBalanceFee();
         if (takeFee) {
             uint256 protocolFee = (excess * zeroBalanceFee) / 10000;
-            _usdc.transfer(owner(), protocolFee);
+            require(_usdc.transfer(owner(), protocolFee));
             excess -= protocolFee;
         }
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault) {
@@ -321,7 +321,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             IERC4626(_vault).deposit(excess, loan.borrower);
             return;
         }
-        _usdc.transfer(loan.borrower, excess);
+        require(_usdc.transfer(loan.borrower, excess));
     }
     
     function claimRewards(uint256 tokenId) public nonReentrant  {
@@ -377,16 +377,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount -= zeroBalanceFee;
             _aero.approve(address(_ve), amount);
             _ve.increaseAmount(tokenId, amount);
-            _aero.transfer(owner(), zeroBalanceFee);
+            require(_aero.transfer(owner(), zeroBalanceFee));
             return;
         }
 
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
         uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
-        _usdc.transfer(owner(), protocolFee);
+        require(_usdc.transfer(owner(), protocolFee));
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
-        _usdc.transfer(_vault, lenderPremium);
+        require(_usdc.transfer(_vault, lenderPremium));
         recordRewards(lenderPremium);
 
         uint256 remaining = amount - protocolFee - lenderPremium;
@@ -419,13 +419,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount -= zeroBalanceFee;
             _aero.approve(address(_ve), amount);
             _ve.increaseAmount(tokenId, amount);
-            _aero.transfer(owner(), zeroBalanceFee);
+            require(_aero.transfer(owner(), zeroBalanceFee));
             return;
         }
 
-        _usdc.transfer(owner(), protocolFee);
+        require(_usdc.transfer(owner(), protocolFee));
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
-        _usdc.transfer(_vault, lenderPremium);
+        require(_usdc.transfer(_vault, lenderPremium));
         recordRewards(lenderPremium);
 
         uint256 remaining = amount - protocolFee - lenderPremium;
@@ -601,7 +601,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /* RESCUE FUNCTIONS */
     function rescueERC20(address token, uint256 amount) public onlyOwner {
-        IERC20(token).transfer(owner(), amount);
+        require(IERC20(token).transfer(owner(), amount));
     }
 
     /* USER METHODS */
