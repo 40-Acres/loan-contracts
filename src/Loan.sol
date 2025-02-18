@@ -16,7 +16,6 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
-import { console } from "forge-std/console.sol";
 import {IOptimizerBase} from "./interfaces/IOptimizerBase.sol";
 import { IAerodromeRouter } from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
