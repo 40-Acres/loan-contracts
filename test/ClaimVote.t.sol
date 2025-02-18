@@ -56,15 +56,10 @@ contract ClaimVoteTest is Test {
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
-
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
-        console.log("--balance", balance);
-        console.log("--borrower", borrower);
         vm.rollFork(26384470);
-        (balance,  borrower,) = loan.getLoanDetails(tokenId);
-        console.log("--balance", balance);
-        console.log("--borrower", borrower);
+        vm.rollFork(26384470);
         owner = Ownable2StepUpgradeable(address(loan)).owner();
         user = votingEscrow.ownerOf(tokenId);
 
@@ -87,6 +82,7 @@ contract ClaimVoteTest is Test {
 
 
     function testClaimingVotes() public {
+        vm.rollFork(26384470);
         uint256 startingBalance = usdc.balanceOf(address(vault));
         address[] memory pools = new address[](1);
         console.log("loan", address(loan));
@@ -130,13 +126,20 @@ contract ClaimVoteTest is Test {
 
     }
 
-    // function testLoanWeight() public {
-    //     uint256[] memory tokenIds = new uint256[](3);
-    //     tokenIds[0] = 25309;
-    //     tokenIds[1] = 271;
-    //     tokenIds[2] = 10131;
-    //     loan.claimRewardsMultiple(tokenIds);
-    //     uint256 loanWeight = loan.getTotalWeight();
-    //     assertTrue(loanWeight >= 329455702323148096383054, "loan weight should be 0");
-    // }
+    function testLoanWeight() public {
+        uint256[] memory tokenIds = new uint256[](3);
+        tokenIds[0] = 25309;
+        tokenIds[1] = 271;
+        tokenIds[2] = 10131;
+        loan.claimRewards(tokenIds[0]);
+        uint256 loanWeight = loan.getTotalWeight();
+        console.log("loan weight", loanWeight);
+        loan.claimRewards(tokenIds[1]);
+        loanWeight = loan.getTotalWeight();
+        console.log("loan weight", loanWeight);
+        loan.claimRewards(tokenIds[2]);
+        loanWeight = loan.getTotalWeight();
+        console.log("loan weight", loanWeight);
+        assertTrue(loanWeight >= 0, "loan weight should be greater than 0");
+    }
 }

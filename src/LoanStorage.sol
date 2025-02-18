@@ -8,6 +8,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:LoanStorage
     struct LoanStorageStruct {
         uint256 _totalWeights;
+        address _autoCompounder;
     }
 
 
@@ -40,6 +41,16 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights -= weights;
+    }
+
+    function setAutoCompounder(address autoCompounder) public onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._autoCompounder = autoCompounder;
+    }
+
+    function getAutoCompounder() public view returns (address) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._autoCompounder;
     }
 
 }

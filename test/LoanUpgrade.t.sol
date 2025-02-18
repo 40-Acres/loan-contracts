@@ -72,7 +72,7 @@ contract LoanUpgradeTest is Test {
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
         usdc.mint(address(voter), 100e6);
-        usdc.mint(address(vault), 100e6);
+        usdc.mint(address(vault), 10000e6);
 
         vm.stopPrank();
     }
@@ -119,7 +119,8 @@ contract LoanUpgradeTest is Test {
         assertEq(o, owner);
     }
 
-    function testGetMaxLoan() public view {
+    function testGetMaxLoan() public  {
+        usdc.mint(address(vault), 10000e6);
         (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
         console.log("max loan", maxLoan / 1e6);
         assertTrue(maxLoan / 1e6 > 10);
@@ -139,6 +140,7 @@ contract LoanUpgradeTest is Test {
     }
 
     function testLoanRequest() public {
+        usdc.mint(address(vault), 10000e6);
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance);
         uint256 startingVaultBalance = usdc.balanceOf(address(vault));
@@ -156,6 +158,7 @@ contract LoanUpgradeTest is Test {
         assertTrue(usdc.balanceOf(address(vault)) < startingVaultBalance);
 
         (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        assertTrue(borrower != address(0), "should be a valid user");
         assertTrue(balance > amount, "loan balance should be greater than 0");
         assertEq(borrower, user, "borrower should be the user");
 
@@ -173,9 +176,11 @@ contract LoanUpgradeTest is Test {
     }
 
     function testCurrentOwnerCanIncreaaseLoan() public {
+        usdc.mint(address(vault), 10000e6);
         uint256 _tokenId = 68510;
         uint256 amount = 1e6;
         (, address _user,) = loan.getLoanDetails(_tokenId);
+        assertTrue(_user != address(0), "should be a valid user");
         vm.startPrank(_user);
         loan.increaseLoan(_tokenId, amount);
         vm.stopPrank();
@@ -184,8 +189,10 @@ contract LoanUpgradeTest is Test {
     function testcurrentOwnerCanPayLoan() public  {
         uint256 _tokenId = 68510;
         (uint256 balance, address _user,) = loan.getLoanDetails(_tokenId);
+        assertTrue(_user != address(0), "should be a valid user");
 
         usdc.mint(address(_user), 100e6);
+        usdc.mint(address(vault), 10000e6);
         vm.startPrank(_user);
         usdc.approve(address(loan), balance);
         loan.pay(_tokenId, 0);
@@ -196,8 +203,12 @@ contract LoanUpgradeTest is Test {
 
     function testRequestLoan() public {
         uint256 _tokenId = 68509;
+        usdc.mint(address(vault), 10000e6);
         uint256 amount = 1e6;
         address _user = votingEscrow.ownerOf(_tokenId);
+        (uint256 maxLoan, ) = loan.getMaxLoan(_tokenId);
+        assertTrue(maxLoan > 0, "max loan should be greater than 0");
+
         vm.startPrank(_user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);

@@ -53,10 +53,16 @@ contract ClaimRewardsTest is Test {
     address user;
     uint256 tokenId = 68509;
 
-    function xtestClaimRewards() public {
+    function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(26007326);
+        vm.rollFork(26007320);
+    }
+
+    function testClaimRewards() public {
+        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        vm.selectFork(fork);
+        vm.rollFork(26007320);
         owner = loan.owner();
         vm.startPrank(owner);
         Loan loanV2 = new Loan();
@@ -64,32 +70,39 @@ contract ClaimRewardsTest is Test {
         vm.stopPrank();
 
 
-        (uint256 borrower,, address[] memory pools) = loan.getLoanDetails(10131);
-        console.log("borrower", borrower);
+        loan.voteOnDefaultPool(tokenId);
+        (uint256 borrower,, address[] memory pools) = loan.getLoanDetails(271);
+        address tokenOwner = votingEscrow.ownerOf(tokenId);
+        console.log("tokenOwner", tokenOwner);
+        console.log("borrower", borrower);  
         console.log("pools", pools.length);
+        // assertEq(pools[0], pool[0], "should be in pool");
+        // console.log("pool", pools[0]);
+
+        
 
         uint256 ownerUsdBalance = usdc.balanceOf(loan.owner());
         console.log("owner", ownerUsdBalance / 1e6);
+        uint256[] memory _tokenIds = new uint256[](7);
+        _tokenIds[0] = 271;
+        // _tokenIds[1] = 37681;
+        // _tokenIds[2] = 10131;
+        // _tokenIds[3] = 40579;
+        // _tokenIds[4] =  65204;
+        // _tokenIds[5]  = 69712;
+        // _tokenIds[6] = 64196;
+        // _tokenIds[7] = 64196;
+        // _tokenIds[8] = 68510;
+        // _tokenIds[9] = 67936;
+        // _tokenIds[10] = 64578;
+        // _tokenIds[11] = 69655;
+        // _tokenIds[12] = 64279;
+        // vm.startPrank(owner);
+        // loan.claimRewardsMultiple(_tokenIds);
+        for(uint256 i = 0; i < _tokenIds.length; i++) {
+            loan.claimRewards(_tokenIds[i]);
+        }
         ownerUsdBalance = usdc.balanceOf(loan._vault());
         console.log("vault", ownerUsdBalance / 1e6);
-        uint256[] memory _tokenIds = new uint256[](13);
-        _tokenIds[0] = 271;
-        _tokenIds[1] = 40579;
-        _tokenIds[2] = 37681;
-        _tokenIds[3] = 69141;
-        _tokenIds[4] =  65204;
-        _tokenIds[5]  = 69712;
-        _tokenIds[6] = 10131;
-        _tokenIds[7] = 64196;
-        _tokenIds[8] = 68510;
-        _tokenIds[9] = 67936;
-        _tokenIds[10] = 64578;
-        _tokenIds[11] = 69655;
-        _tokenIds[12] = 64279;
-        vm.startPrank(owner);
-        // loan.claimRewardsMultiple(_tokenIds);
-        for(uint256 i; i < _tokenIds.length; i++) {
-                loan.claimRewards(_tokenIds[i]);
-        }
     }
 }

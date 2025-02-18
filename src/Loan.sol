@@ -17,7 +17,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
-import { console    } from "forge-std/console.sol";
+import { console } from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // deployed contract addressed
@@ -60,7 +60,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] pools;
         uint256 voteTimestamp;
         uint256 claimTimestamp;
-        // uint256 weight;
+        uint256 weight;
     }
 
     address[] public _defaultPools;
@@ -125,8 +125,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             zeroBalanceOption: zeroBalanceOption,
             pools: new address[](0),
             voteTimestamp: 0,
-            claimTimestamp: 0
-            // weight: _ve.balanceOfNFTAt(tokenId, block.timestamp)
+            claimTimestamp: 0,
+            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp)
         });
 
         if (canVoteOnPool(tokenId)) {
@@ -147,7 +147,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
-        // addTotalWeight(_loanDetails[tokenId].weight);
+        addTotalWeight(_loanDetails[tokenId].weight);
 
         if (amount > 0) {
             increaseLoan(tokenId, amount);
@@ -255,6 +255,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
+        console.log("amountIn", amountIn);
+        console.log("returnAmounts[1]", returnAmounts[1]);
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
                 returnAmounts[1],
@@ -341,14 +343,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _claimRewards(uint256 tokenId) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
         // if weight of loan is 0, populate it
-        // if (loan.weight == 0) {
-        //     loan.weight = _ve.balanceOfNFTAt(tokenId, block.timestamp);
-        //     addTotalWeight(loan.weight);
-        // }
+        if (loan.weight == 0) {
+            loan.weight = _ve.balanceOfNFTAt(tokenId, block.timestamp);
+            addTotalWeight(loan.weight);
+        }
         if(loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
-            console.log("borrower is not the owner of the token", loan.borrower);
-            console.log("ve owner is not this contract", _ve.ownerOf(tokenId));
-            console.log("balance", loan.balance);
             return;
         }
         
@@ -356,7 +355,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {
                 addTotalWeight(claimable);
-                // loan.weight += claimable;
+                loan.weight += claimable;
             } catch {
                 // unable to claim
             }
@@ -368,14 +367,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         address[] memory pools = loan.pools;
-        if(pools.length == 0) {
+        if(loan.voteTimestamp > _defaultPoolChangeTime || pools.length == 0) {
             pools = _defaultPools;
+        } else {
+            pools = loan.pools;
         }
         uint256 amount = getRewards(tokenId, pools);
 
-        uint256 protocolFeePercentage = getProtocolFee();
-        uint256 lenderPremiumPercentage = getLenderPremium();
-        uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
         loan.claimTimestamp = block.timestamp;
 
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
@@ -387,6 +385,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
 
+        uint256 protocolFeePercentage = getProtocolFee();
+        uint256 lenderPremiumPercentage = getLenderPremium();
+        uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
         _usdc.transfer(owner(), protocolFee);
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
         _usdc.transfer(_vault, lenderPremium);
@@ -403,12 +404,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function claimBribes(uint256 tokenId, address[] calldata pools) public nonReentrant {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
-            console.log("borrower is not the owner of the token", block.number);
             return;
         }
 
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
-            console.log("loan balance is 0 and zero balance option is DoNothing");
             return;
         }
 
@@ -466,7 +465,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         _ve.transferFrom(address(this), loan.borrower, tokenId);
         emit CollateralWithdrawn(tokenId, msg.sender);
-        // subTotalWeight(loan.weight);
+        subTotalWeight(loan.weight);
         delete _loanDetails[tokenId];
     }
 
