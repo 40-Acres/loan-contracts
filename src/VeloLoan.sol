@@ -37,40 +37,6 @@ contract VeloLoan is Loan {
         _multiplier = 8;
     }
 
-    
-    // swap paired token to usdc using aeroRouter
-    function swapToToken(
-        uint256 amountIn,
-        address fromToken,
-        address toToken,
-        address tokenOwner
-    ) internal override returns (uint256 amountOut) {
-        if (fromToken == toToken || amountIn == 0) {
-            return amountIn;
-        }
-        IOptimizer optimizer = IOptimizer(0xA7B6243912FB3D752de29B1ec842f3B3313cE148);
-        IRouter.Route[] memory routes = optimizer.getOptimalTokenToTokenRoute(
-            fromToken,
-            toToken,
-            amountIn
-        );
-        uint256 amountOutMin = optimizer.getOptimalAmountOutMin(routes, amountIn, 3, 500);
-        if(amountOutMin == 0) {
-            // return tokens to the user if not radable to usdc
-            IERC20(fromToken).transfer(tokenOwner, amountIn);
-            return 0;
-        }
-
-        IERC20(fromToken).approve(address(_aeroRouter), amountIn);
-        uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
-                amountIn,
-                amountOutMin,
-                routes,
-                address(this),
-                block.timestamp
-            );
-        return amounts[amounts.length - 1];
-    }
 
     function canVoteOnPool(uint256 tokenId) internal override view returns (bool) {
         return _ve.voted(tokenId) == false; 

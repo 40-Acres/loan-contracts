@@ -16,8 +16,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
-import {IOptimizerBase} from "./interfaces/IOptimizerBase.sol";
-import { IAerodromeRouter } from "./interfaces/IAerodromeRouter.sol";
+import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
@@ -73,7 +72,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event ZeroBalanceOptionSet(uint256 tokenId, ZeroBalanceOption option);
     event CollateralWithdrawn(uint256 tokenId, address owner);
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
-    event RewardsReceived(uint256 epoch, uint256 amount);
+    event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
 
 
     constructor() {
@@ -234,33 +234,37 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amountIn,
         address fromToken,
         address toToken,
-        address tokenOwner
-    ) internal virtual returns (uint256 amountOut) {
+        address borrower
+    ) internal returns (uint256 amountOut) {
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
-        IOptimizerBase optimizer = IOptimizerBase(0x79CF636530790602e74500ae560047c98A6990d3);
-        IRouter.Route[] memory routes = optimizer.getOptimalTokenToTokenRoute(
-            fromToken,
-            toToken,
-            amountIn
-        );
-        uint256 amountOutMin = optimizer.getOptimalAmountOutMin(routes, amountIn, 3, 1000);
-        if(amountOutMin == 0) {
-            // return tokens to the user
-            require(IERC20(fromToken).transfer(tokenOwner, amountIn));
-            return 0;
-        }
-
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
+        IRouter.Route[] memory routes = new IRouter.Route[](
+            1
+        );
+        routes[0] = IRouter.Route(
+            address(fromToken),
+            address(toToken),
+            false,
+            _aeroFactory
+        );
+        uint256[] memory returnAmounts = _aeroRouter.getAmountsOut(
+            amountIn,
+            routes
+        );
+        if (returnAmounts[1] == 0) {
+            // send to borrower
+            require(IERC20(fromToken).transfer(borrower, amountIn));
+        }
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
-                amountOutMin,
+                returnAmounts[1],
                 routes,
                 address(this),
                 block.timestamp
             );
-        return amounts[amounts.length - 1];
+        return amounts[0];
     }
 
     function pay(uint256 tokenId, uint256 amount) public {
@@ -284,10 +288,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         LoanInfo storage loan = _loanDetails[tokenId];
         uint256 excess = 0;
-        if (loan.balance == 0) {
-            _handleExcess(tokenId, amount, true);
-            return;
-        }
         if (amount > loan.balance) {
             excess = amount - loan.balance;
             amount = loan.balance;
@@ -315,11 +315,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             uint256 protocolFee = (excess * zeroBalanceFee) / 10000;
             require(_usdc.transfer(owner(), protocolFee));
             excess -= protocolFee;
-        }
-        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault) {
-            _usdc.approve(_vault, excess);
-            IERC4626(_vault).deposit(excess, loan.borrower);
-            return;
         }
         require(_usdc.transfer(loan.borrower, excess));
     }
@@ -363,23 +358,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         address[] memory pools = loan.pools;
-        if(loan.voteTimestamp > _defaultPoolChangeTime || pools.length == 0) {
+        if(pools.length == 0) {
             pools = _defaultPools;
-        } else {
-            pools = loan.pools;
         }
         uint256 amount = getRewards(tokenId, pools);
 
         loan.claimTimestamp = block.timestamp;
-
-        if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
-            uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
-            amount -= zeroBalanceFee;
-            _aero.approve(address(_ve), amount);
-            _ve.increaseAmount(tokenId, amount);
-            require(_aero.transfer(owner(), zeroBalanceFee));
+        // handleZeroBalance
+        if(loan.balance == 0) {
+            handleZeroBalance(tokenId, amount);
             return;
-        }
+        } 
 
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
@@ -388,6 +377,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
         require(_usdc.transfer(_vault, lenderPremium));
         recordRewards(lenderPremium);
+        if(lenderPremium > 0) {
+            emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), lenderPremium, loan.borrower, tokenId);
+            if(loan.voteTimestamp > _defaultPoolChangeTime) {
+                updateVaultRelayRate(lenderPremium, loan.weight);
+            }
+        }
 
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
@@ -395,6 +390,31 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (loan.voteTimestamp < _defaultPoolChangeTime && _ve.ownerOf(tokenId) == address(this)) {
             voteOnDefaultPool(tokenId);
         }
+    }
+
+    function handleZeroBalance(uint256 tokenId, uint256 amount) internal {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if(loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
+            uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
+            amount -= zeroBalanceFee;
+            _aero.approve(address(_ve), amount);
+            _ve.increaseAmount(tokenId, amount);
+            require(_aero.transfer(owner(), zeroBalanceFee));
+            return;
+        }
+        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault) {
+            _usdc.approve(_vault, amount);
+            IERC4626(_vault).deposit(amount, loan.borrower);
+            emit RewardsInvested(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
+            return;
+        }
+        if(loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
+            uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
+            amount -= zeroBalanceFee;
+            require(_usdc.transfer(loan.borrower, amount));
+            return;
+        }
+        return;
     }
 
     function claimBribes(uint256 tokenId, address[] calldata pools) public nonReentrant {
@@ -408,6 +428,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         uint256 amount = getRewards(tokenId, pools);
+        if(amount == 0) {
+            return;
+        }
 
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
@@ -510,11 +533,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (rewards > 0) {
             _rewardsPerEpoch[
                 ProtocolTimeLibrary.epochStart(block.timestamp)
-            ] += rewards;
-            emit RewardsReceived(
-                ProtocolTimeLibrary.epochStart(block.timestamp),
-                rewards
-            );
+            ] += rewards
         }
     }
 

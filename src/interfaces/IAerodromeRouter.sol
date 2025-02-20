@@ -17,7 +17,8 @@ interface IAerodromeRouter {
     error InvalidTo();
     error K();
     error NotEmergencyCouncil();
-    
+
+
   function swapExactTokensForTokens(
         uint256 amountIn,
         uint256 amountOutMin,

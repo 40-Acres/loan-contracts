@@ -57,8 +57,14 @@ contract ClaimVoteTest is Test {
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
+
+        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        console.log("--balance", balance);
+        console.log("--borrower", borrower);
         vm.rollFork(26384470);
-        vm.rollFork(26384470);
+        (balance,  borrower,) = loan.getLoanDetails(tokenId);
+        console.log("--balance", balance);
+        console.log("--borrower", borrower);
         owner = Ownable2StepUpgradeable(address(loan)).owner();
         user = votingEscrow.ownerOf(tokenId);
 
@@ -80,7 +86,14 @@ contract ClaimVoteTest is Test {
     }
 
 
-
+    function testClaimingVotes() public {
+        uint256 startingBalance = usdc.balanceOf(address(vault));
+        address[] memory pools = new address[](1);
+        console.log("loan", address(loan));
+        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
+        loan.claimBribes(tokenId, pools);
+    }
+    
     function testDefaultPools() public { 
         address pool = loan._defaultPools(0);
         assertTrue(pool != address(0), "default pool should not be 0");
