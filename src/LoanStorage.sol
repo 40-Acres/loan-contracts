@@ -27,11 +27,6 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
 
     }
 
-    function setTotalWeight(uint256 totalWeights) public onlyOwner {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._totalWeights = totalWeights;
-    }
-
     function addTotalWeight(uint256 weights) internal  {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights += weights;

@@ -380,7 +380,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-    function updateActualRewardsRate(uint256 amount, uint256 weight) internal {
+    function updateActualRewardsRate(uint256 rewards, uint256 weight) internal {
         uint256 relayRate = (rewards * 1e18) / (weight / 1e12);
         setActualRewardsRate(relayRate);
     }

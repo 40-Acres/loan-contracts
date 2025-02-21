@@ -18,7 +18,7 @@ contract OpUpgrade is Script {
     function upgradeLoan(address _proxy) public {
         VeloLoan loan = new VeloLoan();
         VeloLoan proxy = VeloLoan(payable(_proxy));
-        proxy.upgradeToAndCall(address(loan), new bytes(0));
+        // proxy.upgradeToAndCall(address(loan), new bytes(0));
     }
 
 }
