@@ -87,7 +87,6 @@ contract ClaimVoteTest is Test {
 
 
     function testClaimingVotes() public {
-        uint256 startingBalance = usdc.balanceOf(address(vault));
         address[] memory pools = new address[](1);
         console.log("loan", address(loan));
         pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);

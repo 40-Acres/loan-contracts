@@ -51,12 +51,12 @@ contract ClaimRewardsTest is Test {
         Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
     address owner;
     address user;
-    uint256 tokenId = 68509;
+    uint256 tokenId = 30827;
 
-    function xtestClaimRewards() public {
+    function testClaimRewards() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(26007326);
+        vm.rollFork(26610327);
         owner = loan.owner();
         vm.startPrank(owner);
         Loan loanV2 = new Loan();
@@ -64,7 +64,7 @@ contract ClaimRewardsTest is Test {
         vm.stopPrank();
 
 
-        (uint256 borrower,, address[] memory pools) = loan.getLoanDetails(10131);
+        (, address borrower, address[] memory pools) = loan.getLoanDetails(30827);
         console.log("borrower", borrower);
         console.log("pools", pools.length);
 
@@ -72,21 +72,21 @@ contract ClaimRewardsTest is Test {
         console.log("owner", ownerUsdBalance / 1e6);
         ownerUsdBalance = usdc.balanceOf(loan._vault());
         console.log("vault", ownerUsdBalance / 1e6);
-        uint256[] memory _tokenIds = new uint256[](13);
-        _tokenIds[0] = 271;
-        _tokenIds[1] = 40579;
-        _tokenIds[2] = 37681;
-        _tokenIds[3] = 69141;
-        _tokenIds[4] =  65204;
-        _tokenIds[5]  = 69712;
-        _tokenIds[6] = 10131;
-        _tokenIds[7] = 64196;
-        _tokenIds[8] = 68510;
-        _tokenIds[9] = 67936;
-        _tokenIds[10] = 64578;
-        _tokenIds[11] = 69655;
-        _tokenIds[12] = 64279;
-        vm.startPrank(owner);
+        uint256[] memory _tokenIds = new uint256[](1);
+        _tokenIds[0] = 30827;
+        // _tokenIds[1] = 40579;
+        // _tokenIds[0] = 30827;
+        // _tokenIds[3] = 69141;
+        // _tokenIds[4] =  65204;
+        // _tokenIds[5]  = 69712;
+        // _tokenIds[6] = 30827;
+        // _tokenIds[7] = 64196;
+        // _tokenIds[8] = 68510;
+        // _tokenIds[9] = 67936;
+        // _tokenIds[10] = 64578;
+        // _tokenIds[11] = 69655;
+        // _tokenIds[12] = 64279;
+        vm.startPrank(borrower);
         // loan.claimRewardsMultiple(_tokenIds);
         for(uint256 i; i < _tokenIds.length; i++) {
                 loan.claimRewards(_tokenIds[i]);

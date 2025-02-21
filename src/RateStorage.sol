@@ -12,6 +12,8 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         uint256 _lenderPremium; 
         uint256 _protocolFee;
         uint256 _utilizationRate;
+        uint256 _vaultRelayRate;
+        uint256 _actualRewardsRate;
     }
 
 
@@ -73,5 +75,25 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
     function setUtilizationRate(uint256 utilizationRate) public onlyOwner {
         RateStorageStruct storage $ = _getRateStorage();
         $._utilizationRate = utilizationRate;
+    }
+
+    function getVaultRelayRate() public view virtual returns (uint256) {
+        RateStorageStruct storage $ = _getRateStorage();
+        return $._vaultRelayRate;
+    }
+
+    function setVaultRelayRate(uint256 vaultRelayRate) public onlyOwner {
+        RateStorageStruct storage $ = _getRateStorage();
+        $._vaultRelayRate = vaultRelayRate;
+    }
+
+    function getActualRewardsRate() public view virtual returns (uint256) {
+        RateStorageStruct storage $ = _getRateStorage();
+        return $._actualRewardsRate;
+    }
+
+    function setActualRewardsRate(uint256 actualRewardsRate) public onlyOwner {
+        RateStorageStruct storage $ = _getRateStorage();
+        $._actualRewardsRate = actualRewardsRate;
     }
 }

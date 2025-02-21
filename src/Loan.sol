@@ -18,6 +18,7 @@ import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
+import { console } from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // deployed contract addressed
@@ -302,21 +303,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         require(_usdc.transfer(_vault, amount));
         if (excess > 0) {
-            _handleExcess(tokenId, excess, false);
+            handleZeroBalance(tokenId, amount);
         }
-    }
-
-    function _handleExcess(uint256 tokenId, uint256 excess, bool takeFee) internal {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        (
-            uint256 zeroBalanceFee
-        ) = getZeroBalanceFee();
-        if (takeFee) {
-            uint256 protocolFee = (excess * zeroBalanceFee) / 10000;
-            require(_usdc.transfer(owner(), protocolFee));
-            excess -= protocolFee;
-        }
-        require(_usdc.transfer(loan.borrower, excess));
     }
     
     function claimRewards(uint256 tokenId) public nonReentrant  {
@@ -362,6 +350,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             pools = _defaultPools;
         }
         uint256 amount = getRewards(tokenId, pools);
+        if(amount  > 0 && loan.voteTimestamp > _defaultPoolChangeTime) {
+            updateActualRewardsRate(amount, loan.weight);
+        }
 
         loan.claimTimestamp = block.timestamp;
         // handleZeroBalance
@@ -375,13 +366,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
         require(_usdc.transfer(owner(), protocolFee));
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
-        require(_usdc.transfer(_vault, lenderPremium));
-        recordRewards(lenderPremium);
         if(lenderPremium > 0) {
+            require(_usdc.transfer(_vault, lenderPremium));
+            recordRewards(lenderPremium);
             emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), lenderPremium, loan.borrower, tokenId);
-            if(loan.voteTimestamp > _defaultPoolChangeTime) {
-                updateVaultRelayRate(lenderPremium, loan.weight);
-            }
         }
 
         uint256 remaining = amount - protocolFee - lenderPremium;
@@ -390,6 +378,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (loan.voteTimestamp < _defaultPoolChangeTime && _ve.ownerOf(tokenId) == address(this)) {
             voteOnDefaultPool(tokenId);
         }
+    }
+
+    function updateActualRewardsRate(uint256 amount, uint256 weight) internal {
+        uint256 relayRate = (rewards * 1e18) / (weight / 1e12);
+        setActualRewardsRate(relayRate);
     }
 
     function handleZeroBalance(uint256 tokenId, uint256 amount) internal {
@@ -533,7 +526,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (rewards > 0) {
             _rewardsPerEpoch[
                 ProtocolTimeLibrary.epochStart(block.timestamp)
-            ] += rewards
+            ] += rewards;
         }
     }
 
@@ -650,4 +643,5 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // confirm price of usdc is $1
         return answer >= 99900000;
     }
+
 }
