@@ -12,6 +12,7 @@ import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
 import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";

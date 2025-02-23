@@ -10,7 +10,7 @@ import { Vault } from "src/Vault.sol";
 contract OpUpgrade is Script {
     function run() external  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        address proxy = address(0xf132bD888897254521D13e2c401e109caABa06A7);
+        address proxy = address(0x1eD73446Bc4Ca94002A549cf553E4Ab2f2722b42);
         upgradeLoan(proxy);
         vm.stopBroadcast();
     }
