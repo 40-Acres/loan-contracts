@@ -6,6 +6,8 @@ import {Loan, VeloLoan} from "../src/VeloLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+
 
 
 contract OpDeploy is Script {
@@ -22,6 +24,20 @@ contract OpDeploy is Script {
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
         Vault vault = new Vault(address(usdc), address(proxy));
         Loan(address(proxy)).initialize(address(vault));
+        address[] memory pools = new address[](4);
+        pools[0] = 0x478946BcD4a5a22b316470F5486fAfb928C0bA25;
+        pools[1] = 0x39eD27D101Aa4b7cE1cb4293B877954B8b5e14e5;
+        pools[2] = 0xeBD5311beA1948e1441333976EadCFE5fBda777C;
+        pools[3] = 0xEE1baC98527a9fDd57fcCf967817215B083cE1F0;
+        uint256[] memory weights = new uint256[](4);
+        weights[0] = .25e18;
+        weights[1] = .25e18;
+        weights[2] = .25e18;
+        weights[3] = .25e18;
+        console.log(Ownable2StepUpgradeable(loan).owner());
+        Loan(address(proxy)).setRewardsRate(743);
+        Loan(address(proxy)).setMultiplier(10);
+        Loan(address(proxy)).setDefaultPools(pools, weights);
         return (Loan(address(proxy)), vault);
     }
 }

@@ -64,8 +64,10 @@ contract LoanUpgradeTest is Test {
         Loan loanV2 = new Loan();
         vault = Vault(loan._vault());
         loan.upgradeToAndCall(address(loanV2), new bytes(0));
+        loan.setRewardsRate(11300);
 
         loan.setMultiplier(100000000000);
+        loan.setRewardsRate(11300);
         vm.stopPrank();
 
         // allow this test contract to mint USDC
@@ -218,7 +220,7 @@ contract LoanUpgradeTest is Test {
 
 
         vm.assertEq(loan.getZeroBalanceFee(), 100);
-        vm.assertEq(loan.getRewardsRate(), 113);
+        vm.assertEq(loan.getRewardsRate(), 11300);
         vm.assertEq(loan.getLenderPremium(), 2000);
         vm.assertEq(loan.getProtocolFee(), 500);
 
@@ -249,5 +251,31 @@ contract LoanUpgradeTest is Test {
     }   
 
 
+        
+    function testDefaultPools() public { 
+        address _pool = loan._defaultPools(0);
+        assertTrue(_pool != address(0), "default pool should not be 0");
+
+        assertTrue(loan._defaultWeights(0) > 0, "default pool weight should be greater than 0");
+        
+        uint256 defaultPoolChangeTime = loan._defaultPoolChangeTime();
+        assertTrue(defaultPoolChangeTime > 0, "default pool change time should be greater than 0");
+
+        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
+        address[] memory pools = new address[](2);
+        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
+        pools[1] = address(0x52F38a65daB3cF23478Cc567110bEc90162AB833);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 50e18;
+        weights[1] = 50e18;
+        loan.setDefaultPools(pools, weights);
+        vm.stopPrank();
+
+        assertTrue(loan._defaultPools(0) == pools[0], "default pool should be updated");
+        assertTrue(loan._defaultPools(1) == pools[1], "default pool should be updated");
+        assertTrue(loan._defaultWeights(0) == weights[0], "default pool weight should be updated");
+        assertTrue(loan._defaultWeights(1) == weights[1], "default pool weight should be updated");
+        assertTrue(loan._defaultPoolChangeTime() >= defaultPoolChangeTime, "default pool change time should be updated");
+    }
 }
 
