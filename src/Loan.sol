@@ -353,23 +353,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
             return;
         }
-        
+
         if (loan.voteTimestamp < _defaultPoolChangeTime) {
             voteOnDefaultPool(tokenId);
         }
         
-        uint256 claimable = _rewardsDistributor.claimable(tokenId);
-        if (claimable > 0) {
-            try _rewardsDistributor.claim(tokenId) {
-                addTotalWeight(claimable);
-                loan.weight += claimable;
-            } catch {
-                // unable to claim
-            }
-        }
-
-
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
+            claimRebase(loan);
             return;
         }
 
@@ -378,7 +368,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             pools = _defaultPools;
         }
         uint256 amount = getRewards(tokenId, pools);
-        if(amount  > 0 && loan.voteTimestamp > _defaultPoolChangeTime) {
+        // if voted on the default pool, update the rewards rate if we claimed last epoch
+        if(amount  > 0 && loan.voteTimestamp > _defaultPoolChangeTime && ProtocolTimeLibrary.epochStart(loan.claimTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK) {
             updateActualRewardsRate(amount, loan.weight);
         }
 
@@ -403,11 +394,32 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
 
+        claimRebase(loan);
     }
 
     function updateActualRewardsRate(uint256 rewards, uint256 weight) internal {
+        if(weight == 0) {
+            return;
+        }
+        // if already populated skip
+        if(getActualRewardsRatePerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp)) > 0) {
+            return;
+        }
         uint256 relayRate = (rewards * 1e18) / (weight / 1e12);
         setActualRewardsRate(relayRate);
+        setActualRewardsRatePerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp), relayRate);
+    }
+
+    function claimRebase(LoanInfo storage loan) internal {
+        uint256 claimable = _rewardsDistributor.claimable(loan.tokenId);
+        if (claimable > 0) {
+            try _rewardsDistributor.claim(loan.tokenId) {
+                addTotalWeight(claimable);
+                loan.weight += claimable;
+            } catch {
+                // unable to claim
+            }
+        }
     }
 
     function handleZeroBalance(uint256 tokenId, uint256 amount, bool takeFees) internal {
@@ -462,7 +474,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
         uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
-        loan.claimTimestamp = block.timestamp;
 
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
             uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
