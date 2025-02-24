@@ -259,6 +259,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (returnAmounts[1] == 0) {
             // send to borrower
             require(IERC20(fromToken).transfer(borrower, amountIn));
+            return 0;
         }
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
@@ -353,6 +354,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         
+        if (loan.voteTimestamp < _defaultPoolChangeTime) {
+            voteOnDefaultPool(tokenId);
+        }
+        
         uint256 claimable = _rewardsDistributor.claimable(tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {
@@ -398,9 +403,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
 
-        if (loan.voteTimestamp < _defaultPoolChangeTime) {
-            voteOnDefaultPool(tokenId);
-        }
     }
 
     function updateActualRewardsRate(uint256 rewards, uint256 weight) internal {
@@ -444,6 +446,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
 
+        if (loan.voteTimestamp < _defaultPoolChangeTime) {
+            voteOnDefaultPool(tokenId);
+        }
+
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
             return;
         }
@@ -476,9 +482,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
         
-        if (loan.voteTimestamp < _defaultPoolChangeTime) {
-            voteOnDefaultPool(tokenId);
-        }
+
     }
 
     function voteOnDefaultPool(uint256 tokenId) public {
