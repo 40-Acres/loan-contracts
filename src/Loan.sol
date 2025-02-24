@@ -271,10 +271,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function pay(uint256 tokenId, uint256 amount) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
         if (amount == 0) {
-            LoanInfo storage loan = _loanDetails[tokenId];
             amount = loan.balance;
         }
+
         require(_usdc.transferFrom(msg.sender, address(this), amount));
         _pay(tokenId, amount);
     }
@@ -291,6 +292,23 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         LoanInfo storage loan = _loanDetails[tokenId];
 
+        // take out any fees first
+        if(loan.unpaidFees > 0) {
+            uint256 feesPaid = loan.unpaidFees;
+            if(feesPaid > amount) {
+                feesPaid = amount;
+            }
+            amount -= feesPaid;
+            loan.unpaidFees -= feesPaid;
+            loan.balance -= feesPaid;
+            require(_usdc.transfer(_vault, feesPaid));
+            recordRewards(feesPaid);
+            emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
+            if(amount == 0) {
+                return;
+            }
+        }
+
         uint256 excess = 0;
         if (amount > loan.balance) {
             excess = amount - loan.balance;
@@ -305,18 +323,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _outstandingCapital -= amount;
         }
 
-        if(loan.unpaidFees > 0) {
-            uint256 feesPaid = amount;
-            if(amount >= loan.unpaidFees) {
-                feesPaid = loan.unpaidFees;
-                loan.unpaidFees = 0;
-            } else {
-                feesPaid = amount;
-                loan.unpaidFees -= amount;
-            }
-            recordRewards(feesPaid);
-            emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
-        }
 
         require(_usdc.transfer(_vault, amount));
         if (excess > 0) {
