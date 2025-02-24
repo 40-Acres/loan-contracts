@@ -9,7 +9,6 @@ import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
-import { IOptimizer } from "./interfaces/IOptimizer.sol";
 import { IRouter } from "./interfaces/IRouter.sol";
 import {Loan } from "./Loan.sol";
 
