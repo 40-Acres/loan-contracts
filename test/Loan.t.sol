@@ -106,6 +106,7 @@ contract LoanTest is Test {
     }
 
 
+
     
     function testIncreseLoanMaxLoan() public {
         vm.startPrank(owner);
@@ -185,7 +186,7 @@ contract LoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 37051653);
+        assertEq(vault.epochRewardsLocked(), 37055346);
     }
 
     function testIncreaseLoan() public {
@@ -252,6 +253,7 @@ contract LoanTest is Test {
         loan.claimCollateral(tokenId);
         vm.stopPrank();
 
+        assertEq(loan.lastEpochReward(), .008e6, "should have .8% of rewards");
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 

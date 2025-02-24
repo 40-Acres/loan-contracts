@@ -82,7 +82,7 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         return $._vaultRelayRate;
     }
 
-    function setVaultRelayRate(uint256 vaultRelayRate) public onlyOwner {
+    function setVaultRelayRate(uint256 vaultRelayRate) internal {
         RateStorageStruct storage $ = _getRateStorage();
         $._vaultRelayRate = vaultRelayRate;
     }
@@ -92,7 +92,7 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         return $._actualRewardsRate;
     }
 
-    function setActualRewardsRate(uint256 actualRewardsRate) public onlyOwner {
+    function setActualRewardsRate(uint256 actualRewardsRate) internal {
         RateStorageStruct storage $ = _getRateStorage();
         $._actualRewardsRate = actualRewardsRate;
     }

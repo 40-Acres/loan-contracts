@@ -61,6 +61,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 voteTimestamp;
         uint256 claimTimestamp;
         uint256 weight;
+        uint256 unpaidFees;
     }
 
     address[] public _defaultPools;
@@ -127,7 +128,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             pools: new address[](0),
             voteTimestamp: 0,
             claimTimestamp: 0,
-            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp)
+            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
+            unpaidFees: 0
         });
 
         if (canVoteOnPool(tokenId)) {
@@ -178,6 +180,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             "Cannot increase loan beyond max loan amount"
         );
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
+        loan.unpaidFees += originationFee;
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
@@ -287,6 +290,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         LoanInfo storage loan = _loanDetails[tokenId];
+
         uint256 excess = 0;
         if (amount > loan.balance) {
             excess = amount - loan.balance;
@@ -300,6 +304,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.outstandingCapital -= amount;
             _outstandingCapital -= amount;
         }
+
+        if(loan.unpaidFees > 0) {
+            uint256 feesPaid = amount;
+            if(amount >= loan.unpaidFees) {
+                feesPaid = loan.unpaidFees;
+                loan.unpaidFees = 0;
+            } else {
+                feesPaid = amount;
+                loan.unpaidFees -= amount;
+            }
+            recordRewards(feesPaid);
+            emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
+        }
+
         require(_usdc.transfer(_vault, amount));
         if (excess > 0) {
             handleZeroBalance(tokenId, amount, false);
@@ -447,6 +465,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
         require(_usdc.transfer(_vault, lenderPremium));
         recordRewards(lenderPremium);
+        emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), lenderPremium, loan.borrower, tokenId);
 
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
