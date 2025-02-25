@@ -368,6 +368,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             pools = _defaultPools;
         }
         uint256 amount = getRewards(tokenId, pools);
+        if(amount == 0) {
+            return;
+        }
         // if voted on the default pool, update the rewards rate if we claimed last epoch
         if(amount  > 0 && loan.voteTimestamp > _defaultPoolChangeTime && ProtocolTimeLibrary.epochStart(loan.claimTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK) {
             updateActualRewardsRate(amount, loan.weight);

@@ -21,4 +21,5 @@ contract OpUpgrade is Script {
         proxy.upgradeToAndCall(address(loan), new bytes(0));
         VeloLoan(payable(0xf132bD888897254521D13e2c401e109caABa06A7)).upgradeToAndCall(address(loan), new bytes(0));
     }
+    
 }
