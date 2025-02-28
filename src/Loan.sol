@@ -204,8 +204,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             address gauge = _voter.gauges(pools[i]);
             rewards[0] = _voter.gaugeToFees(gauge);
             rewards[1] = _voter.gaugeToBribe(gauge);
-            token[0] = ICLGauge(address(pools[0])).token0();
-            token[1] = ICLGauge(address(pools[0])).token1();
+            token[0] = ICLGauge(address(pools[i])).token0();
+            token[1] = ICLGauge(address(pools[i])).token1();
             tokens[0] = token;
             tokens[1] = token;
             _voter.claimFees(rewards, tokens, tokenId);

@@ -302,6 +302,7 @@ contract LoanTest is Test {
         user = votingEscrow.ownerOf(_tokenId);
         uint256 startingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
         uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingLoanBalance = usdc.balanceOf(address(loan));
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
@@ -311,6 +312,7 @@ contract LoanTest is Test {
 
         uint256 endingUserBalance = usdc.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
+        uint256 endingLoanBalance = usdc.balanceOf(address(loan));
 
         uint256 totalRewards = endingUserBalance - startingUserBalance + endingOwnerBalance - startingOwnerBalance;
 
@@ -320,7 +322,7 @@ contract LoanTest is Test {
         uint256 paidToUser = totalRewards - protocolFee;        
         assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
         assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
-        
+        assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
     }
 
         
