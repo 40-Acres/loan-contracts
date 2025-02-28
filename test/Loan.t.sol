@@ -15,7 +15,7 @@ import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/tran
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
-
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
     function mint(address to, uint256 amount) external;
@@ -59,6 +59,7 @@ contract LoanTest is Test {
 
         vm.startPrank(address(deployer));
         loan.setMultiplier(100000000000);
+        loan.setRewardsRate(11300);
         IOwnable(address(loan)).transferOwnership(owner);
         vm.stopPrank();
 
@@ -105,6 +106,8 @@ contract LoanTest is Test {
     }
 
 
+
+    
     function testIncreseLoanMaxLoan() public {
         vm.startPrank(owner);
         loan.setMultiplier(8);
@@ -149,7 +152,6 @@ contract LoanTest is Test {
 
         uint256 amount = 1e6;
         
-        
     
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
@@ -184,7 +186,7 @@ contract LoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 37051653);
+        assertEq(vault.epochRewardsLocked(), 37055346);
     }
 
     function testIncreaseLoan() public {
@@ -251,6 +253,7 @@ contract LoanTest is Test {
         loan.claimCollateral(tokenId);
         vm.stopPrank();
 
+        assertEq(loan.lastEpochReward(), .008e6, "should have .8% of rewards");
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
 
@@ -265,4 +268,87 @@ contract LoanTest is Test {
         vm.stopPrank();
     }
 
+
+    function testReinvestVault() public {
+        assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
+        uint256 _tokenId = 6687;
+
+        uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
+        
+        user = votingEscrow.ownerOf(_tokenId);
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.InvestToVault);
+        vm.stopPrank();
+        
+        loan.claimRewards(_tokenId);
+        loan.claimBribes(_tokenId, pool);
+
+        uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
+
+        
+
+        // owner should not receive rewards
+        assertEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should not receive rewards");
+    
+    }
+
+
+    function testPayToOwner() public {
+        assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
+        uint256 _tokenId = 6687;
+
+        
+        user = votingEscrow.ownerOf(_tokenId);
+        uint256 startingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingLoanBalance = usdc.balanceOf(address(loan));
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
+        vm.stopPrank();
+        
+        loan.claimRewards(_tokenId);
+
+        uint256 endingUserBalance = usdc.balanceOf(address(user));
+        uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
+        uint256 endingLoanBalance = usdc.balanceOf(address(loan));
+
+        uint256 totalRewards = endingUserBalance - startingUserBalance + endingOwnerBalance - startingOwnerBalance;
+
+
+        // owner should receive rewards 1% f rewards
+        uint256 protocolFee = totalRewards / 100;
+        uint256 paidToUser = totalRewards - protocolFee;        
+        assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
+        assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
+        assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
+    }
+
+        
+    function testDefaultPools() public { 
+        address _pool = loan._defaultPools(0);
+        assertTrue(_pool != address(0), "default pool should not be 0");
+
+        assertTrue(loan._defaultWeights(0) > 0, "default pool weight should be greater than 0");
+        
+        uint256 defaultPoolChangeTime = loan._defaultPoolChangeTime();
+        assertTrue(defaultPoolChangeTime > 0, "default pool change time should be greater than 0");
+
+        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
+        address[] memory pools = new address[](2);
+        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
+        pools[1] = address(0x52F38a65daB3cF23478Cc567110bEc90162AB833);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 50e18;
+        weights[1] = 50e18;
+        loan.setDefaultPools(pools, weights);
+        vm.stopPrank();
+
+        assertTrue(loan._defaultPools(0) == pools[0], "default pool should be updated");
+        assertTrue(loan._defaultPools(1) == pools[1], "default pool should be updated");
+        assertTrue(loan._defaultWeights(0) == weights[0], "default pool weight should be updated");
+        assertTrue(loan._defaultWeights(1) == weights[1], "default pool weight should be updated");
+        assertTrue(loan._defaultPoolChangeTime() >= defaultPoolChangeTime, "default pool change time should be updated");
+    }
 }

@@ -9,6 +9,7 @@ import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
+import { IRouter } from "./interfaces/IRouter.sol";
 import {Loan } from "./Loan.sol";
 
 contract VeloLoan is Loan {
@@ -35,11 +36,7 @@ contract VeloLoan is Loan {
         _multiplier = 8;
     }
 
-    
 
-    function canVoteOnPool(uint256 tokenId) internal override view returns (bool) {
-        return _ve.voted(tokenId) == false; 
-    }
         /* ORACLE */
     function confirmUsdcPrice() internal view override returns (bool) {
         (
