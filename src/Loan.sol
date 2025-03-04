@@ -426,9 +426,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function incentivizeVault(uint256 amount) public {
-        require(_usdc.transfer(_vault, amount));
+        require(_usdc.transferFrom(msg.sender, _vault, amount));
         recordRewards(amount);
-        emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
+        emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), amount, msg.sender, type(uint256).max);
     }
 
     

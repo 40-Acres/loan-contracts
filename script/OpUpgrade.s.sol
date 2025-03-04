@@ -19,8 +19,9 @@ contract OpUpgrade is Script {
     function upgradeLoan(address _proxy) public {
         VeloLoan loan = new VeloLoan();
         VeloLoan proxy = VeloLoan(payable(_proxy));
-        proxy.upgradeToAndCall(address(loan), new bytes(0));
-        VeloLoan(payable(0xf132bD888897254521D13e2c401e109caABa06A7)).upgradeToAndCall(address(loan), new bytes(0));
+        // proxy.upgradeToAndCall(address(loan), new bytes(0));
+        // VeloLoan(payable(0xf132bD888897254521D13e2c401e109caABa06A7)).upgradeToAndCall(address(loan), new bytes(0));
+        // Ownable(address(proxy)).transferOwnership(address(0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23));
     }
     
 }
