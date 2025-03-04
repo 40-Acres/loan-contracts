@@ -255,7 +255,8 @@ contract LoanTest is Test {
 
         assertEq(loan.lastEpochReward(), .008e6, "should have .8% of rewards");
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
-        assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
+        console.log(usdc.balanceOf(address(vault)));
+        assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Vault should have more than initial balance");
 
 
     }

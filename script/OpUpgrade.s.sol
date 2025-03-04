@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {VeloLoan} from "../src/VeloLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 
 contract OpUpgrade is Script {

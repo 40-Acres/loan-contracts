@@ -327,7 +327,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         require(_usdc.transfer(_vault, amount));
         if (excess > 0) {
-            handleZeroBalance(tokenId, amount, false);
+            handleZeroBalance(tokenId, excess, false);
         }
     }
     
@@ -452,6 +452,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             require(_usdc.transfer(loan.borrower, amount));
             return;
         }
+        if(loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
+            require(_usdc.transfer(loan.borrower, amount));
+            return;
+        }
         return;
     }
 
@@ -538,8 +542,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 maxLoan = maxLoanIgnoreSupply;
 
         // max utilization ratio is 80%
-        uint256 vaultBalance = _usdc.balanceOf(_vault);
-        uint256 vaultSupply =  vaultBalance + _outstandingCapital;
+        uint256 vaultSupply =  IERC4626(_vault).totalAssets();
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;
 
         // if the vault is over utilized, no loans can be made
@@ -561,6 +564,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             maxLoan = vaultAvailableSupply;
         }
 
+        uint256 vaultBalance = _usdc.balanceOf(_vault);
         if (maxLoan > vaultBalance) {
             maxLoan = vaultBalance;
         }
