@@ -425,6 +425,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
+    function incentivizeVault(uint256 amount) public {
+        require(_usdc.transfer(_vault, amount));
+        recordRewards(amount);
+        emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
+    }
+
+    
     function handleZeroBalance(uint256 tokenId, uint256 amount, bool takeFees) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
