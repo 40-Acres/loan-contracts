@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: SEE LICENSE IN LICENSE
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";

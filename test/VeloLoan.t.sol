@@ -15,6 +15,7 @@ import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/tran
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {OpDeploy} from "../script/OpDeploy.s.sol";
 import {OpUpgrade} from "../script/OpUpgrade.s.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -233,4 +234,29 @@ contract VeloLoanTest is Test {
         vm.stopPrank();
     }
 
+
+    function testClaimFourPools() public {
+        vm.rollFork(132810412);
+
+        Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
+        vm.startPrank(IOwnable(address(loan)).owner());
+        loan.upgradeToAndCall(address(new Loan()), new bytes(0));
+
+
+        address op = address(0x4200000000000000000000000000000000000042);
+        address weth = address(0x4200000000000000000000000000000000000006);
+        address velo = address(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
+
+
+ 
+        assertEq(ERC20(velo).balanceOf(address(loan)), 0, "should have 0 velo balance");
+        assertEq(ERC20(op).balanceOf(address(loan)), 0, "should have 0 op balance");
+        assertEq(ERC20(weth).balanceOf(address(loan)), 0, "should have 0 weth balance");
+        
+        loan.claimRewards(11008);
+        // asert loan has no token balance
+        assertEq(ERC20(velo).balanceOf(address(loan)), 0);
+        assertEq(ERC20(op).balanceOf(address(loan)), 0);
+        assertEq(ERC20(weth).balanceOf(address(loan)), 0);
+    }
 }

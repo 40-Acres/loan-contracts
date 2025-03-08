@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: SEE LICENSE IN LICENSE
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";
@@ -74,6 +74,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event CollateralWithdrawn(uint256 tokenId, address owner);
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
     event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event LoanPaid(uint256 tokenId, address borrower, uint256 amount);
     event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
 
 
@@ -199,6 +200,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 assetBalancePre = asset.balanceOf(address(this));
         address[][] memory tokens = new address[][](2);
         address[] memory rewards = new address[](2);
+        address[] memory totalTokens = new address[](pools.length * 2);
         for (uint256 i = 0; i < pools.length; i++) {
             address[] memory token = new address[](2);
             address gauge = _voter.gauges(pools[i]);
@@ -209,16 +211,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             tokens[0] = token;
             tokens[1] = token;
             _voter.claimFees(rewards, tokens, tokenId);
+            totalTokens[i * 2] = token[0];
+            totalTokens[i * 2 + 1] = token[1];
         }
 
-        for (uint256 i = 0; i < tokens.length; i++) {
-            for (uint256 j = 0; j < tokens[i].length; j++) {
-                uint256 tokenBalance = IERC20(tokens[i][j]).balanceOf(
-                    address(this)
-                );
-                if(tokenBalance > 0) {
-                    swapToToken(tokenBalance, tokens[i][j], address(asset), loan.borrower);
-                }
+        for (uint256 i = 0; i < totalTokens.length; i++) {
+            uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(
+                address(this)
+            );
+            if(tokenBalance > 0) {
+                swapToToken(tokenBalance, totalTokens[i], address(asset), loan.borrower);
             }
         }
         uint256 assetBalancePost = asset.balanceOf(address(this));
@@ -304,6 +306,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.balance -= feesPaid;
             require(_usdc.transfer(_vault, feesPaid));
             recordRewards(feesPaid);
+            emit LoanPaid(tokenId, loan.borrower, feesPaid);
             emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
             if(amount == 0) {
                 return;
@@ -316,6 +319,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount = loan.balance;
         }
         loan.balance -= amount;
+        emit LoanPaid(tokenId, loan.borrower, amount);
         if (amount > loan.outstandingCapital) {
             _outstandingCapital -= loan.outstandingCapital;
             loan.outstandingCapital = 0;
@@ -549,7 +553,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 maxLoan = maxLoanIgnoreSupply;
 
         // max utilization ratio is 80%
-        uint256 vaultSupply =  IERC4626(_vault).totalAssets();
+        uint256 vaultBalance = _usdc.balanceOf(_vault);
+        uint256 vaultSupply =  vaultBalance + _outstandingCapital;
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;
 
         // if the vault is over utilized, no loans can be made
@@ -571,7 +576,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             maxLoan = vaultAvailableSupply;
         }
 
-        uint256 vaultBalance = _usdc.balanceOf(_vault);
         if (maxLoan > vaultBalance) {
             maxLoan = vaultBalance;
         }
