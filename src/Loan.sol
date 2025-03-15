@@ -80,6 +80,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event LoanPaid(uint256 tokenId, address borrower, uint256 amount);
     event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
 
 
     constructor() {
@@ -323,7 +325,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount = loan.balance;
         }
         loan.balance -= amount;
-        emit LoanPaid(tokenId, loan.borrower, amount);
         if (amount > loan.outstandingCapital) {
             _outstandingCapital -= loan.outstandingCapital;
             loan.outstandingCapital = 0;
@@ -334,6 +335,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
 
         require(_usdc.transfer(_vault, amount));
+        emit LoanPaid(tokenId, loan.borrower, amount);
         if (excess > 0) {
             handleZeroBalance(tokenId, excess, false);
         }
@@ -396,6 +398,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 lenderPremiumPercentage = getLenderPremium();
         uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
         require(_usdc.transfer(owner(), protocolFee));
+        emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), protocolFee, loan.borrower, tokenId);
         uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
         if(lenderPremium > 0) {
             require(_usdc.transfer(_vault, lenderPremium));
@@ -466,10 +469,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 require(_usdc.transfer(owner(), zeroBalanceFee));
             }
             require(_usdc.transfer(loan.borrower, amount));
+            emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
             return;
         }
         if(loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
             require(_usdc.transfer(loan.borrower, amount));
+            emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
             return;
         }
         return;
@@ -675,6 +680,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] memory pools,
         uint256[] memory weights
     ) public onlyOwner {
+        require(pools.length == weights.length, "Pools and weights must be the same length");
+        for (uint256 i = 0; i < pools.length; i++) {
+            require(pools[i] != address(0), "Pool cannot be zero address");
+            require(weights[i] > 0, "Weight must be greater than 0");
+        }
+        // ensure weights equal 100e18
+        uint256 totalWeight = 0;
+        for (uint256 i = 0; i < weights.length; i++) {
+            totalWeight += weights[i];
+        }
+        require(totalWeight == 100e18, "Weights must equal 100%");
         _defaultPools = pools;
         _defaultWeights = weights;
         _defaultPoolChangeTime = block.timestamp;
