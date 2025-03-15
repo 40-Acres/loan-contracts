@@ -19,9 +19,6 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 
-
-import { console } from "forge-std/console.sol";
-
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // deployed contract addressed
     IVoter internal _voter;
@@ -684,6 +681,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         for (uint256 i = 0; i < pools.length; i++) {
             require(pools[i] != address(0), "Pool cannot be zero address");
             require(weights[i] > 0, "Weight must be greater than 0");
+
+            // confirm pool is a valid gauge
+            address gauge = _voter.gauges(pools[i]);
+            require(gauge != address(0), "Pool does not have a gauge");
+            require(ICLGauge(gauge).isPool(), "Pool is not a valid pool");
         }
         // ensure weights equal 100e18
         uint256 totalWeight = 0;

@@ -340,7 +340,7 @@ contract LoanTest is Test {
         vm.startPrank(Ownable2StepUpgradeable(loan).owner());
         address[] memory pools = new address[](2);
         pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
-        pools[1] = address(0x52F38a65daB3cF23478Cc567110bEc90162AB833);
+        pools[1] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
         uint256[] memory weights = new uint256[](2);
         weights[0] = 50e18;
         weights[1] = 50e18;
