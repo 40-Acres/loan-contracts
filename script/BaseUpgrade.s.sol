@@ -20,7 +20,7 @@ contract BaseUpgrade is Script {
     function upgradeLoan(address _proxy) public {
         Loan loan = new Loan();
         Loan proxy = Loan(payable(_proxy));
-        // proxy.upgradeToAndCall(address(loan), new bytes(0));
+        proxy.upgradeToAndCall(address(loan), new bytes(0));
     }
 
 }

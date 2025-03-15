@@ -150,7 +150,7 @@ interface IVoter {
     function poolVote(uint256 tokenId, uint256 id) external returns (address);
     // /// @notice Called by users to update voting balances in voting rewards contracts.
     // /// @param _tokenId Id of veNFT whose balance you wish to update.
-    // function poke(uint256 _tokenId) external;
+    function poke(uint256 _tokenId) external;
 
     /// @notice Called by users to vote for pools. Votes distributed proportionally based on weights.
     ///         Can only vote or deposit into a managed NFT once per epoch.

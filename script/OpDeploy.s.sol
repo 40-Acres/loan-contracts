@@ -30,10 +30,10 @@ contract OpDeploy is Script {
         pools[2] = 0xeBD5311beA1948e1441333976EadCFE5fBda777C;
         pools[3] = 0xEE1baC98527a9fDd57fcCf967817215B083cE1F0;
         uint256[] memory weights = new uint256[](4);
-        weights[0] = .25e18;
-        weights[1] = .25e18;
-        weights[2] = .25e18;
-        weights[3] = .25e18;
+        weights[0] = 25e18;
+        weights[1] = 25e18;
+        weights[2] = 25e18;
+        weights[3] = 25e18;
         console.log(Ownable2StepUpgradeable(loan).owner());
         Loan(address(proxy)).setRewardsRate(743);
         Loan(address(proxy)).setMultiplier(10);
