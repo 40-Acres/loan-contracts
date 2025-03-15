@@ -99,9 +99,11 @@ contract VeloLoanTest is Test {
         uint256 amount = 5e18;
         vm.expectRevert("Cannot increase loan beyond max loan amount");
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.roll(block.number+1);
 
         amount = 1e6;
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.roll(block.number+1);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
@@ -132,6 +134,7 @@ contract VeloLoanTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.roll(block.number+1);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
         assertEq(usdc.balanceOf(address(vault)), 99e6, "Vault should have 1e6");
@@ -253,6 +256,7 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(op).balanceOf(address(loan)), 0, "should have 0 op balance");
         assertEq(ERC20(weth).balanceOf(address(loan)), 0, "should have 0 weth balance");
         
+        vm.roll(block.number+1);
         loan.claimRewards(11008);
         // asert loan has no token balance
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);

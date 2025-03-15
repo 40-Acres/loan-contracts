@@ -59,6 +59,12 @@ contract LoanUpgradeTest is Test {
         vm.selectFork(fork);
         owner = address(loan.owner());
         user = votingEscrow.ownerOf(tokenId);
+        if (address(loan) == address(user)) {
+            vm.prank(address(loan));
+            votingEscrow.transferFrom(address(loan), address(1), tokenId);
+            user = votingEscrow.ownerOf(tokenId);
+            vm.roll(block.number + 1);
+        }
 
         vm.startPrank(owner);
         Loan loanV2 = new Loan();
@@ -77,8 +83,14 @@ contract LoanUpgradeTest is Test {
         usdc.mint(address(vault), 100e6);
 
         vm.stopPrank();
+        
     }
 
+    function testPoke() public {
+        vm.startPrank(user);
+        voter.poke(tokenId);
+        vm.stopPrank();
+    }
 
     function testMaxLoanVaultUnderfunded() public {
         vm.startPrank(loan._vault());
@@ -206,6 +218,41 @@ contract LoanUpgradeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
+
+        uint256 loanWeight = loan.getTotalWeight();
+        assertTrue(loanWeight > 0, "loan weight should be greater than 0");
+    }
+
+
+    function testVoting() public {
+        uint256 _tokenId = 68510;
+        usdc.mint(address(vault), 10000e6);
+        uint256 amount = 1e6;
+        address _user = votingEscrow.ownerOf(_tokenId);
+        vm.startPrank(_user);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 7 days);
+        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 7 days);
+        loan.voteOnDefaultPool(_tokenId);
+        loan.voteOnDefaultPool(_tokenId);
+        vm.stopPrank();
+
+        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
+        address[] memory pools = new address[](1);
+        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100e18;
+        loan.setDefaultPools(pools, weights);
+        vm.stopPrank();
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        loan.voteOnDefaultPool(_tokenId);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 7 days);
+        loan.voteOnDefaultPool(_tokenId);
 
         uint256 loanWeight = loan.getTotalWeight();
         assertTrue(loanWeight > 0, "loan weight should be greater than 0");

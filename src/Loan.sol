@@ -19,6 +19,9 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 
+
+import { console } from "forge-std/console.sol";
+
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // deployed contract addressed
     IVoter internal _voter;
@@ -76,6 +79,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event LoanPaid(uint256 tokenId, address borrower, uint256 amount);
     event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
 
 
     constructor() {
@@ -375,6 +379,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(amount == 0) {
             return;
         }
+        emit RewardsClaimed(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
         // if voted on the default pool, update the rewards rate if we claimed last epoch
         if(amount  > 0 && loan.voteTimestamp > _defaultPoolChangeTime && ProtocolTimeLibrary.epochStart(loan.claimTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK) {
             updateActualRewardsRate(amount, loan.weight);
@@ -424,7 +429,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 addTotalWeight(claimable);
                 loan.weight += claimable;
             } catch {
-                // unable to claim
+                return;
             }
         }
     }
@@ -515,14 +520,24 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function voteOnDefaultPool(uint256 tokenId) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
         if(canVoteOnPool(tokenId)) {
-            LoanInfo storage loan = _loanDetails[tokenId];
+            if (loan.voteTimestamp > _defaultPoolChangeTime) {
+               try _voter.poke(tokenId) { 
+                    loan.voteTimestamp = block.timestamp; 
+                } catch { }
+                return;
+            }
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 loan.voteTimestamp = block.timestamp;
                 loan.pools = _defaultPools;
-            } catch {
-                // unable to vote
-            }
+            } catch { }
+        }
+    }
+
+    function voteOnDefaultPoolMultiple(uint256[] memory tokenIds) public {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            voteOnDefaultPool(tokenIds[i]);
         }
     }
 
