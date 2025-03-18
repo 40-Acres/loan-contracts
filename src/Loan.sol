@@ -74,7 +74,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event CollateralWithdrawn(uint256 tokenId, address owner);
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
     event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
-    event LoanPaid(uint256 tokenId, address borrower, uint256 amount);
+    event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch);
     event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
@@ -309,7 +309,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.balance -= feesPaid;
             require(_usdc.transfer(_vault, feesPaid));
             recordRewards(feesPaid);
-            emit LoanPaid(tokenId, loan.borrower, feesPaid);
+            emit LoanPaid(tokenId, loan.borrower, feesPaid, ProtocolTimeLibrary.epochStart(block.timestamp));
             emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
             if(amount == 0) {
                 return;
@@ -332,7 +332,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
 
         require(_usdc.transfer(_vault, amount));
-        emit LoanPaid(tokenId, loan.borrower, amount);
+        emit LoanPaid(tokenId, loan.borrower, amount, ProtocolTimeLibrary.epochStart(block.timestamp));
         if (excess > 0) {
             handleZeroBalance(tokenId, excess, false);
         }
