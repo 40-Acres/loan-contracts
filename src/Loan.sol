@@ -137,9 +137,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         });
 
         if (canVoteOnPool(tokenId)) {
-            voteOnDefaultPool(tokenId);
+            _vote(tokenId);
         }
-
         
         _ve.transferFrom(msg.sender, address(this), tokenId);
         require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
@@ -171,7 +170,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
 
         if (loan.voteTimestamp < _defaultPoolChangeTime) {
-            voteOnDefaultPool(tokenId);
+            _vote(tokenId);
         }
 
         require(
@@ -192,44 +191,66 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
-    function getRewards(uint256 tokenId, address[] memory pools) internal returns (uint256 payment) {
+    function getRewards(uint256 tokenId, address[] memory pools, address[] memory additionalTokens) internal returns (uint256 payment) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        IERC20 asset;
-        if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
-            asset = _aero;
-        } else {
-            asset = _usdc;
-        }
+        IERC20 asset = _getAsset(loan);
         uint256 assetBalancePre = asset.balanceOf(address(this));
-        address[][] memory tokens = new address[][](2);
+        address[] memory totalTokens = _claimFeesAndGetTokens(tokenId, pools, additionalTokens);
+        _swapTokensToAsset(totalTokens, asset, loan.borrower);
+        uint256 assetBalancePost = asset.balanceOf(address(this));
+
+        // calculate the amount of fees claimed
+        payment = assetBalancePost - assetBalancePre;
+    }
+
+    function _getAsset(LoanInfo storage loan) internal view returns (IERC20) {
+        if (loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
+            return _aero;
+        } else {
+            return _usdc;
+        }
+    }
+
+    function _claimFeesAndGetTokens(
+        uint256 tokenId,
+        address[] memory pools,
+        address[] memory additionalTokens
+    ) internal returns (address[] memory totalTokens) {
         address[] memory rewards = new address[](2);
-        address[] memory totalTokens = new address[](pools.length * 2);
+        totalTokens = new address[](pools.length * 2 + additionalTokens.length);
         for (uint256 i = 0; i < pools.length; i++) {
-            address[] memory token = new address[](2);
+            address[] memory token = new address[](2 + additionalTokens.length);
             address gauge = _voter.gauges(pools[i]);
             rewards[0] = _voter.gaugeToFees(gauge);
             rewards[1] = _voter.gaugeToBribe(gauge);
             token[0] = ICLGauge(address(pools[i])).token0();
             token[1] = ICLGauge(address(pools[i])).token1();
+            for (uint256 j = 0; j < additionalTokens.length; j++) {
+                token[j + 2] = additionalTokens[j];
+            }
+            address[][] memory tokens = new address[][](2);
             tokens[0] = token;
             tokens[1] = token;
             _voter.claimFees(rewards, tokens, tokenId);
             totalTokens[i * 2] = token[0];
             totalTokens[i * 2 + 1] = token[1];
         }
+        for (uint256 k = 0; k < additionalTokens.length; k++) {
+            totalTokens[pools.length * 2 + k] = additionalTokens[k];
+        }
+    }
 
+    function _swapTokensToAsset(
+        address[] memory totalTokens,
+        IERC20 asset,
+        address borrower
+    ) internal {
         for (uint256 i = 0; i < totalTokens.length; i++) {
-            uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(
-                address(this)
-            );
-            if(tokenBalance > 0) {
-                swapToToken(tokenBalance, totalTokens[i], address(asset), loan.borrower);
+            uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(address(this));
+            if (tokenBalance > 0) {
+                swapToToken(tokenBalance, totalTokens[i], address(asset), borrower);
             }
         }
-        uint256 assetBalancePost = asset.balanceOf(address(this));
-
-        // calculate the amount of fees claimed
-        payment = assetBalancePost - assetBalancePre;
     }
 
 
@@ -338,19 +359,25 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
     
-    function claimRewards(uint256 tokenId) public nonReentrant  {
-        _claimRewards(tokenId);
+    function claimRewards(uint256 tokenId, address[] memory additionalTokens) public nonReentrant  {
+        _claimRewards(tokenId, additionalTokens);
+    }
+
+    function claimRewardsV1(uint256 tokenId) public nonReentrant  {
+        address[] memory additionalTokens = new address[](0);
+        _claimRewards(tokenId, additionalTokens);
     }
 
     function claimRewardsMultiple(
-        uint256[] memory tokenIds
+        uint256[] memory tokenIds,
+        address[] memory additionalTokens
     ) public nonReentrant  {
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            _claimRewards(tokenIds[i]);
+            _claimRewards(tokenIds[i], additionalTokens);
         }
     }
 
-    function _claimRewards(uint256 tokenId) internal {
+    function _claimRewards(uint256 tokenId, address[] memory additionalTokens) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
         // if weight of loan is 0, populate it
         if (loan.weight == 0) {
@@ -359,10 +386,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         if(loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
             return;
-        }
-
-        if (loan.voteTimestamp < _defaultPoolChangeTime) {
-            voteOnDefaultPool(tokenId);
         }
         
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
@@ -374,7 +397,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(pools.length == 0) {
             pools = _defaultPools;
         }
-        uint256 amount = getRewards(tokenId, pools);
+        uint256 amount = getRewards(tokenId, pools, additionalTokens);
         if(amount == 0) {
             return;
         }
@@ -440,7 +463,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), amount, msg.sender, type(uint256).max);
     }
 
-    
     function handleZeroBalance(uint256 tokenId, uint256 amount, bool takeFees) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
@@ -477,21 +499,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return;
     }
 
-    function claimBribes(uint256 tokenId, address[] calldata pools) public nonReentrant {
+    function claimBribes(uint256 tokenId, address[] calldata pools, address[] calldata additionalTokens) public nonReentrant {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
             return;
-        }
-
-        if (loan.voteTimestamp < _defaultPoolChangeTime) {
-            voteOnDefaultPool(tokenId);
         }
 
         if(loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
             return;
         }
 
-        uint256 amount = getRewards(tokenId, pools);
+        uint256 amount = getRewards(tokenId, pools, additionalTokens);
         if(amount == 0) {
             return;
         }
@@ -517,11 +535,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         uint256 remaining = amount - protocolFee - lenderPremium;
         _pay(tokenId, remaining);
-        
-
+    }
+    
+    function voteOnDefaultPoolMultiple(uint256[] memory tokenIds) onlyLastDayOfEpoch public {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            _vote(tokenIds[i]);
+        }
     }
 
-    function voteOnDefaultPool(uint256 tokenId) public {
+    function voteOnDefaultPool(uint256 tokenId) onlyLastDayOfEpoch public {
+        _vote(tokenId);
+    }
+
+    function _vote(uint256 tokenId) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(canVoteOnPool(tokenId)) {
             if (loan.voteTimestamp > _defaultPoolChangeTime) {
@@ -534,12 +560,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 loan.voteTimestamp = block.timestamp;
                 loan.pools = _defaultPools;
             } catch { }
-        }
-    }
-
-    function voteOnDefaultPoolMultiple(uint256[] memory tokenIds) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            voteOnDefaultPool(tokenIds[i]);
         }
     }
 
@@ -737,6 +757,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // confirm price of usdc is $1
         return answer >= 99900000;
+    }
+
+    /* MODIFIERS */
+    modifier onlyLastDayOfEpoch() {
+        uint256 timestamp = block.timestamp;
+        uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;
+        if (timestamp < lastDayStart) revert("Can only call on last day of epoch");
+        _;
     }
 
 }

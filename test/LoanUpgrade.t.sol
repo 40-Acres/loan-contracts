@@ -232,10 +232,14 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(_user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
+        vm.expectRevert();
+        loan.voteOnDefaultPool(_tokenId); // fails because not last day of epoch
+        // last day of epoch
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days);
         loan.voteOnDefaultPool(_tokenId);
         loan.voteOnDefaultPool(_tokenId);
         vm.stopPrank();
@@ -297,8 +301,6 @@ contract LoanUpgradeTest is Test {
         assertEq(loan.owner(), 0x0000000000000000000000000000000000000000);
     }   
 
-
-        
     function testDefaultPools() public { 
         address _pool = loan._defaultPools(0);
         assertTrue(_pool != address(0), "default pool should not be 0");

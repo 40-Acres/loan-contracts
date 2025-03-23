@@ -25,7 +25,8 @@ contract AdvanceLoan is Script {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         address[] memory pools = new address[](1);
         pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
-        loan.claimBribes(64578, pools);
+        address[] memory additionalTokens = new address[](0);
+        loan.claimBribes(64578, pools, additionalTokens);
         vm.stopBroadcast();
     }
 }

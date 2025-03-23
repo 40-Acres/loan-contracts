@@ -178,7 +178,8 @@ contract LoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
-        loan.claimRewards(tokenId);
+        address[] memory additionalTokens = new address[](0);
+        loan.claimRewards(tokenId, additionalTokens);
         assertTrue(usdc.balanceOf(address(vault)) > 99e6, "Vault should have .more than original balance");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
@@ -283,8 +284,9 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.InvestToVault);
         vm.stopPrank();
         
-        loan.claimRewards(_tokenId);
-        loan.claimBribes(_tokenId, pool);
+        address[] memory additionalTokens = new address[](0);
+        loan.claimRewards(_tokenId, additionalTokens);
+        loan.claimBribes(_tokenId, pool, additionalTokens);
 
         uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
 
@@ -310,7 +312,8 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
         vm.stopPrank();
         
-        loan.claimRewards(_tokenId);
+        address[] memory additionalTokens = new address[](0);
+        loan.claimRewards(_tokenId, additionalTokens);
 
         uint256 endingUserBalance = usdc.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));

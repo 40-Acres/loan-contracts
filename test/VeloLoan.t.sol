@@ -150,7 +150,8 @@ contract VeloLoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
-        loan.claimRewards(tokenId);
+        address[] memory additionalTokens = new address[](0);
+        loan.claimRewards(tokenId, additionalTokens);
         assertTrue(usdc.balanceOf(address(vault)) > 99e6, "Vault should have .more than original balance");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
@@ -239,7 +240,7 @@ contract VeloLoanTest is Test {
 
 
     function testClaimFourPools() public {
-        vm.rollFork(132810412);
+        vm.rollFork(133415048);
 
         Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
         vm.startPrank(IOwnable(address(loan)).owner());
@@ -257,10 +258,38 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(weth).balanceOf(address(loan)), 0, "should have 0 weth balance");
         
         vm.roll(block.number+1);
-        loan.claimRewards(11008);
+        address[] memory additionalTokens = new address[](0);
+        loan.claimRewards(11008, additionalTokens);
         // asert loan has no token balance
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);
         assertEq(ERC20(op).balanceOf(address(loan)), 0);
         assertEq(ERC20(weth).balanceOf(address(loan)), 0);
+        assertEq(115425108777, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+    }
+
+    function testClaimBribes() public {
+        vm.rollFork(133415048);
+
+        Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
+        vm.startPrank(IOwnable(address(loan)).owner());
+        loan.upgradeToAndCall(address(new Loan()), new bytes(0));
+
+        address op = address(0x4200000000000000000000000000000000000042);
+        address weth = address(0x4200000000000000000000000000000000000006);
+        address velo = address(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
+ 
+        assertEq(ERC20(velo).balanceOf(address(loan)), 0, "should have 0 velo balance");
+        assertEq(ERC20(op).balanceOf(address(loan)), 0, "should have 0 op balance");
+        assertEq(ERC20(weth).balanceOf(address(loan)), 0, "should have 0 weth balance");
+        
+        vm.roll(block.number+1);
+        address[] memory additionalTokens = new address[](1);
+        additionalTokens[0] = address(0x4200000000000000000000000000000000000042);
+        loan.claimRewards(11008, additionalTokens);
+        // asert loan has no token balance
+        assertEq(ERC20(velo).balanceOf(address(loan)), 0);
+        assertEq(ERC20(op).balanceOf(address(loan)), 0);
+        assertEq(ERC20(weth).balanceOf(address(loan)), 0);
+        assertEq(115427935840, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
     }
 }
