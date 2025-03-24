@@ -16,6 +16,9 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ICLGauge} from "src/interfaces/ICLGauge.sol";
+
+
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
     function mint(address to, uint256 amount) external;
@@ -178,8 +181,38 @@ contract LoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
-        address[] memory additionalTokens = new address[](0);
-        loan.claimRewards(tokenId, additionalTokens);
+        (, , address[] memory pools) = loan.getLoanDetails(tokenId);
+        address[] memory fees = new address[](2 * pools.length);
+        address[][] memory tokens = new address[][](2 * pools.length);
+
+        address[] memory poolVotes = new address[](256); // Assuming a maximum of 256 pool votes
+        uint256 index = 0;
+
+        while (true) {
+            try voter.poolVote(tokenId, index) returns (address pool) {
+            poolVotes[index] = pool;
+            index++;
+            } catch {
+            break; // Exit the loop when it reverts
+            }
+        }
+
+        // Resize the array to the actual number of pool votes
+        assembly {
+            mstore(poolVotes, index)
+        }
+        
+        for (uint256 i = 0; i < pools.length; i++) {
+            address gauge = voter.gauges(pools[i]);
+            fees[2 * i] = voter.gaugeToFees(gauge);
+            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
+            address[] memory token = new address[](2);
+            token[0] = ICLGauge(pools[i]).token0();
+            token[1] = ICLGauge(pools[i]).token1();
+            tokens[2 * i] = token;
+            tokens[2 * i + 1] = token;
+        }
+        loan.claim(tokenId, fees, tokens);
         assertTrue(usdc.balanceOf(address(vault)) > 99e6, "Vault should have .more than original balance");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
@@ -284,9 +317,38 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.InvestToVault);
         vm.stopPrank();
         
-        address[] memory additionalTokens = new address[](0);
-        loan.claimRewards(_tokenId, additionalTokens);
-        loan.claimBribes(_tokenId, pool, additionalTokens);
+        (, , address[] memory pools) = loan.getLoanDetails(_tokenId);
+        address[] memory fees = new address[](2 * pools.length);
+        address[][] memory tokens = new address[][](2 * pools.length);
+
+        address[] memory poolVotes = new address[](256); // Assuming a maximum of 256 pool votes
+        uint256 index = 0;
+
+        while (true) {
+            try voter.poolVote(_tokenId, index) returns (address pool) {
+            poolVotes[index] = pool;
+            index++;
+            } catch {
+            break; // Exit the loop when it reverts
+            }
+        }
+
+        // Resize the array to the actual number of pool votes
+        assembly {
+            mstore(poolVotes, index)
+        }
+        
+        for (uint256 i = 0; i < pools.length; i++) {
+            address gauge = voter.gauges(pools[i]);
+            fees[2 * i] = voter.gaugeToFees(gauge);
+            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
+            address[] memory token = new address[](2);
+            token[0] = ICLGauge(pools[i]).token0();
+            token[1] = ICLGauge(pools[i]).token1();
+            tokens[2 * i] = token;
+            tokens[2 * i + 1] = token;
+        }
+        loan.claim(tokenId, fees, tokens);
 
         uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
 
@@ -312,8 +374,20 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
         vm.stopPrank();
         
-        address[] memory additionalTokens = new address[](0);
-        loan.claimRewards(_tokenId, additionalTokens);
+        (, , address[] memory pools) = loan.getLoanDetails(_tokenId);
+        address[] memory fees = new address[](2 * pools.length);
+        address[][] memory tokens = new address[][](2 * pools.length);
+        for (uint256 i = 0; i < pools.length; i++) {
+            address gauge = voter.gauges(pools[i]);
+            fees[2 * i] = voter.gaugeToFees(gauge);
+            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
+            address[] memory token = new address[](2);
+            token[0] = ICLGauge(pools[i]).token0();
+            token[1] = ICLGauge(pools[i]).token1();
+            tokens[2 * i] = token;
+            tokens[2 * i + 1] = token;
+        }
+        loan.claim(_tokenId, fees, tokens);
 
         uint256 endingUserBalance = usdc.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
