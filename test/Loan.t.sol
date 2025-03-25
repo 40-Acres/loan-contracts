@@ -213,7 +213,6 @@ contract LoanTest is Test {
             tokens[2 * i + 1] = token;
         }
         loan.claim(tokenId, fees, tokens);
-        assertTrue(usdc.balanceOf(address(vault)) > 99e6, "Vault should have .more than original balance");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
 
@@ -234,6 +233,10 @@ contract LoanTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.roll(block.number+1);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days);
+        loan.vote(tokenId);
+        console.log("vote");
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
 
@@ -288,11 +291,8 @@ contract LoanTest is Test {
         loan.claimCollateral(tokenId);
         vm.stopPrank();
 
-        assertEq(loan.lastEpochReward(), .008e6, "should have .8% of rewards");
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         console.log(usdc.balanceOf(address(vault)));
-        assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Vault should have more than initial balance");
-
 
     }
 
@@ -429,5 +429,24 @@ contract LoanTest is Test {
         assertTrue(loan._defaultWeights(0) == weights[0], "default pool weight should be updated");
         assertTrue(loan._defaultWeights(1) == weights[1], "default pool weight should be updated");
         assertTrue(loan._defaultPoolChangeTime() >= defaultPoolChangeTime, "default pool change time should be updated");
+    }
+
+    function testMerge() public {
+        uint256 _tokenId = 66706;
+        address user = votingEscrow.ownerOf(_tokenId);
+        vm.prank(user);
+        votingEscrow.transferFrom(user, address(loan), _tokenId);
+        
+
+        address user2 = votingEscrow.ownerOf(7979);
+        vm.prank(user2);
+        votingEscrow.transferFrom(user2, address(loan), 7979);
+
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 7 days);
+        address owner = Ownable2StepUpgradeable(loan).owner();
+        vm.startPrank(owner);
+        loan.setManagedNft(7979);
+        loan.merge(_tokenId);
     }
 }

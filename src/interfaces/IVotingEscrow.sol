@@ -88,6 +88,5 @@ interface IVotingEscrow {
 
     function increaseAmount(uint256 _tokenId, uint256 _value) external;
     function voted(uint256 tokenId) external view returns (bool);
-
-    
+    function merge(uint256 _from, uint256 _to) external;    
 }

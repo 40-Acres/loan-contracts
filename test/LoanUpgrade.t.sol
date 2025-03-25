@@ -237,11 +237,11 @@ contract LoanUpgradeTest is Test {
         vm.roll(block.number + 1);
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
         vm.expectRevert();
-        loan.voteOnDefaultPool(_tokenId); // fails because not last day of epoch
+        loan.vote(_tokenId); // fails because not last day of epoch
         // last day of epoch
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days);
-        loan.voteOnDefaultPool(_tokenId);
-        loan.voteOnDefaultPool(_tokenId);
+        loan.vote(_tokenId);
+        loan.vote(_tokenId);
         vm.stopPrank();
 
         vm.startPrank(Ownable2StepUpgradeable(loan).owner());
@@ -253,10 +253,10 @@ contract LoanUpgradeTest is Test {
         vm.stopPrank();
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
-        loan.voteOnDefaultPool(_tokenId);
+        loan.vote(_tokenId);
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 7 days);
-        loan.voteOnDefaultPool(_tokenId);
+        loan.vote(_tokenId);
 
         uint256 loanWeight = loan.getTotalWeight();
         assertTrue(loanWeight > 0, "loan weight should be greater than 0");

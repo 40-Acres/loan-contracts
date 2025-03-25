@@ -7,6 +7,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:LoanStorage
     struct LoanStorageStruct {
         uint256 _totalWeights;
+        uint256 _managedNft;
     }
 
 
@@ -36,4 +37,13 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         $._totalWeights -= weights;
     }
 
+    function setManagedNft(uint256 managedNft) onlyOwner public virtual{
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._managedNft = managedNft;
+    }
+
+    function getManagedNft() public view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._managedNft;
+    }
 }
