@@ -8,6 +8,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     struct LoanStorageStruct {
         uint256 _totalWeights;
         uint256 _managedNft;
+        mapping(address => bool) _isApprovedToken; // approved tokens for loan contract
     }
 
 
@@ -21,29 +22,46 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     }
 
     /* Rate Methods */
+
+    /// @dev Get the total weight for the loan contract
     function getTotalWeight() public view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._totalWeights;
 
     }
 
+    /// @dev Add total weight for the loan contract
     function addTotalWeight(uint256 weights) internal  {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights += weights;
     }
 
+    /// @dev Subtract total weight for the loan contract
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights -= weights;
     }
 
-    function setManagedNft(uint256 managedNft) onlyOwner public virtual{
+    /// @dev Set the managed NFT for the loan contract
+    function setManagedNft(uint256 managedNft) onlyOwner public virtual {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._managedNft = managedNft;
     }
 
+    /// @dev Get the managed NFT for the loan contract
     function getManagedNft() public view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._managedNft;
+    }
+
+    /// @dev Check if the token is approved for the loan contract
+    function isApprovedToken(address token) public view virtual returns (bool) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._isApprovedToken[token];
+    }
+    /// @dev Set approved token for the loan contract
+    function setApprovedToken(address token, bool approved) public onlyOwner virtual {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._isApprovedToken[token] = approved;
     }
 }

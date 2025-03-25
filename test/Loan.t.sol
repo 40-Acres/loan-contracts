@@ -193,6 +193,51 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 88361700);
     }
 
+    function testIncreaseAmountPercentage() public {
+        tokenId = 524;
+        user = votingEscrow.ownerOf(tokenId);
+
+        uint256 amount = 1e6;
+        
+    
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
+
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance);
+        assertEq(usdc.balanceOf(address(vault)), 100e6);
+        assertEq(loan.activeAssets(),0, "should have 0 active assets");
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
+        vm.roll(block.number+1);
+        loan.setIncreasePercentage(tokenId, 2000);
+        vm.stopPrank();
+        assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
+        assertEq(usdc.balanceOf(address(vault)), 99e6, "Vault should have 1e6");
+        assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "Owner should have starting balance");
+
+
+        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        assertTrue(balance > amount, "Balance should be more than amount");
+        assertEq(borrower, user);
+
+
+        // owner of token should be the loan
+        assertEq(votingEscrow.ownerOf(tokenId), address(loan));
+        assertEq(loan.activeAssets(), amount, "should have 0 active assets");
+
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, tokenId, bribes);
+        assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
+        assertTrue(loan.activeAssets() < amount, "should have less active assets");
+
+
+        uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
+        assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
+
+        assertEq(vault.epochRewardsLocked(), 88361700);
+    }
+
     function testIncreaseLoan() public {
         uint256 amount = 1e6;
 
@@ -277,18 +322,20 @@ contract LoanTest is Test {
 
     function testReinvestVault() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
-        uint256 _tokenId = 6687;
+        uint256 _tokenId = 524;
 
         uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
+        uint256 startingVaultBalance = usdc.balanceOf(address(vault));
         
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.InvestToVault);
+        vm.roll(block.number+1);
         vm.stopPrank();
         
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, tokenId, bribes);
+        _claimRewards(loan, _tokenId, bribes);
 
         uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
 
@@ -296,13 +343,15 @@ contract LoanTest is Test {
 
         // owner should not receive rewards
         assertEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should not receive rewards");
+        assertTrue(usdc.balanceOf(address(vault)) > startingVaultBalance, "vault should have more than starting balance");
+
     
     }
 
 
     function testPayToOwner() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
-        uint256 _tokenId = 6687;
+        uint256 _tokenId = 524;
 
         
         user = votingEscrow.ownerOf(_tokenId);
@@ -312,11 +361,13 @@ contract LoanTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
+        vm.roll(block.number+1);
+        vm.warp(block.timestamp+1);
         vm.stopPrank();
         
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, tokenId, bribes);
+        _claimRewards(loan, _tokenId, bribes);
 
         uint256 endingUserBalance = usdc.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
@@ -328,6 +379,51 @@ contract LoanTest is Test {
         // owner should receive rewards 1% f rewards
         uint256 protocolFee = totalRewards / 100;
         uint256 paidToUser = totalRewards - protocolFee;        
+        assertTrue(paidToUser > 0, "user should receive rewards");
+        assertTrue(protocolFee > 0, "owner should receive rewards");
+        assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
+        assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
+        assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
+    }
+
+    function testPayToOwnerPayoutToken() public {
+        assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
+        uint256 _tokenId = 524;
+
+        
+        address owner = Ownable2StepUpgradeable(loan).owner();
+        vm.startPrank(owner);
+        loan.setApprovedToken(address(weth), true);
+        vm.stopPrank();
+
+        user = votingEscrow.ownerOf(_tokenId);
+        uint256 startingOwnerBalance = weth.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
+        uint256 startingUserBalance = weth.balanceOf(address(user));
+        uint256 startingLoanBalance = weth.balanceOf(address(loan));
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
+        vm.roll(block.number+1);
+        vm.warp(block.timestamp+1);
+        loan.setPreferredToken(_tokenId, address(weth));
+        vm.stopPrank();
+        
+
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, _tokenId, bribes);
+
+        uint256 endingUserBalance = weth.balanceOf(address(user));
+        uint256 endingOwnerBalance = weth.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
+        uint256 endingLoanBalance = weth.balanceOf(address(loan));
+
+        uint256 totalRewards = endingUserBalance - startingUserBalance + endingOwnerBalance - startingOwnerBalance;
+
+
+        // owner should receive rewards 1% f rewards
+        uint256 protocolFee = totalRewards / 100;
+        uint256 paidToUser = totalRewards - protocolFee;        
+        assertTrue(paidToUser > 0, "user should receive rewards");
+        assertTrue(protocolFee > 0, "owner should receive rewards");
         assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
         assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
@@ -366,10 +462,9 @@ contract LoanTest is Test {
         vm.prank(user);
         votingEscrow.transferFrom(user, address(loan), _tokenId);
         
-
         address user2 = votingEscrow.ownerOf(7979);
         vm.prank(user2);
-        votingEscrow.transferFrom(user2, address(loan), 7979);
+        votingEscrow.approve(address(loan), 7979);
 
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 7 days);
@@ -377,6 +472,9 @@ contract LoanTest is Test {
         vm.startPrank(owner);
         loan.setManagedNft(7979);
         loan.merge(_tokenId);
+
+        vm.expectRevert();
+        loan.setManagedNft(7979);
     }
 
     function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal {
