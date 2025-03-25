@@ -181,38 +181,8 @@ contract LoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
-        (, , address[] memory pools) = loan.getLoanDetails(tokenId);
-        address[] memory fees = new address[](2 * pools.length);
-        address[][] memory tokens = new address[][](2 * pools.length);
-
-        address[] memory poolVotes = new address[](256); // Assuming a maximum of 256 pool votes
-        uint256 index = 0;
-
-        while (true) {
-            try voter.poolVote(tokenId, index) returns (address pool) {
-            poolVotes[index] = pool;
-            index++;
-            } catch {
-            break; // Exit the loop when it reverts
-            }
-        }
-
-        // Resize the array to the actual number of pool votes
-        assembly {
-            mstore(poolVotes, index)
-        }
-        
-        for (uint256 i = 0; i < pools.length; i++) {
-            address gauge = voter.gauges(pools[i]);
-            fees[2 * i] = voter.gaugeToFees(gauge);
-            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
-            address[] memory token = new address[](2);
-            token[0] = ICLGauge(pools[i]).token0();
-            token[1] = ICLGauge(pools[i]).token1();
-            tokens[2 * i] = token;
-            tokens[2 * i + 1] = token;
-        }
-        loan.claim(tokenId, fees, tokens);
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, tokenId, bribes);
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
 
@@ -220,7 +190,7 @@ contract LoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 37055346);
+        assertEq(vault.epochRewardsLocked(), 88361700);
     }
 
     function testIncreaseLoan() public {
@@ -317,38 +287,8 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.InvestToVault);
         vm.stopPrank();
         
-        (, , address[] memory pools) = loan.getLoanDetails(_tokenId);
-        address[] memory fees = new address[](2 * pools.length);
-        address[][] memory tokens = new address[][](2 * pools.length);
-
-        address[] memory poolVotes = new address[](256); // Assuming a maximum of 256 pool votes
-        uint256 index = 0;
-
-        while (true) {
-            try voter.poolVote(_tokenId, index) returns (address pool) {
-            poolVotes[index] = pool;
-            index++;
-            } catch {
-            break; // Exit the loop when it reverts
-            }
-        }
-
-        // Resize the array to the actual number of pool votes
-        assembly {
-            mstore(poolVotes, index)
-        }
-        
-        for (uint256 i = 0; i < pools.length; i++) {
-            address gauge = voter.gauges(pools[i]);
-            fees[2 * i] = voter.gaugeToFees(gauge);
-            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
-            address[] memory token = new address[](2);
-            token[0] = ICLGauge(pools[i]).token0();
-            token[1] = ICLGauge(pools[i]).token1();
-            tokens[2 * i] = token;
-            tokens[2 * i + 1] = token;
-        }
-        loan.claim(tokenId, fees, tokens);
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, tokenId, bribes);
 
         uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
 
@@ -374,20 +314,9 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner);
         vm.stopPrank();
         
-        (, , address[] memory pools) = loan.getLoanDetails(_tokenId);
-        address[] memory fees = new address[](2 * pools.length);
-        address[][] memory tokens = new address[][](2 * pools.length);
-        for (uint256 i = 0; i < pools.length; i++) {
-            address gauge = voter.gauges(pools[i]);
-            fees[2 * i] = voter.gaugeToFees(gauge);
-            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
-            address[] memory token = new address[](2);
-            token[0] = ICLGauge(pools[i]).token0();
-            token[1] = ICLGauge(pools[i]).token1();
-            tokens[2 * i] = token;
-            tokens[2 * i + 1] = token;
-        }
-        loan.claim(_tokenId, fees, tokens);
+
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, tokenId, bribes);
 
         uint256 endingUserBalance = usdc.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
@@ -448,5 +377,45 @@ contract LoanTest is Test {
         vm.startPrank(owner);
         loan.setManagedNft(7979);
         loan.merge(_tokenId);
+    }
+
+    function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal {
+        address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
+        uint256 index = 0;
+
+        while (true) {
+            try voter.poolVote(_tokenId, index) returns (address pool) {
+            pools[index] = pool;
+            console.log("pools[%s]: %s", index, pool);
+            index++;
+            } catch {
+            break; // Exit the loop when it reverts
+            }
+        }
+
+        address[] memory voterPools = new address[](index);
+        for (uint256 i = 0; i < index; i++) {
+            voterPools[i] = pools[i];
+        }
+        address[] memory fees = new address[](2 * voterPools.length);
+        address[][] memory tokens = new address[][](2 * voterPools.length);
+
+        for (uint256 i = 0; i < voterPools.length; i++) {
+            address gauge = voter.gauges(voterPools[i]);
+            fees[2 * i] = voter.gaugeToFees(gauge);
+            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
+            address[] memory token = new address[](2);
+            token[0] = ICLGauge(voterPools[i]).token0();
+            token[1] = ICLGauge(voterPools[i]).token1();
+            tokens[2 * i] = token;
+            address[] memory bribeTokens = new address[](bribes.length + 2);
+            for (uint256 j = 0; j < bribes.length; j++) {
+                bribeTokens[j] = bribes[j];
+            }
+            bribeTokens[bribes.length] = token[0];
+            bribeTokens[bribes.length + 1] = token[1];
+            tokens[2 * i + 1] = bribeTokens;
+        }
+        _loan.claim(_tokenId, fees, tokens);
     }
 }

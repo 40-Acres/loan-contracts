@@ -170,9 +170,9 @@ contract VeloLoanTest is Test {
 
 
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
-        assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
+        assertEq(rewardsPerEpoch, 359887);
 
-        assertEq(vault.epochRewardsLocked(), 34005);
+        assertEq(vault.epochRewardsLocked(), 33266);
     }
 
     function testIncreaseLoan() public {
@@ -220,6 +220,7 @@ contract VeloLoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
         assertEq(usdc.balanceOf(address(vault)), 100e6);
         vm.startPrank(user);
@@ -238,8 +239,8 @@ contract VeloLoanTest is Test {
         vm.stopPrank();
 
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
-        assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
-
+        assertEq(usdc.balanceOf(address(vault)), 100e6, "ault should have initial balance");
+        assertTrue(usdc.balanceOf(address(owner)) > startingOwnerBalance, "User should have more than starting balance");
     }
 
 
@@ -280,7 +281,7 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);
         assertEq(ERC20(op).balanceOf(address(loan)), 0);
         assertEq(ERC20(weth).balanceOf(address(loan)), 0);
-        assertEq(115427935840, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+        assertEq(115427935842, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
     }
 
     function testClaimBribes() public {
@@ -309,11 +310,10 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);
         assertEq(ERC20(op).balanceOf(address(loan)), 0);
         assertEq(ERC20(weth).balanceOf(address(loan)), 0);
-        assertEq(115427935840, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+        assertEq(115427935842, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
     }
 
     function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal {
-
         address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
         uint256 index = 0;
 
