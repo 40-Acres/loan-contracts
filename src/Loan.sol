@@ -20,7 +20,8 @@ import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
-    // deployed contract addressed
+    // initial contract parameters are listed here
+    // parametees introduced after initial deployment are in NamedStorage contracts
     IVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
     address public _pool; // pool to vote on to receive fees
@@ -34,7 +35,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     bool public _paused;
     uint256 public _outstandingCapital;
-    uint256 public  _multiplier;
+    uint256 public  _multiplier; // rewards rate multiplier
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedTokens; // deprecated
@@ -156,6 +157,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             unpaidFees: 0
         });
         
+        // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
         require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
 
@@ -610,6 +612,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     
+    /**
+     * @notice Increases the locked amount of a veNFT token.
+     * @dev This function locks tokens into the veNFT associated with the given token ID.
+     * @param tokenId The ID of the veNFT whose amount is to be increased.
+     * @param amount The amount of tokens to be added to the veNFT.
+     */
+
     function increaseAmount(uint256 tokenId, uint256 amount) public {
         require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
         require(amount > 0, "Amount must be greater than 0");
@@ -646,9 +655,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      operation either by poking the existing vote or casting a new vote with default pools and weights.
      * 
      * @param tokenId The unique identifier of the loan for which the voting operation is performed.
-     * 
-     * Requirements:
-     * - The loan must be eligible to vote on the pool, determined by `canVoteOnPool(tokenId)`.
      */
 
     function _vote(uint256 tokenId) internal {
@@ -861,7 +867,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Allows the owner to merge the managed NFT with a specified token ID.
      * @dev This function can only be called by the owner of the contract.
-     *      Note: This should only be used for Flight School rewards sent to the contract.
+     *      Note: This should only be possible for Flight School rewards sent to the contract.
      * @param tokenId The ID of the token to merge with the managed NFT.
      */
     function merge(uint256 tokenId) public onlyOwner {
