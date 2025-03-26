@@ -136,11 +136,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount,
         ZeroBalanceOption zeroBalanceOption
     ) public whenNotPaused {
-        require(confirmUsdcPrice(), "Price of USDC is not $1");
+        require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
         require(
-            _ve.ownerOf(tokenId) == msg.sender,
-            "Only the owner of the token can request a loan"
+            _ve.ownerOf(tokenId) == msg.sender
         );
 
 
@@ -160,6 +159,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             increasePercentage: 0
         });
         
+
+            // if we are on the last day of the epoch, vote on the default pools
+        uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;
+        if (block.timestamp > lastDayStart && canVoteOnPool(tokenId)) {
+            _vote(tokenId);
+        }
+
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
         require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
