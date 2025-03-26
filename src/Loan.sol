@@ -82,7 +82,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event CollateralWithdrawn(uint256 tokenId, address owner);
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
     event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
-    event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch);
+    event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch, bool isManual);
     event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
@@ -378,7 +378,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         require(_usdc.transferFrom(msg.sender, address(this), amount));
-        _pay(tokenId, amount);
+        _pay(tokenId, amount, true);
     }
 
     /**
@@ -402,7 +402,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The unique identifier of the loan being paid.
      * @param amount The amount being paid towards the loan.
      */
-    function _pay(uint256 tokenId, uint256 amount) internal {
+    function _pay(uint256 tokenId, uint256 amount, bool isManual) internal {
         if (amount == 0) {
             return;
         }
@@ -418,7 +418,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.unpaidFees -= feesPaid;
             loan.balance -= feesPaid;
             require(_usdc.transfer(owner(), feesPaid));
-            emit LoanPaid(tokenId, loan.borrower, feesPaid, ProtocolTimeLibrary.epochStart(block.timestamp));
+            emit LoanPaid(tokenId, loan.borrower, feesPaid, ProtocolTimeLibrary.epochStart(block.timestamp), isManual);
             emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
             if(amount == 0) {
                 return;
@@ -452,7 +452,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         require(_usdc.transfer(_vault, amount));
-        emit LoanPaid(tokenId, loan.borrower, amount, ProtocolTimeLibrary.epochStart(block.timestamp));
+        emit LoanPaid(tokenId, loan.borrower, amount, ProtocolTimeLibrary.epochStart(block.timestamp), isManual);
         // if there is an excess payment, handle it according to the zero balance option
         if (excess > 0) {
             _handleZeroBalance(tokenId, excess, false);
@@ -627,7 +627,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit RewardsReceived(ProtocolTimeLibrary.epochStart(block.timestamp), lenderPremium, loan.borrower, tokenId);
         
         uint256 remaining = amount - protocolFee - lenderPremium;
-        _pay(tokenId, remaining);
+        _pay(tokenId, remaining, false);
         claimRebase(loan);
     }
     
