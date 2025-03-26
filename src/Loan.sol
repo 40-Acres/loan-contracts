@@ -5,6 +5,7 @@ import "./interfaces/IVoter.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
@@ -12,7 +13,6 @@ import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {IRewardsDistributor} from "./interfaces/IRewardsDistributor.sol";
 import {ICLGauge} from "./interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
@@ -88,9 +88,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     event VeNftIncreased(address indexed user, uint256 indexed tokenId, uint256 amount);
-    event PreferredTokenSet(uint256 indexed tokenId, address indexed preferredToken);
-    event PercentIncreaseSet(uint256 indexed tokenId, uint256 percentage);
-
 
     constructor() {
         _disableInitializers();
@@ -444,14 +441,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         // if user has an increase percentage set, increase the veNFT amount
-        uint256 increaseAmount = (amount * loan.increasePercentage) / 10000;
-        if(increaseAmount > 0) {
-            uint256 amountOut = _swapToToken(increaseAmount, address(_usdc), address(_aero), loan.borrower);
+        uint256 amountToIncrease = (amount * loan.increasePercentage) / 10000;
+        if(amountToIncrease > 0) {
+            uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
             _aero.approve(address(_ve), amountOut);
             _ve.increaseAmount(tokenId, amountOut);
             emit VeNftIncreased(loan.borrower, tokenId, amountOut);
             addTotalWeight(amountOut);
-            amount -= increaseAmount;
+            amount -= amountToIncrease;
         }
 
         require(_usdc.transfer(_vault, amount));
@@ -563,7 +560,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param fees An array of addresses representing the fee tokens to be claimed.
      * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset.
      */
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public nonReentrant {
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public  {
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
@@ -633,13 +630,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _pay(tokenId, remaining);
         claimRebase(loan);
     }
-
-    function claimMultiple(uint256[] calldata tokenId, address[] calldata fees, address[][] calldata tokens) public nonReentrant {
-        for (uint256 i = 0; i < tokenId.length; i++) {
-            claim(tokenId[i], fees, tokens);
-        }
-    }
-
     
     /**
      * @notice Increases the locked amount of a veNFT token.
@@ -649,8 +639,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
 
     function increaseAmount(uint256 tokenId, uint256 amount) public {
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
-        require(amount > 0, "Amount must be greater than 0");
+        require(_ve.ownerOf(tokenId) == address(this));
+        require(amount > 0);
         require(_aero.transferFrom(msg.sender, address(this), amount));
         _aero.approve(address(_ve), amount);
         _ve.increaseAmount(tokenId, amount);
@@ -668,17 +658,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _vote(tokenId);
     }
 
-    /**
-     * @notice Allows the borrower to vote on the default pools for multiple loans.
-     * @dev This function can only be called on the last day of the epoch.
-     *      It iterates through an array of token IDs and calls the internal _vote function for each one.
-     * @param tokenIds An array of token IDs representing the loans to be voted on.
-     */
-    function voteMultiple(uint256[] memory tokenIds) onlyLastDayOfEpoch public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            _vote(tokenIds[i]);
-        }
-    }
     /**
      * @dev Internal function to handle voting logic for a specific loan identified by `tokenId`.
      *      This function checks if the loan is eligible to vote on the pool and performs the voting
@@ -905,15 +884,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function merge(uint256 tokenId) public onlyOwner {
         uint256 managedNft = getManagedNft();
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
-        require(_ve.ownerOf(managedNft) == address(this), "ManagedNft not locked");
+        require(_ve.ownerOf(tokenId) == address(this));
+        require(_ve.ownerOf(managedNft) == address(this));
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == address(0), "Token has an owner");
+        require(loan.borrower == address(0));
         _ve.merge(tokenId, managedNft);
         addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
     }
     
-
     /**
      * @notice Sets the managed NFT for the contract and initializes loan details for the given token ID.
      * @dev Transfers the NFT from the sender to the contract, updates the managed NFT state
@@ -940,7 +918,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
         super.setManagedNft(tokenId);
     }
-    
+
     /**
      * @notice Allows the owner to pause the contract.
      * @dev This function can only be called by the owner of the contract.
@@ -1049,12 +1027,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(
-            loan.borrower == msg.sender,
-            "Only the borrower can set the preferred token"
+            loan.borrower == msg.sender
         );
-        require(isApprovedToken(preferredToken), "Token not approved");
+        require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
-        emit PreferredTokenSet(tokenId, preferredToken);
     }
     
 
@@ -1072,12 +1048,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(
-            loan.borrower == msg.sender,
-            "Only the borrower can set the increase percentage"
+            loan.borrower == msg.sender
         );
-        require(increasePercentage <= 2500, "Increase percentage must be <= 25%");
+        require(increasePercentage <= 2500);
         loan.increasePercentage = increasePercentage;
-        emit PercentIncreaseSet(tokenId, increasePercentage);
     }
 
     /** ORACLE */
@@ -1109,7 +1083,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     modifier onlyLastDayOfEpoch() {
         uint256 timestamp = block.timestamp;
         uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;
-        if (timestamp < lastDayStart) revert("Can only call on last day of epoch");
+        if (timestamp < lastDayStart) revert();
         _;
     }
 
