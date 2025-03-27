@@ -77,17 +77,101 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     uint256 public _defaultPoolChangeTime;
 
     
+    /**
+     * @dev Emitted when collateral is added to a loan.
+     * @param tokenId The ID of the token representing the loan.
+     * @param owner The address of the owner adding the collateral.
+     * @param option The zero balance option chosen for the loan.
+     */
+    
     event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
+
+    
+    /**
+     * @dev Emitted when the zero balance option is set for a loan.
+     * @param tokenId The ID of the token representing the loan.
+     * @param option The zero balance option set for the loan.
+     */
     event ZeroBalanceOptionSet(uint256 tokenId, ZeroBalanceOption option);
+    
+    /**
+     * @dev Emitted when collateral is withdrawn from a loan.
+     * @param tokenId The ID of the token representing the loan.
+     * @param owner The address of the owner withdrawing the collateral.
+     */
     event CollateralWithdrawn(uint256 tokenId, address owner);
+    
+    /**
+     * @dev Emitted when funds are borrowed against a loan.
+     * @param tokenId The ID of the token representing the loan.
+     * @param owner The address of the borrower.
+     * @param amount The amount of funds borrowed.
+     */
     event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
+    
+    /**
+     * @dev Emitted when rewards are received for a loan.
+     * @param epoch The epoch during which the rewards were received.
+     * @param amount The amount of rewards received.
+     * @param borrower The address of the borrower receiving the rewards.
+     * @param tokenId The ID of the token representing the loan.
+     */
+    
     event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    /**
+     * @dev mitted when rewards are sent to the vault to lenders as a premium.
+     * @param tokenId The ID of the token representing the loan.
+     * @param borrower The address of the borrower repaying the loan.
+     * @param amount The amount repaid.
+     * @param epoch The epoch during which the repayment occurred.
+     * @param isManual Indicates whether the repayment was manual.
+     */
+    
     event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch, bool isManual);
+    /**
+     * @dev Emitted when rewards are invested back into the vault.
+     * @param epoch The epoch during which the rewards were invested.
+     * @param amount The amount of rewards invested.
+     * @param borrower The address of the borrower whose rewards were invested.
+     * @param tokenId The ID of the token representing the loan.
+     */
     event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    
+    /**
+     * @dev Total Rewards (Fees/Bribes) Claimed for a token.
+     * @param epoch The epoch during which the rewards were claimed.
+     * @param amount The amount of rewards claimed.
+     * @param borrower The address of the borrower claiming the rewards.
+     * @param tokenId The ID of the token representing the loan.
+     */
+    
     event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    /**
+     * @dev Emitted when rewards are paid to the owner of the loan.
+     * @param epoch The epoch during which the rewards were paid.
+     * @param amount The amount of rewards paid.
+     * @param borrower The address of the borrower associated with the loan.
+     * @param tokenId The ID of the token representing the loan.
+     */
     event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    
+    /**
+     * @dev Emitted when the protocol fee is paid.
+     * @param epoch The epoch during which the fee was paid.
+     * @param amount The amount of the protocol fee paid.
+     * @param borrower The address of the borrower paying the fee.
+     * @param tokenId The ID of the token representing the loan.
+     */
+    
     event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    /**
+     * @dev Emitted when a user's veNFT balance is increased.
+     * @param user The address of the user whose veNFT balance is increased.
+     * @param tokenId The ID of the veNFT token.
+     * @param amount The amount by which the veNFT balance is increased.
+     */
     event VeNftIncreased(address indexed user, uint256 indexed tokenId, uint256 amount);
+
 
     constructor() {
         _disableInitializers();
@@ -1038,8 +1122,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
     }
-    
-
     
     /**
      * @notice Sets the increase percentage for a specific loan.
