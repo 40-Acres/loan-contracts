@@ -690,21 +690,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Calculate the protocol fee based on the rewards amount.
         uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
 
-        // Handle the ReinvestVeNft zero balance option.
-        if (loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
-            uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
-            amount -= zeroBalanceFee;
-
-            // Approve and reinvest the remaining rewards into the veNFT.
-            _aero.approve(address(_ve), amount);
-            _ve.increaseAmount(tokenId, amount);
-            emit VeNftIncreased(loan.borrower, tokenId, amount);
-
-            // Transfer the zero balance fee to the contract owner.
-            require(_aero.transfer(owner(), zeroBalanceFee));
-            return;
-        }
-
         // Transfer the protocol fee to the contract owner.
         require(_usdc.transfer(owner(), protocolFee));
 
