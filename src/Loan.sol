@@ -603,7 +603,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         // ReinvestVeNft: reinvest the amount into the veNFT associated with the loan
         if(loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
-            // if takeFees is false the asset is in Aero, otherwise swap to Aero
+            // if takeFees is true the asset is in Aero, otherwise swap to Aero
             if(takeFees) {
                 uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
                 amount -= zeroBalanceFee;
