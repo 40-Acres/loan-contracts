@@ -978,8 +978,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(_ve.ownerOf(managedNft) == address(this));
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == address(0));
-        _ve.merge(tokenId, managedNft);
+        // ensure the token is locked permanently
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        if (!lockedBalance.isPermanent) {
+            if (lockedBalance.end <= block.timestamp) {
+                revert("Token lock expired");
+            }
+            _ve.lockPermanent(tokenId);
+        }
+
         addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
+        _ve.merge(tokenId, managedNft);
     }
     
     /**
