@@ -225,23 +225,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(
             _ve.ownerOf(tokenId) == msg.sender
         );
-
-
-        _loanDetails[tokenId] = LoanInfo({
-            balance: 0,
-            borrower: msg.sender,
-            timestamp: block.timestamp,
-            outstandingCapital: 0,
-            tokenId: tokenId,
-            zeroBalanceOption: zeroBalanceOption,
-            pools: new address[](0),
-            voteTimestamp: 0,
-            claimTimestamp: 0,
-            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
-            unpaidFees: 0,
-            preferredToken: address(0),
-            increasePercentage: 0
-        });
         
 
             // if we are on the last day of the epoch, vote on the default pools
@@ -262,6 +245,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
             _ve.lockPermanent(tokenId);
         }
+
+        _loanDetails[tokenId] = LoanInfo({
+            balance: 0,
+            borrower: msg.sender,
+            timestamp: block.timestamp,
+            outstandingCapital: 0,
+            tokenId: tokenId,
+            zeroBalanceOption: zeroBalanceOption,
+            pools: new address ,
+            voteTimestamp: 0,
+            claimTimestamp: 0,
+            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
+            unpaidFees: 0,
+            preferredToken: address(0),
+            increasePercentage: 0
+        });
 
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
         addTotalWeight(_loanDetails[tokenId].weight);
