@@ -225,23 +225,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(
             _ve.ownerOf(tokenId) == msg.sender
         );
-
-
-        _loanDetails[tokenId] = LoanInfo({
-            balance: 0,
-            borrower: msg.sender,
-            timestamp: block.timestamp,
-            outstandingCapital: 0,
-            tokenId: tokenId,
-            zeroBalanceOption: zeroBalanceOption,
-            pools: new address[](0),
-            voteTimestamp: 0,
-            claimTimestamp: 0,
-            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
-            unpaidFees: 0,
-            preferredToken: address(0),
-            increasePercentage: 0
-        });
         
 
             // if we are on the last day of the epoch, vote on the default pools
@@ -262,6 +245,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
             _ve.lockPermanent(tokenId);
         }
+
+        _loanDetails[tokenId] = LoanInfo({
+            balance: 0,
+            borrower: msg.sender,
+            timestamp: block.timestamp,
+            outstandingCapital: 0,
+            tokenId: tokenId,
+            zeroBalanceOption: zeroBalanceOption,
+            pools: new address ,
+            voteTimestamp: 0,
+            claimTimestamp: 0,
+            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
+            unpaidFees: 0,
+            preferredToken: address(0),
+            increasePercentage: 0
+        });
 
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
         addTotalWeight(_loanDetails[tokenId].weight);
@@ -816,8 +815,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             _multiplier) / 1e12; // rewardsRate * veNFT balance of token
-        uint256 maxLoan = maxLoanIgnoreSupply;
-
+        uint256 maxLoan = maxLoanIgnoreSupply * 10000 / (10000 + 80);
         // Calculate the maximum utilization ratio (80% of the vault supply)
         uint256 vaultBalance = _usdc.balanceOf(_vault);
         uint256 vaultSupply = vaultBalance + _outstandingCapital;
