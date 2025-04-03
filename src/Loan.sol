@@ -515,6 +515,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
         }
 
+        // if user has an increase percentage set, increase the veNFT amount
+        uint256 amountToIncrease = (amount * loan.increasePercentage) / 10000;
+        if(amountToIncrease > 0) {
+            uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
+            _aero.approve(address(_ve), amountOut);
+            _ve.increaseAmount(tokenId, amountOut);
+            emit VeNftIncreased(loan.borrower, tokenId, amountOut);
+            addTotalWeight(amountOut);
+            amount -= amountToIncrease;
+        }
+
         // process the payment
         uint256 excess = 0;
         if (amount > loan.balance) {
@@ -528,17 +539,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         } else {
             loan.outstandingCapital -= amount;
             _outstandingCapital -= amount;
-        }
-
-        // if user has an increase percentage set, increase the veNFT amount
-        uint256 amountToIncrease = (amount * loan.increasePercentage) / 10000;
-        if(amountToIncrease > 0) {
-            uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
-            _aero.approve(address(_ve), amountOut);
-            _ve.increaseAmount(tokenId, amountOut);
-            emit VeNftIncreased(loan.borrower, tokenId, amountOut);
-            addTotalWeight(amountOut);
-            amount -= amountToIncrease;
         }
 
         require(_usdc.transfer(_vault, amount));
