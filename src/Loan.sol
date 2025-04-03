@@ -613,7 +613,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         // InvestToVault: invest the amount to the vault on behalf of the borrower
-        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault) {
+        // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
+        // The user may withdraw their investment later if they are unblacklisted.
+        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || (loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner && takeFees)) {
             _usdc.approve(_vault, amount);
             IERC4626(_vault).deposit(amount, loan.borrower);
             emit RewardsInvested(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
@@ -622,23 +624,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // PayToOwner: transfer the amount to the borrower and pay protocol fees if applicable
         if(loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
             IERC20 asset = _getAsset(loan);
-            if(takeFees) {
-                uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
-                amount -= zeroBalanceFee;
-                require(asset.transfer(owner(), zeroBalanceFee));
-                emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
-            }
+            // fees are always taken, since it is invested to the Vault is takeFees is false
+            uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
+            amount -= zeroBalanceFee;
+            require(asset.transfer(owner(), zeroBalanceFee));
+            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
+
             require(asset.transfer(loan.borrower, amount));
             emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
             return;
         }
         // DoNothing: transfer the amount to the borrower
-        if(loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
-            require(_usdc.transfer(loan.borrower, amount));
-            emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
-            return;
-        }
-        return;
+        require(_usdc.transfer(loan.borrower, amount));
+        emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
     }
 
 
