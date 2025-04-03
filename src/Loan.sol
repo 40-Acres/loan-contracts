@@ -18,7 +18,6 @@ import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
-import {console} from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -398,7 +397,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) internal {
         for (uint256 i = 0; i < totalTokens.length; i++) {
             uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(address(this));
-            console.log("Swapping token %s, balance: %s, before: %s", totalTokens[i], tokenBalance, balanceBefore[i]);
             if (tokenBalance <= balanceBefore[i]) {
                 continue;
             }
