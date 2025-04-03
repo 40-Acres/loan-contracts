@@ -424,6 +424,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
+        IERC20(fromToken).approve(address(_aeroRouter), 0); // reset approval first
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
         IRouter.Route[] memory routes = new IRouter.Route[](
             1
