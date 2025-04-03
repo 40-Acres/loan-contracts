@@ -682,13 +682,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _handleZeroBalance(tokenId, amount, true);
             return;
         }
-
+        uint256 feeEligibleAmount = amount;
+        if(amount > loan.balance) {
+            feeEligibleAmount = loan.balance;
+        }
         // Calculate the protocol fee and lender premium percentages.
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
 
-        // Calculate the protocol fee based on the rewards amount.
-        uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
 
         // Handle the ReinvestVeNft zero balance option.
         if (loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
@@ -705,11 +706,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
 
+        // Calculate the protocol fee based on the rewards amount.
+        uint256 protocolFee = (feeEligibleAmount * protocolFeePercentage) / 10000;
         // Transfer the protocol fee to the contract owner.
         require(_usdc.transfer(owner(), protocolFee));
 
         // Calculate the lender premium based on the rewards amount.
-        uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
+        uint256 lenderPremium = (feeEligibleAmount * lenderPremiumPercentage) / 10000;
 
         // Transfer the lender premium to the vault.
         require(_usdc.transfer(_vault, lenderPremium));
