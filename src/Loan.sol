@@ -18,6 +18,7 @@ import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
+import {console} from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -317,15 +318,28 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         IERC20 asset = _getAsset(loan);
         uint256 assetBalancePre = asset.balanceOf(address(this));
-        _voter.claimFees(fees, tokens, tokenId);
 
-        _swapTokensToAsset(_flattenToken(tokens), asset, loan.borrower);
+        address[] memory flattenedTokens =_flattenToken(tokens);
+        uint256[] memory tokenBalances = _getTokenBalances(flattenedTokens);
+        _voter.claimFees(fees, tokens, tokenId);
+        _swapTokensToAsset(flattenedTokens, asset, loan.borrower, tokenBalances);
         uint256 assetBalancePost = asset.balanceOf(address(this));
 
         // calculate the amount of fees claimed
         totalRewards = assetBalancePost - assetBalancePre;
     }
 
+    /**
+     * @dev Retrieves the token balances of the contract for a given list of token addresses.
+     * @param tokens An array of ERC20 token addresses to query balances for.
+     * @return balances An array of token balances corresponding to the provided token addresses.
+     */
+    function _getTokenBalances(address[] memory tokens) internal view returns (uint256[] memory balances) {
+        balances = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            balances[i] = IERC20(tokens[i]).balanceOf(address(this));
+        }
+    }
 
     /**
      * @dev Returns the asset (either USDC or Aero/Velo) based on the loan's balance and zeroBalanceOption.
@@ -379,12 +393,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _swapTokensToAsset(
         address[] memory totalTokens,
         IERC20 asset,
-        address borrower
+        address borrower,
+        uint256[] memory balanceBefore
     ) internal {
         for (uint256 i = 0; i < totalTokens.length; i++) {
             uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(address(this));
+            console.log("Swapping token %s, balance: %s, before: %s", totalTokens[i], tokenBalance, balanceBefore[i]);
+            if (tokenBalance <= balanceBefore[i]) {
+                continue;
+            }
             if (tokenBalance > 0) {
-                _swapToToken(tokenBalance, totalTokens[i], address(asset), borrower);
+                _swapToToken(tokenBalance - balanceBefore[i], totalTokens[i], address(asset), borrower);
             }
         }
     }
