@@ -16,6 +16,7 @@ contract SwapperTest is Test {
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
+        vm.rollFork(28494354);
 
 
         address[] memory _supportedTokens = new address[](3);
@@ -32,20 +33,27 @@ contract SwapperTest is Test {
     }
 
     function testSwapWethToUsdc() public {
-        IRouter.Route[] memory route = swapper.getBestRoute(_weth, _usdc, 10e18); // 1 WETH
+        IRouter.Route[] memory route = swapper.getBestRoute(_weth, _usdc, 1e18); // 1 WETH
         console.log( "Optimal Route from WETH to USDC:");
         for (uint256 i = 0; i < route.length; i++) {
             console.log("Route %d: %s -> %s", i, address(route[i].from), address(route[i].to));
         }
-        require(route.length > 0, "No route found for WETH to USDC");
+        assertTrue(route.length > 0, "No route found for WETH to USDC");
+        uint256 amountOut = IRouter(swapper.router()).getAmountsOut(1e18, route)[route.length];
+        console.log("Amount out for 1 WETH to USDC: %s", amountOut);
+        assertTrue(amountOut > 1775e6, "Amount out should be greater than $1775");
+
     }
 
+
+
+
     function testSwapSuiToUsdc() public {
-        IRouter.Route[] memory route = swapper.getBestRoute(0xb0505e5a99abd03d94a1169e638B78EDfEd26ea4, _usdc, 10e18); // 1 WETH
+        IRouter.Route[] memory route = swapper.getBestRoute(0xb0505e5a99abd03d94a1169e638B78EDfEd26ea4, _usdc, 1018); // 1 SUI
         console.log( "Optimal Route from SUI to USDC:");
         for (uint256 i = 0; i < route.length; i++) {
             console.log("Route %d: %s -> %s", i, address(route[i].from), address(route[i].to));
         }
-        require(route.length > 0, "No route found for SUI to USDC");
+        assertTrue(route.length > 0, "No route found for SUI to USDC");
     }
 }
