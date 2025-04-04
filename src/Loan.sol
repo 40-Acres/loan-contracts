@@ -18,6 +18,7 @@ import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
+import { ISwapper } from "./interfaces/ISwapper.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -443,27 +444,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         IERC20(fromToken).approve(address(_aeroRouter), 0); // reset approval first
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
-        IRouter.Route[] memory routes = new IRouter.Route[](
-            1
-        );
-        routes[0] = IRouter.Route(
-            address(fromToken),
-            address(toToken),
-            false,
-            _aeroFactory
-        );
-        uint256[] memory returnAmounts = _aeroRouter.getAmountsOut(
-            amountIn,
-            routes
-        );
-        if (returnAmounts[1] == 0) {
+        ISwapper swapper = ISwapper(getSwapper());
+        IRouter.Route[] memory routes = ISwapper(swapper).getBestRoute(fromToken, toToken, amountIn);
+        uint256 minimumAmountOut = ISwapper(swapper).getMinimumAmountOut(routes, amountIn);
+        
+        if (minimumAmountOut == 0) {
             // send to borrower if the swap returns 0
             require(IERC20(fromToken).transfer(borrower, amountIn));
             return 0;
         }
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
-                returnAmounts[1],
+                minimumAmountOut,
                 routes,
                 address(this),
                 block.timestamp
@@ -870,7 +862,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         return (maxLoan, maxLoanIgnoreSupply);
     }
-
     
     /**
      * @notice Records the rewards for the current epoch.
