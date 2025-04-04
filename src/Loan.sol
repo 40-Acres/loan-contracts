@@ -446,7 +446,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
         ISwapper swapper = ISwapper(getSwapper());
         IRouter.Route[] memory routes = ISwapper(swapper).getBestRoute(fromToken, toToken, amountIn);
-        require(routes.length > 0, "No valid swap route found");
         uint256 minimumAmountOut = ISwapper(swapper).getMinimumAmountOut(routes, amountIn);
         
         if (minimumAmountOut == 0) {
