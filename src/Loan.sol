@@ -602,10 +602,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         // ReinvestVeNft: reinvest the amount into the veNFT associated with the loan
         if(loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
+            // if takeFees is true the asset is in Aero, otherwise swap to Aero
             if(takeFees) {
                 uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
                 amount -= zeroBalanceFee;
-                require(_usdc.transfer(owner(), zeroBalanceFee));
+                require(_aero.transfer(owner(), zeroBalanceFee));
+            } else {
+                amount = _swapToToken(amount, address(_usdc), address(_aero), loan.borrower);
             }
             _aero.approve(address(_ve), amount);
             _ve.increaseAmount(tokenId, amount);
