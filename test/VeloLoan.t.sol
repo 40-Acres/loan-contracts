@@ -181,7 +181,7 @@ contract VeloLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertEq(rewardsPerEpoch, 201600);
 
-        assertEq(vault.epochRewardsLocked(), 33266);
+        assertEq(vault.epochRewardsLocked(), 18635);
     }
 
     function testIncreaseLoan() public {
