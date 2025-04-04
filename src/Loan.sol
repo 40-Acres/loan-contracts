@@ -815,8 +815,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             _multiplier) / 1e12; // rewardsRate * veNFT balance of token
-        uint256 maxLoan = maxLoanIgnoreSupply;
-
+        uint256 maxLoan = maxLoanIgnoreSupply * 10000 / (10000 + 80);
         // Calculate the maximum utilization ratio (80% of the vault supply)
         uint256 vaultBalance = _usdc.balanceOf(_vault);
         uint256 vaultSupply = vaultBalance + _outstandingCapital;
