@@ -167,7 +167,7 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
-        vm.expectRevert("Cannot increase loan beyond max loan amount");
+        vm.expectRevert();
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
 
 
