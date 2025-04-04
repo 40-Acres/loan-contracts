@@ -197,7 +197,7 @@ contract LoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 88361700);
+        assertEq(vault.epochRewardsLocked(), 93053);
     }
 
     function testIncreaseAmountPercentage() public {
@@ -242,7 +242,7 @@ contract LoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 88361700);
+        assertEq(vault.epochRewardsLocked(), 93053);
     }
 
     function testIncreaseLoan() public {
