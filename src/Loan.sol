@@ -420,6 +420,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address toToken,
         address borrower
     ) internal returns (uint256 amountOut) {
+        require(fromToken != address(_ve)); // Prevent swapping veNFT
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
