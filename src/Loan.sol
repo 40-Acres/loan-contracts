@@ -639,7 +639,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // PayToOwner: transfer the amount to the borrower and pay protocol fees if applicable
         if(loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
-            IERC20 asset = takeFees ? _getAsset(loan) : _usdc;
+            IERC20 asset = _getAsset(loan);
             if(takeFees) {
                 uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
                 amount -= zeroBalanceFee;
