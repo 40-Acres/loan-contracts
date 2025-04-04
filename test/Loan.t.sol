@@ -15,9 +15,10 @@ import { ITransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/tran
 import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
+import {DeploySwapper} from "../script/BaseDeploySwapper.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
-
+import { Swapper } from "../src/Swapper.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -51,6 +52,9 @@ contract LoanTest is Test {
     address user;
     uint256 tokenId = 64196;
 
+
+    Swapper public swapper;
+
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
@@ -64,6 +68,9 @@ contract LoanTest is Test {
         loan.setMultiplier(100000000000);
         loan.setRewardsRate(11300);
         IOwnable(address(loan)).transferOwnership(owner);
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
         vm.stopPrank();
 
         vm.prank(owner);

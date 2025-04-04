@@ -17,6 +17,8 @@ import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import { console} from "forge-std/console.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import { Swapper } from "../src/Swapper.sol";
+import {DeploySwapper} from "../script/BaseDeploySwapper.s.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -53,6 +55,7 @@ contract LoanUpgradeTest is Test {
     address owner;
     address user;
     uint256 tokenId = 68510;
+    Swapper public swapper;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -74,6 +77,11 @@ contract LoanUpgradeTest is Test {
 
         loan.setMultiplier(100000000000);
         loan.setRewardsRate(11300);
+        
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
+
         vm.stopPrank();
 
         // allow this test contract to mint USDC
