@@ -7,8 +7,6 @@ import { IRouter } from "./interfaces/IRouter.sol";
 import { IPoolFactory } from "./interfaces/IPoolFactory.sol";
 import { IPool } from "./interfaces/IPool.sol";
 
-import {Test, console} from "forge-std/Test.sol";
-
 contract Swapper {
     address[] public supportedTokens;
     address public factory;
@@ -23,6 +21,16 @@ contract Swapper {
         supportedTokens = _supportedTokens;
     }
 
+    /**
+     * @dev Internal function to generate all possible token swap routes between two tokens.
+     *      The function considers intermediate tokens from the list of supported tokens
+     *      and creates routes with up to two hops.
+     * @param token0 The address of the first token in the swap.
+     * @param token1 The address of the second token in the swap.
+     * @return tokenRoutes A 2D array of routes, where each route consists of two hops.
+     *         Each hop is represented as an `IRouter.Route` struct.
+     * @return length The number of valid routes generated.
+     */
     function _getAllRoutes(
         address token0,
         address token1
@@ -52,6 +60,15 @@ contract Swapper {
         return (tokenRoutes, length);
     }
 
+    /**
+     * @notice Finds the best route for swapping a given amount of token0 to token1.
+     * @dev This function evaluates multiple routes and selects the one that provides the highest output amount.
+     *      It uses the `_getAllRoutes` function to retrieve all possible routes and checks their validity.
+     * @param token0 The address of the input token.
+     * @param token1 The address of the output token.
+     * @param amountIn The amount of token0 to be swapped.
+     * @return routes An array of `IRouter.Route` structs representing the best route for the swap.
+     */
     function getBestRoute(
         address token0,
         address token1,
@@ -70,6 +87,7 @@ contract Swapper {
             if (IPoolFactory(routes[0].factory).getPool(routes[0].from, routes[0].to, routes[0].stable) == address(0)) {
                 continue;
             }
+
             try router.getAmountsOut(amountIn, routes) returns (uint256[] memory _amountsOut) {
                 amountsOut = _amountsOut;
             } catch {
@@ -99,6 +117,15 @@ contract Swapper {
         return routes;
     }
 
+    /**
+     * @notice Calculates the minimum amount of output tokens that can be received for a given input amount
+     *         across a series of swap routes, accounting for slippage.
+     * @dev Iterates through the provided routes to compute the output amount at each step.
+     *      If any pool in the route does not exist, the function returns 0.
+     * @param routes An array of swap routes, where each route specifies the token pair, factory, and stability.
+     * @param amountIn The amount of input tokens to be swapped.
+     * @return amountOut The minimum amount of output tokens after applying slippage.
+     */
     function getMinimumAmountOut(
         IRouter.Route[] calldata routes,
         uint256 amountIn
