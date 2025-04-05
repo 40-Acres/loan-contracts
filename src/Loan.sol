@@ -174,6 +174,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event VeNftIncreased(address indexed user, uint256 indexed tokenId, uint256 amount);
 
 
+    /** ERROR CODES */
+    error TokenNotLocked();
+    error TokenLockExpired(uint256 tokenId);
+    error InvalidLoanAmount();
+    error PriceNotConfirmed();
+    error LoanNotFound(uint256 tokenId);
+    error NotOwnerOfToken(uint256 tokenId, address owner);
+    error LoanActive(uint256 tokenId);
+
     constructor() {
         _disableInitializers();
     }
@@ -220,7 +229,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId,
         uint256 amount,
         ZeroBalanceOption zeroBalanceOption
-    ) public whenNotPaused {
+    ) public  {
         require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
         require(
@@ -253,14 +262,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
+        require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
 
         // ensure the token is locked permanently
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
         if (!lockedBalance.isPermanent) {
-            if (lockedBalance.end <= block.timestamp) {
-                revert("Token lock expired");
-            }
+            require(lockedBalance.end > block.timestamp, TokenLockExpired(tokenId));
             _ve.lockPermanent(tokenId);
         }
 
@@ -282,21 +289,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function increaseLoan(
         uint256 tokenId,
         uint256 amount
-    ) public whenNotPaused {
-        require(amount > .01e6, "Amount must be greater than .01 USDC");
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
-        require(confirmUsdcPrice(), "Price of USDC is not $1");
+    ) public  {
+        require(amount > .01e6, InvalidLoanAmount());
+        require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
+        require(confirmUsdcPrice(), PriceNotConfirmed());
         LoanInfo storage loan = _loanDetails[tokenId];
 
         require(
             loan.borrower == msg.sender,
-            "Only the borrower can increase the loan"
+            NotOwnerOfToken(tokenId, loan.borrower)
         );
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
-        require(
-            amount <= maxLoan,
-            "Cannot increase loan beyond max loan amount"
-        );
+        require(amount <= maxLoan, InvalidLoanAmount());
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.unpaidFees += originationFee;
         loan.balance += amount + originationFee;
@@ -795,13 +799,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Ensure that the caller is the borrower of the loan
         require(
             loan.borrower == msg.sender,
-            "Only the borrower can claim collateral"
+            NotOwnerOfToken(tokenId, loan.borrower)
         );
 
         // Ensure that the loan is fully repaid before allowing collateral to be claimed
-        if (loan.balance > 0) {
-            revert("Cannot claim collateral while loan is active");
-        }
+        require(loan.balance == 0, LoanActive(tokenId));
 
         _ve.transferFrom(address(this), loan.borrower, tokenId);
         emit CollateralWithdrawn(tokenId, msg.sender);
@@ -998,7 +1000,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the NFT to be managed by the contract.
      */
     function setManagedNft(uint256 tokenId) public onlyOwner override {
-        require(getManagedNft() == 0, "Managed NFT already set");
+        require(getManagedNft() == 0);
         _ve.transferFrom(_ve.ownerOf(tokenId), address(this), tokenId);
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -1018,24 +1020,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
         super.setManagedNft(tokenId);
     }
-
-    /**
-     * @notice Allows the owner to pause the contract.
-     * @dev This function can only be called by the owner of the contract.
-     */
-    function pause() public onlyOwner {
-        _paused = true;
-    }
-
-
-    /**
-     * @notice Allows the owner to unpause the contract.
-     * @dev This function can only be called by the owner of the contract.
-     */
-    function unpause() public onlyOwner {
-        _paused = false;
-    }
-
     /**
      * @notice Allows the owner to set the default pools and their respective weights.
      * @dev The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
@@ -1082,7 +1066,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Overrides the renounceOwnership function to prevent the owner from renouncing ownership.
      */
     function renounceOwnership() public view override onlyOwner {
-        revert("Cannot renounce ownership");
+        revert();
     }
 
     /**
@@ -1109,7 +1093,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         require(
             loan.borrower == msg.sender,
-            "Only the borrower can set the zero balance option"
+            NotOwnerOfToken(tokenId, loan.borrower)
         );
         loan.zeroBalanceOption = option;
         emit ZeroBalanceOptionSet(tokenId, option);
@@ -1184,15 +1168,5 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (timestamp < lastDayStart) revert();
         _;
     }
-
-    /**
-     * @notice Modifier to restrict function calls to the last day of the epoch.
-     * @dev This modifier checks if the current block timestamp is within the last day of the epoch.
-     */
-    modifier whenNotPaused() {
-        require(!_paused, "Contract is paused");
-        _;
-    }
-
 
 }
