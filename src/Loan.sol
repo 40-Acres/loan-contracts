@@ -1001,6 +1001,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function setManagedNft(uint256 tokenId) public onlyOwner override {
         require(getManagedNft() == 0);
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == address(0), "Token has an owner");
         _ve.transferFrom(_ve.ownerOf(tokenId), address(this), tokenId);
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
