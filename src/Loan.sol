@@ -443,6 +443,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address toToken,
         address borrower
     ) internal returns (uint256 amountOut) {
+        require(fromToken != address(_ve)); // Prevent swapping veNFT
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
@@ -617,10 +618,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         // ReinvestVeNft: reinvest the amount into the veNFT associated with the loan
         if(loan.zeroBalanceOption == ZeroBalanceOption.ReinvestVeNft) {
+            // if takeFees is true the asset is in Aero, otherwise swap to Aero
             if(takeFees) {
                 uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
                 amount -= zeroBalanceFee;
-                require(_usdc.transfer(owner(), zeroBalanceFee));
+                require(_aero.transfer(owner(), zeroBalanceFee));
+            } else {
+                amount = _swapToToken(amount, address(_usdc), address(_aero), loan.borrower);
             }
             _aero.approve(address(_ve), amount);
             _ve.increaseAmount(tokenId, amount);
@@ -829,8 +833,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             _multiplier) / 1e12; // rewardsRate * veNFT balance of token
-        uint256 maxLoan = maxLoanIgnoreSupply;
-
+        uint256 maxLoan = maxLoanIgnoreSupply * 10000 / (10000 + 80);
+        
         // Calculate the maximum utilization ratio (80% of the vault supply)
         uint256 vaultBalance = _usdc.balanceOf(_vault);
         uint256 vaultSupply = vaultBalance + _outstandingCapital;
@@ -1001,6 +1005,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function setManagedNft(uint256 tokenId) public onlyOwner override {
         require(getManagedNft() == 0);
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == address(0), "Token has an owner");
         _ve.transferFrom(_ve.ownerOf(tokenId), address(this), tokenId);
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
