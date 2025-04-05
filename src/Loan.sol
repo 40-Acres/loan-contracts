@@ -1037,22 +1037,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] memory pools,
         uint256[] memory weights
     ) public onlyOwner {
-        require(pools.length == weights.length, "Pools and weights must be the same length");
+        require(pools.length == weights.length);
         for (uint256 i = 0; i < pools.length; i++) {
-            require(pools[i] != address(0), "Pool cannot be zero address");
-            require(weights[i] > 0, "Weight must be greater than 0");
+            require(pools[i] != address(0));
+            require(weights[i] > 0);
 
             // confirm pool is a valid gauge
             address gauge = _voter.gauges(pools[i]);
-            require(gauge != address(0), "Pool does not have a gauge");
-            require(ICLGauge(gauge).isPool(), "Pool is not a valid pool");
+            require(gauge != address(0));
+            require(ICLGauge(gauge).isPool());
         }
         // ensure weights equal 100e18
         uint256 totalWeight = 0;
         for (uint256 i = 0; i < weights.length; i++) {
             totalWeight += weights[i];
         }
-        require(totalWeight == 100e18, "Weights must equal 100%");
+        require(totalWeight == 100e18);
         _defaultPools = pools;
         _defaultWeights = weights;
         _defaultPoolChangeTime = block.timestamp;
