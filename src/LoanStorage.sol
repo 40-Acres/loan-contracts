@@ -9,6 +9,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         uint256 _totalWeights;
         uint256 _managedNft;
         mapping(address => bool) _isApprovedToken; // approved tokens for loan contract
+        address _swapper;
     }
 
 
@@ -63,5 +64,18 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function setApprovedToken(address token, bool approved) public onlyOwner virtual {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._isApprovedToken[token] = approved;
+    }
+
+    /// @dev Get the swapper address for the loan contract
+    function getSwapper() public view virtual returns (address) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._swapper;
+    }
+
+    /// @dev Set the swapper address for the loan contract
+    function setSwapper(address swapper) public onlyOwner virtual {
+        require(swapper != address(0));
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._swapper = swapper;
     }
 }

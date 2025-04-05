@@ -18,6 +18,7 @@ import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
+import { ISwapper } from "./interfaces/ISwapper.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -173,6 +174,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event VeNftIncreased(address indexed user, uint256 indexed tokenId, uint256 amount);
 
 
+    /** ERROR CODES */
+    error TokenNotLocked();
+    error TokenLockExpired(uint256 tokenId);
+    error InvalidLoanAmount();
+    error PriceNotConfirmed();
+    error LoanNotFound(uint256 tokenId);
+    error NotOwnerOfToken(uint256 tokenId, address owner);
+    error LoanActive(uint256 tokenId);
+
     constructor() {
         _disableInitializers();
     }
@@ -219,7 +229,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId,
         uint256 amount,
         ZeroBalanceOption zeroBalanceOption
-    ) public whenNotPaused {
+    ) public  {
         require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
         require(
@@ -252,14 +262,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
+        require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
 
         // ensure the token is locked permanently
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
         if (!lockedBalance.isPermanent) {
-            if (lockedBalance.end <= block.timestamp) {
-                revert("Token lock expired");
-            }
+            require(lockedBalance.end > block.timestamp, TokenLockExpired(tokenId));
             _ve.lockPermanent(tokenId);
         }
 
@@ -281,21 +289,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function increaseLoan(
         uint256 tokenId,
         uint256 amount
-    ) public whenNotPaused {
-        require(amount > .01e6, "Amount must be greater than .01 USDC");
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked");
-        require(confirmUsdcPrice(), "Price of USDC is not $1");
+    ) public  {
+        require(amount > .01e6, InvalidLoanAmount());
+        require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
+        require(confirmUsdcPrice(), PriceNotConfirmed());
         LoanInfo storage loan = _loanDetails[tokenId];
 
         require(
             loan.borrower == msg.sender,
-            "Only the borrower can increase the loan"
+            NotOwnerOfToken(tokenId, loan.borrower)
         );
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
-        require(
-            amount <= maxLoan,
-            "Cannot increase loan beyond max loan amount"
-        );
+        require(amount <= maxLoan, InvalidLoanAmount());
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.unpaidFees += originationFee;
         loan.balance += amount + originationFee;
@@ -317,15 +322,28 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         IERC20 asset = _getAsset(loan);
         uint256 assetBalancePre = asset.balanceOf(address(this));
-        _voter.claimFees(fees, tokens, tokenId);
 
-        _swapTokensToAsset(_flattenToken(tokens), asset, loan.borrower);
+        address[] memory flattenedTokens =_flattenToken(tokens);
+        uint256[] memory tokenBalances = _getTokenBalances(flattenedTokens);
+        _voter.claimFees(fees, tokens, tokenId);
+        _swapTokensToAsset(flattenedTokens, asset, loan.borrower, tokenBalances);
         uint256 assetBalancePost = asset.balanceOf(address(this));
 
         // calculate the amount of fees claimed
         totalRewards = assetBalancePost - assetBalancePre;
     }
 
+    /**
+     * @dev Retrieves the token balances of the contract for a given list of token addresses.
+     * @param tokens An array of ERC20 token addresses to query balances for.
+     * @return balances An array of token balances corresponding to the provided token addresses.
+     */
+    function _getTokenBalances(address[] memory tokens) internal view returns (uint256[] memory balances) {
+        balances = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            balances[i] = IERC20(tokens[i]).balanceOf(address(this));
+        }
+    }
 
     /**
      * @dev Returns the asset (either USDC or Aero/Velo) based on the loan's balance and zeroBalanceOption.
@@ -379,12 +397,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _swapTokensToAsset(
         address[] memory totalTokens,
         IERC20 asset,
-        address borrower
+        address borrower,
+        uint256[] memory balanceBefore
     ) internal {
         for (uint256 i = 0; i < totalTokens.length; i++) {
             uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(address(this));
+            if (tokenBalance <= balanceBefore[i]) {
+                continue;
+            }
             if (tokenBalance > 0) {
-                _swapToToken(tokenBalance, totalTokens[i], address(asset), borrower);
+                _swapToToken(tokenBalance - balanceBefore[i], totalTokens[i], address(asset), borrower);
             }
         }
     }
@@ -424,28 +446,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;
         }
+        IERC20(fromToken).approve(address(_aeroRouter), 0); // reset approval first
         IERC20(fromToken).approve(address(_aeroRouter), amountIn);
-        IRouter.Route[] memory routes = new IRouter.Route[](
-            1
-        );
-        routes[0] = IRouter.Route(
-            address(fromToken),
-            address(toToken),
-            false,
-            _aeroFactory
-        );
-        uint256[] memory returnAmounts = _aeroRouter.getAmountsOut(
-            amountIn,
-            routes
-        );
-        if (returnAmounts[1] == 0) {
+        ISwapper swapper = ISwapper(getSwapper());
+        IRouter.Route[] memory routes = ISwapper(swapper).getBestRoute(fromToken, toToken, amountIn);
+        uint256 minimumAmountOut = ISwapper(swapper).getMinimumAmountOut(routes, amountIn);
+        
+        if (minimumAmountOut == 0) {
             // send to borrower if the swap returns 0
             require(IERC20(fromToken).transfer(borrower, amountIn));
             return 0;
         }
         uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
                 amountIn,
-                returnAmounts[1],
+                minimumAmountOut,
                 routes,
                 address(this),
                 block.timestamp
@@ -515,6 +529,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
         }
 
+        // if user has an increase percentage set, increase the veNFT amount
+        uint256 amountToIncrease = (amount * loan.increasePercentage) / 10000;
+        if(amountToIncrease > 0) {
+            uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
+            _aero.approve(address(_ve), amountOut);
+            _ve.increaseAmount(tokenId, amountOut);
+            emit VeNftIncreased(loan.borrower, tokenId, amountOut);
+            addTotalWeight(amountOut);
+            amount -= amountToIncrease;
+        }
+
         // process the payment
         uint256 excess = 0;
         if (amount > loan.balance) {
@@ -528,17 +553,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         } else {
             loan.outstandingCapital -= amount;
             _outstandingCapital -= amount;
-        }
-
-        // if user has an increase percentage set, increase the veNFT amount
-        uint256 amountToIncrease = (amount * loan.increasePercentage) / 10000;
-        if(amountToIncrease > 0) {
-            uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
-            _aero.approve(address(_ve), amountOut);
-            _ve.increaseAmount(tokenId, amountOut);
-            emit VeNftIncreased(loan.borrower, tokenId, amountOut);
-            addTotalWeight(amountOut);
-            amount -= amountToIncrease;
         }
 
         require(_usdc.transfer(_vault, amount));
@@ -613,7 +627,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         // InvestToVault: invest the amount to the vault on behalf of the borrower
-        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault) {
+        // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
+        // The user may withdraw their investment later if they are unblacklisted.
+        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || (loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner && !takeFees)) {
             _usdc.approve(_vault, amount);
             IERC4626(_vault).deposit(amount, loan.borrower);
             emit RewardsInvested(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
@@ -622,23 +638,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // PayToOwner: transfer the amount to the borrower and pay protocol fees if applicable
         if(loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
             IERC20 asset = _getAsset(loan);
-            if(takeFees) {
-                uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
-                amount -= zeroBalanceFee;
-                require(asset.transfer(owner(), zeroBalanceFee));
-                emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
-            }
+            // fees are always taken, since it is invested to the Vault is takeFees is false
+            uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
+            amount -= zeroBalanceFee;
+            require(asset.transfer(owner(), zeroBalanceFee));
+            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
+
             require(asset.transfer(loan.borrower, amount));
             emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
             return;
         }
         // DoNothing: transfer the amount to the borrower
-        if(loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
-            require(_usdc.transfer(loan.borrower, amount));
-            emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
-            return;
-        }
-        return;
+        require(_usdc.transfer(loan.borrower, amount));
+        emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
     }
 
 
@@ -682,19 +694,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _handleZeroBalance(tokenId, amount, true);
             return;
         }
-
+        uint256 feeEligibleAmount = amount;
+        if(amount > loan.balance) {
+            feeEligibleAmount = loan.balance;
+        }
         // Calculate the protocol fee and lender premium percentages.
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
 
-        // Calculate the protocol fee based on the rewards amount.
-        uint256 protocolFee = (amount * protocolFeePercentage) / 10000;
 
         // Transfer the protocol fee to the contract owner.
         require(_usdc.transfer(owner(), protocolFee));
 
         // Calculate the lender premium based on the rewards amount.
-        uint256 lenderPremium = (amount * lenderPremiumPercentage) / 10000;
+        uint256 lenderPremium = (feeEligibleAmount * lenderPremiumPercentage) / 10000;
 
         // Transfer the lender premium to the vault.
         require(_usdc.transfer(_vault, lenderPremium));
@@ -769,13 +782,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Ensure that the caller is the borrower of the loan
         require(
             loan.borrower == msg.sender,
-            "Only the borrower can claim collateral"
+            NotOwnerOfToken(tokenId, loan.borrower)
         );
 
         // Ensure that the loan is fully repaid before allowing collateral to be claimed
-        if (loan.balance > 0) {
-            revert("Cannot claim collateral while loan is active");
-        }
+        require(loan.balance == 0, LoanActive(tokenId));
 
         _ve.transferFrom(address(this), loan.borrower, tokenId);
         emit CollateralWithdrawn(tokenId, msg.sender);
@@ -836,7 +847,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         return (maxLoan, maxLoanIgnoreSupply);
     }
-
     
     /**
      * @notice Records the rewards for the current epoch.
@@ -973,7 +983,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the NFT to be managed by the contract.
      */
     function setManagedNft(uint256 tokenId) public onlyOwner override {
-        require(getManagedNft() == 0, "Managed NFT already set");
+        require(getManagedNft() == 0);
         _ve.transferFrom(_ve.ownerOf(tokenId), address(this), tokenId);
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -993,24 +1003,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
         super.setManagedNft(tokenId);
     }
-
-    /**
-     * @notice Allows the owner to pause the contract.
-     * @dev This function can only be called by the owner of the contract.
-     */
-    function pause() public onlyOwner {
-        _paused = true;
-    }
-
-
-    /**
-     * @notice Allows the owner to unpause the contract.
-     * @dev This function can only be called by the owner of the contract.
-     */
-    function unpause() public onlyOwner {
-        _paused = false;
-    }
-
     /**
      * @notice Allows the owner to set the default pools and their respective weights.
      * @dev The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
@@ -1057,7 +1049,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Overrides the renounceOwnership function to prevent the owner from renouncing ownership.
      */
     function renounceOwnership() public view override onlyOwner {
-        revert("Cannot renounce ownership");
+        revert();
     }
 
     /**
@@ -1084,7 +1076,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         require(
             loan.borrower == msg.sender,
-            "Only the borrower can set the zero balance option"
+            NotOwnerOfToken(tokenId, loan.borrower)
         );
         loan.zeroBalanceOption = option;
         emit ZeroBalanceOptionSet(tokenId, option);
@@ -1159,15 +1151,5 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (timestamp < lastDayStart) revert();
         _;
     }
-
-    /**
-     * @notice Modifier to restrict function calls to the last day of the epoch.
-     * @dev This modifier checks if the current block timestamp is within the last day of the epoch.
-     */
-    modifier whenNotPaused() {
-        require(!_paused, "Contract is paused");
-        _;
-    }
-
 
 }

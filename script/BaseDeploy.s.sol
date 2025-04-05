@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {Loan} from "../src/Loan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
+import { Swapper } from "../src/Swapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 
