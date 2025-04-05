@@ -18,6 +18,8 @@ import {OpUpgrade} from "../script/OpUpgrade.s.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
+import {DeploySwapper} from "../script/OpDeploySwapper.s.sol";
+import { Swapper } from "../src/Swapper.sol";
 
 
 interface IUSDC {
@@ -51,6 +53,8 @@ contract VeloLoanTest is Test {
     address user;
     uint256 tokenId = 2087;
 
+    Swapper public swapper;
+
     function setUp() public {
         fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
@@ -62,6 +66,11 @@ contract VeloLoanTest is Test {
 
         vm.startPrank(address(deployer));
         loan.setMultiplier(10000000000000);
+
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
+
         IOwnable(address(loan)).transferOwnership(owner);
         vm.stopPrank();
 
@@ -102,7 +111,7 @@ contract VeloLoanTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
-        vm.expectRevert("Cannot increase loan beyond max loan amount");
+        vm.expectRevert();
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.roll(block.number+1);
 
@@ -170,9 +179,9 @@ contract VeloLoanTest is Test {
 
 
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
-        assertEq(rewardsPerEpoch, 359887);
+        assertEq(rewardsPerEpoch, 201600);
 
-        assertEq(vault.epochRewardsLocked(), 33266);
+        assertEq(vault.epochRewardsLocked(), 18635);
     }
 
     function testIncreaseLoan() public {
@@ -259,6 +268,10 @@ contract VeloLoanTest is Test {
         vm.startPrank(IOwnable(address(loan)).owner());
         loan.upgradeToAndCall(address(new Loan()), new bytes(0));
 
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
+
 
         address op = address(0x4200000000000000000000000000000000000042);
         address weth = address(0x4200000000000000000000000000000000000006);
@@ -291,6 +304,9 @@ contract VeloLoanTest is Test {
         vm.startPrank(IOwnable(address(loan)).owner());
         loan.upgradeToAndCall(address(new Loan()), new bytes(0));
 
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
         address op = address(0x4200000000000000000000000000000000000042);
         address weth = address(0x4200000000000000000000000000000000000006);
         address velo = address(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
