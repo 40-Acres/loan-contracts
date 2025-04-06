@@ -10,6 +10,8 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         uint256 _managedNft;
         mapping(address => bool) _isApprovedToken; // approved tokens for loan contract
         address _swapper;
+        mapping(address => uint256) _setUserPayoffToken; // token a user pays off first
+        mapping(address => bool) _usePayoffToken; // if user wants to pay off specific token first
     }
 
 
@@ -77,5 +79,20 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         require(swapper != address(0));
         LoanStorageStruct storage $ = _getLoanStorage();
         $._swapper = swapper;
+    }
+
+    function _setUserPayoffToken(address user, uint256 token) internal {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._setUserPayoffToken[user] = token;
+    }
+
+    function getUserPayoffToken(address user) public view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._setUserPayoffToken[user];
+    }
+
+    function _setUsePayoffToken(address user, bool use) internal onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._usePayoffToken[user] = use;
     }
 }

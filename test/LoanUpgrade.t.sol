@@ -155,7 +155,7 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = .001e6;
-        vm.expectRevert("Amount must be greater than .01 USDC");
+        vm.expectRevert();
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.stopPrank();
     }

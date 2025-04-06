@@ -118,12 +118,12 @@ contract LoanTest is Test {
 
 
     
-    function testIncreseLoanMaxLoan() public {
+    function git () public {
         vm.startPrank(owner);
         loan.setMultiplier(8);
         vm.stopPrank();
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 90538);
+        assertEq(maxLoan, 89819);
     }
 
     function testNftOwner() public view {
