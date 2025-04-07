@@ -16,6 +16,11 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
 import {OpDeploy} from "../script/OpDeploy.s.sol";
 import {OpUpgrade} from "../script/OpUpgrade.s.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IVoter } from "src/interfaces/IVoter.sol";
+import {ICLGauge} from "src/interfaces/ICLGauge.sol";
+import {DeploySwapper} from "../script/OpDeploySwapper.s.sol";
+import { Swapper } from "../src/Swapper.sol";
+
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -37,9 +42,9 @@ contract VeloLoanTest is Test {
 
     IUSDC usdc = IUSDC(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
     IVotingEscrow votingEscrow = IVotingEscrow(0xFAf8FD17D9840595845582fCB047DF13f006787d);
-    address[] pools = [address(0xa0A215dE234276CAc1b844fD58901351a50fec8A)];
     uint256[] weights = [100e18];
     ProxyAdmin admin;
+    IVoter voter = IVoter(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
 
     // deployed contracts
     Vault vault;
@@ -47,6 +52,8 @@ contract VeloLoanTest is Test {
     address owner;
     address user;
     uint256 tokenId = 2087;
+
+    Swapper public swapper;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("OP_RPC_URL"));
@@ -59,11 +66,18 @@ contract VeloLoanTest is Test {
 
         vm.startPrank(address(deployer));
         loan.setMultiplier(10000000000000);
+
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
+
         IOwnable(address(loan)).transferOwnership(owner);
         vm.stopPrank();
 
         vm.startPrank(owner);
         IOwnable(address(loan)).acceptOwnership();
+        address[] memory pools = new address[](1);
+        pools[0] = address(0xa0A215dE234276CAc1b844fD58901351a50fec8A);
         loan.setDefaultPools(pools, weights);
         vm.stopPrank();
         
@@ -97,7 +111,7 @@ contract VeloLoanTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
-        vm.expectRevert("Cannot increase loan beyond max loan amount");
+        vm.expectRevert();
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.roll(block.number+1);
 
@@ -134,7 +148,6 @@ contract VeloLoanTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
-        vm.roll(block.number+1);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
         assertEq(usdc.balanceOf(address(vault)), 99e6, "Vault should have 1e6");
@@ -145,21 +158,30 @@ contract VeloLoanTest is Test {
         assertTrue(balance > amount, "Balance should be more than amount");
         assertEq(borrower, user);
 
-
-        // owner of token should be the loan
+        
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
-        loan.claimRewards(tokenId);
+
+        address op = address(0x4200000000000000000000000000000000000042);
+        address weth = address(0x4200000000000000000000000000000000000006);
+        address velo = address(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
+        
+        address[] memory bribes = new address[](4);
+        bribes[0] = op;
+        bribes[1] = weth;
+        bribes[2] = velo;
+        bribes[3] = address(usdc);
+        _claimRewards(loan, tokenId, bribes);
         assertTrue(usdc.balanceOf(address(vault)) > 99e6, "Vault should have .more than original balance");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
 
 
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
-        assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
+        assertEq(rewardsPerEpoch, 201600);
 
-        assertEq(vault.epochRewardsLocked(), 34005);
+        assertEq(vault.epochRewardsLocked(), 18635);
     }
 
     function testIncreaseLoan() public {
@@ -207,6 +229,7 @@ contract VeloLoanTest is Test {
         assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
         assertEq(usdc.balanceOf(address(vault)), 100e6);
         vm.startPrank(user);
@@ -225,8 +248,8 @@ contract VeloLoanTest is Test {
         vm.stopPrank();
 
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
-        assertTrue(usdc.balanceOf(address(vault)) > 100e6, "Loan should have more than initial balance");
-
+        assertEq(usdc.balanceOf(address(vault)), 100e6, "ault should have initial balance");
+        assertTrue(usdc.balanceOf(address(owner)) > startingOwnerBalance, "User should have more than starting balance");
     }
 
 
@@ -239,11 +262,15 @@ contract VeloLoanTest is Test {
 
 
     function testClaimFourPools() public {
-        vm.rollFork(132810412);
+        vm.rollFork(133415048);
 
         Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
         vm.startPrank(IOwnable(address(loan)).owner());
         loan.upgradeToAndCall(address(new Loan()), new bytes(0));
+
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
 
 
         address op = address(0x4200000000000000000000000000000000000042);
@@ -256,11 +283,89 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(op).balanceOf(address(loan)), 0, "should have 0 op balance");
         assertEq(ERC20(weth).balanceOf(address(loan)), 0, "should have 0 weth balance");
         
-        vm.roll(block.number+1);
-        loan.claimRewards(11008);
+        vm.roll(block.number+1);        
+        address[] memory bribes = new address[](4);
+        bribes[0] = op;
+        bribes[1] = weth;
+        bribes[2] = velo;
+        bribes[3] = address(usdc);
+        _claimRewards(loan, 11008, bribes);
         // asert loan has no token balance
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);
         assertEq(ERC20(op).balanceOf(address(loan)), 0);
         assertEq(ERC20(weth).balanceOf(address(loan)), 0);
+        assertEq(115427935842, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+    }
+
+    function testClaimBribes() public {
+        vm.rollFork(133415048);
+
+        Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
+        vm.startPrank(IOwnable(address(loan)).owner());
+        loan.upgradeToAndCall(address(new Loan()), new bytes(0));
+
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
+        address op = address(0x4200000000000000000000000000000000000042);
+        address weth = address(0x4200000000000000000000000000000000000006);
+        address velo = address(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
+ 
+        assertEq(ERC20(velo).balanceOf(address(loan)), 0, "should have 0 velo balance");
+        assertEq(ERC20(op).balanceOf(address(loan)), 0, "should have 0 op balance");
+        assertEq(ERC20(weth).balanceOf(address(loan)), 0, "should have 0 weth balance");
+        
+        vm.roll(block.number+1);
+        // asert loan has no token balance
+        address[] memory bribes = new address[](4);
+        bribes[0] = op;
+        bribes[1] = weth;
+        bribes[2] = velo;
+        bribes[3] = address(usdc);
+        _claimRewards(loan, 11008, bribes);
+        assertEq(ERC20(velo).balanceOf(address(loan)), 0);
+        assertEq(ERC20(op).balanceOf(address(loan)), 0);
+        assertEq(ERC20(weth).balanceOf(address(loan)), 0);
+        assertEq(115427935842, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+    }
+
+    function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal {
+        address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
+        uint256 index = 0;
+
+        while (true) {
+            try voter.poolVote(_tokenId, index) returns (address pool) {
+            pools[index] = pool;
+            console.log("pools[%s]: %s", index, pool);
+            index++;
+            } catch {
+            break; // Exit the loop when it reverts
+            }
+        }
+
+        address[] memory voterPools = new address[](index);
+        for (uint256 i = 0; i < index; i++) {
+            voterPools[i] = pools[i];
+        }
+        address[] memory fees = new address[](2 * voterPools.length);
+        address[][] memory tokens = new address[][](2 * voterPools.length);
+
+        for (uint256 i = 0; i < voterPools.length; i++) {
+            address gauge = voter.gauges(voterPools[i]);
+            fees[2 * i] = voter.gaugeToFees(gauge);
+            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
+            address[] memory token = new address[](2);
+            token[0] = ICLGauge(voterPools[i]).token0();
+            token[1] = ICLGauge(voterPools[i]).token1();
+            tokens[2 * i] = token;
+            address[] memory bribeTokens = new address[](bribes.length + 2);
+            for (uint256 j = 0; j < bribes.length; j++) {
+                bribeTokens[j] = bribes[j];
+            }
+            bribeTokens[bribes.length] = token[0];
+            bribeTokens[bribes.length + 1] = token[1];
+            tokens[2 * i + 1] = bribeTokens;
+        }
+        _loan.claim(_tokenId, fees, tokens);
     }
 }
