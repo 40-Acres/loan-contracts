@@ -66,6 +66,8 @@ contract VeloLoanTest is Test {
 
         vm.startPrank(address(deployer));
         loan.setMultiplier(10000000000000);
+        loan.setLenderPremium(2000);
+        loan.setProtocolFee(500); // 5% protocol fee
 
         DeploySwapper swapperDeploy = new DeploySwapper();
         swapper = Swapper(swapperDeploy.deploy());

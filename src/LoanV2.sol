@@ -25,24 +25,24 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     // parametees introduced after initial deployment are in NamedStorage contracts
     IVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
-    address public _pool; // pool to vote on to receive fees
+    address private _pool; // deprecated
     IERC20 internal _usdc;
     IERC20 internal _aero;
     IVotingEscrow internal _ve;
     IAerodromeRouter internal _aeroRouter;
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
-    address public _vault;
+    address internal _vault;
 
-    bool public _paused;
+    bool internal _paused;
     uint256 public _outstandingCapital;
     uint256 public  _multiplier; // rewards rate multiplier
 
     mapping(uint256 => LoanInfo) public _loanDetails;
-    mapping(address => bool) public _approvedTokens; // deprecated
+    mapping(address => bool) private _approvedTokens; // deprecated
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
-    uint256 public _lastEpochPaid; // deprecated
+    uint256 private _lastEpochPaid; // deprecated
 
     
     // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
@@ -71,11 +71,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     // Pools each token votes on for this epoch
-    address[] public _defaultPools;
+    address[] private _defaultPools;
     // Weights for each pool (must equal length of _defaultPools)
-    uint256[] public _defaultWeights;
+    uint256[] private _defaultWeights;
     // Time when the default pools were last changed
-    uint256 public _defaultPoolChangeTime;
+    uint256 private _defaultPoolChangeTime;
 
     
     /**
@@ -173,7 +173,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     event VeNftIncreased(address indexed user, uint256 indexed tokenId, uint256 amount);
 
-
+    event OriginationFeePaid(uint256 tokenId, address borrower, uint256 amount);
 
     /** ERROR CODES */
     error TokenNotLocked();
@@ -215,24 +215,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _ve.ownerOf(tokenId) == msg.sender
         );
 
-
-        _loanDetails[tokenId] = LoanInfo({
-            balance: 0,
-            borrower: msg.sender,
-            timestamp: block.timestamp,
-            outstandingCapital: 0,
-            tokenId: tokenId,
-            zeroBalanceOption: zeroBalanceOption,
-            pools: new address[](0),
-            voteTimestamp: 0,
-            claimTimestamp: 0,
-            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
-            unpaidFees: 0,
-            preferredToken: address(0),
-            increasePercentage: 0
-        });
-        
-
             // if we are on the last day of the epoch, vote on the default pools
         uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;
         if (block.timestamp > lastDayStart && canVoteOnPool(tokenId)) {
@@ -250,6 +232,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _ve.lockPermanent(tokenId);
         }
 
+        _loanDetails[tokenId] = LoanInfo({
+            balance: 0,
+            borrower: msg.sender,
+            timestamp: block.timestamp,
+            outstandingCapital: 0,
+            tokenId: tokenId,
+            zeroBalanceOption: zeroBalanceOption,
+            pools: new address[](0),
+            voteTimestamp: 0,
+            claimTimestamp: 0,
+            weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
+            unpaidFees: 0,
+            preferredToken: address(0),
+            increasePercentage: 0
+        });
+        
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
         addTotalWeight(_loanDetails[tokenId].weight);
 
@@ -269,9 +267,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId,
         uint256 amount
     ) public  {
-        require(amount > .01e6, InvalidLoanAmount());
+        require(amount > .01e6);
         require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
-        require(confirmUsdcPrice(), PriceNotConfirmed());
+        require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
 
         require(
@@ -279,7 +277,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             NotOwnerOfToken(tokenId, loan.borrower)
         );
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
-        require(amount <= maxLoan, InvalidLoanAmount());
+        require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.unpaidFees += originationFee;
         loan.balance += amount + originationFee;
@@ -287,6 +285,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _outstandingCapital += amount;
         require(_usdc.transferFrom(_vault, msg.sender, amount));
         emit FundsBorrowed(tokenId, loan.borrower, amount);
+
+       // set a default payoff token if not set
+       if(getUserPayoffToken(loan.borrower)== 0) {
+           super._setUserPayoffToken(loan.borrower, tokenId);
+       }
     }
 
     /**
@@ -498,12 +501,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             if(feesPaid > amount) {
                 feesPaid = amount;
             }
+            // cap feesPaid at 5% of the total payment amount if payment is from rewards
+            uint256 maxFees = (amount * 500) / 10000; // 5%
+            if (feesPaid > maxFees && !isManual) {
+                feesPaid = maxFees;
+            }
             amount -= feesPaid;
             loan.unpaidFees -= feesPaid;
             loan.balance -= feesPaid;
             require(_usdc.transfer(owner(), feesPaid));
-            emit LoanPaid(tokenId, loan.borrower, feesPaid, ProtocolTimeLibrary.epochStart(block.timestamp), isManual);
-            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
+            emit OriginationFeePaid(tokenId, loan.borrower, feesPaid);
         }
 
         // if user has an increase percentage set, increase the veNFT amount
@@ -517,17 +524,33 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount -= amountToIncrease;
         }
 
+
        uint256 payoffToken = getUserPayoffToken(loan.borrower);
        // set a default payoff token if not set
        if(payoffToken == 0) {
            super._setUserPayoffToken(loan.borrower, tokenId);
            payoffToken = tokenId;
        }
+
+        if(payoffToken != tokenId && !isManual) {
+            LoanInfo memory payoffLoan = _loanDetails[payoffToken];
+            uint256 payoffAmount = amount;
+            if(payoffAmount >= payoffLoan.balance) {
+                payoffAmount = payoffLoan.balance; // cap the payment to the balance of the new loan
+            }
+            _pay(payoffToken, payoffAmount, isManual);
+            amount -= payoffAmount;
+            if (amount == 0) {
+                return; // all payment has been handled
+            }
+        }
+
         // process the payment
         uint256 excess = 0;
-        if (amount > loan.balance) {
+        if (amount >= loan.balance) {
             excess = amount - loan.balance;
             amount = loan.balance;
+            _setUserPayoffToken(loan.borrower, 0); // reset the payoff token if the loan is fully paid
         }
         loan.balance -= amount;
         if (amount > loan.outstandingCapital) {
@@ -727,8 +750,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // if user has an increase percentage set, increase the veNFT amount
 
-        uint256 remaining = amount - protocolFee - lenderPremium;
-        remaining = _increaseNft(loan, remaining);
+        uint256 remaining = amount - protocolFee - lenderPremium - _increaseNft(loan, amount);
         _pay(tokenId, remaining, false);
         claimRebase(loan);
     }
@@ -737,23 +759,23 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev Internal function to increase the NFT-related value for a loan.
      * @param loan The LoanInfo struct containing details of the loan.
      * @param claimedRewards The amount of rewards that have been claimed.
-     * @return remaining The remaining value after the operation.
+     * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
-    function _increaseNft(LoanInfo memory loan, uint256 claimedRewards) internal  returns (uint256 remaining) {
-        uint256 amountToIncrease = (claimedRewards * loan.increasePercentage) / 10000;
-        if(amountToIncrease == 0) {
-            return claimedRewards; // No increase9
+    function _increaseNft(LoanInfo memory loan, uint256 claimedRewards) internal  returns (uint256 spent) {
+        if(loan.increasePercentage == 0) {
+            return 0; // No increase
         }
         uint256 increasePercentage = loan.increasePercentage;
-        if(loan.balance > 0 && loan.increasePercentage > 25000) {
-            increasePercentage = 25000; // Cap the increase percentage to 25% max
+        if(loan.balance > 0 && loan.increasePercentage > 2500) {
+            increasePercentage = 2500; // Cap the increase percentage to 25% max
         }
+        uint256 amountToIncrease = (claimedRewards * increasePercentage) / 10000;
         uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
         _aero.approve(address(_ve), amountOut);
         _ve.increaseAmount(loan.tokenId, amountOut);
         emit VeNftIncreased(loan.borrower, loan.tokenId, amountOut);
         addTotalWeight(amountOut);
-        return claimedRewards - amountToIncrease;
+        return amountToIncrease;
     }
 
     /**
@@ -908,9 +930,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function getZeroBalanceFee() public view override returns (uint256) {
         uint256 zeroBalanceFee = RateStorage.getZeroBalanceFee();
-        if (zeroBalanceFee == 0) {
-            return 100; // 1%
-        }
         return zeroBalanceFee;
     }
 
@@ -922,9 +941,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function getRewardsRate() public view override returns (uint256) {
         uint256 rewardsRate = RateStorage.getRewardsRate();
-        if (rewardsRate == 0) {
-            return 113; 
-        }
         return rewardsRate;
     }
 
@@ -936,9 +952,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function getLenderPremium() public view override returns (uint256) {
         uint256 lenderPremium = RateStorage.getLenderPremium();
-        if (lenderPremium == 0) {
-            return 2000; // 20%
-        }
         return lenderPremium;
     }
 
@@ -950,9 +963,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function getProtocolFee() public view override returns (uint256) {
         uint256 protocolFee = RateStorage.getProtocolFee();
-        if (protocolFee == 0) {
-            return 500; // 5%
-        }
         return protocolFee;
     }
 
@@ -1164,14 +1174,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      The borrower must be the owner of the loan token.
      * @param tokenId The unique identifier of the loan.
      */
-    function setPayoffToken(uint256 tokenId) public {
-        LoanInfo memory loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender, NotOwnerOfToken(tokenId, loan.borrower));
+    function setPayoffToken(uint256 tokenId, bool enable) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
         require(loan.balance > 0);
         super._setUserPayoffToken(loan.borrower, tokenId);
-        super._setUsePayoffToken(loan.borrower, true);
+        super._setUserPayoffTokenOption(loan.borrower, enable);
     }
 
+    function setPayoffTokenOption(bool enabled) public {
+        super._setUserPayoffTokenOption(msg.sender, enabled);
+    }
 
     /** ORACLE */
     

@@ -882,6 +882,49 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
+    /* Rate Methods */
+
+    /**
+     * @notice Retrieves the zero balance fee percentage.
+     * @dev This function checks the zero balance fee stored in the RateStorage contract.
+     *      If the zero balance fee is not set (returns 0), it defaults to 1%.
+     * @return The zero balance fee percentage (in basis points, where 100 = 1%).
+     */
+    function getZeroBalanceFee() public view override returns (uint256) {
+        uint256 zeroBalanceFee = RateStorage.getZeroBalanceFee();
+        if (zeroBalanceFee == 0) {
+            return 100; // 1%
+        }
+        return zeroBalanceFee;
+    }
+
+    /**
+     * @notice Retrieves the rewards rate for the current epoch.
+     * @dev This function checks the rewards rate stored in the RateStorage contract.
+     *      If the rewards rate is not set (returns 0), it defaults to 113 (11.3%).
+     * @return The rewards rate percentage (in basis points, where 113 = 1.13%).
+     */
+    function getRewardsRate() public view override returns (uint256) {
+        uint256 rewardsRate = RateStorage.getRewardsRate();
+        if (rewardsRate == 0) {
+            return 113; 
+        }
+        return rewardsRate;
+    }
+
+    /**
+     * @notice Retrieves the lender premium percentage.
+     * @dev This function checks the lender premium stored in the RateStorage contract.
+     *      If the lender premium is not set (returns 0), it defaults to 20%.
+     * @return The lender premium percentage (in basis points, where 2000 = 20%).
+     */
+    function getLenderPremium() public view override returns (uint256) {
+        uint256 lenderPremium = RateStorage.getLenderPremium();
+        if (lenderPremium == 0) {
+            return 2000; // 20%
+        }
+        return lenderPremium;
+    }
 
     /**
      * @notice Retrieves the protocol fee percentage.

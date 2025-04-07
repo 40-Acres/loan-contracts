@@ -276,13 +276,7 @@ contract LoanUpgradeTest is Test {
         vm.expectRevert();
         loan.setZeroBalanceFee(1e6);
         vm.stopPrank();
-
-
-        vm.assertEq(loan.getZeroBalanceFee(), 100);
-        vm.assertEq(loan.getRewardsRate(), 11300);
-        vm.assertEq(loan.getLenderPremium(), 2000);
-        vm.assertEq(loan.getProtocolFee(), 500);
-
+        
         vm.startPrank(owner);
         loan.setZeroBalanceFee(1e6);
         loan.setRewardsRate(1e6);

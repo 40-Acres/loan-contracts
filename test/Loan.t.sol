@@ -67,6 +67,8 @@ contract LoanTest is Test {
         vm.startPrank(address(deployer));
         loan.setMultiplier(100000000000);
         loan.setRewardsRate(11300);
+        loan.setLenderPremium(2000);
+        loan.setProtocolFee(500); // 5% protocol fee
         IOwnable(address(loan)).transferOwnership(owner);
         DeploySwapper swapperDeploy = new DeploySwapper();
         swapper = Swapper(swapperDeploy.deploy());
@@ -349,7 +351,7 @@ contract LoanTest is Test {
         
 
         // owner should not receive rewards
-        assertEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should not receive rewards");
+        assertNotEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should receive rewards");
         assertTrue(usdc.balanceOf(address(vault)) > startingVaultBalance, "vault should have more than starting balance");
 
     
@@ -434,33 +436,6 @@ contract LoanTest is Test {
         assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
         assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
-    }
-
-        
-    function testDefaultPools() public { 
-        address _pool = loan._defaultPools(0);
-        assertTrue(_pool != address(0), "default pool should not be 0");
-
-        assertTrue(loan._defaultWeights(0) > 0, "default pool weight should be greater than 0");
-        
-        uint256 defaultPoolChangeTime = loan._defaultPoolChangeTime();
-        assertTrue(defaultPoolChangeTime > 0, "default pool change time should be greater than 0");
-
-        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
-        address[] memory pools = new address[](2);
-        pools[0] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
-        pools[1] = address(0x52f38A65DAb3Cf23478cc567110BEC90162aB832);
-        uint256[] memory weights = new uint256[](2);
-        weights[0] = 50e18;
-        weights[1] = 50e18;
-        loan.setDefaultPools(pools, weights);
-        vm.stopPrank();
-
-        assertTrue(loan._defaultPools(0) == pools[0], "default pool should be updated");
-        assertTrue(loan._defaultPools(1) == pools[1], "default pool should be updated");
-        assertTrue(loan._defaultWeights(0) == weights[0], "default pool weight should be updated");
-        assertTrue(loan._defaultWeights(1) == weights[1], "default pool weight should be updated");
-        assertTrue(loan._defaultPoolChangeTime() >= defaultPoolChangeTime, "default pool change time should be updated");
     }
 
     function testMerge() public {

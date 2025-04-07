@@ -13,7 +13,6 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         uint256 _utilizationRate;
         uint256 _vaultRelayRate;
         uint256 _actualRewardsRate;
-        mapping(uint256 => uint256) _actualRewardsRatePerEpoch;
     }
 
 
@@ -30,7 +29,7 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
     /* Rate Methods */
     function getZeroBalanceFee() public view virtual returns (uint256) {
         RateStorageStruct storage $ = _getRateStorage();
-        return $._zeroBalanceFee;
+        return $._zeroBalanceFee != 0 ? $._zeroBalanceFee : 100;
 
     }
     function getRewardsRate() public view virtual returns (uint256) {
@@ -67,4 +66,5 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         RateStorageStruct storage $ = _getRateStorage();
         $._protocolFee = protocolFee;
     }
+
 }

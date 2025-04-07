@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
+
 
 abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:LoanStorage
@@ -10,8 +12,9 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         uint256 _managedNft;
         mapping(address => bool) _isApprovedToken; // approved tokens for loan contract
         address _swapper;
-        mapping(address => uint256) _setUserPayoffToken; // token a user pays off first
-        mapping(address => bool) _usePayoffToken; // if user wants to pay off specific token first
+        mapping(address => uint256) _userPayoffToken; // token a user pays off first
+        mapping(address => bool) _userPayoffTokenOption; // if user wants to pay off specific token first
+        mapping(uint256 => uint256) _totalWeightPerEpoch;
     }
 
 
@@ -37,12 +40,15 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function addTotalWeight(uint256 weights) internal  {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights += weights;
+        $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
+
     }
 
     /// @dev Subtract total weight for the loan contract
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights -= weights;
+        $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
     }
 
     /// @dev Set the managed NFT for the loan contract
@@ -52,13 +58,13 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     }
 
     /// @dev Get the managed NFT for the loan contract
-    function getManagedNft() public view virtual returns (uint256) {
+    function getManagedNft() internal view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._managedNft;
     }
 
     /// @dev Check if the token is approved for the loan contract
-    function isApprovedToken(address token) public view virtual returns (bool) {
+    function isApprovedToken(address token) internal view virtual returns (bool) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._isApprovedToken[token];
     }
@@ -69,30 +75,39 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     }
 
     /// @dev Get the swapper address for the loan contract
-    function getSwapper() public view virtual returns (address) {
+    function getSwapper() internal view virtual returns (address) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._swapper;
     }
 
     /// @dev Set the swapper address for the loan contract
     function setSwapper(address swapper) public onlyOwner virtual {
-        require(swapper != address(0));
         LoanStorageStruct storage $ = _getLoanStorage();
         $._swapper = swapper;
     }
 
     function _setUserPayoffToken(address user, uint256 token) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
-        $._setUserPayoffToken[user] = token;
+        $._userPayoffToken[user] = token;
     }
 
     function getUserPayoffToken(address user) public view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
-        return $._setUserPayoffToken[user];
+        return $._userPayoffToken[user];
     }
 
-    function _setUsePayoffToken(address user, bool use) internal onlyOwner {
+    function _setUserPayoffTokenOption(address user, bool option) internal onlyOwner {
         LoanStorageStruct storage $ = _getLoanStorage();
-        $._usePayoffToken[user] = use;
+        $._userPayoffTokenOption[user] = option;
+    }
+
+    function getUsePayoffToken(address user) public view virtual returns (bool) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._userPayoffTokenOption[user];
+    }
+
+    function getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._totalWeightPerEpoch[epoch];
     }
 }
