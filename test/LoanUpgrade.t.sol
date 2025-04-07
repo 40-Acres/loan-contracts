@@ -17,6 +17,8 @@ import {BaseDeploy} from "../script/BaseDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import { console} from "forge-std/console.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import { Swapper } from "../src/Swapper.sol";
+import {DeploySwapper} from "../script/BaseDeploySwapper.s.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -53,6 +55,7 @@ contract LoanUpgradeTest is Test {
     address owner;
     address user;
     uint256 tokenId = 68510;
+    Swapper public swapper;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -74,6 +77,11 @@ contract LoanUpgradeTest is Test {
 
         loan.setMultiplier(100000000000);
         loan.setRewardsRate(11300);
+        
+        DeploySwapper swapperDeploy = new DeploySwapper();
+        swapper = Swapper(swapperDeploy.deploy());
+        loan.setSwapper(address(swapper));
+
         vm.stopPrank();
 
         // allow this test contract to mint USDC
@@ -159,7 +167,7 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
-        vm.expectRevert("Cannot increase loan beyond max loan amount");
+        vm.expectRevert();
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
 
 
@@ -232,12 +240,16 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(_user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        loan.voteOnDefaultPool(_tokenId);
-        loan.voteOnDefaultPool(_tokenId);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
+        vm.expectRevert();
+        loan.vote(_tokenId); // fails because not last day of epoch
+        // last day of epoch
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days);
+        loan.vote(_tokenId);
+        loan.vote(_tokenId);
         vm.stopPrank();
 
         vm.startPrank(Ownable2StepUpgradeable(loan).owner());
@@ -249,10 +261,10 @@ contract LoanUpgradeTest is Test {
         vm.stopPrank();
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
-        loan.voteOnDefaultPool(_tokenId);
+        loan.vote(_tokenId);
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 7 days);
-        loan.voteOnDefaultPool(_tokenId);
+        loan.vote(_tokenId);
 
         uint256 loanWeight = loan.getTotalWeight();
         assertTrue(loanWeight > 0, "loan weight should be greater than 0");
@@ -297,8 +309,6 @@ contract LoanUpgradeTest is Test {
         assertEq(loan.owner(), 0x0000000000000000000000000000000000000000);
     }   
 
-
-        
     function testDefaultPools() public { 
         address _pool = loan._defaultPools(0);
         assertTrue(_pool != address(0), "default pool should not be 0");

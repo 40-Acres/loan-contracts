@@ -48,11 +48,6 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         return $._protocolFee;
     }
 
-    function getUtilizationRate() public view virtual returns (uint256) {
-        RateStorageStruct storage $ = _getRateStorage();
-        return $._utilizationRate;
-    }
-
     function setZeroBalanceFee(uint256 zeroBalanceFee) public onlyOwner {
         RateStorageStruct storage $ = _getRateStorage();
         $._zeroBalanceFee = zeroBalanceFee;
@@ -71,30 +66,5 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
     function setProtocolFee(uint256 protocolFee) public onlyOwner {
         RateStorageStruct storage $ = _getRateStorage();
         $._protocolFee = protocolFee;
-    }
-    
-    function setUtilizationRate(uint256 utilizationRate) public onlyOwner {
-        RateStorageStruct storage $ = _getRateStorage();
-        $._utilizationRate = utilizationRate;
-    }
-
-    function getActualRewardsRate() public view virtual returns (uint256) {
-        RateStorageStruct storage $ = _getRateStorage();
-        return $._actualRewardsRate;
-    }
-
-    function setActualRewardsRate(uint256 actualRewardsRate) internal {
-        RateStorageStruct storage $ = _getRateStorage();
-        $._actualRewardsRate = actualRewardsRate;
-    }
-
-    function setActualRewardsRatePerEpoch(uint256 epoch, uint256 actualRewardsRate) internal {
-        RateStorageStruct storage $ = _getRateStorage();
-        $._actualRewardsRatePerEpoch[epoch] = actualRewardsRate;
-    }
-
-    function getActualRewardsRatePerEpoch(uint256 epoch) public view virtual returns (uint256) {
-        RateStorageStruct storage $ = _getRateStorage();
-        return $._actualRewardsRatePerEpoch[epoch];
     }
 }
