@@ -261,7 +261,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             outstandingCapital: 0,
             tokenId: tokenId,
             zeroBalanceOption: zeroBalanceOption,
-            pools: new address ,
+            pools: new address[](0),
             voteTimestamp: 0,
             claimTimestamp: 0,
             weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
@@ -977,17 +977,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(_ve.ownerOf(managedNft) == address(this));
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == address(0));
-        // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
-        if (!lockedBalance.isPermanent) {
-            if (lockedBalance.end <= block.timestamp) {
-                revert("Token lock expired");
-            }
-            _ve.lockPermanent(tokenId);
-        }
+        uint256 beginningBalance = _ve.balanceOfNFTAt(managedNft, block.timestamp);
 
-        addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
         _ve.merge(tokenId, managedNft);
+        // add the balance gained from the merge to the managed NFT
+        addTotalWeight(_ve.balanceOfNFTAt(managedNft, block.timestamp) - beginningBalance);
     }
     
     /**

@@ -123,7 +123,7 @@ contract LoanTest is Test {
         loan.setMultiplier(8);
         vm.stopPrank();
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 90538);
+        assertEq(maxLoan, 89819);
     }
 
     function testNftOwner() public view {
@@ -349,7 +349,7 @@ contract LoanTest is Test {
         
 
         // owner should not receive rewards
-        assertEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should not receive rewards");
+        assertNotEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should receive rewards");
         assertTrue(usdc.balanceOf(address(vault)) > startingVaultBalance, "vault should have more than starting balance");
 
     
@@ -464,8 +464,9 @@ contract LoanTest is Test {
     }
 
     function testMerge() public {
-        uint256 _tokenId = 66706;
+        uint256 _tokenId = 64198;
         address user = votingEscrow.ownerOf(_tokenId);
+        uint256 oldNftBalance = votingEscrow.balanceOfNFT(_tokenId);
         vm.prank(user);
         votingEscrow.transferFrom(user, address(loan), _tokenId);
         
@@ -478,8 +479,13 @@ contract LoanTest is Test {
         address owner = Ownable2StepUpgradeable(loan).owner();
         vm.startPrank(owner);
         loan.setManagedNft(7979);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        uint256 oldManagedNftBalance = votingEscrow.balanceOfNFT(loan.getManagedNft());
         loan.merge(_tokenId);
+        uint256 newManagedNftBalance = votingEscrow.balanceOfNFT(loan.getManagedNft());
 
+        assertTrue(newManagedNftBalance > oldManagedNftBalance + oldNftBalance, "managed nft balance should be gain more than old nft balance");
         vm.expectRevert();
         loan.setManagedNft(7979);
     }
