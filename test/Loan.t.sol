@@ -345,9 +345,7 @@ contract LoanTest is Test {
         _claimRewards(loan, _tokenId, bribes);
 
         uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
-
         
-
         // owner should not receive rewards
         assertNotEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should receive rewards");
         assertTrue(usdc.balanceOf(address(vault)) > startingVaultBalance, "vault should have more than starting balance");
