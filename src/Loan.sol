@@ -261,7 +261,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             outstandingCapital: 0,
             tokenId: tokenId,
             zeroBalanceOption: zeroBalanceOption,
-            pools: new address ,
+            pools: new address[](0),
             voteTimestamp: 0,
             claimTimestamp: 0,
             weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
