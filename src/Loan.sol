@@ -633,6 +633,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || ((loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner || loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) && !takeFees)) {
+            if(takeFees) {
+                uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
+                amount -= zeroBalanceFee;
+                require(_usdc.transfer(owner(), zeroBalanceFee));
+            }
             _usdc.approve(_vault, amount);
             IERC4626(_vault).deposit(amount, loan.borrower);
             emit RewardsInvested(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
