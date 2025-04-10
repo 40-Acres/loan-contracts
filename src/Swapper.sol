@@ -6,6 +6,7 @@ pragma solidity ^0.8.28;
 import { IRouter } from "./interfaces/IRouter.sol";
 import { IPoolFactory } from "./interfaces/IPoolFactory.sol";
 import { IPool } from "./interfaces/IPool.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Swapper {
     address[] public supportedTokens;
@@ -142,4 +143,41 @@ contract Swapper {
 
         return  (amountIn * (10000 - SLIPPAGE)) / 10000;
     }
+
+
+
+
+    /**
+     * @dev Flattens a two-dimensional array of token addresses into a single-dimensional array.
+     * @param tokens A two-dimensional array of token addresses to be flattened.
+     * @return An array containing all token addresses from the input in a single dimension.
+     */
+    function flattenToken(address[][] memory tokens) public pure returns (address[] memory) {
+        uint256 totalLength = 0;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            totalLength += tokens[i].length;
+        }
+        address[] memory totalTokens = new address[](totalLength);
+        uint256 index = 0;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            for (uint256 j = 0; j < tokens[i].length; j++) {
+                totalTokens[index] = tokens[i][j];
+                index++;
+            }
+        }
+        return totalTokens;
+    }
+
+    /**
+     * @dev Retrieves the token balances of the contract for a given list of token addresses.
+     * @param tokens An array of ERC20 token addresses to query balances for.
+     * @return balances An array of token balances corresponding to the provided token addresses.
+     */
+    function getTokenBalances(address[] memory tokens) public view returns (uint256[] memory balances) {
+        balances = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            balances[i] = IERC20(tokens[i]).balanceOf(address(this));
+        }
+    }
+
 }

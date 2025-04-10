@@ -106,7 +106,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         return $._userPayoffTokenOption[user];
     }
 
-    function getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
+    function _getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._totalWeightPerEpoch[epoch];
     }
