@@ -32,7 +32,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     IAerodromeRouter internal _aeroRouter;
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
-    address internal _vault;
+    address public _vault;
 
     bool internal _paused;
     uint256 public _outstandingCapital;
@@ -156,7 +156,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the token representing the loan.
      */
     
-    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when a user's veNFT balance is increased.
      * @param user The address of the user whose veNFT balance is increased.
@@ -205,9 +205,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _ve.ownerOf(tokenId) == msg.sender
         );
 
-        // if we are on the last day of the epoch, vote on the default pools
-        uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;
-        if (block.timestamp > lastDayStart && canVoteOnPool(tokenId)) {
+        if (canVoteOnPool(tokenId) && _withinVotingWindow()) {
             _vote(tokenId);
         }
 
@@ -459,7 +457,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.balance -= feesPaid;
             _usdc.transfer(owner(), feesPaid);
             emit LoanPaid(tokenId, loan.borrower, feesPaid, ProtocolTimeLibrary.epochStart(block.timestamp), isManual);
-            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId);
+            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), feesPaid, loan.borrower, tokenId, address(_usdc));
             if(amount == 0) {
                 return;
             }
@@ -579,7 +577,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
             amount -= zeroBalanceFee;
             _usdc.transfer(owner(), zeroBalanceFee);
-            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
+            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId, address(_usdc));
 
             _usdc.approve(_vault, amount);
             IERC4626(_vault).deposit(amount, loan.borrower);
@@ -592,7 +590,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
             amount -= zeroBalanceFee;
             require(asset.transfer(owner(), zeroBalanceFee));
-            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
+            emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId, address(asset));
+             // Transfer the amount to the borrower
 
             require(asset.transfer(loan.borrower, amount));
             emit RewardsPaidtoOwner(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
@@ -636,9 +635,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Emit an event indicating that rewards have been claimed.
         emit RewardsClaimed(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
 
-        // Update the claim timestamp for the loan.
-        loan.claimTimestamp = block.timestamp;
-
         // Handle zero balance scenarios.
         if (loan.balance == 0) {
             _handleZeroBalance(tokenId, amount, false);
@@ -651,7 +647,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Calculate the protocol fee and lender premium percentages.
         uint256 protocolFeePercentage = getProtocolFee();
         uint256 lenderPremiumPercentage = getLenderPremium();
-
 
         // Calculate the protocol fee based on the rewards amount.
         uint256 protocolFee = (feeEligibleAmount * protocolFeePercentage) / 10000;
@@ -720,7 +715,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      It updates the vote timestamp and calls the internal _vote function.
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      */
-    function vote(uint256 tokenId) onlyLastDayOfEpoch public {
+    function vote(uint256 tokenId) public {
+        require(_withinVotingWindow());
         _vote(tokenId);
     }
 
@@ -737,12 +733,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(canVoteOnPool(tokenId) && !loan.voteManual) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 loan.voteTimestamp = block.timestamp;
-                loan.pools = _defaultPools;
             } catch { }
             return;
         } else {
             try _voter.poke(tokenId) { 
-                loan.voteTimestamp = block.timestamp; 
             } catch { }
         }
     }
@@ -848,6 +842,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return zeroBalanceFee;
     }
 
+
     /**
      * @notice Retrieves the rewards rate for the current epoch.
      * @dev This function checks the rewards rate stored in the RateStorage contract.
@@ -881,6 +876,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return protocolFee;
     }
 
+
     /* VIEW FUNCTIONS */
 
     /**
@@ -889,15 +885,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT).
      * @return balance The current balance of the loan.
      * @return borrower The address of the borrower.
-     * @return pools An array of addresses representing the pools associated with the loan.
      */
     function getLoanDetails(
         uint256 tokenId
-    ) public view returns (uint256 balance, address borrower, address[] memory pools) {
+    ) public view returns (uint256 balance, address borrower) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        return (loan.balance, loan.borrower, loan.pools);
+        return (loan.balance, loan.borrower);
     }
-
 
     /**
      * @notice Retrieves the total amount of active assets (outstanding capital).
@@ -973,23 +967,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         super.setManagedNft(tokenId);
     }
 
-
-    function userVote(
-        uint256 tokenId,
-        address[] memory pools,
-        uint256[] memory weights,
-        bool enable
-    ) public onlyOwner {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        if(!enable) {
-            loan.voteManual = false;
-        } 
-        _validatePoolChoices(pools, weights);
-        _voter.vote(tokenId, pools, weights);
-        loan.voteManual = true;
-    }
-
     /**
      * @notice Allows the owner to set the default pools and their respective weights.
      * @dev The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
@@ -1008,7 +985,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _defaultPoolChangeTime = block.timestamp;
     }
 
-
     function _validatePoolChoices(
         address[] memory pools,
         uint256[] memory weights
@@ -1018,10 +994,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         for (uint256 i = 0; i < pools.length; i++) {
             require(weights[i] > 0);
             require(_approvedPools[pools[i]]);
-            
-            // confirm pool is a valid gauge
-            address gauge = _voter.gauges(pools[i]);
-            require(ICLGauge(gauge).isPool());
             totalWeight += weights[i];
         }
         require(totalWeight == 100e18);
@@ -1038,6 +1010,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     function setApprovedPools(address[] calldata pools, bool enable) public onlyOwner {
         for (uint256 i = 0; i < pools.length; i++) {
+            // confirm pool is a valid gauge
+            address gauge = _voter.gauges(pools[i]);
+            require(ICLGauge(gauge).isPool());
             _approvedPools[pools[i]] = enable;
         }
     }
@@ -1093,6 +1068,24 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         );
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
+    }
+    
+
+
+    function userVote(
+        uint256 tokenId,
+        address[] memory pools,
+        uint256[] memory weights,
+        bool enable
+    ) public onlyOwner {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        if(!enable) {
+            loan.voteManual = false;
+        } 
+        _validatePoolChoices(pools, weights);
+        _voter.vote(tokenId, pools, weights);
+        loan.voteManual = true;
     }
     
     /**
@@ -1152,17 +1145,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return answer >= 99900000;
     }
 
-    /** MODIFIERS */
     
+
     /**
-     * @notice Modifier to restrict function calls to the last day of the epoch.
-     * @dev This modifier checks if the current block timestamp is within the last day of the epoch.
+     * @dev 40 Acres voting window is two hours prior to voting end
      */
-    modifier onlyLastDayOfEpoch() {
-        uint256 timestamp = block.timestamp;
-        uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;
-        if (timestamp < lastDayStart) revert();
-        _;
+    function _withinVotingWindow() internal view returns (bool) {
+        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 2 hours;
     }
 
 }

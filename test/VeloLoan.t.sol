@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Loan} from "../src/VeloLoan.sol";
+import {Loan} from "../src/LoanV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
@@ -80,6 +80,7 @@ contract VeloLoanTest is Test {
         IOwnable(address(loan)).acceptOwnership();
         address[] memory pools = new address[](1);
         pools[0] = address(0xa0A215dE234276CAc1b844fD58901351a50fec8A);
+        loan.setApprovedPools(pools, true);
         loan.setDefaultPools(pools, weights);
         vm.stopPrank();
         
@@ -124,7 +125,7 @@ contract VeloLoanTest is Test {
         assertTrue(usdc.balanceOf(address(user)) > 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
 
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount);
         assertEq(borrower, user);
 
@@ -156,7 +157,7 @@ contract VeloLoanTest is Test {
         assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "Owner should have starting balance");
 
 
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount, "Balance should be more than amount");
         assertEq(borrower, user);
 
@@ -200,7 +201,7 @@ contract VeloLoanTest is Test {
         assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
 
         assertEq(loan.activeAssets(),1e6, "ff");
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount, "Balance should be 1e6");
         assertEq(borrower, user);
 
@@ -208,7 +209,7 @@ contract VeloLoanTest is Test {
         loan.increaseLoan(tokenId, amount);
         vm.stopPrank();
 
-        (balance, borrower,) = loan.getLoanDetails(tokenId);
+        (balance, borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount, "Balance should be more than amount");
         assertEq(borrower, user);
         assertEq(loan.activeAssets(),2e6, "ff");
@@ -296,7 +297,7 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);
         assertEq(ERC20(op).balanceOf(address(loan)), 0);
         assertEq(ERC20(weth).balanceOf(address(loan)), 0);
-        assertEq(115427935842, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+        assertEq(115428570335, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
     }
 
     function testClaimBribes() public {
@@ -328,7 +329,7 @@ contract VeloLoanTest is Test {
         assertEq(ERC20(velo).balanceOf(address(loan)), 0);
         assertEq(ERC20(op).balanceOf(address(loan)), 0);
         assertEq(ERC20(weth).balanceOf(address(loan)), 0);
-        assertEq(115427935842, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
+        assertEq(115428570335, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
     }
 
     function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal {

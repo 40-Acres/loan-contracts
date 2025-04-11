@@ -148,7 +148,7 @@ contract LoanTest is Test {
         assertTrue(usdc.balanceOf(address(user)) > 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
 
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount);
         assertEq(borrower, user);
 
@@ -181,7 +181,7 @@ contract LoanTest is Test {
         assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "Owner should have starting balance");
 
 
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount, "Balance should be more than amount");
         assertEq(borrower, user);
 
@@ -226,7 +226,7 @@ contract LoanTest is Test {
         assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "Owner should have starting balance");
 
 
-        (uint256 balance, address borrower,) = loan.getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount, "Balance should be more than amount");
         assertEq(borrower, user);
 
@@ -258,16 +258,14 @@ contract LoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing);
         vm.roll(block.number+1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days + 22 hours);
         loan.vote(tokenId);
         console.log("vote");
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
 
         assertEq(loan.activeAssets(),1e6, "ff");
-        (uint256 balance, address borrower, address[] memory pools) = loan.getLoanDetails(tokenId);
-        assertEq(pools.length, 1, "should have 1 pool");
-        assertEq(pools[0], pool[0], "should be in pool");
+        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance > amount, "Balance should be 1e6");
         assertEq(borrower, user);
 
@@ -275,7 +273,7 @@ contract LoanTest is Test {
         loan.increaseLoan(tokenId, amount);
         vm.stopPrank();
 
-        (balance, borrower, ) = loan.getLoanDetails(tokenId);
+        (balance, borrower) = loan.getLoanDetails(tokenId);
         assertTrue(balance> amount, "Balance should be more than amount");
         assertEq(borrower, user);
         assertEq(loan.activeAssets(),2e6, "ff");
