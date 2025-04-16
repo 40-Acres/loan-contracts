@@ -49,7 +49,11 @@ contract LoanDemo {
         _loan.requestLoan(
             tokenId,
             amount,
-            zeroBalanceOption
+            zeroBalanceOption,
+            0, 
+            false, 
+            false,
+            address(0)
         );
     }
 

@@ -633,12 +633,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || ((loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner || loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) && !takeFees)) {
-            if(takeFees) {
-                uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000; 
-                amount -= zeroBalanceFee;
-                require(_usdc.transfer(owner(), zeroBalanceFee));
-                emit ProtocolFeePaid(ProtocolTimeLibrary.epochStart(block.timestamp), zeroBalanceFee, loan.borrower, tokenId);
-            }
             _usdc.approve(_vault, amount);
             IERC4626(_vault).deposit(amount, loan.borrower);
             emit RewardsInvested(ProtocolTimeLibrary.epochStart(block.timestamp), amount, loan.borrower, tokenId);
@@ -937,12 +931,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT).
      * @return balance The current balance of the loan.
      * @return borrower The address of the borrower.
+     * @return pools An array of addresses representing the pools associated with the loan.
      */
     function getLoanDetails(
         uint256 tokenId
-    ) public view returns (uint256 balance, address borrower) {
+    ) public view returns (uint256 balance, address borrower, address[] memory pools) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        return (loan.balance, loan.borrower);
+        return (loan.balance, loan.borrower, loan.pools);
     }
 
 
@@ -1028,24 +1023,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] memory pools,
         uint256[] memory weights
     ) public onlyOwner {
-        require(pools.length == weights.length, "Pools and weights length mismatch");
-         // ensure pools are valid
+        require(pools.length == weights.length);
         for (uint256 i = 0; i < pools.length; i++) {
-            require(pools[i] != address(0), "Pool address cannot be zero");
-            require(weights[i] > 0, "Weight must be greater than zero");
+            require(pools[i] != address(0));
+            require(weights[i] > 0);
 
             // confirm pool is a valid gauge
             address gauge = _voter.gauges(pools[i]);
-            require(gauge != address(0), "Invalid gauge");
-             // confirm pool is a valid pool
-            require(ICLGauge(gauge).isPool(), "Invalid pool");
+            require(gauge != address(0));
+            require(ICLGauge(gauge).isPool());
         }
         // ensure weights equal 100e18
         uint256 totalWeight = 0;
         for (uint256 i = 0; i < weights.length; i++) {
             totalWeight += weights[i];
         }
-        require(totalWeight == 100e18, "Weights must sum to 100e18");
+        require(totalWeight == 100e18);
         _defaultPools = pools;
         _defaultWeights = weights;
         _defaultPoolChangeTime = block.timestamp;
