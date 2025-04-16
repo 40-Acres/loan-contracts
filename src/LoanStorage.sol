@@ -96,12 +96,12 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         return $._userPayoffToken[user];
     }
 
-    function _setUserPayoffTokenOption(address user, bool option) internal onlyOwner {
+    function _setUserPayoffTokenOption(address user, bool option) internal  {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._userPayoffTokenOption[user] = option;
     }
 
-    function getUsePayoffToken(address user) public view virtual returns (bool) {
+    function userUsesPayoffToken(address user) public view virtual returns (bool) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._userPayoffTokenOption[user];
     }
