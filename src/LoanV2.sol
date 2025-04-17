@@ -67,7 +67,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 unpaidFees; // unpaid fees for the loan
         address preferredToken; // preferred token to receive for zero balance option
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
-        bool    voteManual; // votes manually on pools
         bool    topUp; // automatically tops up loan balance after rewards are claimed
     }
 
@@ -194,15 +193,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the token to be used as collateral.
      * @param amount The amount of the loan to be requested. If 0, no loan amount is added initially.
      * @param zeroBalanceOption The option specifying how zero balance scenarios should be handled.
+     * @param increasePercentage The percentage of the rewards to reinvest into venft.
+     * @param topUp Indicates whether to top up the loan amount.
      */
     function requestLoan(
         uint256 tokenId,
         uint256 amount,
         ZeroBalanceOption zeroBalanceOption,
         uint256 increasePercentage,
-        bool voteManual,
-        bool topUp,
-        address preferredToken
+        bool topUp
     ) public  {
         require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
@@ -215,10 +214,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _ve.lockPermanent(tokenId);
         }
 
-        // manual votes that come into contract during voting window will be voted on
-        if (canVoteOnPool(tokenId)) {
-            _vote(tokenId);
-        }
+        vote(tokenId);
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
@@ -226,9 +222,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
 
         require(increasePercentage <= 10000);
-        if(preferredToken != address(0)) {
-            require(isApprovedToken(preferredToken));
-        }
+        // if(preferredToken != address(0)) {
+        //     require(isApprovedToken(preferredToken));
+        // }
 
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -242,9 +238,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             claimTimestamp: 0,
             weight: _ve.balanceOfNFTAt(tokenId, block.timestamp),
             unpaidFees: 0,
-            preferredToken: preferredToken,
+            preferredToken: address(0),
             increasePercentage: increasePercentage,
-            voteManual: voteManual,
             topUp: topUp
         });
         
@@ -535,7 +530,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     function _handlePayoffToken(address borrower, uint256 tokenId, uint256 amount) internal returns (uint256) {
        uint256 payoffToken = getUserPayoffToken(borrower);
-       // set a default payoff token if not set
+
        if(payoffToken == 0 || !userUsesPayoffToken(borrower) || payoffToken == tokenId) {
             // no payoff token set, or the payoff token is the same as the current tokenId
            return 0;
@@ -629,7 +624,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return fee The amount of the zero balance fee paid.
      */
     function _payZeroBalanceFee(address borrower, uint256 tokenId, uint256 amount, address token) internal returns (uint256) {
-        LoanInfo storage loan = _loanDetails[tokenId];
         uint256 zeroBalanceFee = (amount * getZeroBalanceFee()) / 10000;
         IERC20(token).transfer(owner(), zeroBalanceFee);
         emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, tokenId, address(token));
@@ -752,6 +746,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(amount);
     }
 
+
     /**
      * @notice Allows the borrower to vote on the default pools for their loan.
      * @dev This function can only be called on the last day of the epoch.
@@ -759,32 +754,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      */
     function vote(uint256 tokenId) public {
-        require(_withinVotingWindow());
         LoanInfo storage loan = _loanDetails[tokenId];
-
-        // if user has voted and is using manual voting, just poke
-        if(loan.voteManual && loan.voteTimestamp > 0) {
-            _voter.poke(tokenId);
-            return;
-        }
-        _vote(tokenId);
-    }
-
-    /**
-     * @dev Internal function to handle voting logic for a specific loan identified by `tokenId`.
-     *      This function checks if the loan is eligible to vote on the pool and performs the voting
-     *      operation either by poking the existing vote or casting a new vote with default pools and weights.
-     * 
-     * @param tokenId The unique identifier of the loan for which the voting operation is performed.
-     */
-
-    function _vote(uint256 tokenId) internal {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        if(canVoteOnPool(tokenId) && loan.voteTimestamp < _defaultPoolChangeTime) {
-            try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
-                loan.voteTimestamp = block.timestamp;
-            } catch { }
-            return;
+        if(canVoteOnPool(tokenId)) {
+            (address[] memory pools, uint256[] memory weights, uint256 changeTime) = _getUserPoolVotes(loan.borrower);
+            if(pools.length == 0) {
+                pools = _defaultPools;
+                weights = _defaultWeights;
+                changeTime = _defaultPoolChangeTime;
+            }
+            if(loan.voteTimestamp < changeTime) {
+                try _voter.vote(tokenId, pools, weights) {
+                    loan.voteTimestamp = block.timestamp;
+                    return;
+                } catch { }
+            }
         } 
         try _voter.poke(tokenId) { 
         } catch { }
@@ -1007,7 +990,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             unpaidFees: 0,
             preferredToken: address(0),
             increasePercentage: 0,
-            voteManual: false,
             topUp: false
         });
         addTotalWeight(_ve.balanceOfNFTAt(tokenId, block.timestamp));
@@ -1025,7 +1007,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] calldata pools,
         uint256[] calldata weights
     ) public onlyOwner {
-        require(pools.length == weights.length);
         _validatePoolChoices(pools, weights);
         _defaultPools = pools;
         _defaultWeights = weights;
@@ -1100,7 +1081,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT).
      * @param option The zero balance option to set.
      */
-    function setUserBalanceOptions(
+    function setZeroBalanceOption(
         uint256 tokenId,
         ZeroBalanceOption option
     ) public {
@@ -1145,25 +1126,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /**
      * @notice Allows the borrower to vote on preapproved pools for their loan.
-     * @dev This function can only be called by the borrower of the loan. Weights must equal 100e18, and pools must be preapproved.
-     * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote for.
      * @param weights An array of uint256 values representing the weights of the pools.
-     * @param enable A boolean indicating whether to enable or disable the manual vote.
      */
     function userVote(
-        uint256 tokenId,
-        address[] memory pools,
-        uint256[] memory weights,
-        bool enable
-    ) public onlyOwner {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        loan.voteManual = enable;
-        if(enable) {
-            _validatePoolChoices(pools, weights);
-            _voter.vote(tokenId, pools, weights);
-        }
+        address[] calldata pools,
+        uint256[] calldata weights
+    ) public {
+        _validatePoolChoices(pools, weights);
+        _setUserPoolVotes(msg.sender, pools, weights);
     }
     
     /**
