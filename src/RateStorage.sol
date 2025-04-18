@@ -66,5 +66,4 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         RateStorageStruct storage $ = _getRateStorage();
         $._protocolFee = protocolFee;
     }
-
 }
