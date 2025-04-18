@@ -71,6 +71,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._isApprovedToken[token];
     }
+
     /// @dev Set approved token for the loan contract
     function setApprovedToken(address token, bool approved) public onlyOwner virtual {
         LoanStorageStruct storage $ = _getLoanStorage();
@@ -78,7 +79,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     }
 
     /// @dev Get the swapper address for the loan contract
-    function getSwapper() internal view virtual returns (address) {
+    function getSwapper() public view virtual returns (address) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._swapper;
     }
@@ -121,7 +122,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         $._userPoolChangeTime[user] = block.timestamp;
     }
 
-    function _getUserPoolVotes(address user) internal view virtual returns (address[] memory pools, uint256[] memory weights, uint256 time) {
+    function getUserPoolVotes(address user) public view returns (address[] memory pools, uint256[] memory weights, uint256 time) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return ($._userPoolVotes[user], $._userPoolWeights[user], $._userPoolChangeTime[user]);
     }

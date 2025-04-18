@@ -51,6 +51,7 @@ contract LoanDemo {
             amount,
             zeroBalanceOption,
             0, 
+            address(0),
             false
         );
     }
