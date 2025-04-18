@@ -61,7 +61,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     }
 
     /// @dev Get the managed NFT for the loan contract
-    function getManagedNft() internal view virtual returns (uint256) {
+    function getManagedNft() public view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._managedNft;
     }
@@ -127,39 +127,4 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         return ($._userPoolVotes[user], $._userPoolWeights[user], $._userPoolChangeTime[user]);
     }
 
-    /// @dev Set the managed NFT for the loan contract
-    function setManagedNft(uint256 managedNft) onlyOwner public virtual {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._managedNft = managedNft;
-    }
-
-    /// @dev Get the managed NFT for the loan contract
-    function getManagedNft() public view virtual returns (uint256) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._managedNft;
-    }
-
-    /// @dev Check if the token is approved for the loan contract
-    function isApprovedToken(address token) public view virtual returns (bool) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._isApprovedToken[token];
-    }
-    /// @dev Set approved token for the loan contract
-    function setApprovedToken(address token, bool approved) public onlyOwner virtual {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._isApprovedToken[token] = approved;
-    }
-
-    /// @dev Get the swapper address for the loan contract
-    function getSwapper() public view virtual returns (address) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._swapper;
-    }
-
-    /// @dev Set the swapper address for the loan contract
-    function setSwapper(address swapper) public onlyOwner virtual {
-        require(swapper != address(0));
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._swapper = swapper;
-    }
 }
