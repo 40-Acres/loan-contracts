@@ -15,4 +15,7 @@ interface ISwapper {
         IRouter.Route[] calldata routes,
         uint256 amountIn
     ) external view returns (uint256 amountOutMin);
+    function flattenToken(address[][] memory tokens) external pure returns (address[] memory);
+
+    function getTokenBalances(address[] memory tokens) external view returns (uint256[] memory balances);
 }

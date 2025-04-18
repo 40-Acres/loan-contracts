@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.27;
 
-import { Loan } from "./Loan.sol";
+import { Loan } from "./LoanV2.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -49,7 +49,10 @@ contract LoanDemo {
         _loan.requestLoan(
             tokenId,
             amount,
-            zeroBalanceOption
+            zeroBalanceOption,
+            0, 
+            address(0),
+            false
         );
     }
 

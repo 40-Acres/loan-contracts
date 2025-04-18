@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
+
 
 abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:LoanStorage
@@ -10,6 +12,12 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         uint256 _managedNft;
         mapping(address => bool) _isApprovedToken; // approved tokens for loan contract
         address _swapper;
+        mapping(address => uint256) _userPayoffToken; // token a user pays off first
+        mapping(address => bool) _userPayoffTokenOption; // if user wants to pay off specific token first
+        mapping(uint256 => uint256) _totalWeightPerEpoch;
+        mapping(address => address[]) _userPoolVotes; // pools user wants to vote on
+        mapping(address => uint256[]) _userPoolWeights; // weights for pools user wants to vote on
+        mapping(address => uint256) _userPoolChangeTime; // weights for pools user wants to vote on
     }
 
 
@@ -35,12 +43,15 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function addTotalWeight(uint256 weights) internal  {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights += weights;
+        $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
+
     }
 
     /// @dev Subtract total weight for the loan contract
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights -= weights;
+        $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
     }
 
     /// @dev Set the managed NFT for the loan contract
@@ -60,6 +71,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._isApprovedToken[token];
     }
+
     /// @dev Set approved token for the loan contract
     function setApprovedToken(address token, bool approved) public onlyOwner virtual {
         LoanStorageStruct storage $ = _getLoanStorage();
@@ -74,8 +86,45 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
 
     /// @dev Set the swapper address for the loan contract
     function setSwapper(address swapper) public onlyOwner virtual {
-        require(swapper != address(0));
         LoanStorageStruct storage $ = _getLoanStorage();
         $._swapper = swapper;
     }
+
+    function _setUserPayoffToken(address user, uint256 token) internal {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._userPayoffToken[user] = token;
+    }
+
+    function getUserPayoffToken(address user) public view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._userPayoffToken[user];
+    }
+
+    function _setUserPayoffTokenOption(address user, bool option) internal  {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._userPayoffTokenOption[user] = option;
+    }
+
+    function userUsesPayoffToken(address user) public view virtual returns (bool) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._userPayoffTokenOption[user];
+    }
+
+    function _getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._totalWeightPerEpoch[epoch];
+    }
+
+    function _setUserPoolVotes(address user, address[] calldata pools, uint256[] calldata weights) internal {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._userPoolVotes[user] = pools;
+        $._userPoolWeights[user] = weights;
+        $._userPoolChangeTime[user] = block.timestamp;
+    }
+
+    function getUserPoolVotes(address user) public view returns (address[] memory pools, uint256[] memory weights, uint256 time) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return ($._userPoolVotes[user], $._userPoolWeights[user], $._userPoolChangeTime[user]);
+    }
+
 }

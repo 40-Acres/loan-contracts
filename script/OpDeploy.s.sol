@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
 import {Loan, VeloLoan} from "../src/VeloLoan.sol";
+import {VeloLoan as LoanV2} from "../src/VeloLoanV2.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -19,7 +20,7 @@ contract OpDeploy is Script {
         vm.stopBroadcast();
     }
 
-    function deployLoan() public returns (Loan, Vault) {
+    function deployLoan() public returns (LoanV2, Vault) {
         Loan loan = new VeloLoan();
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
         Vault vault = new Vault(address(usdc), address(proxy));
@@ -38,6 +39,7 @@ contract OpDeploy is Script {
         Loan(address(proxy)).setRewardsRate(743);
         Loan(address(proxy)).setMultiplier(10);
         Loan(address(proxy)).setDefaultPools(pools, weights);
-        return (Loan(address(proxy)), vault);
+        Loan(address(proxy)).upgradeToAndCall(address(new LoanV2()), new bytes(0));
+        return (LoanV2(address(proxy)), vault);
     }
 }
