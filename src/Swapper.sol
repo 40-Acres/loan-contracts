@@ -166,14 +166,14 @@ contract Swapper {
     }
 
     /**
-     * @dev Retrieves the token balances of the contract for a given list of token addresses.
+     * @dev Retrieves the token balances of the caller (`msg.sender`) for a given list of token addresses.
      * @param tokens An array of ERC20 token addresses to query balances for.
      * @return balances An array of token balances corresponding to the provided token addresses.
      */
     function getTokenBalances(address[] memory tokens) public view returns (uint256[] memory balances) {
         balances = new uint256[](tokens.length);
         for (uint256 i = 0; i < tokens.length; i++) {
-            balances[i] = IERC20(tokens[i]).balanceOf(address(this));
+            balances[i] = IERC20(tokens[i]).balanceOf(msg.sender);
         }
     }
 
