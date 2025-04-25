@@ -500,9 +500,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _handleZeroBalance(tokenId, excess, true);
         }
 
-        if(!isManual && loan.topUp) {
+        if(!isManual && loan.topUp && confirmUsdcPrice()) {
             (uint256 maxLoan, ) = getMaxLoan(tokenId);
-            _increaseLoan(loan, tokenId, maxLoan);
+            if(maxLoan > .01e6) {
+                _increaseLoan(loan, tokenId, maxLoan);
+            }
         }
 
 
