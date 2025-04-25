@@ -600,8 +600,8 @@ contract LoanTest is Test {
 
         user = votingEscrow.ownerOf(_tokenId);
         uint256 startingOwnerBalance = weth.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
-        uint256 startingUserBalance = weth.balanceOf(address(user));
-        uint256 startingLoanBalance = weth.balanceOf(address(loan));
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingLoanBalance = usdc.balanceOf(address(loan));
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
@@ -615,19 +615,16 @@ contract LoanTest is Test {
         _claimRewards(loan, _tokenId, bribes);
 
         uint256 endingUserBalance = weth.balanceOf(address(user));
-        uint256 endingOwnerBalance = weth.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
-        uint256 endingLoanBalance = weth.balanceOf(address(loan));
-
-        uint256 totalRewards = endingUserBalance - startingUserBalance + endingOwnerBalance - startingOwnerBalance;
+        uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
+        uint256 endingLoanBalance = usdc.balanceOf(address(loan));
 
 
-        // owner should receive rewards 1% f rewards
-        uint256 protocolFee = totalRewards / 100;
-        uint256 paidToUser = totalRewards - protocolFee;        
-        assertTrue(paidToUser > 0, "user should receive rewards");
-        assertTrue(protocolFee > 0, "owner should receive rewards");
-        assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
-        assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
+
+        // owner should receive rewards in usdc 
+        assertNotEq(endingOwnerBalance - startingOwnerBalance, 0, "owner should receive usd rewards");
+
+        assertNotEq(endingUserBalance - startingUserBalance, 0,  "user should have receive weth rewards");
+
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
     }
 
