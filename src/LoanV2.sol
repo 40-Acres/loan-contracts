@@ -313,34 +313,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _getRewards(uint256 tokenId, address[] memory fees, address[][] memory tokens) internal returns (uint256 totalRewards) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        IERC20 asset = _getAsset(loan);
-        uint256 assetBalancePre = asset.balanceOf(address(this));
+        uint256 assetBalancePre = _usdc.balanceOf(address(this));
 
         ISwapper swapper = ISwapper(getSwapper());
         address[] memory flattenedTokens = swapper.flattenToken(tokens);
         uint256[] memory tokenBalances = swapper.getTokenBalances(flattenedTokens);
         _voter.claimFees(fees, tokens, tokenId);
-        _swapTokensToAsset(flattenedTokens, asset, loan.borrower, tokenBalances);
-        uint256 assetBalancePost = asset.balanceOf(address(this));
+        _swapTokensToAsset(flattenedTokens, _usdc, loan.borrower, tokenBalances);
+        uint256 assetBalancePost = _usdc.balanceOf(address(this));
 
         // calculate the amount of fees claimed
         return assetBalancePost - assetBalancePre;
-    }
-
-    /**
-     * @dev Returns the asset (either USDC or Aero/Velo) based on the loan's balance and zeroBalanceOption.
-     * @param loan The LoanInfo struct containing the loan details.
-     * @return The IERC20 asset to be used for the loan.
-     */
-    function _getAsset(LoanInfo storage loan) internal view returns (IERC20) {
-        if(loan.balance > 0) {
-            return _usdc;
-        }
-        if(loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner && loan.preferredToken != address(0)) {
-            return IERC20(loan.preferredToken);
-        }
-        
-        return _usdc;
     }
 
 
@@ -599,8 +582,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _handleZeroBalance(uint256 tokenId, uint256 amount, bool wasActiveLoan) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
-        IERC20 asset = wasActiveLoan ? IERC20(_usdc) : _getAsset(loan);
-        amount -= _payZeroBalanceFee(loan.borrower, tokenId, amount, address(asset));
+        amount -= _payZeroBalanceFee(loan.borrower, tokenId, amount, address(_usdc));
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
@@ -611,8 +593,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
-        require(asset.transfer(loan.borrower, amount));
+        IERC20 asset = loan.preferredToken == address(0) ? _usdc : IERC20(loan.preferredToken);
         emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId);
+        if(asset != _usdc) {
+            amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
+        }
+        require(asset.transfer(loan.borrower, amount));
         return;
     }
 
