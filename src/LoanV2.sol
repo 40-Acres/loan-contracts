@@ -204,6 +204,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken,
         bool topUp
     ) public  {
+        require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
 
@@ -499,10 +500,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _handleZeroBalance(tokenId, excess, true);
         }
 
-        if(!isManual && loan.topUp) {
+        if(!isManual && loan.topUp && confirmUsdcPrice()) {
             (uint256 maxLoan, ) = getMaxLoan(tokenId);
-            if (maxLoan > .01e6) {
-                _increaseLoan(loan, tokenId, maxLoan);
+            if(maxLoan > .01e6) {
+            _   increaseLoan(loan, tokenId, maxLoan);
             }
         }
 
@@ -734,7 +735,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function increaseAmount(uint256 tokenId, uint256 amount) public {
         require(_ve.ownerOf(tokenId) == address(this));
         require(amount > 0);
-        require(confirmUsdcPrice());
         require(_aero.transferFrom(msg.sender, address(this), amount));
         _aero.approve(address(_ve), amount);
         _ve.increaseAmount(tokenId, amount);
