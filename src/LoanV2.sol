@@ -299,7 +299,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
-        _usdc.transferFrom(_vault, msg.sender, amount);
+        _usdc.transferFrom(_vault, loan.borrower, amount);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 

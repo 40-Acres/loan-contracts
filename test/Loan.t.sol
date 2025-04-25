@@ -802,11 +802,13 @@ contract LoanTest is Test {
         loan.requestLoan(_tokenId2, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
         loan.setPayoffToken(_tokenId2, true);
         loan.setTopUp(_tokenId2, true);
+        vm.stopPrank();
 
-
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
         address[] memory bribes = new address[](0);
         _claimRewards(loan, _tokenId, bribes);
-
+        uint256 endingUserBalance = usdc.balanceOf(address(user));        
+        assertTrue(endingUserBalance > startingUserBalance, "User should have more than starting balance");
 
         (uint256 balance,) = loan.getLoanDetails(_tokenId2);
         assertTrue(balance >  1000e6, "Balance should have increased");
