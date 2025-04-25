@@ -523,7 +523,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
            return 0;
        }
 
-        LoanInfo memory payoffLoan = _loanDetails[payoffToken];
+        LoanInfo storage payoffLoan = _loanDetails[payoffToken];
         if(payoffLoan.borrower != borrower) {
             return 0; // not the borrower of the payoff loan
         }
