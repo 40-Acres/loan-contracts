@@ -652,8 +652,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Emit an event indicating that rewards have been claimed.
         emit RewardsClaimed(currentEpochStart(), amount, loan.borrower, tokenId);
 
+
          // If the loan balance is zero and the user is not using a payoff token, handle zero balance scenarios.
-        if(loan.balance == 0 && !userUsesPayoffToken(loan.borrower)) {
+        if(loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
             uint256 amountAfterFees = amount - _increaseNft(loan, amount, true);
             _handleZeroBalance(tokenId, amountAfterFees, false);
             _claimRebase(loan);
