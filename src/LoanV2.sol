@@ -503,7 +503,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(!isManual && loan.topUp && confirmUsdcPrice()) {
             (uint256 maxLoan, ) = getMaxLoan(tokenId);
             if(maxLoan > .01e6) {
-            _   increaseLoan(loan, tokenId, maxLoan);
+                _increaseLoan(loan, tokenId, maxLoan);
             }
         }
 
