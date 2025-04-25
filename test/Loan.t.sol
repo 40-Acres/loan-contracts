@@ -697,7 +697,7 @@ contract LoanTest is Test {
 
         uint256 _tokenId = 524;
 
-        uint256 loanAmount = 400e6;
+        uint256 loanAmount = 300e6;
 
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
@@ -730,6 +730,44 @@ contract LoanTest is Test {
         assertEq(balance, 0, "Balance should be 0");
     }
 
+    function testPayoffTokenMoreBalance() public {
+
+        usdc.mint(address(vault), 100000e6);
+
+        uint256 _tokenId = 524;
+
+        uint256 loanAmount = 400e6;
+
+        user = votingEscrow.ownerOf(_tokenId);
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
+
+        vm.stopPrank();
+
+        uint256 _tokenId2 = 7979;
+        address user2 = votingEscrow.ownerOf(_tokenId2);
+        vm.prank(user2);
+        votingEscrow.transferFrom(user2, user, _tokenId2);
+        
+        vm.startPrank(user);
+        vm.warp(block.timestamp+1);
+        vm.roll(block.number + 1);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId2);
+        loan.requestLoan(_tokenId2, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
+        loan.setPayoffToken(_tokenId2, true);
+
+
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, _tokenId, bribes);
+
+
+        (uint256 balance,) = loan.getLoanDetails(_tokenId2);
+        console.log("balance: %s", balance);
+        assertTrue(balance < loanAmount, "Balance should be less than amount");
+        (balance,) = loan.getLoanDetails(_tokenId);
+        assertNotEq(balance, 0, "Balance should not be 0");
+    }
 
     function testIncreaseAmountPercentage() public {
         tokenId = 524;
