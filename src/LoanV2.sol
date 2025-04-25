@@ -227,7 +227,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             claimTimestamp: 0,
             weight: 0,
             unpaidFees: 0,
-            preferredToken: address(0),
+            preferredToken: preferredToken,
             increasePercentage: increasePercentage,
             topUp: topUp
         });
