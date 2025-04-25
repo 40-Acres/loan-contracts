@@ -13,6 +13,7 @@ abstract contract RateStorage is Ownable2StepUpgradeable {
         uint256 _utilizationRate;
         uint256 _vaultRelayRate;
         uint256 _actualRewardsRate;
+        mapping(uint256 => uint256) _actualRewardsRatePerEpoch; //deprecated
     }
 
 
