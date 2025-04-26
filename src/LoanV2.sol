@@ -1127,6 +1127,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Allows the borrower to vote on pools for their loan.
      * @dev This function can only be called by the borrower of the loan.
      *      The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
+     * @notice The pools must be updated at least every 14 days or the vote will be reset to the default pools.
      * @param tokenIds An array of token IDs representing the loans for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
@@ -1169,7 +1170,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function allows the borrower to set the preferred payoff token for their loan.
      *      The borrower must be the owner of the loan token.
      * @param tokenId The unique identifier of the loan.
-     * @param enable A boolean indicating whether to enable or disable the preferred payoff token option.
+     git * @param enable A boolean indicating whether to enable or disable the preferred payoff token option.
      */
     function setPayoffToken(uint256 tokenId, bool enable) public {
         LoanInfo storage loan = _loanDetails[tokenId];
