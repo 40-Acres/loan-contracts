@@ -22,7 +22,7 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
-    // parametees introduced after initial deployment are in NamedStorage contracts
+    // parameters introduced after initial deployment are in NamedStorage contracts
     IVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
     address private _pool; // deprecated
@@ -113,7 +113,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     
     event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     /**
-     * @dev mitted when rewards are sent to the vault to lenders as a premium.
+     * @dev Emitted when rewards are sent to the vault to lenders as a premium.
      * @param tokenId The ID of the token representing the loan.
      * @param borrower The address of the borrower repaying the loan.
      * @param amount The amount repaid.
@@ -123,7 +123,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     
     event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch, bool isManual);
     /**
-     * @dev Emitted when rewards are invested back into the vault.
+     * @dev Emitted when rewards are used to repay a loan balance.
      * @param epoch The epoch during which the rewards were invested.
      * @param amount The amount of rewards invested.
      * @param borrower The address of the borrower whose rewards were invested.
@@ -205,7 +205,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken,
         bool topUp
     ) public  {
-        require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
 
@@ -455,6 +454,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * 
      * @param tokenId The unique identifier of the loan being paid.
      * @param amount The amount being paid towards the loan.
+     * @param isManual Indicates whether the payment is made manually via pay function or automatically via claim flow.
      */
     function _pay(uint256 tokenId, uint256 amount, bool isManual) internal {
         if (amount == 0) {
@@ -533,7 +533,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0; // not the borrower of the payoff loan
         }
         uint256 payoffAmount = amount;
-        if(payoffAmount >= payoffLoan.balance) {
+        if(payoffAmount > payoffLoan.balance) {
             payoffAmount = payoffLoan.balance; // cap the payment to the balance of the loan
         }
         _pay(payoffToken, payoffAmount, false);
@@ -606,7 +606,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
         }
         require(asset.transfer(loan.borrower, amount));
-        return;
     }
 
 
@@ -824,14 +823,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;
 
         // If the vault is over-utilized, no loans can be made
-        if (_outstandingCapital > maxUtilization) {
+        if (_outstandingCapital >= maxUtilization) {
             return (0, maxLoanIgnoreSupply);
         }
 
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the current loan balance exceeds the maximum loan, no additional loans can be made
-        if (loan.balance > maxLoan) {
+        if (loan.balance >= maxLoan) {
             return (0, maxLoanIgnoreSupply);
         }
 
@@ -867,8 +866,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Retrieves the zero balance fee percentage.
      * @dev This function checks the zero balance fee stored in the RateStorage contract.
-     *      If the zero balance fee is not set (returns 0), it defaults to 1%.
-     * @return The zero balance fee percentage (in basis points, where 100 = 1%).
+     * @return The zero balance fee with 6 decimal precision.
      */
     function getZeroBalanceFee() public view override returns (uint256) {
         uint256 zeroBalanceFee = RateStorage.getZeroBalanceFee();
@@ -877,10 +875,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
 
     /**
-     * @notice Retrieves the rewards rate for the current epoch.
+     * @notice Retrieves the rewards rate for the current epoch .
      * @dev This function checks the rewards rate stored in the RateStorage contract.
-     *      If the rewards rate is not set (returns 0), it defaults to 113 (11.3%).
-     * @return The rewards rate percentage (in basis points, where 113 = 1.13%).
+    * @return The rewards rate with 6 decimal precision.
      */
     function getRewardsRate() public view override returns (uint256) {
         uint256 rewardsRate = RateStorage.getRewardsRate();
@@ -890,8 +887,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Retrieves the lender premium percentage.
      * @dev This function checks the lender premium stored in the RateStorage contract.
-     *      If the lender premium is not set (returns 0), it defaults to 20%.
-     * @return The lender premium percentage (in basis points, where 2000 = 20%).
+     * @return The lender premium with 6 decimal precision.
      */
     function getLenderPremium() public view override returns (uint256) {
         uint256 lenderPremium = RateStorage.getLenderPremium();
@@ -901,8 +897,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Retrieves the protocol fee percentage.
      * @dev This function checks the protocol fee stored in the RateStorage contract.
-     *      If the protocol fee is not set (returns 0), it defaults to 5%.
-     * @return The protocol fee percentage (in basis points, where 500 = 5%).
+     * @return The protocol fee with 6 decimal precision.
      */
     function getProtocolFee() public view override returns (uint256) {
         uint256 protocolFee = RateStorage.getProtocolFee();
@@ -987,9 +982,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Sets the managed NFT for the contract
      * @dev Transfers the NFT from the sender to the contract, updates the managed NFT state
+     *    The managed NFT is used to represent the community owned veNFT, the owner of the managed NFT will be the managedNFT contract itself.
+     *    The only special case a managedNFT has within this contract is the ability to merge unowned venfts into it
      * @param tokenId The ID of the NFT to be managed by the contract.
      */
     function setManagedNft(uint256 tokenId) public onlyOwner override {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower != address(0));
         require(getManagedNft() == 0);
         super.setManagedNft(tokenId);
     }
@@ -1127,7 +1126,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Allows the borrower to vote on pools for their loan.
      * @dev This function can only be called by the borrower of the loan.
      *      The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
-     * @notice The pools must be updated at least every 14 days or the vote will be reset to the default pools.
+     * @notice The tokens must be votes on at least every 14 days or the token will vote for the default pools.
      * @param tokenIds An array of token IDs representing the loans for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
@@ -1137,7 +1136,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] calldata pools,
         uint256[] calldata weights
     ) public {
-        require(pools.length < 12); // limit the number of pools to 12
+        require(pools.length <= 12); // limit the number of pools to 12
         _validatePoolChoices(pools, weights);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             LoanInfo storage loan = _loanDetails[tokenIds[i]];
@@ -1151,9 +1150,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Sets the increase percentage for a specific loan.
      * @dev This function allows the borrower to set the increase percentage for their loan.
-     *      The increase percentage must not exceed 25% (represented as 2500 basis points).
+     *      The increase percentage must not exceed 100% (represented as 10000).
      * @param tokenId The unique identifier of the loan.
-     * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100 basis points).
+     * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100).
      */
     function setIncreasePercentage(
         uint256 tokenId,
@@ -1170,7 +1169,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function allows the borrower to set the preferred payoff token for their loan.
      *      The borrower must be the owner of the loan token.
      * @param tokenId The unique identifier of the loan.
-     git * @param enable A boolean indicating whether to enable or disable the preferred payoff token option.
+     * @param enable A boolean indicating whether to enable or disable the preferred payoff token option.
      */
     function setPayoffToken(uint256 tokenId, bool enable) public {
         LoanInfo storage loan = _loanDetails[tokenId];
@@ -1199,7 +1198,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         ) = AggregatorV3Interface(address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B)).latestRoundData();
 
-        // add staleness check data updates every 24 hours
+        // add staleness check, data updates every 24 hours
         require(timestamp > block.timestamp - 25 hours);
         // confirm price of usdc is $1
         return answer >= 99900000;
