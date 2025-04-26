@@ -900,29 +900,45 @@ contract LoanTest is Test {
         loan.setApprovedPools(manualPools, true);
         vm.stopPrank();
 
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = _tokenId;
+        
         vm.startPrank(_user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.userVote(manualPools, manualWeights);
 
+        uint256 blockTimestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
         vm.roll(block.number + 1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 1);
+        vm.warp(ProtocolTimeLibrary.epochStart(blockTimestamp) + 2 hours);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false);
+        vm.warp(block.timestamp + 1);
         vm.roll(block.number + 1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
+        loan.userVote(tokenIds, manualPools, manualWeights);
+        lastVoteTimestamp = block.timestamp;
         assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId));
-        loan.vote(_tokenId); // fails because not last day of epoch
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 15 hours);
-        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId));
-        loan.vote(_tokenId); // fails because not last day of epoch
-        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId));
-        // last day of epoch
-        assertNotEq(voter.poolVote(_tokenId, 0), manualPools[0]);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days + 22 hours);
-        
-        loan.vote(_tokenId);
-        assertEq(block.timestamp, voter.lastVoted(_tokenId));
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.warp(ProtocolTimeLibrary.epochStart(blockTimestamp) + 7 days + 1);
+        loan.vote(_tokenId); // does not vote because of manual voting
+        vm.warp(ProtocolTimeLibrary.epochStart(blockTimestamp) + 7 days + 15 hours);
+        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId), "1");
+        loan.vote(_tokenId); // does not vote because of manual voting
+        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId), "2");
+        vm.warp(ProtocolTimeLibrary.epochStart(blockTimestamp) + 12 days + 22 hours);
+        loan.vote(_tokenId); // does not vote because of manual voting
+        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId), "3");
 
-        assertEq(voter.poolVote(_tokenId, 0), manualPools[0]);
+        vm.warp(ProtocolTimeLibrary.epochStart(blockTimestamp) + 14 days + 22 hours);
+        vm.roll(block.number + 1);
+        loan.vote(_tokenId); // should not success, not within voting winow
+        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId), "5");
+        
+        vm.warp(ProtocolTimeLibrary.epochStart(blockTimestamp) + 20 days + 22 hours);
+        vm.roll(block.number + 1);
+        loan.vote(_tokenId); // should succees
+
+        assertEq(block.timestamp, voter.lastVoted(_tokenId), "4");
+
+        assertNotEq(voter.poolVote(_tokenId, 0), manualPools[0]);
         vm.stopPrank();
 
         vm.startPrank(Ownable2StepUpgradeable(loan).owner());
@@ -933,12 +949,6 @@ contract LoanTest is Test {
         loan.setApprovedPools(pools, true);
         loan.setDefaultPools(pools, weights);
         vm.stopPrank();
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        loan.vote(_tokenId);
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        loan.vote(_tokenId);
 
         uint256 loanWeight = loan.getTotalWeight();
         assertTrue(loanWeight > 0, "loan weight should be greater than 0");
