@@ -68,6 +68,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken; // preferred token to receive for zero balance option
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
+        bool    manualVote; // if user wants to vote manually
     }
 
     // Pools each token votes on for this epoch
@@ -229,7 +230,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             unpaidFees: 0,
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
-            topUp: topUp
+            topUp: topUp,
+            manualVote: false
         });
 
         vote(tokenId);
@@ -748,29 +750,31 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
 
     /**
-     * @notice Allows the borrower to vote on the default pools for their loan.
-     * @dev This function can only be called on the last day of the epoch.
-     *      It updates the vote timestamp and calls the internal _vote function.
+     * @notice Allows anyone to vote on the default pools for the nft.
+     * @dev This function can only be called on the last day of the epoch during the voting window.
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      */
     function vote(uint256 tokenId) public {
         LoanInfo storage loan = _loanDetails[tokenId];
-        if(canVoteOnPool(tokenId)) {
-            (address[] memory pools, uint256[] memory weights, uint256 changeTime) = getUserPoolVotes(loan.borrower);
-            if(pools.length == 0) {
-                pools = _defaultPools;
-                weights = _defaultWeights;
-                changeTime = _defaultPoolChangeTime;
+        if(loan.manualVote) {
+            if(ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days) {
+                return; // if the user has manually voted, we don't want to override their vote
             }
-            if(loan.voteTimestamp < changeTime) {
-                try _voter.vote(tokenId, pools, weights) {
+            // if user hasn't voted in the last 14 days, we want to reset their manual vote
+            loan.manualVote = false;
+            loan.voteTimestamp = 0;
+        }
+        
+        if(canVoteOnPool(tokenId)) {
+            if(loan.voteTimestamp < _defaultPoolChangeTime) {
+                try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                     loan.voteTimestamp = block.timestamp;
                     return;
                 } catch { }
             }
+            try _voter.poke(tokenId) { 
+            } catch { }
         } 
-        try _voter.poke(tokenId) { 
-        } catch { }
     }
 
     /**
@@ -1118,21 +1122,29 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     
 
 
+
     /**
-     * @notice Allows the borrower to vote on preapproved pools for their loan.
-     * @dev The number of pools is limited to 12, and the weights equal 100e18.
-     *      The function validates the pool choices and sets the user's pool votes.
-     *      To remove votes and return to default, send empty arrays.
-     * @param pools An array of addresses representing the pools to vote for.
+     * @notice Allows the borrower to vote on pools for their loan.
+     * @dev This function can only be called by the borrower of the loan.
+     *      The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
+     * @param tokenIds An array of token IDs representing the loans for which the vote is being cast.
+     * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
      */
     function userVote(
+        uint256[] calldata tokenIds,
         address[] calldata pools,
         uint256[] calldata weights
     ) public {
         require(pools.length < 12); // limit the number of pools to 12
         _validatePoolChoices(pools, weights);
-        _setUserPoolVotes(msg.sender, pools, weights);
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            LoanInfo storage loan = _loanDetails[tokenIds[i]];
+            require(loan.borrower == msg.sender);
+            _voter.vote(tokenIds[i], pools, weights);
+            loan.voteTimestamp = block.timestamp;
+            loan.manualVote = true;
+        }
     }
     
     /**
@@ -1157,6 +1169,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function allows the borrower to set the preferred payoff token for their loan.
      *      The borrower must be the owner of the loan token.
      * @param tokenId The unique identifier of the loan.
+     * @param enable A boolean indicating whether to enable or disable the preferred payoff token option.
      */
     function setPayoffToken(uint256 tokenId, bool enable) public {
         LoanInfo storage loan = _loanDetails[tokenId];

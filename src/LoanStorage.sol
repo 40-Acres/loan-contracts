@@ -15,9 +15,6 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(address => uint256) _userPayoffToken; // token a user pays off first
         mapping(address => bool) _userPayoffTokenOption; // if user wants to pay off specific token first
         mapping(uint256 => uint256) _totalWeightPerEpoch;
-        mapping(address => address[]) _userPoolVotes; // pools user wants to vote on
-        mapping(address => uint256[]) _userPoolWeights; // weights for pools user wants to vote on
-        mapping(address => uint256) _userPoolChangeTime; // weights for pools user wants to vote on
     }
 
 
@@ -114,17 +111,4 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._totalWeightPerEpoch[epoch];
     }
-
-    function _setUserPoolVotes(address user, address[] calldata pools, uint256[] calldata weights) internal {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._userPoolVotes[user] = pools;
-        $._userPoolWeights[user] = weights;
-        $._userPoolChangeTime[user] = block.timestamp;
-    }
-
-    function getUserPoolVotes(address user) public view returns (address[] memory pools, uint256[] memory weights, uint256 time) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return ($._userPoolVotes[user], $._userPoolWeights[user], $._userPoolChangeTime[user]);
-    }
-
 }
