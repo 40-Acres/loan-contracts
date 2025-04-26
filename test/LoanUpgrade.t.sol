@@ -251,7 +251,7 @@ contract LoanUpgradeTest is Test {
         vm.startPrank(_user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         vm.roll(block.number + 1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 1);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false);
         vm.roll(block.number + 1);
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
