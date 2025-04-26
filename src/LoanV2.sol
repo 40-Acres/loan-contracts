@@ -1177,13 +1177,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function confirmUsdcPrice() virtual internal view returns (bool) {
         (
-            ,
-            /* uint80 roundID */ int answer /*uint startedAt*/ /*uint timeStamp*/ /*uint80 answeredInRound*/,
-            ,
-            ,
+            /* uint80 roundID */,
+            int answer ,
+            /*uint startedAt*/,
+            uint256 timestamp,
+            /*uint80 answeredInRound*/
 
         ) = AggregatorV3Interface(address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B)).latestRoundData();
 
+        // add staleness check data updates every 24 hours
+        require(timestamp > block.timestamp - 25 hours);
         // confirm price of usdc is $1
         return answer >= 99900000;
     }

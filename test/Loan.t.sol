@@ -458,9 +458,7 @@ contract LoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false);
         vm.roll(block.number+1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days + 22 hours);
         loan.vote(tokenId);
-        console.log("vote");
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
 
@@ -907,7 +905,7 @@ contract LoanTest is Test {
         loan.userVote(manualPools, manualWeights);
 
         vm.roll(block.number + 1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days);
+        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 1);
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false);
         vm.roll(block.number + 1);
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
