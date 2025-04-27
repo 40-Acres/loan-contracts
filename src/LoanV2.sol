@@ -668,14 +668,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         uint256 feeEligibleAmount = amount;
-        uint256 payoffTokenLoanBalance;
-        
-        if (userUsesPayoffToken(loan.borrower) && getUserPayoffToken(loan.borrower) != 0) {
-            payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
-        }
-        
-        if(amount > loan.balance + payoffTokenLoanBalance) {
-            feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
+        if(amount > loan.balance) {
+            feeEligibleAmount = loan.balance;
         }
 
         // Calculate the protocol fee based on the rewards amount.
