@@ -677,7 +677,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 feeEligibleAmount = amount;
         uint256 payoffTokenLoanBalance;
         
-        if (userUsesPayoffToken(loan.borrower) && getUserPayoffToken(loan.borrower) != 0) {
+        if (userUsesPayoffToken(loan.borrower) && getUserPayoffToken(loan.borrower) != 0 && getUserPayoffToken(loan.borrower) != tokenId) {
             payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
         }
         
