@@ -292,9 +292,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
      */
     function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
-        if(amount == 0) {
-            return;
-        }
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
@@ -717,6 +714,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
 
+        if(amountOut == 0) {
+            return 0;
+        }
         // get protocol fee 
         if(takeFees) {
             amountOut -= _payZeroBalanceFee(loan.borrower, loan.tokenId, amountOut, address(_aero));
