@@ -68,7 +68,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken; // preferred token to receive for zero balance option
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
-        bool    manualVote; // if user wants to vote manually
     }
 
     // Pools each token votes on for this epoch
@@ -229,8 +228,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             unpaidFees: 0,
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
-            topUp: topUp,
-            manualVote: false
+            topUp: topUp
         });
 
         vote(tokenId);
@@ -1127,16 +1125,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             // not within try catch because we want to revert if the transaction fails so the user can try again
             _voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
-            loan.manualVote = true;
         }
         
-        bool isActiveManualVote = loan.manualVote && ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
-        if(isActiveManualVote) {
+        bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
+        if(isActive) {
             return; // if the user has manually voted, we don't want to override their vote
         }
         if(_withinVotingWindow()) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
-                loan.voteTimestamp = block.timestamp;
                 return;
             } catch { }
         } 
