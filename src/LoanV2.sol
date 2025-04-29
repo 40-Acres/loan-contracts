@@ -350,16 +350,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
         }
     }
-
-
-    /**
-     * @dev Checks if tokens has vote this epoch
-    * @param tokenId The ID of the token to check.
-    * @return True if the token can vote on the pool, false otherwise.
-     */
-    function canVoteOnPool(uint256 tokenId) internal virtual view returns (bool) {
-        return _voter.lastVoted(tokenId) < currentEpochStart() && _withinVotingWindow();
-    }
     
     /**
      * @dev Internal function to swap a specified amount of one token to another token.
@@ -747,35 +737,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(amount);
     }
 
-
-    /**
-     * @notice Allows anyone to vote on the default pools for the nft.
-     * @dev This function can only be called on the last day of the epoch during the voting window.
-     * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
-     */
-    function vote(uint256 tokenId) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        if(loan.manualVote) {
-            if(ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days) {
-                return; // if the user has manually voted, we don't want to override their vote
-            }
-            // if user hasn't voted in the last 14 days, we want to reset their manual vote
-            loan.manualVote = false;
-            loan.voteTimestamp = 0;
-        }
-        
-        if(canVoteOnPool(tokenId)) {
-            if(loan.voteTimestamp < _defaultPoolChangeTime) {
-                try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
-                    loan.voteTimestamp = block.timestamp;
-                    return;
-                } catch { }
-            }
-            try _voter.poke(tokenId) { 
-            } catch { }
-        } 
-    }
-
     /**
      * @notice Allows the borrower to claim their collateral (veNFT) after the loan is fully repaid.
      * @dev This function ensures that only the borrower can claim the collateral and that the loan is fully repaid.
@@ -1139,12 +1100,46 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(pools.length <= 12); // limit the number of pools to 12
         _validatePoolChoices(pools, weights);
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            LoanInfo storage loan = _loanDetails[tokenIds[i]];
-            require(loan.borrower == msg.sender);
-            _voter.vote(tokenIds[i], pools, weights);
+            _vote(tokenIds[i], pools, weights);
+        }
+    }
+
+    /**
+     * @notice Allows anyone to vote on the default pools for the nft.
+     * @dev This function can only be called on the last day of the epoch during the voting window.
+     * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
+     */
+    function vote(uint256 tokenId) public {
+        address[] memory pools = new address[](0);
+        uint256[] memory weights = new uint256[](0);
+        _vote(tokenId, pools, weights);
+    }
+
+    /**
+     * @dev Internal function to handle voting for a specific loan.
+     * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
+     * @param pools An array of addresses representing the pools to vote on.
+     * @param weights An array of uint256 values representing the weights of the pools.
+     */
+    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if(loan.borrower == msg.sender && pools.length > 0) {
+            // not within try catch because we want to revert if the transaction fails so the user can try again
+            _voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
             loan.manualVote = true;
         }
+        
+        bool isActiveManualVote = loan.manualVote && ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
+        if(isActiveManualVote) {
+            return; // if the user has manually voted, we don't want to override their vote
+        }
+        if(_withinVotingWindow()) {
+            try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
+                loan.voteTimestamp = block.timestamp;
+                return;
+            } catch { }
+        } 
     }
     
     /**
