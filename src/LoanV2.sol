@@ -715,6 +715,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
 
+        if(amountOut == 0) {
+            return 0;
+        }
         // get protocol fee 
         if(takeFees) {
             amountOut -= _payZeroBalanceFee(loan.borrower, loan.tokenId, amountOut, address(_aero));
