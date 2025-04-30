@@ -100,8 +100,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the borrower.
      * @param amount The amount of funds borrowed.
+     * @param viaTopup Indicates whether the funds were borrowed via a top-up.
      */
-    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
+    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount, bool viaTopup);
     
     /**
      * @dev Emitted when rewards are received for a loan.
@@ -276,7 +277,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
 
         require(loan.borrower == msg.sender);
-        _increaseLoan(loan, tokenId, amount);
+        _increaseLoan(loan, tokenId, amount, false);
 
        // set a default payoff token if not set
        if(getUserPayoffToken(loan.borrower) == 0) {
@@ -291,8 +292,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      and if the borrower is the one requesting the increase.
      * @param tokenId The ID of the loan for which the amount is being increased.
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
+     * @param viaTopup Indicates whether the increase is being done via a top-up.
      */
-    function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
+    function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount, bool viaTopup) internal {
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
@@ -301,7 +303,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
         _usdc.transferFrom(_vault, loan.borrower, amount);
-        emit FundsBorrowed(tokenId, loan.borrower, amount);
+        emit FundsBorrowed(tokenId, loan.borrower, amount, viaTopup);
     }
 
     /**
@@ -505,7 +507,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(!isManual && loan.topUp && confirmUsdcPrice()) {
             (uint256 maxLoan, ) = getMaxLoan(tokenId);
             if(maxLoan > .01e6) {
-                _increaseLoan(loan, tokenId, maxLoan);
+                _increaseLoan(loan, tokenId, maxLoan, true);
             }
         }
 
@@ -1181,8 +1183,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
+    /**
+     * @notice Sets the user preference for a specific loan.
+     * @dev This function allows the borrower to set their preferred token and increase percentage for their loan.
+     *      The borrower must be the owner of the loan token.
+     * @param tokenId The unique identifier of the loan.
+     * @param preferredToken The address of the preferred token to be set. If set to address(0), the default token will be used.
+     * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100).
+     */
+    function setUserPreference(uint256 tokenId, address preferredToken, uint256 increasePercentage) public {
+        if(preferredToken != address(0)) {
+            setPreferredToken(tokenId, preferredToken);
+        }
+        setIncreasePercentage(tokenId, increasePercentage);
+    }
+
     /** ORACLE */
-    
     /**
      * @notice Confirms the price of USDC is $1.
      * @dev This function checks the latest round data from the Chainlink price feed for USDC.
