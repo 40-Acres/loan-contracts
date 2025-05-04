@@ -181,4 +181,59 @@ contract CommunityRewardsTest is Test {
         assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
     }
 
+    function testClaimSameEpochBeforeRewardsReceived() public {
+        communityRewards._deposit(1e18, user1);
+        communityRewards._deposit(1e18, user2);
+        communityRewards._deposit(1e18, user3);
+        communityRewards._deposit(1e18, user4);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        
+        vm.warp(block.timestamp + 7 days);
+        usdc.approve(address(communityRewards), type(uint256).max);
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+        communityRewards.notifyRewardAmount(address(usdc), 6e6);
+
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+        vm.prank(user2);
+        communityRewards.getReward(tokens);
+        vm.prank(user3);
+        communityRewards.getReward(tokens);
+        vm.prank(user4);
+        communityRewards.getReward(tokens);
+
+        assertEq(usdc.balanceOf(user1), 1.5e6, "User 1 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user2), 1.5e6, "User 2 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user3), 1.5e6, "User 3 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
+    }
+    function testClaimSameEpochAfterRewardsReceived() public {
+        communityRewards._deposit(1e18, user1);
+        communityRewards._deposit(1e18, user2);
+        communityRewards._deposit(1e18, user3);
+        communityRewards._deposit(1e18, user4);
+
+        vm.warp(block.timestamp + 7 days);
+        usdc.approve(address(communityRewards), type(uint256).max);
+        communityRewards.notifyRewardAmount(address(usdc), 6e6);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+        vm.prank(user2);
+        communityRewards.getReward(tokens);
+        vm.prank(user3);
+        communityRewards.getReward(tokens);
+        vm.prank(user4);
+        communityRewards.getReward(tokens);
+
+        assertEq(usdc.balanceOf(user1), 1.5e6, "User 1 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user2), 1.5e6, "User 2 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user3), 1.5e6, "User 3 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
+    }
 }

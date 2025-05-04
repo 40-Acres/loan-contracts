@@ -36,7 +36,7 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
 
     mapping(address => mapping(uint256 => uint256)) public tokenRewardsPerEpoch;
     mapping(address => mapping(address => uint256)) public lastEarn;
-    mapping(address => uint256) public lastEarnedEpoch;
+    mapping(address => uint256) public lastNotify;
 
     address[] public rewards;
     mapping(address => bool) public isReward;
@@ -89,6 +89,7 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
 
     function notifyRewardAmount(address token, uint256 amount) external  nonReentrant {
         address sender = _msgSender();
+        require(sender == authorized);
         if (amount == 0) revert ZeroAmount();
         if (!isReward[token]) revert InvalidReward();
         IERC20(token).safeTransferFrom(sender, address(this), amount);
@@ -97,9 +98,8 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK;
         tokenRewardsPerEpoch[token][epochStart] += amount;
 
-        if (lastEarnedEpoch[token] < epochStart) {
-            lastEarnedEpoch[token] = epochStart;
-        }
+        lastNotify[token] = block.timestamp;
+        
         emit NotifyReward(sender, token, epochStart, amount);
     }
 
@@ -263,8 +263,8 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     ) internal {
         uint256 _length = tokens.length;
         for (uint256 i = 0; i < _length; i++) {
-            uint256 _reward = earned(tokens[i], owner);
-            lastEarn[tokens[i]][owner] = block.timestamp;
+            uint256 _reward = earned(tokens[i], owner); 
+            lastEarn[tokens[i]][owner] = lastNotify[tokens[i]];
             if (_reward > 0) IERC20(tokens[i]).safeTransfer(owner, _reward);
 
             emit ClaimRewards(owner, tokens[i], _reward);
