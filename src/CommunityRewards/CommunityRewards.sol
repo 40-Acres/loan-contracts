@@ -23,8 +23,8 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     error NotWhitelisted();
     error ZeroAmount();
 
-    event Deposit(address indexed from, uint256 indexed tokenId, uint256 amount);
-    event Withdraw(address indexed from, uint256 indexed tokenId, uint256 amount);
+    event Deposit(address indexed from, uint256 amount);
+    event Withdraw(address indexed from, uint256 amount);
     event NotifyReward(address indexed from, address indexed reward, uint256 indexed epoch, uint256 amount);
     event ClaimRewards(address indexed from, address indexed reward, uint256 amount);
 
@@ -35,7 +35,7 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     address public authorized;
 
     mapping(address => mapping(uint256 => uint256)) public tokenRewardsPerEpoch;
-    mapping(address => mapping(uint256 => uint256)) public lastEarn;
+    mapping(address => mapping(address => uint256)) public lastEarn;
     mapping(address => uint256) public lastEarnedEpoch;
 
     address[] public rewards;
@@ -44,7 +44,7 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     /// @notice A checkpoint for marking balance
     struct Checkpoint {
         uint256 timestamp;
-        uint256 balanceOf;
+        uint256 _balances;
     }
 
     /// @notice A checkpoint for marking supply
@@ -54,9 +54,9 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     }
 
     /// @notice A record of balance checkpoints for each account, by index
-    mapping(uint256 => mapping(uint256 => Checkpoint)) public checkpoints;
+    mapping(address => mapping(uint256 => Checkpoint)) public checkpoints;
     /// @notice The number of checkpoints for each account
-    mapping(uint256 => uint256) public numCheckpoints;
+    mapping(address => uint256) public numCheckpoints;
     /// @notice A record of balance checkpoints for each token, by index
     mapping(uint256 => SupplyCheckpoint) public supplyCheckpoints;
     /// @notice The number of checkpoints
@@ -75,7 +75,7 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         authorized = loanContract;
     }
 
-    function transfer(address recipient, uint256 amount) external override nonReentrant  returns (bool) {
+    function transfer(address recipient, uint256 amount) public override nonReentrant  returns (bool) {
         address sender = _msgSender();
 
         _transfer(sender, recipient, amount);
@@ -87,7 +87,7 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     }
 
 
-    function notifyRewardAmount(address token, uint256 amount) external override nonReentrant {
+    function notifyRewardAmount(address token, uint256 amount) external  nonReentrant {
         address sender = _msgSender();
         if (amount == 0) revert ZeroAmount();
         if (!isReward[token]) revert InvalidReward();
@@ -97,6 +97,9 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK;
         tokenRewardsPerEpoch[token][epochStart] += amount;
 
+        if (lastEarnedEpoch[token] < epochStart) {
+            lastEarnedEpoch[token] = epochStart;
+        }
         emit NotifyReward(sender, token, epochStart, amount);
     }
 
@@ -189,9 +192,9 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
             ProtocolTimeLibrary.epochStart(supplyCheckpoints[_nCheckPoints - 1].timestamp) ==
             ProtocolTimeLibrary.epochStart(_timestamp)
         ) {
-            supplyCheckpoints[_nCheckPoints - 1] = SupplyCheckpoint(_timestamp, totalSupply);
+            supplyCheckpoints[_nCheckPoints - 1] = SupplyCheckpoint(_timestamp, totalSupply());
         } else {
-            supplyCheckpoints[_nCheckPoints] = SupplyCheckpoint(_timestamp, totalSupply);
+            supplyCheckpoints[_nCheckPoints] = SupplyCheckpoint(_timestamp, totalSupply());
             supplyNumCheckpoints = _nCheckPoints + 1;
         }
     }
@@ -237,13 +240,12 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         address sender = _msgSender();
         if (sender != authorized) revert NotAuthorized();
 
-        totalSupply += amount;
-        balanceOf(owner) += amount;
+        _mint(owner, amount);
 
         _writeCheckpoint(owner, balanceOf(owner));
         _writeSupplyCheckpoint();
 
-        emit Deposit(sender, owner, amount);
+        emit Deposit(sender, amount);
     }
 
     function _withdraw(uint256 amount, address owner) external {
@@ -267,26 +269,5 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
 
             emit ClaimRewards(owner, tokens[i], _reward);
         }
-    }
-
-    function notifyRewardAmount(address token, uint256 amount) external virtual nonReentrant {}
-
-    /// @dev used within all notifyRewardAmount implementations
-    function _notifyRewardAmount(
-        address sender,
-        address token,
-        uint256 amount
-    ) internal virtual{
-        if (amount == 0) revert ZeroAmount();
-        if (sender != authorized) revert NotAuthorized();
-        IERC20(token).safeTransferFrom(sender, address(this), amount);
-
-        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-        tokenRewardsPerEpoch[token][epochStart] += amount;
-        if (lastEarnedEpoch[token] < epochStart) {
-            lastEarnedEpoch[token] = epochStart;
-        }
-
-        emit NotifyReward(sender, token, epochStart, amount);
     }
 }
