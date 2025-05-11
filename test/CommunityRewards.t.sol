@@ -5,6 +5,8 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import{IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -37,7 +39,7 @@ contract CommunityRewardsTest is Test {
         vm.selectFork(fork);
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
-        communityRewards = new CommunityRewards(address(this), tokens);
+        communityRewards = new CommunityRewards(address(this), tokens, 1000);
               
         IERC20 aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
         vm.prank(usdc.masterMinter());
@@ -56,10 +58,10 @@ contract CommunityRewardsTest is Test {
     }
 
     function testCommunityRewards() public {
-        communityRewards._deposit(1e18, user1);
-        communityRewards._deposit(1e18, user2);
-        communityRewards._deposit(1e18, user3);
-        communityRewards._deposit(1e18, user4);
+        communityRewards.deposit(uint256(0), 1e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
 
         console.log("balance", usdc.balanceOf(user1));
         vm.warp(block.timestamp + 7 days);
@@ -87,14 +89,14 @@ contract CommunityRewardsTest is Test {
 
 
     function testIncrease() public {
-        communityRewards._deposit(1e18, user1);
-        communityRewards._deposit(1e18, user2);
-        communityRewards._deposit(1e18, user3);
-        communityRewards._deposit(1e18, user4);
+        communityRewards.deposit(uint256(0), 1e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
 
         console.log("balance", usdc.balanceOf(user1));
         vm.warp(block.timestamp + 7 days);
-        communityRewards._deposit(1e18, user4);
+        communityRewards.deposit(uint256(0), 1e18, user4);
         usdc.approve(address(communityRewards), type(uint256).max);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
 
@@ -119,10 +121,10 @@ contract CommunityRewardsTest is Test {
 
 
     function testTransfer() public {
-        communityRewards._deposit(1e18, user1);
-        communityRewards._deposit(1e18, user2);
-        communityRewards._deposit(1e18, user3);
-        communityRewards._deposit(1e18, user4);
+        communityRewards.deposit(uint256(0), 1e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
 
         vm.prank(user1);
         communityRewards.transfer(user2, 1e18);
@@ -150,10 +152,10 @@ contract CommunityRewardsTest is Test {
 
 
     function testTransfer2() public {
-        communityRewards._deposit(1e18, user1);
-        communityRewards._deposit(1e18, user2);
-        communityRewards._deposit(1e18, user3);
-        communityRewards._deposit(1e18, user4);
+        communityRewards.deposit(uint256(0), 1e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
 
         vm.prank(user1);
         communityRewards.transfer(user2, 1e18);
@@ -182,10 +184,10 @@ contract CommunityRewardsTest is Test {
     }
 
     function testClaimSameEpochBeforeRewardsReceived() public {
-        communityRewards._deposit(1e18, user1);
-        communityRewards._deposit(1e18, user2);
-        communityRewards._deposit(1e18, user3);
-        communityRewards._deposit(1e18, user4);
+        communityRewards.deposit(uint256(0), 1e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -210,11 +212,11 @@ contract CommunityRewardsTest is Test {
         assertEq(usdc.balanceOf(user3), 1.5e6, "User 3 should have received 1.5 USDC");
         assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
     }
-    function testClaimSameEpochAfterRewardsReceived() public {
-        communityRewards._deposit(1e18, user1);
-        communityRewards._deposit(1e18, user2);
-        communityRewards._deposit(1e18, user3);
-        communityRewards._deposit(1e18, user4);
+    function testRewardsReceivedAfterClaim() public {
+        communityRewards.deposit(uint256(0), 1e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
 
         vm.warp(block.timestamp + 7 days);
         usdc.approve(address(communityRewards), type(uint256).max);
@@ -222,6 +224,33 @@ contract CommunityRewardsTest is Test {
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
+        vm.prank(user2);
+        communityRewards.getReward(tokens);
+        vm.prank(user3);
+        communityRewards.getReward(tokens);
+        vm.prank(user4);
+        communityRewards.getReward(tokens);
+
+
+        communityRewards.notifyRewardAmount(address(usdc), 6e6);
+
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+        vm.prank(user2);
+        communityRewards.getReward(tokens);
+        
+        vm.prank(user4);
+        communityRewards.getReward(tokens);
+
+
+        assertEq(usdc.balanceOf(user1), 3e6, "User 1 should have received 3 USDC");
+        assertEq(usdc.balanceOf(user2), 3e6, "User 2 should have received 3 USDC");
+        assertEq(usdc.balanceOf(user3), 1.5e6, "User 3 should have received 1.5 USDC");
+        assertEq(usdc.balanceOf(user4), 3e6, "User 4 should have received 3 USDC");
+
+
+        communityRewards.notifyRewardAmount(address(usdc), 6e6);
+
         vm.prank(user1);
         communityRewards.getReward(tokens);
         vm.prank(user2);
@@ -231,9 +260,29 @@ contract CommunityRewardsTest is Test {
         vm.prank(user4);
         communityRewards.getReward(tokens);
 
-        assertEq(usdc.balanceOf(user1), 1.5e6, "User 1 should have received 1.5 USDC");
-        assertEq(usdc.balanceOf(user2), 1.5e6, "User 2 should have received 1.5 USDC");
-        assertEq(usdc.balanceOf(user3), 1.5e6, "User 3 should have received 1.5 USDC");
-        assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
+
+        assertEq(usdc.balanceOf(user1), 4.5e6, "User 1 should have received 4.5 USDC");
+        assertEq(usdc.balanceOf(user2), 4.5e6, "User 2 should have received 4.5 USDC");
+        assertEq(usdc.balanceOf(user3), 4.5e6, "User 3 should have received 4.5 USDC");
+        assertEq(usdc.balanceOf(user4), 4.5e6, "User 4 should have received 4.5 USDC");
+
+
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+        vm.prank(user2);
+        communityRewards.getReward(tokens);
+        vm.prank(user3);
+        communityRewards.getReward(tokens);
+        vm.prank(user4);
+        communityRewards.getReward(tokens);
+
+
+
+        assertEq(usdc.balanceOf(user1), 4.5e6, "User 1 should have received 4.5 USDC");
+        assertEq(usdc.balanceOf(user2), 4.5e6, "User 2 should have received 4.5 USDC");
+        assertEq(usdc.balanceOf(user3), 4.5e6, "User 3 should have received 4.5 USDC");
+        assertEq(usdc.balanceOf(user4), 4.5e6, "User 4 should have received 4.5 USDC");
+
     }
+    
 }

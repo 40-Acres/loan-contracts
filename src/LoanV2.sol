@@ -19,6 +19,7 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
+import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -716,6 +717,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _aero.approve(address(_ve), amountOut);
         _ve.increaseAmount(loan.tokenId, amountOut);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, amountOut);
+        (, address managedNft) = getLoanDetails(getManagedNft());
+        ICommunityRewards(managedNft).deposit(getManagedNft(), amountOut, loan.borrower);
         addTotalWeight(amountOut);
         return amountToIncrease;
     }
