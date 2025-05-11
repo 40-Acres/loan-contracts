@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
+
+
 pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";
@@ -594,6 +596,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
         }
         require(asset.transfer(loan.borrower, amount));
+        if(tokenId == getManagedNft()) {
+            ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), amount);
+        }
     }
 
 
@@ -923,7 +928,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(loan.borrower == address(0));
         uint256 beginningBalance = _ve.balanceOfNFTAt(managedNft, block.timestamp);
         _ve.merge(tokenId, managedNft);
-        addTotalWeight(_ve.balanceOfNFTAt(managedNft, block.timestamp) - beginningBalance);
+        uint256 weightAdded = _ve.balanceOfNFTAt(managedNft, block.timestamp) - beginningBalance;
+        addTotalWeight(weightAdded);
+        ICommunityRewards(_ve.ownerOf(managedNft)).notifyFlightBonus(weightAdded);
     }
     
 

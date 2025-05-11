@@ -3,9 +3,6 @@ pragma solidity ^0.8.0;
 
 /// @title Interface for CommunityRewards contract
 interface ICommunityRewards {
-    error InvalidReward();
-    error NotAuthorized();
-    error ZeroAmount();
 
     event Deposit(address indexed from, uint256 amount);
     event Withdraw(address indexed from, uint256 amount);
@@ -30,7 +27,13 @@ interface ICommunityRewards {
 
     function getUserFlightSchoolAllocation(address _owner, uint256 _tokenId, uint256 _epoch) external;
 
-    function notifyFlightBonus(uint256 flight, uint256 amount) external;
+    function notifyFlightBonus(uint256 amount) external;
 
     function claimFlightBonus(address owner, uint256 month) external;
+    
+    function initialize(
+        address _loanContract,
+        address[] memory _rewards,
+        uint256 _threshold
+    ) external;
 }

@@ -1,4 +1,11 @@
 // SPDX-License-Identifier: BUSL-1.1
+
+// Portions of this contract are adapted from Velodrome's Reward.sol
+// Source: https://github.com/velodrome-finance/contracts/blob/a2548b1d91f3312acb9e4f317d8149d723d78f00/contracts/rewards/Reward.sol
+// Commit: a2548b1d91f3312acb9e4f317d8149d723d78f00
+// Originally licensed under the MIT License.
+// Copyright (c) Velodrome Finance
+
 pragma solidity ^0.8.0;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -6,12 +13,15 @@ import {IReward} from "../interfaces/IReward.sol";
 import {IVoter} from "../interfaces/IVoter.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {ProtocolTimeLibrary} from "../libraries/ProtocolTimeLibrary.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { ILoan } from "../interfaces/ILoan.sol";
+import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
 
 /// @title Base reward contract for distribution of rewards
-contract CommunityRewards is ERC20, ReentrancyGuard {
+contract CommunityRewards is ERC20Upgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
 
     error InvalidReward();
@@ -31,6 +41,9 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         address indexed reward,
         uint256 amount
     );
+
+    event NotifyFlightBonus(uint256 indexed flight, uint256 amount);
+    event ClaimFlightBonus(address indexed from, uint256 indexed flight, uint256 amount);
 
     uint256 public constant DURATION = 7 days;
 
@@ -79,11 +92,21 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
     /// @notice The number of checkpoints
     uint256 public supplyNumCheckpoints;
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _loanContract,
         address[] memory _rewards,
-        uint256 _threshold
-    ) ERC20("40AcresCommunityRewards", "40A-Community-Rewards") {
+        uint256 _threshold,
+        uint256 _tokenId,
+        address _votingEscrow
+    ) external initializer {
+        __ERC20_init("40AcresCommunityRewards", "40A-Community-Rewards");
+        __ReentrancyGuard_init();
+        
         uint256 _length = _rewards.length;
         for (uint256 i; i < _length; i++) {
             if (_rewards[i] != address(0)) {
@@ -94,6 +117,9 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         rewards.push(address(this)); // add this contract to the list of rewards
         authorized = _loanContract;
         threshold = _threshold;
+        IVotingEscrow(_votingEscrow).transferFrom(msg.sender, address(this), _tokenId);
+        IVotingEscrow(_votingEscrow).approve(_loanContract, _tokenId);
+        ILoan(_loanContract).requestLoan(_tokenId, 0, ILoan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
     }
 
     function transfer(
@@ -109,6 +135,22 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
 
         return true;
     }
+    function transferFrom(
+        address _sender,
+        address _recipient,
+        uint256 _amount
+    ) public override nonReentrant returns (bool) {
+        address msgSender = _msgSender();
+        
+        _spendAllowance(_sender, msgSender, _amount);
+        _transfer(_sender, _recipient, _amount);
+        
+        _writeCheckpoint(_recipient, balanceOf(_recipient));
+        _writeCheckpoint(_sender, balanceOf(_sender));
+        
+        return true;
+    }
+    
 
     function notifyRewardAmount(
         address _token,
@@ -118,7 +160,6 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         require(sender == authorized);
         if (_amount == 0) revert ZeroAmount();
         if (!isReward[_token]) revert InvalidReward();
-        IERC20(_token).safeTransferFrom(sender, address(this), _amount);
 
         // we send the reward to the previous epoch since rewards are distributed at the end of the epoch
         uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp) -
@@ -372,14 +413,16 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         }
     }
 
-    function notifyFlightBonus(uint256 flight, uint256 amount) external {
+    function notifyFlightBonus(uint256 amount) external {
         address sender = _msgSender();
         if (sender != authorized) revert NotAuthorized();
         if (amount == 0) revert ZeroAmount();
 
-        flightBonus[flight] += amount;
+        uint256 previousFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4 * ProtocolTimeLibrary.WEEK) - 4 * ProtocolTimeLibrary.WEEK;
+        flightBonus[previousFlight] += amount;
 
-        // emit NotifyFlightBonus(month, amount);
+
+        emit NotifyFlightBonus(previousFlight, amount);
     }
 
     function claimFlightBonus(address owner, uint256 flight) external nonReentrant {
@@ -398,6 +441,6 @@ contract CommunityRewards is ERC20, ReentrancyGuard {
         _writeCheckpoint(owner, balanceOf(owner));
         _writeSupplyCheckpoint();
 
-        emit ClaimRewards(owner, address(this), rewardAmount);
+        emit ClaimFlightBonus(owner, flight, rewardAmount);
     }
 }

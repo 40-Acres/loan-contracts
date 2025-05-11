@@ -7,7 +7,11 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import{IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ProtocolTimeLibrary} from "../src/libraries/ProtocolTimeLibrary.sol";
-
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Loan} from "../src/LoanV2.sol";
+import { IVotingEscrow } from "../src/interfaces/IVotingEscrow.sol";
+import { IVoter } from "src/interfaces/IVoter.sol";
+import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -34,18 +38,37 @@ contract CommunityRewardsTest is Test {
     address public user2 = address(0x26546);
     address public user3 = address(0x36546);
     address public user4 = address(0x465436);
+    IVoter public voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
+
+    Loan public loan = Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
+    uint256 public tokenId = 524;
+
+    IVotingEscrow votingEscrow = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
-        communityRewards = new CommunityRewards(address(this), tokens, 2500e18);
+
+
+        address user = votingEscrow.ownerOf(tokenId);
+        vm.prank(user);
+        votingEscrow.transferFrom(user, address(this), tokenId);
+
+        CommunityRewards _communityRewards = new CommunityRewards();
+        ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
+        votingEscrow.approve(address(_proxy), tokenId);
+        vm.roll(block.number + 1);
+        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, tokenId, 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+
+
+        communityRewards = CommunityRewards(address(_proxy));
               
         IERC20 aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
-        usdc.mint(address(this), 150e18);
+        usdc.mint(address(loan), 150e18);
 
         // remove all users usdc balance
         vm.prank(user1);
@@ -59,15 +82,20 @@ contract CommunityRewardsTest is Test {
     }
 
     function testCommunityRewards() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
 
         console.log("balance", usdc.balanceOf(user1));
         vm.warp(block.timestamp + 7 days);
         usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
 
         address[] memory tokens = new address[](1);
@@ -90,16 +118,22 @@ contract CommunityRewardsTest is Test {
 
 
     function testIncrease() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
 
         console.log("balance", usdc.balanceOf(user1));
         vm.warp(block.timestamp + 7 days);
+        vm.prank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user4);
         usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
 
         address[] memory tokens = new address[](1);
@@ -122,17 +156,22 @@ contract CommunityRewardsTest is Test {
 
 
     function testTransfer() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
 
         vm.prank(user1);
         communityRewards.transfer(user2, 1e18);
 
         vm.warp(block.timestamp + 7 days);
         usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -153,10 +192,12 @@ contract CommunityRewardsTest is Test {
 
 
     function testTransfer2() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
 
         vm.prank(user1);
         communityRewards.transfer(user2, 1e18);
@@ -165,7 +206,10 @@ contract CommunityRewardsTest is Test {
         vm.prank(user2);
         communityRewards.transfer(user1, 1e18);
         usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -185,10 +229,12 @@ contract CommunityRewardsTest is Test {
     }
 
     function testClaimSameEpochBeforeRewardsReceived() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -197,7 +243,10 @@ contract CommunityRewardsTest is Test {
         usdc.approve(address(communityRewards), type(uint256).max);
         vm.prank(user1);
         communityRewards.getReward(tokens);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
         vm.prank(user1);
         communityRewards.getReward(tokens);
@@ -214,14 +263,19 @@ contract CommunityRewardsTest is Test {
         assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
     }
     function testRewardsReceivedAfterClaim() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
 
         vm.warp(block.timestamp + 7 days);
         usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -233,7 +287,10 @@ contract CommunityRewardsTest is Test {
         communityRewards.getReward(tokens);
 
 
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
         vm.prank(user1);
         communityRewards.getReward(tokens);
@@ -250,7 +307,10 @@ contract CommunityRewardsTest is Test {
         assertEq(usdc.balanceOf(user4), 3e6, "User 4 should have received 3 USDC");
 
 
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
         communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
 
         vm.prank(user1);
         communityRewards.getReward(tokens);
@@ -287,10 +347,12 @@ contract CommunityRewardsTest is Test {
     }
 
     function testFlightSchoolAllocation() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
         communityRewards.deposit(uint256(0), 1e18, user2);
         communityRewards.deposit(uint256(0), 1e18, user3);
         communityRewards.deposit(uint256(1), 1e18, user4);
+        vm.stopPrank();
 
         vm.warp(block.timestamp + 3 days);
         uint256 currentFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4*ProtocolTimeLibrary.WEEK);
@@ -309,7 +371,9 @@ contract CommunityRewardsTest is Test {
         balance = IERC20(address(communityRewards)).balanceOf(user4);
         assertEq(balance, 0, "User 4 should have 0 balance");
 
-        communityRewards.notifyFlightBonus(currentFlight, .75e18);
+        vm.startPrank(address(loan));
+        communityRewards.notifyFlightBonus(.75e18);
+        vm.stopPrank();
 
         communityRewards.claimFlightBonus(address(user1), currentFlight);
         balance = IERC20(address(communityRewards)).balanceOf(user1);
@@ -329,10 +393,12 @@ contract CommunityRewardsTest is Test {
     }
 
     function testFlightSchoolEscrowAllocation() public {
+        vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1000e18, user1);
         communityRewards.deposit(uint256(0), 1000e18, user2);
         communityRewards.deposit(uint256(0), 1000e18, user3);
         communityRewards.deposit(uint256(1), 3000e18, user4);
+        vm.stopPrank();
 
         vm.warp(block.timestamp + 3 days);
         uint256 currentFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4*ProtocolTimeLibrary.WEEK);
@@ -347,8 +413,10 @@ contract CommunityRewardsTest is Test {
         balance = IERC20(address(communityRewards)).balanceOf(user4);
         assertEq(balance, 0, "User 4 should have 0 balance");
 
-        communityRewards.notifyFlightBonus(currentFlight, 600e18);
-
+        vm.warp(block.timestamp + 28 days);
+        vm.startPrank(address(loan));
+        communityRewards.notifyFlightBonus(600e18);
+        vm.stopPrank();
         communityRewards.claimFlightBonus(address(user1), currentFlight);
         balance = IERC20(address(communityRewards)).balanceOf(user1);
         assertEq(balance, 1000e18 + 100e18, "User 1 should have 1100e18 balance");
@@ -366,4 +434,43 @@ contract CommunityRewardsTest is Test {
         assertEq(balance, 300e18, "User 4 should have 300e18 balance");
     }
 
+
+    function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal returns (uint256) {
+        address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
+        uint256 index = 0;
+
+        while (true) {
+            try voter.poolVote(_tokenId, index) returns (address _pool) {
+                pools[index] = _pool;
+                index++;
+            } catch {
+                break; // Exit the loop when it reverts
+            }
+        }
+
+        address[] memory voterPools = new address[](index);
+        for (uint256 i = 0; i < index; i++) {
+            voterPools[i] = pools[i];
+        }
+        address[] memory fees = new address[](2 * voterPools.length);
+        address[][] memory tokens = new address[][](2 * voterPools.length);
+
+        for (uint256 i = 0; i < voterPools.length; i++) {
+            address gauge = voter.gauges(voterPools[i]);
+            fees[2 * i] = voter.gaugeToFees(gauge);
+            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
+            address[] memory token = new address[](2);
+            token[0] = ICLGauge(voterPools[i]).token0();
+            token[1] = ICLGauge(voterPools[i]).token1();
+            tokens[2 * i] = token;
+            address[] memory bribeTokens = new address[](bribes.length + 2);
+            for (uint256 j = 0; j < bribes.length; j++) {
+                bribeTokens[j] = bribes[j];
+            }
+            bribeTokens[bribes.length] = token[0];
+            bribeTokens[bribes.length + 1] = token[1];
+            tokens[2 * i + 1] = bribeTokens;
+        }
+        return _loan.claim(_tokenId, fees, tokens);
+    }
 }

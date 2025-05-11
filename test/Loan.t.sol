@@ -89,7 +89,6 @@ contract LoanTest is Test {
         vm.stopPrank();
     }
 
-    // FOR ON FRIDAY DONT APPROVE
     function testOwner() public view {
         address o = loan.owner();
         assertEq(o, owner);
