@@ -30,5 +30,7 @@ interface ICommunityRewards {
 
     function getUserFlightSchoolAllocation(address _owner, uint256 _tokenId, uint256 _epoch) external;
 
-    function notifyFlightSchoolRewards(uint256 _epoch) external;
+    function notifyFlightBonus(uint256 flight, uint256 amount) external;
+
+    function claimFlightBonus(address owner, uint256 month) external;
 }
