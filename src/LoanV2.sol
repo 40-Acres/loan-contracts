@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: BUSL-1.1
-
-
 pragma solidity ^0.8.27;
 
 import "./interfaces/IVoter.sol";
@@ -102,9 +100,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the borrower.
      * @param amount The amount of funds borrowed.
-     * @param viaTopup Indicates whether the funds were borrowed via a top-up.
      */
-    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount, bool viaTopup);
+    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
     
     /**
      * @dev Emitted when rewards are received for a loan.
@@ -278,7 +275,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
 
         require(loan.borrower == msg.sender);
-        _increaseLoan(loan, tokenId, amount, false);
+        _increaseLoan(loan, tokenId, amount);
 
        // set a default payoff token if not set
        if(getUserPayoffToken(loan.borrower) == 0) {
@@ -293,9 +290,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      and if the borrower is the one requesting the increase.
      * @param tokenId The ID of the loan for which the amount is being increased.
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
-     * @param viaTopup Indicates whether the increase is being done via a top-up.
      */
-    function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount, bool viaTopup) internal {
+    function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
@@ -304,7 +300,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
         _usdc.transferFrom(_vault, loan.borrower, amount);
-        emit FundsBorrowed(tokenId, loan.borrower, amount, viaTopup);
+        emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
     /**
@@ -498,7 +494,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(!isManual && loan.topUp && confirmUsdcPrice()) {
             (uint256 maxLoan, ) = getMaxLoan(tokenId);
             if(maxLoan > .01e6) {
-                _increaseLoan(loan, tokenId, maxLoan, true);
+                _increaseLoan(loan, tokenId, maxLoan);
             }
         }
 
@@ -711,6 +707,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
 
+        if(amountOut == 0) {
+            return 0;
+        }
         // get protocol fee 
         if(takeFees) {
             amountOut -= _payZeroBalanceFee(loan.borrower, loan.tokenId, amountOut, address(_aero));
@@ -719,8 +718,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _aero.approve(address(_ve), amountOut);
         _ve.increaseAmount(loan.tokenId, amountOut);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, amountOut);
-        (, address managedNft) = getLoanDetails(getManagedNft());
-        ICommunityRewards(managedNft).deposit(getManagedNft(), amountOut, loan.borrower);
         addTotalWeight(amountOut);
         return amountToIncrease;
     }
@@ -917,7 +914,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * ManagedNFT is essentially a community owned veNFT where users can increase the NFT to obtain shares
      * In the future this can be used as collateral for loans
      */
-    function mergeIntoManagedNft(uint256 tokenId) public onlyOwner {
+   function mergeIntoManagedNft(uint256 tokenId) public onlyOwner {
         uint256 managedNft = getManagedNft();
         require(_ve.ownerOf(tokenId) == address(this));
         require(_ve.ownerOf(managedNft) == address(this));
@@ -927,7 +924,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.merge(tokenId, managedNft);
         uint256 weightAdded = _ve.balanceOfNFTAt(managedNft, block.timestamp) - beginningBalance;
         addTotalWeight(weightAdded);
-        ICommunityRewards(_ve.ownerOf(managedNft)).notifyFlightBonus(weightAdded);
+        (, address managedNftAddress) = getLoanDetails(managedNft);
+        ICommunityRewards(managedNftAddress).notifyFlightBonus(weightAdded);
     }
     
 
@@ -1086,9 +1084,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
     }
-    
-
-
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.
@@ -1181,22 +1176,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-    /**
-     * @notice Sets the user preference for a specific loan.
-     * @dev This function allows the borrower to set their preferred token and increase percentage for their loan.
-     *      The borrower must be the owner of the loan token.
-     * @param tokenId The unique identifier of the loan.
-     * @param preferredToken The address of the preferred token to be set. If set to address(0), the default token will be used.
-     * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100).
-     */
-    function setUserPreference(uint256 tokenId, address preferredToken, uint256 increasePercentage) public {
-        if(preferredToken != address(0)) {
-            setPreferredToken(tokenId, preferredToken);
-        }
-        setIncreasePercentage(tokenId, increasePercentage);
-    }
-
     /** ORACLE */
+    
     /**
      * @notice Confirms the price of USDC is $1.
      * @dev This function checks the latest round data from the Chainlink price feed for USDC.

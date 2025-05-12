@@ -19,6 +19,7 @@ import {DeploySwapper} from "../script/BaseDeploySwapper.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import { Swapper } from "../src/Swapper.sol";
+import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -625,37 +626,66 @@ contract LoanTest is Test {
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
     }
 
-    function testMergeManagedNft() public {
+    function testManagedNft() public {
         uint256 _tokenId = 524;
         address _user = votingEscrow.ownerOf(_tokenId);
-        vm.startPrank(_user);        
-        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), true);
-        vm.stopPrank();
+        vm.prank(_user);
+        votingEscrow.transferFrom(_user, address(this), _tokenId);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
         
+        CommunityRewards _communityRewards = new CommunityRewards();
+        ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
+        votingEscrow.approve(address(_proxy), _tokenId);
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
+        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, _tokenId, 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+
         
-        address _user2 = votingEscrow.ownerOf(66706);
-        vm.prank(_user2);
-        votingEscrow.transferFrom(_user2, address(loan), 66706);
+
+        vm.prank(0x40EbC1Ac8d4Fedd2E144b75fe9C0420BE82750c6);
+        aero.transfer(_user, 10e18);
+        vm.startPrank(_user);
+        aero.approve(address(votingEscrow), 10e18);
+        uint256 newLockId = votingEscrow.createLock(10e18, 604800);
+        vm.stopPrank();
 
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + 1);
+        
+        address _user2 = votingEscrow.ownerOf(newLockId);
+        console.log("new lock id: %s", newLockId);
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        uint256 nftBalance = votingEscrow.balanceOfNFT(newLockId);
+        assertTrue(nftBalance > 0, "should not have balance");
+        vm.prank(_user2);
+        votingEscrow.transferFrom(_user2, address(loan), newLockId);
+
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
         address _owner = Ownable2StepUpgradeable(loan).owner();
         vm.prank(_owner);
         loan.setManagedNft(524);
 
         vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(block.timestamp + 1);
+        uint256 beginningBalance = votingEscrow.balanceOfNFT(_tokenId);
         vm.startPrank(_owner);
-        loan.mergeIntoManagedNft(66706);
+        loan.mergeIntoManagedNft(newLockId);
+        assertTrue(votingEscrow.balanceOfNFT(_tokenId) > beginningBalance, "should have more balance");
 
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
-        assertEq(votingEscrow.ownerOf(66706), address(0), "should be burnt");
+        assertEq(votingEscrow.ownerOf(newLockId), address(0), "should be burnt");
         vm.expectRevert();
-        loan.setManagedNft(66706);
+        loan.setManagedNft(newLockId);
+
+        address[] memory bribes = new address[](0);
+        _claimRewards(loan, _tokenId, bribes);
+
+        uint256 rewards = CommunityRewards(address(_proxy)).tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
+        assertTrue(rewards > 0, "rewards should be greater than 0");
     }
 
 

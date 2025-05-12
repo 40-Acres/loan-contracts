@@ -114,6 +114,7 @@ contract CommunityRewards is ERC20Upgradeable, ReentrancyGuardUpgradeable {
                 rewards.push(_rewards[i]);
             }
         }
+        
         rewards.push(address(this)); // add this contract to the list of rewards
         authorized = _loanContract;
         threshold = _threshold;
