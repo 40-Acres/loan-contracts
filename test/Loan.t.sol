@@ -20,6 +20,7 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import { Swapper } from "../src/Swapper.sol";
 import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
+import { IMinter } from "src/interfaces/IMinter.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -682,12 +683,35 @@ contract LoanTest is Test {
         loan.setManagedNft(newLockId);
 
         address[] memory bribes = new address[](0);
+        CommunityRewards communityRewards = CommunityRewards(address(_proxy));
+        address user1 = address(0x353641);
+        address user2 = address(0x26546);
+        vm.startPrank(address(loan));
+        communityRewards.deposit(uint256(524), 10e18, user1);
+        communityRewards.deposit(uint256(524), 10e18, user2);
+        vm.stopPrank();
+
+
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 7 days);
+
+        IMinter(0xeB018363F0a9Af8f91F06FEe6613a751b2A33FE5).updatePeriod();
         _claimRewards(loan, _tokenId, bribes);
-
-        uint256 rewards = CommunityRewards(address(_proxy)).tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
+        uint256 rewards = communityRewards.tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
         assertTrue(rewards > 0, "rewards should be greater than 0");
-    }
+       
+        communityRewards.getRewardForUser(user1, tokens);
+        communityRewards.getRewardForUser(user2, tokens);
 
+        assertTrue(IERC20(address(usdc)).balanceOf(address(communityRewards)) <  10, "should be less than 10");
+
+        // test setting increase percentage
+        vm.expectRevert();
+        communityRewards.setIncreasePercentage(0);
+        
+        vm.startPrank(_owner);
+        communityRewards.setIncreasePercentage(0);
+    }
 
     function testMerge() public {
         uint256 _tokenId = 524;

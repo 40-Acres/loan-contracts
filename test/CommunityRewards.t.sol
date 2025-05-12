@@ -116,6 +116,65 @@ contract CommunityRewardsTest is Test {
     }
 
 
+    function testThreshold() public {
+        vm.startPrank(address(loan));
+        communityRewards.deposit(uint256(1), 1000e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
+
+        console.log("balance", usdc.balanceOf(user1));
+        vm.warp(block.timestamp + 7 days);
+        usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
+        communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
+
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+
+        assertEq(usdc.balanceOf(user1), 0e6, "User 1 should have received 0 USDC");
+    }
+
+    function testMeetThresholdNoFlightReward() public {
+        vm.startPrank(address(loan));
+        communityRewards.deposit(uint256(1), 3000e18, user1);
+        communityRewards.deposit(uint256(0), 1e18, user2);
+        communityRewards.deposit(uint256(0), 1e18, user3);
+        communityRewards.deposit(uint256(0), 1e18, user4);
+        vm.stopPrank();
+
+        console.log("balance", usdc.balanceOf(user1));
+        vm.warp(block.timestamp + 7 days);
+        usdc.approve(address(communityRewards), type(uint256).max);
+        vm.startPrank(address(loan));
+        usdc.transfer(address(communityRewards), 6e6);
+        communityRewards.notifyRewardAmount(address(usdc), 6e6);
+        vm.stopPrank();
+
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        vm.prank(user1);
+        communityRewards.getReward(tokens);
+        vm.prank(user2);
+        communityRewards.getReward(tokens);
+        vm.prank(user3);
+        communityRewards.getReward(tokens);
+        vm.prank(user4);
+        communityRewards.getReward(tokens);
+
+        assertEq(usdc.balanceOf(user1), 2e6, "User 1 should have received 2 USDC");
+        assertEq(usdc.balanceOf(user2), 2e6, "User 2 should have received 2 USDC");
+        assertEq(usdc.balanceOf(user3), 2e6, "User 3 should have received 2 USDC");
+        assertEq(usdc.balanceOf(user4), 2e6, "User 4 should have received 2 USDC");
+
+    }
 
     function testIncrease() public {
         vm.startPrank(address(loan));
@@ -262,6 +321,7 @@ contract CommunityRewardsTest is Test {
         assertEq(usdc.balanceOf(user3), 1.5e6, "User 3 should have received 1.5 USDC");
         assertEq(usdc.balanceOf(user4), 1.5e6, "User 4 should have received 1.5 USDC");
     }
+
     function testRewardsReceivedAfterClaim() public {
         vm.startPrank(address(loan));
         communityRewards.deposit(uint256(0), 1e18, user1);
