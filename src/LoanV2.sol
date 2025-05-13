@@ -21,6 +21,7 @@ import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 
+
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -704,6 +705,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             increasePercentage = 2500; // Cap the increase percentage to 25% max
         }
         uint256 amountToIncrease = (claimedRewards * increasePercentage) / 10000;
+
         uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
 
         if(amountOut == 0) {
@@ -713,6 +715,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(takeFees) {
             amountOut -= _payZeroBalanceFee(loan.borrower, loan.tokenId, amountOut, address(_aero));
         }
+
         _aero.approve(address(_ve), amountOut);
         uint256 managedNft = getManagedNft();
         uint256 tokenToIncrease = userIncreasesManagedToken(loan.borrower) ? managedNft : loan.tokenId;
@@ -1088,6 +1091,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
     }
+    
+
+
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.

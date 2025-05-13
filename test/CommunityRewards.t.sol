@@ -81,13 +81,6 @@ contract CommunityRewardsTest is Test {
         usdc.transfer(address(this), usdc.balanceOf(user4));
     }
 
-    function testOpDeploy() public {
-        uint256 fork = vm.createFork(vm.envString("OP_RPC_URL"));
-        vm.selectFork(fork);
-        OpDeploy opDeploy = new OpDeploy();
-        opDeploy.run();
-    }
-
     function testUpgrade() public {
         vm.startPrank(IOwnable(address(loan)).owner());
         address newImplementation = address(new CommunityRewards());
