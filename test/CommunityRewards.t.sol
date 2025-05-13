@@ -53,6 +53,12 @@ contract CommunityRewardsTest is Test {
         tokens[0] = address(usdc);
 
 
+
+        vm.startPrank(address(loan.owner()));
+        Loan loanV2 = new Loan();
+        loan.upgradeToAndCall(address(loanV2), new bytes(0));
+        vm.stopPrank();
+
         address user = votingEscrow.ownerOf(tokenId);
         vm.prank(user);
         votingEscrow.transferFrom(user, address(this), tokenId);

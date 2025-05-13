@@ -70,6 +70,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken; // preferred token to receive for zero balance option
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
+        bool    optInCommunityRewards; // opt in to community rewards
     }
 
     // Pools each token votes on for this epoch
@@ -204,7 +205,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         ZeroBalanceOption zeroBalanceOption,
         uint256 increasePercentage,
         address preferredToken,
-        bool topUp
+        bool topUp,
+        bool optInCommunityRewards
     ) public  {
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
@@ -230,7 +232,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             unpaidFees: 0,
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
-            topUp: topUp
+            topUp: topUp,
+            optInCommunityRewards: optInCommunityRewards
+
         });
 
         vote(tokenId);
@@ -718,7 +722,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         _aero.approve(address(_ve), amountOut);
         uint256 managedNft = getManagedNft();
-        uint256 tokenToIncrease = userIncreasesManagedToken(loan.borrower) ? managedNft : loan.tokenId;
+        uint256 tokenToIncrease = (userIncreasesManagedToken(loan.borrower) || loan.optInCommunityRewards) ? managedNft : loan.tokenId;
         _ve.increaseAmount(tokenToIncrease, amountOut);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut);
         addTotalWeight(amountOut);
@@ -1092,7 +1096,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.preferredToken = preferredToken;
     }
     
-
+    function setOptInCommunityRewards(
+        uint256 tokenId,
+        bool optIn
+    ) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        loan.optInCommunityRewards = optIn;
+    }
 
 
     /**
