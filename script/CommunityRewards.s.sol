@@ -27,7 +27,7 @@ contract BaseDeploy is CommunityRewardsDeploy {
         tokens[0] = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
 
         address loan = 0x87f18b377e625b62c708D5f6EA96EC193558EFD0;
-        uint256 tokenId = 30882;
+        uint256 tokenId = 74706;
         address ve = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
         deploy(loan, ve, tokens, tokenId);
     }
@@ -45,3 +45,4 @@ contract OpDeploy is CommunityRewardsDeploy  {
         deploy(loan, ve, tokens, tokenId);
     }
 }
+
