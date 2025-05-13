@@ -19,6 +19,8 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
+import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
+
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -398,7 +400,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 address(this),
                 block.timestamp
             );
-        return amounts[0];
+        return amounts[amounts.length - 1];
     }
 
     /**
@@ -591,6 +593,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
         }
         require(asset.transfer(loan.borrower, amount));
+        if(tokenId == getManagedNft()) {
+            ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), amount);
+        }
     }
 
 
@@ -712,9 +717,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         _aero.approve(address(_ve), amountOut);
-        _ve.increaseAmount(loan.tokenId, amountOut);
-        emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, amountOut);
+        uint256 managedNft = getManagedNft();
+        uint256 tokenToIncrease = userIncreasesManagedToken(loan.borrower) ? managedNft : loan.tokenId;
+        _ve.increaseAmount(tokenToIncrease, amountOut);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut);
         addTotalWeight(amountOut);
+        (, address managedNftAddress) = getLoanDetails(managedNft);
+        if(managedNftAddress != address(0)) {
+            ICommunityRewards(managedNftAddress).deposit(tokenToIncrease, amountOut, loan.borrower);
+        }
         return amountToIncrease;
     }
 
@@ -910,7 +921,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * ManagedNFT is essentially a community owned veNFT where users can increase the NFT to obtain shares
      * In the future this can be used as collateral for loans
      */
-    function mergeIntoManagedNft(uint256 tokenId) public onlyOwner {
+   function mergeIntoManagedNft(uint256 tokenId) public onlyOwner {
         uint256 managedNft = getManagedNft();
         require(_ve.ownerOf(tokenId) == address(this));
         require(_ve.ownerOf(managedNft) == address(this));
@@ -918,7 +929,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(loan.borrower == address(0));
         uint256 beginningBalance = _ve.balanceOfNFTAt(managedNft, block.timestamp);
         _ve.merge(tokenId, managedNft);
-        addTotalWeight(_ve.balanceOfNFTAt(managedNft, block.timestamp) - beginningBalance);
+        uint256 weightAdded = _ve.balanceOfNFTAt(managedNft, block.timestamp) - beginningBalance;
+        addTotalWeight(weightAdded);
+        (, address managedNftAddress) = getLoanDetails(managedNft);
+        ICommunityRewards(managedNftAddress).notifyFlightBonus(weightAdded);
     }
     
 
