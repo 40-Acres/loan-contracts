@@ -15,6 +15,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(address => uint256) _userPayoffToken; // token a user pays off first
         mapping(address => bool) _userPayoffTokenOption; // if user wants to pay off specific token first
         mapping(uint256 => uint256) _totalWeightPerEpoch;
+        mapping(address => bool) _increaseManagedToken; // if user wants to increase community token
     }
 
 
@@ -110,5 +111,15 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function _getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._totalWeightPerEpoch[epoch];
+    }
+
+    function setIncreaseManagedToken(bool enabled) public {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._increaseManagedToken[msg.sender] = enabled;
+    }
+
+    function userIncreasesManagedToken(address user) public view returns (bool) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._increaseManagedToken[user];
     }
 }

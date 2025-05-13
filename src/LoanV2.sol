@@ -399,7 +399,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 address(this),
                 block.timestamp
             );
-        return amounts[0];
+        return amounts[amounts.length - 1];
     }
 
     /**
@@ -704,7 +704,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             increasePercentage = 2500; // Cap the increase percentage to 25% max
         }
         uint256 amountToIncrease = (claimedRewards * increasePercentage) / 10000;
-
         uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
 
         if(amountOut == 0) {
@@ -714,11 +713,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(takeFees) {
             amountOut -= _payZeroBalanceFee(loan.borrower, loan.tokenId, amountOut, address(_aero));
         }
-
         _aero.approve(address(_ve), amountOut);
-        _ve.increaseAmount(loan.tokenId, amountOut);
-        emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, amountOut);
+        uint256 managedNft = getManagedNft();
+        uint256 tokenToIncrease = userIncreasesManagedToken(loan.borrower) ? managedNft : loan.tokenId;
+        _ve.increaseAmount(tokenToIncrease, amountOut);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut);
         addTotalWeight(amountOut);
+        (, address managedNftAddress) = getLoanDetails(managedNft);
+        if(managedNftAddress != address(0)) {
+            ICommunityRewards(managedNftAddress).deposit(tokenToIncrease, amountOut, loan.borrower);
+        }
         return amountToIncrease;
     }
 

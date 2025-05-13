@@ -19,7 +19,9 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
-
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { console } from "forge-std/console.sol";
 
 interface IOwnable {
     function owner() external view returns (address);
@@ -30,7 +32,7 @@ interface IOwnable {
  * @notice A contract for managing community rewards distribution.
  * @dev This contract is upgradeable and uses OpenZeppelin's upgradeable libraries.
  */
-contract CommunityRewards is ERC20Upgradeable, ReentrancyGuardUpgradeable {
+contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, ReentrancyGuardUpgradeable  {
     using SafeERC20 for IERC20;
 
     /* 
@@ -227,7 +229,14 @@ contract CommunityRewards is ERC20Upgradeable, ReentrancyGuardUpgradeable {
     constructor() {
         _disableInitializers();
     }
-
+    
+    /**
+     * @dev This function is used to authorize upgrades to the contract.
+     *      It restricts the upgradeability to only the contract owner.
+     */
+    function _authorizeUpgrade(address) internal override view {
+        if (msg.sender != IOwnable(loanContract).owner()) revert NotAuthorized();
+    }
     /* 
      * @notice Initializes the contract.
      * @param _loanContract The address of the loan contract.
