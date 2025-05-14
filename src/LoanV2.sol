@@ -1228,7 +1228,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev 40 Acres voting window is two hours prior to voting end
      */
     function _withinVotingWindow() internal view returns (bool) {
-        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 2 hours;
+        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 1 hours;
     }
 
     function currentEpochStart() internal view returns (uint256) {
