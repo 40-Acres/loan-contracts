@@ -1097,12 +1097,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
     
     function setOptInCommunityRewards(
-        uint256 tokenId,
+        uint256[] calldata tokenIds,
         bool optIn
     ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        loan.optInCommunityRewards = optIn;
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            LoanInfo storage loan = _loanDetails[tokenIds[i]];
+            require(loan.borrower == msg.sender);
+            loan.optInCommunityRewards = optIn;
+        }
     }
 
 
