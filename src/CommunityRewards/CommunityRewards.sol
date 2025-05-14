@@ -595,19 +595,20 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
         }
     }
 
-    function getReward(address[] memory _tokens) external nonReentrant {
-        _getReward(msg.sender, _tokens);
+    function getReward(address[] memory _tokens) external nonReentrant returns (uint256) {
+        return _getReward(msg.sender, _tokens);
     }
 
     function getRewardForUser(
         address _owner,
         address[] memory _tokens
-    ) external nonReentrant {
-        _getReward(_owner, _tokens);
+    ) external nonReentrant returns (uint256) {
+        return _getReward(_owner, _tokens);
     }
 
-    function _getReward(address _owner, address[] memory _tokens) internal {
+    function _getReward(address _owner, address[] memory _tokens) internal returns (uint256) {
         uint256 _length = _tokens.length;
+        uint256 _totalReward = 0;
         for (uint256 i = 0; i < _length; i++) {
             uint256 _reward = earned(_tokens[i], _owner);
             if (lastNotify[_tokens[i]] == 0) {
@@ -620,7 +621,9 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
             if (_reward > 0) IERC20(_tokens[i]).safeTransfer(_owner, _reward);
 
             emit ClaimRewards(_owner, _tokens[i], _reward);
+            _totalReward += _reward;
         }
+        return _totalReward;
     }
 
     /**
