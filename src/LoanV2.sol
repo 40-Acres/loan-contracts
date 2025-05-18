@@ -20,6 +20,7 @@ import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
+import { console } from "forge-std/console.sol";
 
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
@@ -209,14 +210,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         bool optInCommunityRewards
     ) public  {
         // require the msg.sender to be the owner of the token
-        require(_ve.ownerOf(tokenId) == msg.sender);
+        require(_ve.ownerOf(tokenId) == msg.sender, "ss");
 
         // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
-        if (!lockedBalance.isPermanent) {
-            require(lockedBalance.end > block.timestamp);
-            _ve.lockPermanent(tokenId);
-        }
+        // IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        // if (!lockedBalance.isPermanent) {
+        //     require(lockedBalance.end > block.timestamp, "dss");
+        //     _ve.lockPermanent(tokenId);
+        // }
+        // console.log("Locked Balance: ", lockedBalance.amount);
 
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -241,13 +243,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this));
+        require(_ve.ownerOf(tokenId) == address(this), "ssss");
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
 
 
         require(increasePercentage <= 10000);
         if(preferredToken != address(0)) {
-            require(isApprovedToken(preferredToken));
+            require(isApprovedToken(preferredToken), "Token not approved");
         }
         
         _loanDetails[tokenId].weight = _ve.balanceOfNFTAt(tokenId, block.timestamp);
@@ -381,7 +383,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address fromToken,
         address toToken,
         address borrower
-    ) internal returns (uint256 amountOut) {
+    ) virtual internal returns (uint256 amountOut) {
         require(fromToken != address(_ve)); // Prevent swapping veNFT
         if (fromToken == toToken || amountIn == 0) {
             return amountIn;

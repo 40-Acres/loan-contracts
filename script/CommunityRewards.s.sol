@@ -40,9 +40,17 @@ contract OpDeploy is CommunityRewardsDeploy  {
         tokens[0] = address(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
 
         uint256 tokenId = 30882;
-        address loan = 0x1eD73446Bc4Ca94002A549cf553E4Ab2f2722b42;
+        address loan = 0xf132bD888897254521D13e2c401e109caABa06A7;
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         deploy(loan, ve, tokens, tokenId);
     }
 }
 
+contract OpFix is Script {
+    function run() external {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        CommunityRewards _communityRewards = new CommunityRewards();
+        CommunityRewards(0x40ac2e1401d6A80e894cA4dbeA7Ca46C6C4f9D3d).upgradeToAndCall(address(_communityRewards), "");
+        CommunityRewards(0x40ac2e1401d6A80e894cA4dbeA7Ca46C6C4f9D3d).upgrade();
+    }
+}
