@@ -211,12 +211,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
 
-        // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
-        if (!lockedBalance.isPermanent) {
-            require(lockedBalance.end > block.timestamp);
-            _ve.lockPermanent(tokenId);
-        }
+        _lock(tokenId);
 
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -627,7 +622,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset.
      * @return totalRewards The total amount usdc claimed after fees.
      */
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public returns (uint256 totalRewards) {
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public virtual returns (uint256 totalRewards) {
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
@@ -955,6 +950,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.merge(from, to);
         addTotalWeight(_ve.balanceOfNFTAt(to, block.timestamp) - beginningBalance);
     }
+    
 
     /**
      * @notice Sets the managed NFT for the contract
@@ -1163,6 +1159,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 return;
             } catch { }
         } 
+    }
+
+
+    function _lock(uint256 tokenId) internal virtual {
+        // ensure the token is locked permanently
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        if (!lockedBalance.isPermanent) {
+            require(lockedBalance.end > block.timestamp);
+            _ve.lockPermanent(tokenId);
+        }
     }
     
     /**

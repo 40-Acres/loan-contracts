@@ -23,7 +23,7 @@ contract OpDeploy is Script {
     function deployLoan() public returns (LoanV2, Vault) {
         Loan loan = new VeloLoan();
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
-        Vault vault = new Vault(address(usdc), address(proxy));
+        Vault vault = new Vault(address(usdc), address(proxy), "40op-USDC-VAULT", "40op-USDC-VAULT");
         Loan(address(proxy)).initialize(address(vault));
         address[] memory pools = new address[](4);
         pools[0] = 0x478946BcD4a5a22b316470F5486fAfb928C0bA25;

@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {PharaohLoan as Loan} from "src/Pharaoh/PharaohLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
+import { Vault as VaultV2 } from "src/VaultV2.sol";
 import { PharaohSwapper as Swapper } from "src/Pharaoh/PharaohSwapper.sol";
 // import { PharaohSwapper as Swapper } from "../src/Pharaoh/PharaohSwapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -25,17 +26,20 @@ contract PharaohDeploy is Script {
     }
 
     function deploy() public returns (LoanV2, Vault, Swapper) {
-        Loan loan = new Loan();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
-        Vault vault = new Vault(address(_usdc), address(proxy));
-        Loan(address(proxy)).initialize(address(vault));
+        Loan loanImplementation = new Loan();
+        ERC1967Proxy _loan = new ERC1967Proxy(address(loanImplementation), "");
+        VaultV2 vaultImplementation = new VaultV2();
+        ERC1967Proxy _vault = new ERC1967Proxy(address(vaultImplementation), "");
 
+        Vault vault = Vault(payable(_vault));
+        LoanV2 loan = LoanV2(payable(_loan));
+        Loan(address(loan)).initialize(address(_vault));
+        VaultV2(address(vault)).initialize(address(_usdc), address(loan), "40avax-USDC-VAULT", "40avax-USDC-VAULT");
         LoanV2 loanV2 = new LoanV2();
-        LoanV2 _proxy = LoanV2(payable(proxy));
-        _proxy.upgradeToAndCall(address(loanV2), new bytes(0));
-        _proxy.setProtocolFee(500);
-        _proxy.setLenderPremium(2000);
-        _proxy.setZeroBalanceFee(100);
+        loan.upgradeToAndCall(address(loanV2), new bytes(0));
+        loan.setProtocolFee(500);
+        loan.setLenderPremium(2000);
+        loan.setZeroBalanceFee(100);
 
         address[] memory _supportedTokens = new address[](3);
         _supportedTokens[0] = _phar; 
@@ -45,12 +49,11 @@ contract PharaohDeploy is Script {
         
         swapper = new Swapper(
             address(0xAAA32926fcE6bE95ea2c51cB4Fcb60836D320C42),  // favtory 
-            address(0xAAA45c8F5ef92a000a121d102F4e89278a711Faa), // roouter
-            // address(0xAAAE99091Fbb28D400029052821653C1C752483B),
+            address(0xAAA45c8F5ef92a000a121d102F4e89278a711Faa), // router
             supportedTokens
         );
-        _proxy.setSwapper(address(swapper));
-        _proxy.transferOwnership(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
-        return (_proxy, vault, swapper);
+        loan.setSwapper(address(swapper));
+        loan.transferOwnership(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
+        return (loan, vault, swapper);
     }
 }

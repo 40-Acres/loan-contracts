@@ -12,73 +12,6 @@ import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
 contract PharaohLoanV2 is Loan {
 
-    /**
-     * @notice Allows the owner of a token to request a loan by locking the token as collateral.
-     * @dev The function ensures that the token is locked permanently and transfers ownership of the token
-     *      to the contract. It also initializes loan details for the token and optionally increases the loan amount.
-     * @param tokenId The ID of the token to be used as collateral.
-     * @param amount The amount of the loan to be requested. If 0, no loan amount is added initially.
-     * @param zeroBalanceOption The option specifying how zero balance scenarios should be handled.
-     * @param increasePercentage The percentage of the rewards to reinvest into venft.
-     * @param topUp Indicates whether to top up the loan amount.
-     */
-    function requestLoan(
-        uint256 tokenId,
-        uint256 amount,
-        ZeroBalanceOption zeroBalanceOption,
-        uint256 increasePercentage,
-        address preferredToken,
-        bool topUp,
-        bool optInCommunityRewards
-    ) public override {
-        // require the msg.sender to be the owner of the token
-        require(_ve.ownerOf(tokenId) == msg.sender);
-        
-
-        _loanDetails[tokenId] = LoanInfo({
-            balance: 0,
-            borrower: msg.sender,
-            timestamp: block.timestamp,
-            outstandingCapital: 0,
-            tokenId: tokenId,
-            zeroBalanceOption: zeroBalanceOption,
-            pools: new address[](0),
-            voteTimestamp: 0,
-            claimTimestamp: 0,
-            weight: 0,
-            unpaidFees: 0,
-            preferredToken: preferredToken,
-            increasePercentage: increasePercentage,
-            topUp: topUp,
-            optInCommunityRewards: optInCommunityRewards
-
-        });
-
-        vote(tokenId);
-
-        // transfer the token to the contract
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this));
-        emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
-
-
-        require(increasePercentage <= 10000);
-        if(preferredToken != address(0)) {
-            require(isApprovedToken(preferredToken), "Token not approved");
-        }
-        
-        _loanDetails[tokenId].weight = _ve.balanceOfNFTAt(tokenId, block.timestamp);
-        addTotalWeight(_loanDetails[tokenId].weight);
-
-        // if user selects topup option, increase to the max loan amount
-        if(topUp) {
-            (amount,) = getMaxLoan(tokenId);
-        }
-
-        if (amount > 0) {
-            increaseLoan(tokenId, amount);
-        }
-    }
 
     /* ORACLE */
     /**
@@ -141,12 +74,6 @@ contract PharaohLoanV2 is Loan {
      * @param weights An array of uint256 values representing the weights of the pools.
      */
     function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal override {
-        // ensure the token is locked permanently
-        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(address(_ve)).locked(tokenId);
-        if (lockedBalance.end < ProtocolTimeLibrary.epochNext(block.timestamp)) {
-           IVotingEscrow(address(_ve)).increaseUnlockTime(tokenId, 126144000); // 4 years
-        }
-
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
@@ -155,15 +82,29 @@ contract PharaohLoanV2 is Loan {
         }
         // must vote each epoch, user are able to change their vote so we vote once per epoch if the user has not voted
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp);
-        if(isActive) {
-            return; // if the user has manually voted, we don't want to override their vote
-        }
-        if(_withinVotingWindow()) {
+        if(!isActive && loan.timestamp != block.timestamp) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 loan.voteTimestamp = block.timestamp;
-                return;
             } catch { }
-        } 
+        }
     }
 
+    function _lock(uint256 tokenId) internal override {
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(address(_ve)).locked(tokenId);
+        if (lockedBalance.end < ProtocolTimeLibrary.epochNext(block.timestamp) + 126144000) {
+           IVotingEscrow(address(_ve)).increaseUnlockTime(tokenId, 126144000);
+        }
+    }
+
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public override returns (uint256 totalRewards) {
+        vote(tokenId);
+        // dont claim rewards unless the user has been in the pool for over an hour, or doesnt have a loan
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if (loan.timestamp > block.timestamp - 3600 && loan.balance > 0) {
+            // if the user has a loan, we don't want to claim rewards
+            // this is to prevent the contract from instantly claiming rewards when a user deposits
+            return 0;
+        }
+        return super.claim(tokenId, fees, tokens);
+    }
 }

@@ -36,9 +36,4 @@ contract PharaohLoan is Loan {
         _multiplier = 12;
     }
 
-
-        /* ORACLE */
-    function confirmUsdcPrice() internal view override returns (bool) {
-        return true;
-    }
 }

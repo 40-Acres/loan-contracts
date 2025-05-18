@@ -269,6 +269,6 @@ interface IVoter {
     // /// @param _gauge .
     // function updateFor(address _gauge) external;
 
-    // Pharaoh specific function
+    // Pharoah specific function
     function feeDistributors(address gauge) external view returns (address);
 }
