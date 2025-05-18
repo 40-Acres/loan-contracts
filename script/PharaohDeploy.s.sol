@@ -33,6 +33,9 @@ contract PharaohDeploy is Script {
         LoanV2 loanV2 = new LoanV2();
         LoanV2 _proxy = LoanV2(payable(proxy));
         _proxy.upgradeToAndCall(address(loanV2), new bytes(0));
+        _proxy.setProtocolFee(500);
+        _proxy.setLenderPremium(2000);
+        _proxy.setZeroBalanceFee(100);
 
         address[] memory _supportedTokens = new address[](3);
         _supportedTokens[0] = _phar; 
@@ -47,6 +50,7 @@ contract PharaohDeploy is Script {
             supportedTokens
         );
         _proxy.setSwapper(address(swapper));
+        _proxy.transferOwnership(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
         return (_proxy, vault, swapper);
     }
 }

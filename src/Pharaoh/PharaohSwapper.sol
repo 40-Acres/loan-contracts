@@ -145,10 +145,7 @@ contract PharaohSwapper {
 
         return (amountIn * (10000 - SLIPPAGE)) / 10000;
     }
-
-// 3000
-// 10000
-
+    
     /**
      * @dev Flattens a two-dimensional array of token addresses into a single-dimensional array.
      * @param tokens A two-dimensional array of token addresses to be flattened.
