@@ -124,7 +124,7 @@ interface IVoter {
     // function isWhitelistedNFT(uint256 tokenId) external view returns (bool);
 
     // /// @dev Gauge => Liveness status
-    // function isAlive(address gauge) external view returns (bool);
+    function isAlive(address gauge) external view returns (bool);
 
     // /// @dev Gauge => Amount claimable
     // function claimable(address gauge) external view returns (uint256);
@@ -269,6 +269,6 @@ interface IVoter {
     // /// @param _gauge .
     // function updateFor(address _gauge) external;
 
-    // Pharoah specific function
+    // Pharaoh specific function
     function feeDistributors(address gauge) external view returns (address);
 }

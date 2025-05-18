@@ -2,16 +2,16 @@
 pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
-import {PharoahLoan as Loan} from "src/Pharaoh/PharoahLoan.sol";
+import {PharaohLoan as Loan} from "src/Pharaoh/PharaohLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
 import { PharaohSwapper as Swapper } from "src/Pharaoh/PharaohSwapper.sol";
 // import { PharaohSwapper as Swapper } from "../src/Pharaoh/PharaohSwapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {PharoahLoanV2 as LoanV2} from "../src/Pharaoh/PharoahLoanV2.sol";
+import {PharaohLoanV2 as LoanV2} from "../src/Pharaoh/PharaohLoanV2.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract PharoahDeploy is Script {
+contract PharaohDeploy is Script {
     Swapper public swapper;
     address[] public supportedTokens;
     uint256 fork;

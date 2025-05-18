@@ -20,7 +20,6 @@ import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
-import { console } from "forge-std/console.sol";
 
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
@@ -208,17 +207,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken,
         bool topUp,
         bool optInCommunityRewards
-    ) public  {
+    ) public virtual {
         // require the msg.sender to be the owner of the token
-        require(_ve.ownerOf(tokenId) == msg.sender, "ss");
+        require(_ve.ownerOf(tokenId) == msg.sender);
 
         // ensure the token is locked permanently
-        // IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
-        // if (!lockedBalance.isPermanent) {
-        //     require(lockedBalance.end > block.timestamp, "dss");
-        //     _ve.lockPermanent(tokenId);
-        // }
-        // console.log("Locked Balance: ", lockedBalance.amount);
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        if (!lockedBalance.isPermanent) {
+            require(lockedBalance.end > block.timestamp);
+            _ve.lockPermanent(tokenId);
+        }
 
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -243,13 +241,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this), "ssss");
+        require(_ve.ownerOf(tokenId) == address(this));
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
 
 
         require(increasePercentage <= 10000);
         if(preferredToken != address(0)) {
-            require(isApprovedToken(preferredToken), "Token not approved");
+            require(isApprovedToken(preferredToken));
         }
         
         _loanDetails[tokenId].weight = _ve.balanceOfNFTAt(tokenId, block.timestamp);
@@ -1028,7 +1026,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         for (uint256 i = 0; i < pools.length; i++) {
             // confirm pool is a valid gauge
             address gauge = _voter.gauges(pools[i]);
-            require(ICLGauge(gauge).isPool());
+            require(_voter.isAlive(gauge));
             _approvedPools[pools[i]] = enable;
         }
     }
@@ -1148,7 +1146,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
      */
-    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal {
+    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again

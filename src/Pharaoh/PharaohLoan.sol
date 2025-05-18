@@ -12,7 +12,7 @@ import {IRewardsDistributor} from "../interfaces/IRewardsDistributor.sol";
 import { IRouter } from "../interfaces/IRouter.sol";
 import {Loan } from "../Loan.sol";
 
-contract PharoahLoan is Loan {
+contract PharaohLoan is Loan {
     function initialize(address vault) initializer public virtual override {
         __Ownable_init(msg.sender); //set owner to msg.sender
         __UUPSUpgradeable_init();
