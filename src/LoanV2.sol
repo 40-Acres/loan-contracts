@@ -148,8 +148,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount of rewards paid.
      * @param borrower The address of the borrower associated with the loan.
      * @param tokenId The ID of the token representing the loan.
+     * @param token The address of the token used for the rewards payment.
      */
-    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     
     /**
      * @dev Emitted when the protocol fee is paid.
@@ -162,11 +163,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when a user's veNFT balance is increased.
+     * @param epoch The epoch during which the veNFT balance was increased.
      * @param user The address of the user whose veNFT balance is increased.
      * @param tokenId The ID of the veNFT token.
      * @param amount The amount by which the veNFT balance is increased.
+     * @param fromTokenId The ID of the token from which the rewards were taken to increase the veNFT balance.
      */
-    event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount);
+    event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount, uint256 indexed fromTokenId);
 
     /** ERROR CODES */
     // error TokenNotLocked();
@@ -592,10 +595,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _usdc : IERC20(loan.preferredToken);
-        emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId);
         if(asset != _usdc) {
             amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
         }
+        emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, amount));
         if(tokenId == getManagedNft()) {
             ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), amount);
