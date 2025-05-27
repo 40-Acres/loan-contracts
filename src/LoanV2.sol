@@ -149,7 +149,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param borrower The address of the borrower associated with the loan.
      * @param tokenId The ID of the token representing the loan.
      */
-    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     
     /**
      * @dev Emitted when the protocol fee is paid.
@@ -162,11 +162,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when a user's veNFT balance is increased.
+     * @param epoch The epoch during which the veNFT balance was increased.
      * @param user The address of the user whose veNFT balance is increased.
-     * @param tokenId The ID of the veNFT token.
+     * @param tokenId The ID of the veNFT token increase.
      * @param amount The amount by which the veNFT balance is increased.
+     * @param fromToken The address of the token from which the veNFT balance is increased.
      */
-    event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount);
+    event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount, uint256 indexed fromToken);
 
     /** ERROR CODES */
     // error TokenNotLocked();
@@ -232,7 +234,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         });
 
-        vote(tokenId);
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
@@ -256,6 +257,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (amount > 0) {
             increaseLoan(tokenId, amount);
         }
+
+        vote(tokenId);
     }
 
     /**
@@ -587,10 +590,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _usdc : IERC20(loan.preferredToken);
-        emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId);
         if(asset != _usdc) {
             amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
         }
+        emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, amount));
         if(tokenId == getManagedNft()) {
             ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), amount);
@@ -719,7 +722,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 managedNft = getManagedNft();
         uint256 tokenToIncrease = (userIncreasesManagedToken(loan.borrower) || loan.optInCommunityRewards) ? managedNft : loan.tokenId;
         _ve.increaseAmount(tokenToIncrease, amountOut);
-        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut, loan.tokenId);
         addTotalWeight(amountOut);
         (, address managedNftAddress) = getLoanDetails(managedNft);
         if(managedNftAddress != address(0)) {
@@ -741,7 +744,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(_aero.transferFrom(msg.sender, address(this), amount));
         _aero.approve(address(_ve), amount);
         _ve.increaseAmount(tokenId, amount);
-        emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount);
+        emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
         addTotalWeight(amount);
     }
 

@@ -74,6 +74,7 @@ contract PharaohLoanV2 is Loan {
      * @param weights An array of uint256 values representing the weights of the pools.
      */
     function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal override {
+        _lock(tokenId);
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
@@ -82,7 +83,7 @@ contract PharaohLoanV2 is Loan {
         }
         // must vote each epoch, user are able to change their vote so we vote once per epoch if the user has not voted
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp);
-        if(!isActive && loan.timestamp != block.timestamp) {
+        if(!isActive) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 loan.voteTimestamp = block.timestamp;
             } catch { }
@@ -91,7 +92,7 @@ contract PharaohLoanV2 is Loan {
 
     function _lock(uint256 tokenId) internal override {
         IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(address(_ve)).locked(tokenId);
-        if (lockedBalance.end < ProtocolTimeLibrary.epochNext(block.timestamp) + 126144000) {
+        if (lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp) + 125539200) {
            IVotingEscrow(address(_ve)).increaseUnlockTime(tokenId, 126144000);
         }
     }
@@ -100,11 +101,12 @@ contract PharaohLoanV2 is Loan {
         vote(tokenId);
         // dont claim rewards unless the user has been in the pool for over an hour, or doesnt have a loan
         LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.timestamp > block.timestamp - 3600 && loan.balance > 0) {
-            // if the user has a loan, we don't want to claim rewards
+        if (loan.timestamp > block.timestamp - 3600) {
+            // if the user has a loan, we don't want to claim rewards too fast
             // this is to prevent the contract from instantly claiming rewards when a user deposits
             return 0;
         }
+
         return super.claim(tokenId, fees, tokens);
     }
 }

@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {PharaohLoan as Loan} from "src/Pharaoh/PharaohLoan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
-import { Vault as VaultV2 } from "src/VaultV2.sol";
+import { Vault as VaultV2 } from "src/Pharaoh/PharaohVault.sol";
 import { PharaohSwapper as Swapper } from "src/Pharaoh/PharaohSwapper.sol";
 // import { PharaohSwapper as Swapper } from "../src/Pharaoh/PharaohSwapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";

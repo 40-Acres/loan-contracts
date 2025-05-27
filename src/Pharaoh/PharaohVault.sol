@@ -10,10 +10,6 @@ import "../interfaces/ILoan.sol";
 
 
 contract Vault is VaultV2 {
-    function epochRewardsLocked() public view override returns (uint256) {
-        return 0; // rewards come in over time over the epoch, so we don't need to lock any rewards
-    }
-
     function totalAssets() public view override returns (uint256) {
         return _asset.balanceOf(address(this)) + _loanContract.activeAssets(); 
     }
