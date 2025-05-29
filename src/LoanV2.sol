@@ -733,7 +733,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return amountToIncrease;
     }
 
-    /**g
+    /**
      * @notice Increases the locked amount of a veNFT token.
      * @dev This function locks tokens into the veNFT associated with the given token ID.
      * @param tokenId The ID of the veNFT whose amount is to be increased.
