@@ -1143,11 +1143,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Allows anyone to vote on the default pools for the nft.
      * @dev This function can only be called on the last day of the epoch during the voting window.
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
+     * @return bool indicating whether the vote was successfully cast.
      */
-    function vote(uint256 tokenId) public {
+    function vote(uint256 tokenId) public returns (bool) {
         address[] memory pools = new address[](0);
         uint256[] memory weights = new uint256[](0);
-        _vote(tokenId, pools, weights);
+        return _vote(tokenId, pools, weights);
     }
 
     /**
@@ -1155,24 +1156,27 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
+     * @return bool indicating whether the vote was successfully cast.
      */
-    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal {
+    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal returns (bool) {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
             _voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
+            return true; // if the user has manually voted, we don't want to override their vote
         }
         
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
         if(isActive) {
-            return; // if the user has manually voted, we don't want to override their vote
+            return false; // if the user has manually voted, we don't want to override their vote
         }
         if(_withinVotingWindow()) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
-                return;
+                return true;
             } catch { }
         } 
+        return false;
     }
     
     /**
