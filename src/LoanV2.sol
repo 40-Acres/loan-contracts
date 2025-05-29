@@ -733,7 +733,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return amountToIncrease;
     }
 
-    /**
+    /**g
      * @notice Increases the locked amount of a veNFT token.
      * @dev This function locks tokens into the veNFT associated with the given token ID.
      * @param tokenId The ID of the veNFT whose amount is to be increased.
@@ -752,6 +752,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
 
+    /**
+     * @dev Records a deposit on the managed NFT for community rewards.
+     * @param tokenId The ID of the token being deposited.
+     * @param amount The amount being deposited.
+     * @param owner The address of the owner of the token.
+     */
     function _recordDepositOnManagedNft(uint256 tokenId, uint256 amount, address owner) internal {
         uint256 managedNft = getManagedNft();
         (, address managedNftAddress) = getLoanDetails(managedNft);
