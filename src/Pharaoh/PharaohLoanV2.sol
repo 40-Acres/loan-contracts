@@ -73,21 +73,24 @@ contract PharaohLoanV2 is Loan {
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
      */
-    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal override {
+    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal override returns (bool) {
         _lock(tokenId);
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
             _voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
+            return true;
         }
         // must vote each epoch, user are able to change their vote so we vote once per epoch if the user has not voted
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp);
         if(!isActive) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 loan.voteTimestamp = block.timestamp;
+                return true;
             } catch { }
         }
+        return false;
     }
 
     function _lock(uint256 tokenId) internal override {

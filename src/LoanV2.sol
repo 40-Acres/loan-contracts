@@ -148,8 +148,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount of rewards paid.
      * @param borrower The address of the borrower associated with the loan.
      * @param tokenId The ID of the token representing the loan.
+     * @param token The address of the token in which the rewards are paid.
      */
-    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
+    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);    
     
     /**
      * @dev Emitted when the protocol fee is paid.
@@ -162,14 +163,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when a user's veNFT balance is increased.
-     * @param epoch The epoch during which the veNFT balance was increased.
+     * @param epoch The epoch during which the veNFT balance was increased
      * @param user The address of the user whose veNFT balance is increased.
-     * @param tokenId The ID of the veNFT token increase.
+     * @param tokenId The ID of the veNFT token being increased.
      * @param amount The amount by which the veNFT balance is increased.
-     * @param fromToken The address of the token from which the veNFT balance is increased.
+     * @param fromToken The token from which the amount is derived.
      */
     event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount, uint256 indexed fromToken);
-
+    
     /** ERROR CODES */
     // error TokenNotLocked();
     // error TokenLockExpired(uint256 tokenId);
@@ -724,10 +725,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.increaseAmount(tokenToIncrease, amountOut);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut, loan.tokenId);
         addTotalWeight(amountOut);
-        (, address managedNftAddress) = getLoanDetails(managedNft);
-        if(managedNftAddress != address(0)) {
-            ICommunityRewards(managedNftAddress).deposit(tokenToIncrease, amountOut, loan.borrower);
-        }
+        _recordDepositOnManagedNft(tokenToIncrease, amountOut, loan.borrower);
         return amountToIncrease;
     }
 
@@ -746,6 +744,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.increaseAmount(tokenId, amount);
         emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
         addTotalWeight(amount);
+        _recordDepositOnManagedNft(tokenId, amount, msg.sender);
+    }
+
+
+    /**
+     * @dev Records a deposit on the managed NFT for community rewards.
+     * @param tokenId The ID of the token being deposited.
+     * @param amount The amount being deposited.
+     * @param owner The address of the owner of the token.
+     */
+    function _recordDepositOnManagedNft(uint256 tokenId, uint256 amount, address owner) internal {
+        uint256 managedNft = getManagedNft();
+        (, address managedNftAddress) = getLoanDetails(managedNft);
+        if(managedNftAddress != address(0)) {
+            ICommunityRewards(managedNftAddress).deposit(tokenId, amount, owner);
+        }
     }
 
     /**
@@ -1132,11 +1146,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Allows anyone to vote on the default pools for the nft.
      * @dev This function can only be called on the last day of the epoch during the voting window.
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
+     * @return bool indicating whether the vote was successfully cast.
      */
-    function vote(uint256 tokenId) public {
+    function vote(uint256 tokenId) public returns (bool) {
         address[] memory pools = new address[](0);
         uint256[] memory weights = new uint256[](0);
-        _vote(tokenId, pools, weights);
+        return _vote(tokenId, pools, weights);
     }
 
     /**
@@ -1144,24 +1159,27 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
+     * @return bool indicating whether the vote was successfully cast.
      */
-    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual {
+    function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
             _voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
+            return true; // if the user has manually voted, we don't want to override their vote
         }
         
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
         if(isActive) {
-            return; // if the user has manually voted, we don't want to override their vote
+            return false; // if the user has manually voted, we don't want to override their vote
         }
         if(_withinVotingWindow()) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
-                return;
+                return true;
             } catch { }
         } 
+        return false;
     }
 
 
