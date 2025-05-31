@@ -11,8 +11,6 @@ import { ProtocolTimeLibrary } from "../libraries/ProtocolTimeLibrary.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
 contract PharaohLoanV2 is Loan {
-
-
     /* ORACLE */
     /**
      * @notice Confirms the price of USDC is $1.
@@ -35,6 +33,7 @@ contract PharaohLoanV2 is Loan {
         return answer >= 99900000;
     }
 
+    
     function _swapToToken(
         uint256 amountIn,
         address fromToken,
@@ -93,6 +92,10 @@ contract PharaohLoanV2 is Loan {
         return false;
     }
 
+    /**
+     * @dev Internal function to lock the voting escrow for a specific loan.
+     * @param tokenId The ID of the loan (NFT) for which the lock is being applied.
+     */
     function _lock(uint256 tokenId) internal override {
         IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(address(_ve)).locked(tokenId);
         if (lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp) + 125539200) {
@@ -100,16 +103,31 @@ contract PharaohLoanV2 is Loan {
         }
     }
 
+    /**
+     * @notice Resets the vote for a specific loan.
+     * @param tokenId The ID of the loan (NFT) for which the vote is being reset.
+     */
+    function reset(uint256 tokenId) public  {
+        // reset the vote timestamp so the user can claim collateral
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        require(loan.balance == 0);
+        loan.voteTimestamp = 0;
+        _voter.reset(tokenId);
+    }
+
+
+    /**
+     * @notice Claims rewards for a specific loan.
+     * @param tokenId The ID of the loan (NFT) for which rewards are being claimed.
+     * @param fees An array of addresses representing the fee recipients.
+     * @param tokens An array of arrays of addresses representing the tokens to claim.
+     * @return totalRewards The total amount of rewards claimed.
+     */
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public override returns (uint256 totalRewards) {
         vote(tokenId);
         // dont claim rewards unless the user has been in the pool for over an hour, or doesnt have a loan
         LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.timestamp > block.timestamp - 3600) {
-            // if the user has a loan, we don't want to claim rewards too fast
-            // this is to prevent the contract from instantly claiming rewards when a user deposits
-            return 0;
-        }
-
         return super.claim(tokenId, fees, tokens);
     }
 }

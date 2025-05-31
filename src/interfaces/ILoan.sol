@@ -17,4 +17,6 @@ interface ILoan {
     function requestLoan(uint256 tokenId,uint256 amount,ZeroBalanceOption zeroBalanceOption,uint256 increasePercentage,address preferredToken,bool topUp) external;
     function setIncreasePercentage(uint256 tokenId,uint256 increasePercentage) external;
     function claimCollateral(uint256 tokenId) external;
+
+    function getRewardsRate() external view returns (uint256);
 }

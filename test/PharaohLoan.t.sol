@@ -2,7 +2,6 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Loan} from "../src/Pharaoh/PharaohLoanV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
@@ -20,6 +19,9 @@ import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import { PharaohSwapper as Swapper } from "../src/Pharaoh/PharaohSwapper.sol";
 import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
+
+import {PharaohLoanV2 as Loan} from "../src/Pharaoh/PharaohLoanV2.sol";
+import { Loan as Loanv2 } from "../src/LoanV2.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -106,13 +108,13 @@ contract PharaohLoanTest is Test {
     }
 
 
-    function testGetMaxLoan() public {
+    function testMaxLoan() public {
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
         assertEq(maxLoan, 80e6);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e6;
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
 
 
         (maxLoan,  ) = loan.getMaxLoan(tokenId);
@@ -132,7 +134,7 @@ contract PharaohLoanTest is Test {
 
 
     
-    function git () public {
+    function testGetMaxLoan() public {
         vm.startPrank(owner);
         loan.setMultiplier(8);
         vm.stopPrank();
@@ -152,10 +154,10 @@ contract PharaohLoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
         vm.expectRevert();
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
 
         amount = 1e6;
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
@@ -185,7 +187,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.stopPrank();
@@ -231,7 +233,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         loan.setIncreasePercentage(tokenId, 2000);
@@ -277,7 +279,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         loan.setIncreasePercentage(tokenId, 5000);
@@ -327,7 +329,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         loan.setIncreasePercentage(tokenId, 10000);
@@ -379,7 +381,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
         vm.roll(block.number+1);
         loan.setIncreasePercentage(tokenId, 10000);
         vm.stopPrank();
@@ -429,7 +431,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         loan.setIncreasePercentage(tokenId, 7500);
@@ -491,7 +493,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
+        loan.requestLoan(tokenId, 0, Loanv2.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         loan.setIncreasePercentage(tokenId, 10000);
@@ -536,7 +538,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "ff");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.warp(block.timestamp+1);
@@ -576,9 +578,25 @@ contract PharaohLoanTest is Test {
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
         assertEq(usdc.balanceOf(address(vault)), 100e6);
+
+        address[] memory manualPools = new address[](1);
+        manualPools[0] = address(0xa20c959b19F114e9C2D81547734CdC1110bd773D);
+
+        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
+        loan.setApprovedPools(manualPools, true);
+        vm.stopPrank();
         vm.startPrank(user);
+        
+        uint256[] memory manualWeights = new uint256[](1);
+        manualWeights[0] = 100e18;
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = tokenId;
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.roll(block.number+1);
+        vm.warp(block.timestamp + 1);
+        loan.userVote(tokenIds, manualPools, manualWeights);
+
         vm.stopPrank();
         assertEq(usdc.balanceOf(address(user)), 1e6+startingUserBalance, "User should have 1e6");
         assertEq(usdc.balanceOf(address(vault)), 99e6, "Loan should have 97e6");
@@ -587,7 +605,10 @@ contract PharaohLoanTest is Test {
 
         vm.startPrank(user);
         usdc.approve(address(loan), 5e6);
+        vm.expectRevert();
+        loan.reset(tokenId); // should not be able to reset loan with balance
         loan.pay(tokenId, 0);
+        loan.reset(tokenId);
         loan.claimCollateral(tokenId);
         vm.stopPrank();
 
@@ -613,7 +634,7 @@ contract PharaohLoanTest is Test {
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, 0, Loanv2.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.stopPrank();
@@ -642,7 +663,7 @@ contract PharaohLoanTest is Test {
         uint256 startingLoanBalance = usdc.balanceOf(address(loan));
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, 0, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.stopPrank();
@@ -684,7 +705,7 @@ contract PharaohLoanTest is Test {
         uint256 startingLoanBalance = usdc.balanceOf(address(loan));
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, 0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, 0, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.warp(block.timestamp+1);
@@ -892,7 +913,7 @@ contract PharaohLoanTest is Test {
         address _user = votingEscrow.ownerOf(tokenId);
         vm.startPrank(_user);        
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), true, false);
+        loan.requestLoan(tokenId, 0, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), true, false);
         vm.stopPrank();
         
         vm.roll(block.number + 1);
@@ -935,7 +956,7 @@ contract PharaohLoanTest is Test {
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
 
         vm.stopPrank();
 
@@ -947,7 +968,7 @@ contract PharaohLoanTest is Test {
         vm.warp(block.timestamp+1);
         vm.roll(block.number + 1);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId2);
-        loan.requestLoan(_tokenId2, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId2, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         loan.setPayoffToken(_tokenId2, true);
 
 
@@ -976,7 +997,7 @@ contract PharaohLoanTest is Test {
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
 
         vm.stopPrank();
 
@@ -988,7 +1009,7 @@ contract PharaohLoanTest is Test {
         vm.warp(block.timestamp+1);
         vm.roll(block.number + 1);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId2);
-        loan.requestLoan(_tokenId2, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId2, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         loan.setPayoffToken(_tokenId2, true);
 
 
@@ -1018,7 +1039,7 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.stopPrank();
@@ -1059,7 +1080,7 @@ contract PharaohLoanTest is Test {
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
 
         vm.stopPrank();
 
@@ -1072,7 +1093,7 @@ contract PharaohLoanTest is Test {
         vm.warp(block.timestamp+3601);
         vm.roll(block.number + 1);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId2);
-        loan.requestLoan(_tokenId2, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId2, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         loan.setPayoffToken(_tokenId2, true);
         loan.setTopUp(_tokenId2, true);
         vm.warp(block.timestamp+3601);
@@ -1102,7 +1123,7 @@ contract PharaohLoanTest is Test {
         user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
 
         vm.stopPrank();
 
@@ -1115,7 +1136,7 @@ contract PharaohLoanTest is Test {
         vm.warp(block.timestamp+1);
         vm.roll(block.number + 1);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId2);
-        loan.requestLoan(_tokenId2, loanAmount, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), true, false);
+        loan.requestLoan(_tokenId2, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), true, false);
         loan.setPayoffToken(_tokenId2, true);
 
         address[] memory bribes = new address[](0);
@@ -1146,7 +1167,7 @@ contract PharaohLoanTest is Test {
 
         vm.startPrank(_user);
         votingEscrow.approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
 
         vm.stopPrank();
 

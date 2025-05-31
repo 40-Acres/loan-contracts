@@ -20,6 +20,7 @@ import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
+import { LoanUtils } from "./LoanUtils.sol";
 
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
@@ -232,7 +233,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             increasePercentage: increasePercentage,
             topUp: topUp,
             optInCommunityRewards: optInCommunityRewards
-
         });
 
 
@@ -785,7 +785,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /**
      * @notice Calculates the maximum loan amount that can be borrowed for a given token ID.
-     * @dev This function considers the veNFT balance, rewards rate, vault utilization, and current loan balance.
+     * @dev This function forwards the call to the LoanCalculator contract.
      * @param tokenId The ID of the loan (NFT).
      * @return maxLoan The maximum loan amount that can be borrowed.
      * @return maxLoanIgnoreSupply The maximum loan amount ignoring vault supply constraints.
@@ -793,50 +793,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function getMaxLoan(
         uint256 tokenId
     ) public view returns (uint256, uint256) {
-        // Calculate the veNFT balance of the token at the current block timestamp
-        uint256 veBalance = _ve.balanceOfNFTAt(tokenId, block.timestamp);
-
-        uint256 rewardsRate = getRewardsRate();
-
-        // Calculate the maximum loan ignoring vault supply constraints
-        uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
-            _multiplier) / 1e12; // rewardsRate * veNFT balance of token
-        uint256 maxLoan = maxLoanIgnoreSupply * 10000 / (10000 + 80);
-        
-        // Calculate the maximum utilization ratio (80% of the vault supply)
-        uint256 vaultBalance = _usdc.balanceOf(_vault);
-        uint256 vaultSupply = vaultBalance + _outstandingCapital;
-        uint256 maxUtilization = (vaultSupply * 8000) / 10000;
-
-        // If the vault is over-utilized, no loans can be made
-        if (_outstandingCapital >= maxUtilization) {
-            return (0, maxLoanIgnoreSupply);
-        }
-
-        LoanInfo storage loan = _loanDetails[tokenId];
-
-        // If the current loan balance exceeds the maximum loan, no additional loans can be made
-        if (loan.balance >= maxLoan) {
-            return (0, maxLoanIgnoreSupply);
-        }
-
-        // Subtract the current loan balance from the maximum loan
-        maxLoan = maxLoan - loan.balance;
-
-        // Ensure the loan amount does not exceed the available vault supply
-        uint256 vaultAvailableSupply = maxUtilization - _outstandingCapital;
-        if (maxLoan > vaultAvailableSupply) {
-            maxLoan = vaultAvailableSupply;
-        }
-
-        // Ensure the loan amount does not exceed the vault's current balance
-        if (maxLoan > vaultBalance) {
-            maxLoan = vaultBalance;
-        }
-
-        return (maxLoan, maxLoanIgnoreSupply);
+        return LoanUtils.getMaxLoanByRewardsRate(
+            tokenId,
+            address(_ve),
+            getRewardsRate(),
+            _multiplier,
+            _usdc.balanceOf(_vault),
+            _outstandingCapital,
+            _loanDetails[tokenId].balance
+        );
     }
-    
+
     /**
      * @notice Records the rewards for the current epoch.
      * @dev This function adds the specified rewards to the total rewards for the current epoch.
@@ -1156,7 +1123,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /**
      * @dev Internal function to handle voting for a specific loan.
-     * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
+    * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
      * @return bool indicating whether the vote was successfully cast.
