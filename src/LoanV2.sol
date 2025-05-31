@@ -1171,10 +1171,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
-        if(isActive) {
-            return false; // if the user has manually voted, we don't want to override their vote
-        }
-        if(_withinVotingWindow()) {
+        if(!isActive && _withinVotingWindow()) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 return true;
             } catch { }
