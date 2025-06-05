@@ -56,4 +56,26 @@ contract PharaohDeploy is Script {
         loan.transferOwnership(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
         return (loan, vault, swapper);
     }
+
+}
+
+
+contract PharaohUpgrade is Script {
+    Swapper public swapper;
+    address[] public supportedTokens;
+    uint256 fork;
+    address _phar = 0xAAAB9D12A30504559b0C5a9A5977fEE4A6081c6b;
+    address _usdc = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+    address _avax = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+
+    function run() external  {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        upgrade();
+    }
+
+    function upgrade() public {
+        LoanV2 loanV2 = new LoanV2();
+        Loan(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).upgradeToAndCall(address(loanV2), new bytes(0));
+    }
+
 }
