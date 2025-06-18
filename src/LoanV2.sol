@@ -308,50 +308,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
-     * @dev Claims rewards for a given loan and swaps them to the asset (USDC or Aero/Velo).
-     *      The function calculates the total rewards claimed and returns it.
-     * @param tokenId The ID of the loan for which rewards are being claimed.
-     * @param fees An array of addresses representing the fee tokens to be claimed.
-     * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset.
-     * @return totalRewards The total amount of rewards claimed and swapped to the asset.
-     */
-    function _getRewards(uint256 tokenId, address[] memory fees, address[][] memory tokens) internal returns (uint256 totalRewards) {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        uint256 assetBalancePre = _usdc.balanceOf(address(this));
-
-        ISwapper swapper = ISwapper(getSwapper());
-        address[] memory flattenedTokens = swapper.flattenToken(tokens);
-        uint256[] memory tokenBalances = swapper.getTokenBalances(flattenedTokens);
-        _voter.claimFees(fees, tokens, tokenId);
-        _swapTokensToAsset(flattenedTokens, _usdc, loan.borrower, tokenBalances);
-        uint256 assetBalancePost = _usdc.balanceOf(address(this));
-
-        // calculate the amount of fees claimed
-        return assetBalancePost - assetBalancePre;
-    }
-
-
-    /**
      * @dev Swaps all tokens in the provided array to a specified asset and transfers the resulting asset to the borrower.
-     * @param totalTokens An array of token addresses to be swapped.
-     * @param asset The target asset to which the tokens will be swapped.
-     * @param borrower The address of the borrower to receive the swapped asset.
+     * @param data The calldata containing the swap instructions.
      */
-    function _swapTokensToAsset(
-        address[] memory totalTokens,
-        IERC20 asset,
-        address borrower,
-        uint256[] memory balanceBefore
-    ) internal {
-        for (uint256 i = 0; i < totalTokens.length; i++) {
-            uint256 tokenBalance = IERC20(totalTokens[i]).balanceOf(address(this));
-            if (tokenBalance <= balanceBefore[i]) {
-                continue;
-            }
-            if (tokenBalance > 0) {
-                _swapToToken(tokenBalance - balanceBefore[i], totalTokens[i], address(asset), borrower);
-            }
-        }
+    function _executeSwaps(
+        bytes calldata data
+    ) internal virtual {
+        ISwapper swapper = ISwapper(getSwapper());
+        (bool success, bytes memory result) = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC.call{value: 0}(data);
+        require(success);
     }
     
     /**
@@ -626,7 +591,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset.
      * @return totalRewards The total amount usdc claimed after fees.
      */
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public virtual returns (uint256 totalRewards) {
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256 totalRewards) {
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
@@ -639,22 +604,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
 
+        totalRewards = allocations[0];
         // Retrieve rewards for the loan.
-        totalRewards = _getRewards(tokenId, fees, tokens);
-        uint256 amount = totalRewards;
-
-        // If no rewards were retrieved, exit early.
-        if (amount == 0) {
-            return 0;
-        }
+        _voter.claimFees(fees, tokens, tokenId);
+        _executeSwaps(tradeData);
 
         // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), amount, loan.borrower, tokenId);
+        emit RewardsClaimed(currentEpochStart(), totalRewards, loan.borrower, tokenId);
 
 
+        uint256 amount = totalRewards;
          // If the loan balance is zero and the user is not using a payoff token, handle zero balance scenarios.
         if(loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
-            uint256 amountAfterFees = amount - _increaseNft(loan, amount, true);
+            uint256 amountAfterFees = amount - _increaseNft(loan, allocations[1], true);
             _handleZeroBalance(tokenId, amountAfterFees, false);
             _claimRebase(loan);
             return totalRewards;
@@ -667,7 +629,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
         }
         
-        if(amount > loan.balance + payoffTokenLoanBalance) {
+        if(totalRewards > loan.balance + payoffTokenLoanBalance) {
             feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
         }
 
@@ -685,8 +647,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         recordRewards(lenderPremium, loan.borrower, tokenId);
         
         // if user has an increase percentage set, increase the veNFT amount
-        uint256 remaining = amount - protocolFee - lenderPremium - _increaseNft(loan, amount, false);
-
+        uint256 remaining = totalRewards - protocolFee - lenderPremium;
+        _increaseNft(loan, allocations[1], false);
         remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
         _pay(tokenId, remaining, false);
         _claimRebase(loan);

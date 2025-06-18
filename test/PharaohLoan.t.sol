@@ -1221,8 +1221,9 @@ contract PharaohLoanTest is Test {
             tokens[i] = bribeTokens;
         }
         vm.selectFork(fork);
-        uint256 claimed = _loan.claim(_tokenId, fees, tokens);
-        console.log("claimed: %s for token %v", claimed, _tokenId);
-        return claimed;
+        bytes memory data = "";
+        uint256[2] memory allocations = [uint256(0), uint256(0)];
+        _loan.claim(_tokenId, fees, tokens, data, allocations);
+        return 0;
     }
 }
