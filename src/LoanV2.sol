@@ -22,7 +22,6 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 
-
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -308,70 +307,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
-     * @dev Swaps all tokens in the provided array to a specified asset and transfers the resulting asset to the borrower.
-     * @param data The calldata containing the swap instructions.
-     */
-    function _executeSwaps(
-        bytes calldata data
-    ) internal virtual {
-        ISwapper swapper = ISwapper(getSwapper());
-        (bool success, bytes memory result) = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC.call{value: 0}(data);
-        require(success);
-    }
-    
-    /**
-     * @dev Internal function to swap a specified amount of one token to another token.
-     *      If the `fromToken` and `toToken` are the same or the `amountIn` is zero, 
-     *      the function returns the input amount without performing any swap.
-     * 
-     * @param amountIn The amount of the `fromToken` to be swapped.
-     * @param fromToken The address of the token to be swapped from.
-     * @param toToken The address of the token to be swapped to.
-     * @param borrower The address of the borrower to send the tokens to if the swap fails.
-     * 
-     * @return amountOut The amount of the `toToken` received after the swap.
-     * 
-     * Requirements:
-     * - The `fromToken` must be approved for spending by the `_aeroRouter`.
-     * - The `_aeroRouter` and `_aeroFactory` must be properly configured.
-     * 
-     * Behavior:
-     * - If the swap route returns zero output, the `fromToken` is transferred back to the borrower.
-     * - Otherwise, the function performs the token swap using the `_aeroRouter` and returns the amount received.
-     */
-
-    function _swapToToken(
-        uint256 amountIn,
-        address fromToken,
-        address toToken,
-        address borrower
-    ) virtual internal returns (uint256 amountOut) {
-        require(fromToken != address(_ve)); // Prevent swapping veNFT
-        if (fromToken == toToken || amountIn == 0) {
-            return amountIn;
-        }
-        IERC20(fromToken).approve(address(_aeroRouter), 0); // reset approval first
-        IERC20(fromToken).approve(address(_aeroRouter), amountIn);
-        ISwapper swapper = ISwapper(getSwapper());
-        IRouter.Route[] memory routes = ISwapper(swapper).getBestRoute(fromToken, toToken, amountIn);
-        uint256 minimumAmountOut = ISwapper(swapper).getMinimumAmountOut(routes, amountIn);
-        
-        if (minimumAmountOut == 0) {
-            // send to borrower if the swap returns 0
-            IERC20(fromToken).transfer(borrower, amountIn);
-            return 0;
-        }
-        uint256[] memory amounts = _aeroRouter.swapExactTokensForTokens(
-                amountIn,
-                minimumAmountOut,
-                routes,
-                address(this),
-                block.timestamp
-            );
-        return amounts[amounts.length - 1];
-    }
-
-    /**
      * @notice Allows a borrower to make a payment towards their loan.
      * @dev If the `amount` parameter is set to 0, the entire remaining loan balance will be paid.
      *      The function transfers the specified `amount` of USDC from the caller to the contract
@@ -556,9 +491,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _usdc : IERC20(loan.preferredToken);
-        if(asset != _usdc) {
-            amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
-        }
         emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, amount));
         if(tokenId == getManagedNft()) {
@@ -604,64 +536,144 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
 
+        // keep track of rewards and aero balances so wont use excess rewards
+        uint256 rewardsAmount = _usdc.balanceOf(address(this));
+        uint256 aeroAmount = _aero.balanceOf(address(this));
         totalRewards = allocations[0];
-        // Retrieve rewards for the loan.
-        _voter.claimFees(fees, tokens, tokenId);
-        _executeSwaps(tradeData);
+        _processRewards(fees, tokens, tokenId, tradeData);
+        rewardsAmount = _usdc.balanceOf(address(this)) - rewardsAmount;
+        aeroAmount = _aero.balanceOf(address(this)) - aeroAmount;
+
+        // due to slippage, make sure we dont try to increase more than aero received
+        uint256 increaseAmount = allocations[1];
+        if (increaseAmount > aeroAmount) {
+            increaseAmount = aeroAmount; // cap the increase amount to the remaining rewards
+        }
 
         // Emit an event indicating that rewards have been claimed.
         emit RewardsClaimed(currentEpochStart(), totalRewards, loan.borrower, tokenId);
 
-
-        uint256 amount = totalRewards;
-         // If the loan balance is zero and the user is not using a payoff token, handle zero balance scenarios.
-        if(loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
-            uint256 amountAfterFees = amount - _increaseNft(loan, allocations[1], true);
-            _handleZeroBalance(tokenId, amountAfterFees, false);
+        // Handle zero balance case
+        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+            _handleZeroBalanceClaim(loan, rewardsAmount, allocations[1]);
             _claimRebase(loan);
+            require(_ve.ownerOf(tokenId) == address(this));
             return totalRewards;
         }
 
-        uint256 feeEligibleAmount = amount;
-        uint256 payoffTokenLoanBalance;
+        // Handle active loan case
+        _handleActiveLoanClaim(loan, tokenId, totalRewards, allocations[1], rewardsAmount);
+        _claimRebase(loan);
+        require(_ve.ownerOf(tokenId) == address(this));
         
-        if (userUsesPayoffToken(loan.borrower) && getUserPayoffToken(loan.borrower) != 0 && getUserPayoffToken(loan.borrower) != tokenId) {
-            payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
+        return totalRewards;
+    }
+    
+    function _processRewards(
+        address[] calldata fees,
+        address[][] calldata tokens,
+        uint256 tokenId,
+        bytes calldata tradeData
+    ) internal {
+        _voter.claimFees(fees, tokens, tokenId);
+        ISwapper swapper = ISwapper(getSwapper());
+        address[] memory flattenedTokens = swapper.flattenToken(tokens);
+
+        if (tradeData.length == 0) {
+            return;
         }
-        
-        if(totalRewards > loan.balance + payoffTokenLoanBalance) {
-            feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
+        // get balance before claiming rewards
+        // loop through flattened tokens and set allowances
+        for (uint256 i = 0; i < flattenedTokens.length; i++) {
+            IERC20 token = IERC20(flattenedTokens[i]);
+            if (token.allowance(address(this), address(0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC)) < type(uint256).max) {
+                token.approve(address(0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC), type(uint256).max);
+            }
         }
 
-        // Calculate the protocol fee based on the rewards amount.
-        uint256 protocolFee = (feeEligibleAmount * getProtocolFee()) / 10000;
-        // Transfer the protocol fee to the contract owner.
+        (bool success,) = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC.call{value: 0}(tradeData);
+        require(success);
+
+
+        for (uint256 i = 0; i < flattenedTokens.length; i++) {
+            IERC20 token = IERC20(flattenedTokens[i]);
+            if (token.allowance(address(this), address(0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC)) != 0) {
+                token.approve(address(0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC), 0);
+            }
+        }
+    }
+
+
+    function _handleZeroBalanceClaim(
+        LoanInfo storage loan, 
+        uint256 amount,
+        uint256 increaseAmount
+    ) internal {
+        _increaseNft(loan, increaseAmount, true);
+        _handleZeroBalance(loan.tokenId, amount, false);
+    }
+
+    function _handleActiveLoanClaim(
+        LoanInfo storage loan,
+        uint256 tokenId, 
+        uint256 totalRewards,
+        uint256 increaseAmount,
+        uint256 remaining
+    ) internal {
+        // Calculate fee eligible amount
+        uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, totalRewards);
+        
+        // Process fees
+        remaining -= _processFees(loan, tokenId, totalRewards, feeEligibleAmount);
+        
+        // Handle NFT increase
+        _increaseNft(loan, increaseAmount, false);
+        
+        // Handle payoff token and payment
+        remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
+        _pay(tokenId, remaining, false);
+    }
+
+    function _processFees(
+        LoanInfo storage loan,
+        uint256 tokenId,
+        uint256 totalRewards,
+        uint256 remaining
+    ) internal returns (uint256) {
+        // Calculate and transfer protocol fee
+        uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
         _usdc.transfer(owner(), protocolFee);
         emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, tokenId, address(_usdc));
 
-        // Calculate the lender premium based on the rewards amount.
-        uint256 lenderPremium = (feeEligibleAmount * getLenderPremium()) / 10000;
-
-        // Transfer the lender premium to the vault.
+        // Calculate and transfer lender premium
+        uint256 lenderPremium = (totalRewards * getLenderPremium()) / 10000;
         _usdc.transfer(_vault, lenderPremium);
         recordRewards(lenderPremium, loan.borrower, tokenId);
-        
-        // if user has an increase percentage set, increase the veNFT amount
-        uint256 remaining = totalRewards - protocolFee - lenderPremium;
-        _increaseNft(loan, allocations[1], false);
-        remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
-        _pay(tokenId, remaining, false);
-        _claimRebase(loan);
-        require(_ve.ownerOf(tokenId) == address(this));
+
+        return remaining - protocolFee - lenderPremium;
     }
-    
+
+    function _calculateFeeEligibleAmount(LoanInfo storage loan, uint256 amount) internal view returns (uint256) {
+        uint256 feeEligibleAmount = amount;
+        
+        if (userUsesPayoffToken(loan.borrower) && getUserPayoffToken(loan.borrower) != 0 && getUserPayoffToken(loan.borrower) != loan.tokenId) {
+            uint256 payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
+            if (amount > loan.balance + payoffTokenLoanBalance) {
+                feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
+            }
+        }
+        
+        return feeEligibleAmount;
+    }
+
     /**
-     * @dev Internal function to increase the NFT-related value for a loan.
+     * @dev Internal function to increase the
+      NFT-related value for a loan.
      * @param loan The LoanInfo struct containing details of the loan.
-     * @param claimedRewards The amount of rewards that have been claimed.
+     * @param allocation The amount  to be allocated for increasing the veNFT balance.
      * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
-    function _increaseNft(LoanInfo memory loan, uint256 claimedRewards, bool takeFees) internal  returns (uint256 spent) {
+    function _increaseNft(LoanInfo memory loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
         if(loan.increasePercentage == 0) {
             return 0; // No increase
         }
@@ -669,26 +681,23 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(loan.balance > 0 && loan.increasePercentage > 2500) {
             increasePercentage = 2500; // Cap the increase percentage to 25% max
         }
-        uint256 amountToIncrease = (claimedRewards * increasePercentage) / 10000;
 
-        uint256 amountOut = _swapToToken(amountToIncrease, address(_usdc), address(_aero), loan.borrower);
-
-        if(amountOut == 0) {
+        if(allocation == 0) {
             return 0;
         }
         // get protocol fee 
         if(takeFees) {
-            amountOut -= _payZeroBalanceFee(loan.borrower, loan.tokenId, amountOut, address(_aero));
+            allocation -= _payZeroBalanceFee(loan.borrower, loan.tokenId, allocation, address(_aero));
         }
 
-        _aero.approve(address(_ve), amountOut);
+        _aero.approve(address(_ve), allocation);
         uint256 managedNft = getManagedNft();
         uint256 tokenToIncrease = (userIncreasesManagedToken(loan.borrower) || loan.optInCommunityRewards) ? managedNft : loan.tokenId;
-        _ve.increaseAmount(tokenToIncrease, amountOut);
-        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, amountOut, loan.tokenId);
-        addTotalWeight(amountOut);
-        _recordDepositOnManagedNft(tokenToIncrease, amountOut, loan.borrower);
-        return amountToIncrease;
+        _ve.increaseAmount(tokenToIncrease, allocation);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
+        addTotalWeight(allocation);
+        _recordDepositOnManagedNft(tokenToIncrease, allocation, loan.borrower);
+        return allocation;
     }
 
     /**

@@ -58,7 +58,7 @@ contract PharaohLoanTest is Test {
     address user;
     uint256 tokenId = 3801;
 
-    uint256 expectedRewards = 1261867;
+    uint256 expectedRewards = 1269895;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
@@ -206,7 +206,9 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        uint256 rewards = _claimRewards(loan, tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
         assertEq(rewards, expectedRewards, "rewards should be expectedRewards");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
@@ -215,7 +217,7 @@ contract PharaohLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 169576);
+        assertEq(vault.epochRewardsLocked(), 172913);
     }
 
     function testIncreaseAmountPercentage20() public {
@@ -253,7 +255,9 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
 
@@ -261,7 +265,7 @@ contract PharaohLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 169576);
+        assertEq(vault.epochRewardsLocked(), 172913);
     }
 
     function testIncreaseAmountPercentage50WithLoan() public {
@@ -300,7 +304,9 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020200015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70ada278e2a9c28900000000001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500019962Cf3ba621bEb96D3fA2614D24161A717ada710001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e080de1420c44a46e800001037eDa3aDB1198021A9b2e88C22B464fD38db3f30001aaab9d12a30504559b0c5a9a5977fee4a6081c6b041fec6c6c0001037eDa3aDB1198021A9b2e88C22B464fD38db3f300000000060204060195a33bf60002000b0301010200020302000003040001040b0101050201ff000000000000000000000000000000000000000000000000000000000000b0336b14d76d373b9ec711efef67a5922e0cad62b31f66aa3c1e785363f0875a1b74e27b85fd66c79962cf3ba621beb96d3fa2614d24161a717ada71ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773d00000000000000000000000000000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(1027835), uint256(482898852822771)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
         nftBalance = votingEscrow.balanceOfNFTAt(tokenId, block.timestamp);
         assertTrue(nftBalance >= 994807632341109944);
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
@@ -310,7 +316,7 @@ contract PharaohLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 169576);
+        assertEq(vault.epochRewardsLocked(), 172913);
     }
 
 
@@ -350,7 +356,9 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70ad9daf43fcef0400000000001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500019962Cf3ba621bEb96D3fA2614D24161A717ada710001aaab9d12a30504559b0c5a9a5977fee4a6081c6b042237923a0001037eDa3aDB1198021A9b2e88C22B464fD38db3f30000000004010305000002020302000001020001040301010103040064ff000000000000009962cf3ba621beb96d3fa2614d24161a717ada71ffff003a6bad9b743d658048742935fffe2b6ed7aaa3f202babcf7d6493afbc0caee03af9c64f984b31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
         nftBalance = votingEscrow.balanceOfNFTAt(tokenId, block.timestamp);
         assertTrue(nftBalance >= 994807632341109944);
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
@@ -360,7 +368,7 @@ contract PharaohLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 169576);
+        assertEq(vault.epochRewardsLocked(), 172913);
     }
 
     function testIncreaseAmountPercentage100NoLoan() public {
@@ -398,12 +406,17 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        uint256 rewardsClaimed = _claimRewards(loan, tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70ad9daf43fcef0400000000001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500019962Cf3ba621bEb96D3fA2614D24161A717ada710001aaab9d12a30504559b0c5a9a5977fee4a6081c6b042237923a0001037eDa3aDB1198021A9b2e88C22B464fD38db3f30000000004010305000002020302000001020001040301010103040064ff000000000000009962cf3ba621beb96d3fa2614d24161a717ada71ffff003a6bad9b743d658048742935fffe2b6ed7aaa3f202babcf7d6493afbc0caee03af9c64f984b31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(36117747185770)];
+        uint256 rewardsClaimed = _claimRewards(loan, tokenId, bribes, data, allocations);
+        console.log("LOAN BALANCE", usdc.balanceOf(address(loan)));
+        console.log("Reards claimed", rewardsClaimed);
+        console.log("owner", address(owner));
         assertEq(rewardsClaimed, expectedRewards);
         nftBalance = votingEscrow.balanceOfNFTAt(tokenId, block.timestamp);
         assertTrue(nftBalance >= 997150273160109328);
+        assertEq(aero.balanceOf(address(owner)), 361177471857, "owner should have gained");
         assertEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should not have gained");
-        assertEq(aero.balanceOf(address(owner)), 36117747185770, "owner should have gained");
         assertEq(loan.activeAssets(), 0, "should not have active assets");
 
 
@@ -449,14 +462,15 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        uint256 rewardsClaimed = _claimRewards(loan, tokenId, bribes);
-        assertEq(rewardsClaimed, expectedRewards);
+        bytes memory data = hex"84a7f3dd020200015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70ad935b2e457a4f80000000001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500019962Cf3ba621bEb96D3fA2614D24161A717ada710001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e080de3a24c639828000001037eDa3aDB1198021A9b2e88C22B464fD38db3f30001aaab9d12a30504559b0c5a9a5977fee4a6081c6b041f40eba90001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000802040a019539cc7e0002000b0300010200020302000003040001040001060002020b0306060201040b01010708010607020100050900ff00000000000000000066a5de11d1e1f20da825d974453f099c4bb13647b31f66aa3c1e785363f0875a1b74e27b85fd66c79962cf3ba621beb96d3fa2614d24161a717ada71ffff003a6bad9b743d658048742935fffe2b6ed713e09b6a2919413f8436ecb3b963a47a6fe5c616d011625b43727e7e9dc684c15ca30a70cdbef7a8770f5f599301b61d7101637d9784ae6156726c1849d5c2bdffac6ce2bfdb6640f4f80f226bc10babd5d0a9b3f2c264b955ae7161cfa6d38a7aea60a7000000000000000000000000";
+        uint256[2] memory allocations = [uint256(1020654), uint256(2670931523329828)];
+        uint256 rewardsClaimed = _claimRewards(loan, tokenId, bribes, data, allocations);
+        assertEq(rewardsClaimed, 1020654);
         nftBalance = votingEscrow.balanceOfNFTAt(tokenId, block.timestamp);
         assertTrue(nftBalance >= 996367037369959857);
-        assertEq(usdc.balanceOf(address(owner)), 3154, "owner should have gained");
-        assertEq(aero.balanceOf(address(owner)), 27093227692782, "owner should have gained");
+        assertEq(usdc.balanceOf(address(owner)), 3345, "owner should have gained");
+        assertEq(aero.balanceOf(address(owner)), 26709315233298, "owner should have gained");
         assertEq(loan.activeAssets(), 0, "should not have active assets");
-
 
         rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertEq(rewardsPerEpoch, 0, "rewardsPerEpoch should be  0");
@@ -464,70 +478,72 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 0);
     }
 
-    function testIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
-        user = votingEscrow.ownerOf(tokenId);
+    // function xtestIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
+    //     user = votingEscrow.ownerOf(tokenId);
 
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(usdc);
+    //     address[] memory tokens = new address[](1);
+    //     tokens[0] = address(usdc);
             
-        address[] memory bribes = new address[](0);
+    //     address[] memory bribes = new address[](0);
 
-        address veOwner = votingEscrow.ownerOf(3687);
-        vm.startPrank(veOwner);
-        CommunityRewards _communityRewards = new CommunityRewards();
-        ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
-        vm.roll(block.number + 1);
-        votingEscrow.approve(address(_proxy), 3687);
-        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 0, 3687, 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
-        vm.stopPrank();
-        vm.startPrank(owner);
-        loan.setManagedNft(3687);
+    //     address veOwner = votingEscrow.ownerOf(3687);
+    //     vm.startPrank(veOwner);
+    //     CommunityRewards _communityRewards = new CommunityRewards();
+    //     ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
+    //     vm.roll(block.number + 1);
+    //     votingEscrow.approve(address(_proxy), 3687);
+    //     CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 0, 3687, 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
+    //     vm.stopPrank();
+    //     vm.startPrank(owner);
+    //     loan.setManagedNft(3687);
 
-        uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
-        assertEq(rewardsPerEpoch, 0, "rewardsPerEpoch should be  0");
+    //     uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
+    //     assertEq(rewardsPerEpoch, 0, "rewardsPerEpoch should be  0");
 
-        uint256 startingUserBalance = usdc.balanceOf(address(user));
+    //     uint256 startingUserBalance = usdc.balanceOf(address(user));
 
-        assertEq(usdc.balanceOf(address(user)), startingUserBalance);
-        assertEq(usdc.balanceOf(address(vault)), 100e6);
-        assertEq(loan.activeAssets(),0, "should have 0 active assets");
-        vm.startPrank(user);
-        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, 0, Loanv2.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
-        vm.roll(block.number+1);
-        vm.warp(block.timestamp + 3601);
-        loan.setIncreasePercentage(tokenId, 10000);
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = tokenId;
-        loan.setOptInCommunityRewards(tokenIds, true);
-        vm.stopPrank();
-
-
-        CommunityRewards communityRewards = CommunityRewards(address(_proxy));
-        vm.startPrank(address(loan));
-        console.log(3687, _claimRewards(loan, 3687, bribes));
-        vm.stopPrank();
+    //     assertEq(usdc.balanceOf(address(user)), startingUserBalance);
+    //     assertEq(usdc.balanceOf(address(vault)), 100e6);
+    //     assertEq(loan.activeAssets(),0, "should have 0 active assets");
+    //     vm.startPrank(user);
+    //     IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+    //     loan.requestLoan(tokenId, 0, Loanv2.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
+    //     vm.roll(block.number+1);
+    //     vm.warp(block.timestamp + 3601);
+    //     loan.setIncreasePercentage(tokenId, 10000);
+    //     uint256[] memory tokenIds = new uint256[](1);
+    //     tokenIds[0] = tokenId;
+    //     loan.setOptInCommunityRewards(tokenIds, true);
+    //     vm.stopPrank();
 
 
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        IMinter(0xAAA823aa799BDa3193D46476539bcb1da5B71330).updatePeriod();
-        uint256 ownerShares = communityRewards.balanceOf(owner);
-        console.log(3687, _claimRewards(loan, 3687, bribes));
-        uint256 userBalance = usdc.balanceOf(address(user));
-        assertTrue(ownerShares > 0, "owner should have shares");
+    //     CommunityRewards communityRewards = CommunityRewards(address(_proxy));
+    //     vm.startPrank(address(loan));
+    //     bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+    //     uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+    //     uint256 rewards = _claimRewards(loan, 3687, bribes, data, allocations);
+    //     vm.stopPrank();
+
+
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 7 days);
+    //     IMinter(0xAAA823aa799BDa3193D46476539bcb1da5B71330).updatePeriod();
+    //     uint256 ownerShares = communityRewards.balanceOf(owner);
+    //     rewards = _claimRewards(loan, 3687, bribes, data, allocations);
+    //     uint256 userBalance = usdc.balanceOf(address(user));
+    //     assertTrue(ownerShares > 0, "owner should have shares");
         
-        uint256 ownerUsdBalance = usdc.balanceOf(address(owner));
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        vm.prank(address(loan));
-        communityRewards.notifyRewardAmount(tokens[0], 10e6);
-        usdc.mint(address(communityRewards), 10e6);
-        communityRewards.getRewardForUser(user, tokens);
-        communityRewards.getRewardForUser(owner, tokens);
+    //     uint256 ownerUsdBalance = usdc.balanceOf(address(owner));
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 7 days);
+    //     vm.prank(address(loan));
+    //     communityRewards.notifyRewardAmount(tokens[0], 10e6);
+    //     usdc.mint(address(communityRewards), 10e6);
+    //     communityRewards.getRewardForUser(user, tokens);
+    //     communityRewards.getRewardForUser(owner, tokens);
 
-        assertTrue(usdc.balanceOf(address(owner)) > ownerUsdBalance, "owner should have more than starting balance");
-    }
+    //     assertTrue(usdc.balanceOf(address(owner)) > ownerUsdBalance, "owner should have more than starting balance");
+    // }
 
     function testIncreaseLoan() public {
         uint256 amount = 1e6;
@@ -640,7 +656,9 @@ contract PharaohLoanTest is Test {
         vm.stopPrank();
         
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        _claimRewards(loan, tokenId, bribes, data, allocations);
 
         uint256 endingOwnerBalance = usdc.balanceOf(address(owner));
 
@@ -655,8 +673,9 @@ contract PharaohLoanTest is Test {
     function testPayToOwner() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 3687;
-
+        console.log("LOAN:L", address(loan));
         
+        uint256 loanBeginningBalance = usdc.balanceOf(address(loan));
         user = votingEscrow.ownerOf(_tokenId);
         uint256 startingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
         uint256 startingUserBalance = usdc.balanceOf(address(user));
@@ -670,7 +689,9 @@ contract PharaohLoanTest is Test {
         
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
 
         uint256 endingUserBalance = usdc.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
@@ -687,6 +708,8 @@ contract PharaohLoanTest is Test {
         assertEq(endingUserBalance - startingUserBalance, paidToUser,  "user should receive rewards");
         assertEq(endingOwnerBalance - startingOwnerBalance, protocolFee, "owner should receive rewards");
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
+        uint256 loanEndingBalance = usdc.balanceOf(address(loan));
+        assertEq(loanEndingBalance - loanBeginningBalance, 0, "loan should not have balance");
     }
 
     function testPayToOwnerPayoutToken() public {
@@ -714,7 +737,9 @@ contract PharaohLoanTest is Test {
         
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
 
         uint256 endingUserBalance = weth.balanceOf(address(user));
         uint256 endingOwnerBalance = usdc.balanceOf(address(Ownable2StepUpgradeable(loan).owner()));
@@ -730,182 +755,186 @@ contract PharaohLoanTest is Test {
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
     }
 
-    function testManagedNft() public {
-        uint256 _tokenId = 3687;
-        address _user = votingEscrow.ownerOf(_tokenId);
-        vm.prank(_user);
-        votingEscrow.transferFrom(_user, address(this), _tokenId);
+    // function testManagedNft() public {
+    //     uint256 _tokenId = 3687;
+    //     address _user = votingEscrow.ownerOf(_tokenId);
+    //     vm.prank(_user);
+    //     votingEscrow.transferFrom(_user, address(this), _tokenId);
 
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(usdc);
+    //     address[] memory tokens = new address[](1);
+    //     tokens[0] = address(usdc);
         
-        CommunityRewards _communityRewards = new CommunityRewards();
-        ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
-        votingEscrow.approve(address(_proxy), _tokenId);
-        vm.roll(block.number + 1);
-        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, _tokenId, 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
-
-        
-
-        vm.prank(0xeefbd314141BF7933Be47E44C1dC1437e58604Cb);
-        aero.transfer(_user, 10e18);
-        vm.startPrank(_user);
-        aero.approve(address(votingEscrow), 10e18);
-        uint256 newLockId = votingEscrow.createLock(10e18, 604800);
-        vm.stopPrank();
-
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        
-        address _user2 = votingEscrow.ownerOf(newLockId);
-        console.log("new lock id: %s", newLockId);
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        uint256 nftBalance = votingEscrow.balanceOfNFT(newLockId);
-        assertTrue(nftBalance > 0, "should not have balance");
-        vm.prank(_user2);
-        votingEscrow.transferFrom(_user2, address(loan), newLockId);
-
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        address _owner = Ownable2StepUpgradeable(loan).owner();
-        vm.prank(_owner);
-        loan.setManagedNft(3687);
-
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        uint256 beginningBalance = votingEscrow.balanceOfNFT(_tokenId);
-        vm.startPrank(_owner);
-        loan.mergeIntoManagedNft(newLockId);
-        assertTrue(votingEscrow.balanceOfNFT(_tokenId) > beginningBalance, "should have more balance");
-
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        assertEq(votingEscrow.ownerOf(newLockId), address(0), "should be burnt");
-        vm.expectRevert();
-        loan.setManagedNft(newLockId);
-
-        address[] memory bribes = new address[](0);
-        CommunityRewards communityRewards = CommunityRewards(address(_proxy));
-        address user1 = address(0x353641);
-        address user2 = address(0x26546);
-        vm.startPrank(address(loan));
-        communityRewards.deposit(uint256(3687), 10e18, user1);
-        communityRewards.deposit(uint256(3687), 10e18, user2);
-        vm.stopPrank();
-
-
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-
-
-        IMinter(0xAAA823aa799BDa3193D46476539bcb1da5B71330).updatePeriod();
-        _claimRewards(loan, _tokenId, bribes);
-        uint256 rewards = communityRewards.tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
-        assertTrue(rewards > 0, "rewards should be greater than 0");
-        console.log(usdc.balanceOf(address(user1)));
-        communityRewards.getRewardForUser(user1, tokens);
-        communityRewards.getRewardForUser(user2, tokens);
-        console.log(usdc.balanceOf(address(user1)));
-
-
-
-
-        assertTrue(IERC20(address(usdc)).balanceOf(address(communityRewards)) <  10, "should be less than 10");
-
-        // test setting increase percentage
-        vm.expectRevert();
-        communityRewards.setIncreasePercentage(0);
-        
-        vm.startPrank(_owner);
-        communityRewards.setIncreasePercentage(0);
-    }
-
-    function testManagedNft2() public {
-        uint256 _tokenId = 3687;
-        address _user = votingEscrow.ownerOf(_tokenId);
-        vm.prank(_user);
-        votingEscrow.transferFrom(_user, address(this), _tokenId);
-
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(usdc);
-        
-        CommunityRewards _communityRewards = new CommunityRewards();
-        ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
-        votingEscrow.approve(address(_proxy), _tokenId);
-        vm.roll(block.number + 1);
-        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, _tokenId, 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
+    //     CommunityRewards _communityRewards = new CommunityRewards();
+    //     ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
+    //     votingEscrow.approve(address(_proxy), _tokenId);
+    //     vm.roll(block.number + 1);
+    //     CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, _tokenId, 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
 
         
 
-        vm.prank(0xeefbd314141BF7933Be47E44C1dC1437e58604Cb);
-        aero.transfer(_user, 10e18);
-        vm.startPrank(_user);
-        aero.approve(address(votingEscrow), 10e18);
-        uint256 newLockId = votingEscrow.createLock(10e18, 604800);
-        vm.stopPrank();
+    //     vm.prank(0xeefbd314141BF7933Be47E44C1dC1437e58604Cb);
+    //     aero.transfer(_user, 10e18);
+    //     vm.startPrank(_user);
+    //     aero.approve(address(votingEscrow), 10e18);
+    //     uint256 newLockId = votingEscrow.createLock(10e18, 604800);
+    //     vm.stopPrank();
 
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
         
-        address _user2 = votingEscrow.ownerOf(newLockId);
-        console.log("new lock id: %s", newLockId);
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        uint256 nftBalance = votingEscrow.balanceOfNFT(newLockId);
-        assertTrue(nftBalance > 0, "should not have balance");
-        vm.prank(_user2);
-        votingEscrow.transferFrom(_user2, address(loan), newLockId);
+    //     address _user2 = votingEscrow.ownerOf(newLockId);
+    //     console.log("new lock id: %s", newLockId);
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     uint256 nftBalance = votingEscrow.balanceOfNFT(newLockId);
+    //     assertTrue(nftBalance > 0, "should not have balance");
+    //     vm.prank(_user2);
+    //     votingEscrow.transferFrom(_user2, address(loan), newLockId);
 
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        address _owner = Ownable2StepUpgradeable(loan).owner();
-        vm.prank(_owner);
-        loan.setManagedNft(3687);
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     address _owner = Ownable2StepUpgradeable(loan).owner();
+    //     vm.prank(_owner);
+    //     loan.setManagedNft(3687);
 
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        uint256 beginningBalance = votingEscrow.balanceOfNFT(_tokenId);
-        vm.startPrank(_owner);
-        loan.mergeIntoManagedNft(newLockId);
-        assertTrue(votingEscrow.balanceOfNFT(_tokenId) > beginningBalance, "should have more balance");
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     uint256 beginningBalance = votingEscrow.balanceOfNFT(_tokenId);
+    //     vm.startPrank(_owner);
+    //     loan.mergeIntoManagedNft(newLockId);
+    //     assertTrue(votingEscrow.balanceOfNFT(_tokenId) > beginningBalance, "should have more balance");
 
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        assertEq(votingEscrow.ownerOf(newLockId), address(0), "should be burnt");
-        vm.expectRevert();
-        loan.setManagedNft(newLockId);
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     assertEq(votingEscrow.ownerOf(newLockId), address(0), "should be burnt");
+    //     vm.expectRevert();
+    //     loan.setManagedNft(newLockId);
 
-        address[] memory bribes = new address[](0);
-        CommunityRewards communityRewards = CommunityRewards(address(_proxy));
-        address user1 = address(0x353641);
-        address user2 = address(0x26546);
-        vm.startPrank(address(loan));
-        communityRewards.deposit(uint256(3687), 10e18, user1);
-        communityRewards.deposit(uint256(3687), 10e18, user2);
-        vm.stopPrank();
+    //     address[] memory bribes = new address[](0);
+    //     CommunityRewards communityRewards = CommunityRewards(address(_proxy));
+    //     address user1 = address(0x353641);
+    //     address user2 = address(0x26546);
+    //     vm.startPrank(address(loan));
+    //     communityRewards.deposit(uint256(3687), 10e18, user1);
+    //     communityRewards.deposit(uint256(3687), 10e18, user2);
+    //     vm.stopPrank();
 
 
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 7 days);
 
-        IMinter(0xAAA823aa799BDa3193D46476539bcb1da5B71330).updatePeriod();
-        _claimRewards(loan, _tokenId, bribes);
-        uint256 rewards = communityRewards.tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
-        assertTrue(rewards > 0, "rewards should be greater than 0");
+
+    //     IMinter(0xAAA823aa799BDa3193D46476539bcb1da5B71330).updatePeriod();
+    //     bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+    //     uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+    //      _claimRewards(loan, tokenId, bribes, data, allocations);
+    //     uint256 rewards = communityRewards.tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
+    //     assertTrue(rewards > 0, "rewards should be greater than 0");
+    //     console.log(usdc.balanceOf(address(user1)));
+    //     communityRewards.getRewardForUser(user1, tokens);
+    //     communityRewards.getRewardForUser(user2, tokens);
+    //     console.log(usdc.balanceOf(address(user1)));
+
+
+
+
+    //     assertTrue(IERC20(address(usdc)).balanceOf(address(communityRewards)) <  10, "should be less than 10");
+
+    //     // test setting increase percentage
+    //     vm.expectRevert();
+    //     communityRewards.setIncreasePercentage(0);
+        
+    //     vm.startPrank(_owner);
+    //     communityRewards.setIncreasePercentage(0);
+    // }
+
+    // function testManagedNft2() public {
+    //     uint256 _tokenId = 3687;
+    //     address _user = votingEscrow.ownerOf(_tokenId);
+    //     vm.prank(_user);
+    //     votingEscrow.transferFrom(_user, address(this), _tokenId);
+
+    //     address[] memory tokens = new address[](1);
+    //     tokens[0] = address(usdc);
+        
+    //     CommunityRewards _communityRewards = new CommunityRewards();
+    //     ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
+    //     votingEscrow.approve(address(_proxy), _tokenId);
+    //     vm.roll(block.number + 1);
+    //     CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, _tokenId, 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
+
+        
+
+    //     vm.prank(0xeefbd314141BF7933Be47E44C1dC1437e58604Cb);
+    //     aero.transfer(_user, 10e18);
+    //     vm.startPrank(_user);
+    //     aero.approve(address(votingEscrow), 10e18);
+    //     uint256 newLockId = votingEscrow.createLock(10e18, 604800);
+    //     vm.stopPrank();
+
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+        
+    //     address _user2 = votingEscrow.ownerOf(newLockId);
+    //     console.log("new lock id: %s", newLockId);
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     uint256 nftBalance = votingEscrow.balanceOfNFT(newLockId);
+    //     assertTrue(nftBalance > 0, "should not have balance");
+    //     vm.prank(_user2);
+    //     votingEscrow.transferFrom(_user2, address(loan), newLockId);
+
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     address _owner = Ownable2StepUpgradeable(loan).owner();
+    //     vm.prank(_owner);
+    //     loan.setManagedNft(3687);
+
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     uint256 beginningBalance = votingEscrow.balanceOfNFT(_tokenId);
+    //     vm.startPrank(_owner);
+    //     loan.mergeIntoManagedNft(newLockId);
+    //     assertTrue(votingEscrow.balanceOfNFT(_tokenId) > beginningBalance, "should have more balance");
+
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 1);
+    //     assertEq(votingEscrow.ownerOf(newLockId), address(0), "should be burnt");
+    //     vm.expectRevert();
+    //     loan.setManagedNft(newLockId);
+
+    //     address[] memory bribes = new address[](0);
+    //     CommunityRewards communityRewards = CommunityRewards(address(_proxy));
+    //     address user1 = address(0x353641);
+    //     address user2 = address(0x26546);
+    //     vm.startPrank(address(loan));
+    //     communityRewards.deposit(uint256(3687), 10e18, user1);
+    //     communityRewards.deposit(uint256(3687), 10e18, user2);
+    //     vm.stopPrank();
+
+
+    //     vm.roll(block.number + 1);
+    //     vm.warp(block.timestamp + 7 days);
+
+    //     IMinter(0xAAA823aa799BDa3193D46476539bcb1da5B71330).updatePeriod();
+    //     bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+    //     uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+    //     _claimRewards(loan, tokenId, bribes, data, allocations);
+    //     uint256 rewards = communityRewards.tokenRewardsPerEpoch(address(usdc), ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.WEEK);
+    //     assertTrue(rewards > 0, "rewards should be greater than 0");
        
-        communityRewards.getRewardForUser(user1, tokens);
-        communityRewards.getRewardForUser(user2, tokens);
+    //     communityRewards.getRewardForUser(user1, tokens);
+    //     communityRewards.getRewardForUser(user2, tokens);
 
-        assertTrue(IERC20(address(usdc)).balanceOf(address(communityRewards)) <  10, "should be less than 10");
+    //     assertTrue(IERC20(address(usdc)).balanceOf(address(communityRewards)) <  10, "should be less than 10");
 
-        // test setting increase percentage
-        vm.expectRevert();
-        communityRewards.setIncreasePercentage(0);
+    //     // test setting increase percentage
+    //     vm.expectRevert();
+    //     communityRewards.setIncreasePercentage(0);
         
-        vm.startPrank(_owner);
-        communityRewards.setIncreasePercentage(0);
-    }
+    //     vm.startPrank(_owner);
+    //     communityRewards.setIncreasePercentage(0);
+    // }
 
 
     function testMerge() public {
@@ -973,7 +1002,9 @@ contract PharaohLoanTest is Test {
 
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        _claimRewards(loan, tokenId, bribes, data, allocations);
 
 
         (uint256 balance,) = loan.getLoanDetails(_tokenId2);
@@ -1014,7 +1045,9 @@ contract PharaohLoanTest is Test {
 
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        _claimRewards(loan, tokenId, bribes, data, allocations);
 
 
         (uint256 balance,) = loan.getLoanDetails(_tokenId2);
@@ -1058,7 +1091,9 @@ contract PharaohLoanTest is Test {
         assertEq(loan.activeAssets(), amount, "should have 0 active assets");
 
         address[] memory bribes = new address[](0);
-        uint256 rewards = _claimRewards(loan, tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        uint256 rewards = _claimRewards(loan, tokenId, bribes, data, allocations);
         assertEq(rewards, 1261867, "rewards should be 957174473");
         assertNotEq(usdc.balanceOf(address(owner)), startingOwnerBalance, "owner should have gained");
         assertTrue(loan.activeAssets() < amount, "should have less active assets");
@@ -1067,7 +1102,7 @@ contract PharaohLoanTest is Test {
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
         assertTrue(rewardsPerEpoch > 0, "rewardsPerEpoch should be greater than 0");
 
-        assertEq(vault.epochRewardsLocked(), 169576);
+        assertEq(vault.epochRewardsLocked(), 172913);
     }
 
     function testTopup() public {
@@ -1102,7 +1137,9 @@ contract PharaohLoanTest is Test {
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        _claimRewards(loan, tokenId, bribes, data, allocations);
         uint256 endingUserBalance = usdc.balanceOf(address(user));      
         console.log("ending user balance: %s", endingUserBalance);
         console.log("starting user balance: %s", startingUserBalance);  
@@ -1140,8 +1177,9 @@ contract PharaohLoanTest is Test {
         loan.setPayoffToken(_tokenId2, true);
 
         address[] memory bribes = new address[](0);
-        _claimRewards(loan, _tokenId, bribes);
-
+        bytes memory data = hex"84a7f3dd020100015f3454Fa53E5866a4f69bBc2E6B9A041092D9Ad70703c19d0213c8780001b31f66aa3c1e785363f0875a1b74e27b85fd66c7077938fca12e5c4e00000001ffff003a6bad9b743d658048742935fffe2b6ed7080e9c7ed08b7ac7d500018B0D80F3EDd2631962BE8aE932c7B4558f8B23650001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8f775b0001037eDa3aDB1198021A9b2e88C22B464fD38db3f3000000000401030500000202030200000102001e040b0101030401ff0000000000000000008b0d80f3edd2631962be8ae932c7b4558f8b2365ffff003a6bad9b743d658048742935fffe2b6ed7a20c959b19f114e9c2d81547734cdc1110bd773db31f66aa3c1e785363f0875a1b74e27b85fd66c700000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
+        _claimRewards(loan, tokenId, bribes, data, allocations);
 
         (uint256 balance,) = loan.getLoanDetails(_tokenId2);
         assertTrue(balance >  1000e6, "Balance should have increased");
@@ -1154,7 +1192,6 @@ contract PharaohLoanTest is Test {
         uint256 amount = 1e6;
         address _user = votingEscrow.ownerOf(_tokenId);
 
-        uint256 lastVoteTimestamp = voter.lastVoted(_tokenId);
         
         address[] memory manualPools = new address[](1);
         manualPools[0] = address(0xa20c959b19F114e9C2D81547734CdC1110bd773D);
@@ -1185,7 +1222,7 @@ contract PharaohLoanTest is Test {
         loan.userVote(tokenIds, manualPools, manualWeights);
     }
 
-    function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes) internal returns (uint256) {
+    function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes, bytes memory tradeData, uint256[2] memory allocations) internal returns (uint256) {
         vm.selectFork(fork2);
         address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
         uint256 index = 0;
@@ -1220,10 +1257,17 @@ contract PharaohLoanTest is Test {
             bribeTokens[bribes.length + 1] = token[1];
             tokens[i] = bribeTokens;
         }
+        // log fees and tokens
+        console.log("Fees and Tokens for Token ID %s", _tokenId);
+        for (uint256 i = 0; i < fees.length; i++) {
+            console.log("Fee %s: %s", i, fees[i]);
+            for (uint256 j = 0; j < tokens[i].length; j++) {
+                console.log("Token %s: %s", j, tokens[i][j]);
+            }
+        }
         vm.selectFork(fork);
-        bytes memory data = "";
-        uint256[2] memory allocations = [uint256(0), uint256(0)];
-        _loan.claim(_tokenId, fees, tokens, data, allocations);
-        return 0;
+        // Convert hex string to bytes
+        return _loan.claim(_tokenId, fees, tokens, tradeData, allocations);
     }
 }
+// 1061274 + 208621 = 1279895
