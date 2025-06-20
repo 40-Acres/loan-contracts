@@ -536,10 +536,38 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
 
+        (uint256 rewardsClaimed, uint256 increaseAmount) = _processRewardClaims(tokenId, fees, tokens, tradeData, allocations);
+
+        // Emit an event indicating that rewards have been claimed.
+        emit RewardsClaimed(currentEpochStart(), totalRewards, loan.borrower, tokenId);
+
+        // Handle zero balance case
+        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+            _handleZeroBalanceClaim(loan, rewardsAmount, increaseAmount);
+            _claimRebase(loan);
+            require(_ve.ownerOf(tokenId) == address(this));
+            return totalRewards;
+        }
+
+        // Handle active loan case
+        _handleActiveLoanClaim(loan, tokenId, totalRewards, increaseAmount, rewardsAmount);
+        _claimRebase(loan);
+        require(_ve.ownerOf(tokenId) == address(this));
+        
+        return totalRewards;
+    }
+    
+
+    function _processRewardClaims(
+        uint256 tokenId,
+        address[] calldata fees,
+        address[][] calldata tokens,
+        bytes calldata tradeData,
+        uint256[2] calldata allocations
+    ) internal returns (uint256 rewardsAmount, uint256 increaseAmount) {
         // keep track of rewards and aero balances so wont use excess rewards
         uint256 rewardsAmount = _usdc.balanceOf(address(this));
         uint256 aeroAmount = _aero.balanceOf(address(this));
-        totalRewards = allocations[0];
         _processRewards(fees, tokens, tokenId, tradeData);
         rewardsAmount = _usdc.balanceOf(address(this)) - rewardsAmount;
         aeroAmount = _aero.balanceOf(address(this)) - aeroAmount;
@@ -549,26 +577,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (increaseAmount > aeroAmount) {
             increaseAmount = aeroAmount; // cap the increase amount to the remaining rewards
         }
-
-        // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), totalRewards, loan.borrower, tokenId);
-
-        // Handle zero balance case
-        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
-            _handleZeroBalanceClaim(loan, rewardsAmount, allocations[1]);
-            _claimRebase(loan);
-            require(_ve.ownerOf(tokenId) == address(this));
-            return totalRewards;
-        }
-
-        // Handle active loan case
-        _handleActiveLoanClaim(loan, tokenId, totalRewards, allocations[1], rewardsAmount);
-        _claimRebase(loan);
-        require(_ve.ownerOf(tokenId) == address(this));
-        
-        return totalRewards;
+        return (rewardsAmount, increaseAmount);
     }
-    
+
     function _processRewards(
         address[] calldata fees,
         address[][] calldata tokens,
