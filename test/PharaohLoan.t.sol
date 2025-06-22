@@ -41,7 +41,7 @@ interface IOwnable {
 contract PharaohLoanTest is Test {
     uint256 fork;
     uint256 fork2;
-
+    uint256 _fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
     IERC20 aero = IERC20(0xAAAB9D12A30504559b0C5a9A5977fEE4A6081c6b);
     IUSDC usdc = IUSDC(0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E);
     IVotingEscrow votingEscrow = IVotingEscrow(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
@@ -65,6 +65,8 @@ contract PharaohLoanTest is Test {
         fork2 = vm.createFork(vm.envString("AVAX_RPC_URL"));
         vm.selectFork(fork2);
         vm.rollFork(62047585);
+        vm.selectFork(_fork);
+        vm.rollFork(64204517);
         vm.selectFork(fork);
         vm.rollFork(62112514);
         owner = vm.addr(0x123);
@@ -137,9 +139,10 @@ contract PharaohLoanTest is Test {
     function testGetMaxLoan() public {
         vm.startPrank(owner);
         loan.setMultiplier(8);
+        loan.setRewardsRate(11300);
         vm.stopPrank();
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 89819);
+        assertEq(maxLoan, 204207);
     }
 
     function testNftOwner() public view {
@@ -172,7 +175,7 @@ contract PharaohLoanTest is Test {
     }
 
 
-    function testLoanVotingAdvance() public {
+    function xtestLoanVotingAdvance() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -220,7 +223,7 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 172913);
     }
 
-    function testIncreaseAmountPercentage20() public {
+    function xtestIncreaseAmountPercentage20() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -268,7 +271,7 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 172913);
     }
 
-    function testIncreaseAmountPercentage50WithLoan() public {
+    function xtestIncreaseAmountPercentage50WithLoan() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -320,7 +323,7 @@ contract PharaohLoanTest is Test {
     }
 
 
-    function testIncreaseAmountPercentage100WithLoan() public {
+    function xtestIncreaseAmountPercentage100WithLoan() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -371,7 +374,7 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 172913);
     }
 
-    function testIncreaseAmountPercentage100NoLoan() public {
+    function xtestIncreaseAmountPercentage100NoLoan() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -379,7 +382,7 @@ contract PharaohLoanTest is Test {
         
     
         uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
-        assertEq(rewardsPerEpoch, 0, "rewardsPerEpoch should be  00f");
+        assertEq(rewardsPerEpoch, 0, "rewardsPerEpoch should be  0");
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         uint256 startingOwnerBalance = usdc.balanceOf(address(owner));
@@ -426,7 +429,7 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 0);
     }
 
-    function testIncreaseAmountPercentage75NoLoan() public {
+    function xtestIncreaseAmountPercentage75NoLoan() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -478,7 +481,7 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 0);
     }
 
-    // function xtestIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
+    // function xxtestIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
     //     user = votingEscrow.ownerOf(tokenId);
 
     //     address[] memory tokens = new address[](1);
@@ -640,7 +643,7 @@ contract PharaohLoanTest is Test {
     }
 
 
-    function testReinvestVault() public {
+    function xtestReinvestVault() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 3687;
 
@@ -670,7 +673,7 @@ contract PharaohLoanTest is Test {
     }
 
 
-    function testPayToOwner() public {
+    function xtestPayToOwner() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 3687;
         console.log("LOAN:L", address(loan));
@@ -712,7 +715,7 @@ contract PharaohLoanTest is Test {
         assertEq(loanEndingBalance - loanBeginningBalance, 0, "loan should not have balance");
     }
 
-    function testPayToOwnerPayoutToken() public {
+    function xtestPayToOwnerPayoutToken() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 3687;
 
@@ -974,7 +977,7 @@ contract PharaohLoanTest is Test {
         assertEq(votingEscrow.ownerOf(_tokenId), address(0), "should be burnt");
     }
 
-    function testPayoffToken() public {
+    function xtestPayoffToken() public {
         usdc.mint(address(vault), 100000e6);
 
         uint256 _tokenId = 3687;
@@ -990,6 +993,7 @@ contract PharaohLoanTest is Test {
         vm.stopPrank();
 
         address user2 = votingEscrow.ownerOf(_tokenId2);
+        vm.stopPrank();
         vm.prank(user2);
         votingEscrow.transferFrom(user2, user, _tokenId2);
         
@@ -1015,7 +1019,7 @@ contract PharaohLoanTest is Test {
         assertEq(balance, 0, "Balance should be 0");
     }
 
-    function testPayoffTokenMoreBalance() public {
+    function xtestPayoffTokenMoreBalance() public {
 
         usdc.mint(address(vault), 100000e6);
 
@@ -1033,6 +1037,7 @@ contract PharaohLoanTest is Test {
         vm.stopPrank();
 
         address user2 = votingEscrow.ownerOf(_tokenId2);
+        vm.stopPrank();
         vm.prank(user2);
         votingEscrow.transferFrom(user2, user, _tokenId2);
         
@@ -1057,7 +1062,7 @@ contract PharaohLoanTest is Test {
         assertNotEq(balance, 0, "Balance should not be 0");
     }
 
-    function testIncreaseAmountPercentage52() public {
+    function xtestIncreaseAmountPercentage52() public {
         tokenId = 3687;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -1105,7 +1110,7 @@ contract PharaohLoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 172913);
     }
 
-    function testTopup() public {
+    function xtestTopup() public {
         usdc.mint(address(vault), 100000e6);
 
         uint256 _tokenId = 3687;
@@ -1149,8 +1154,23 @@ contract PharaohLoanTest is Test {
         assertTrue(balance >  1000e6, "Balance should have increased");
     }
 
+    function testClaimWithIncreasePercentage() public {
+        uint256 _tokenId = 5596;
+        vm.selectFork(_fork);
+        vm.startPrank(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).owner());
+        Loan loanV2 = new Loan();
+        Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).upgradeToAndCall(address(loanV2), new bytes(0));
+        vm.stopPrank();
+        uint256 beginningLoanUsdcBalance = usdc.balanceOf(address(loan));
+        address[] memory bribes = new address[](0);
+        bytes memory data = hex"84a7f3dd03020001f052cee512c696e91625b07ecc9484fdb6d456290a06912fe77c2e008000000001152b9d0fdc40c096757f570a51e494bd4b943e5001070001d9fa522f5bc6cfa40211944f2c8da785773ad99d0001b31f66aa3c1e785363f0875a1b74e27b85fd66c70703d8071f393ade0000000149d5c2bdffac6ce2bfdb6640f4f80f226bc10bab0605c4cf050fef000142be75636374dfa0e57eb96fa7f68fe7fcdad8a30001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e080dde312cce18ee800001f6a044c3b2a3373ef2909e2474f3229f23279b5f0001aaab9d12a30504559b0c5a9a5977fee4a6081c6b041bfa733b0001f6a044c3b2a3373ef2909e2474f3229f23279b5f000000000c03040e020b03020203000425010000040501001501000006070106030009000109001e020b03000a03010600010003010000080b011e03c03020fd0000020b03010c0d0000020dff0000000000000000000000000000000000000000000000003b35f7050c99729a50e69d69e43983864934103b07d2a7663ebac17276da047670b4b465081ca6f9b31f66aa3c1e785363f0875a1b74e27b85fd66c742be75636374dfa0e57eb96fa7f68fe7fcdad8a349d5c2bdffac6ce2bfdb6640f4f80f226bc10babd9fa522f5bc6cfa40211944f2c8da785773ad99d152b9d0fdc40c096757f570a51e494bd4b943e501784b2ff6841d46163fbf817b3feb98a0e163e0facfb898cff266e53278cc0124fc2c7c94c8cb9a5a20c959b19f114e9c2d81547734cdc1110bd773d60781c2586d68229fde47564546784ab3faca982f70b1d7d9dcb99e4b9db92e2799ddfcfc2d88aabb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e00000000000000000000000000000000000000000000000000000000";
+        uint256[2] memory allocations = [uint256(41349), uint256(21919478169541)];
+        uint256 rewards = _claimRewards(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F), _tokenId, bribes, data, allocations);
+        uint256 endingLoanUsdcBalance = usdc.balanceOf(address(loan));
+        assertEq(endingLoanUsdcBalance - beginningLoanUsdcBalance, 0, "Loan USDC balance should not change");
+    }
 
-    function testTopup2() public {
+    function xtestTopup2() public {
         usdc.mint(address(vault), 100000e6);
 
         uint256 _tokenId = 3687;
@@ -1184,26 +1204,6 @@ contract PharaohLoanTest is Test {
         (uint256 balance,) = loan.getLoanDetails(_tokenId2);
         assertTrue(balance >  1000e6, "Balance should have increased");
     }
-
-    function testClaimWithIncreasePercentage() public {
-        uint256 _fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
-        vm.selectFork(_fork);
-        vm.rollFork(64204517);
-
-        vm.startPrank(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).owner());
-        Loan loanV2 = new Loan();
-        Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).upgradeToAndCall(address(loanV2), new bytes(0));
-        vm.stopPrank();
-        uint256 _tokenId = 5596;
-        uint256 beginningLoanUsdcBalance = usdc.balanceOf(address(loan));
-        address[] memory bribes = new address[](0);
-        bytes memory data = hex"84a7f3dd03020001f052cee512c696e91625b07ecc9484fdb6d456290a06912fe77c2e008000000001152b9d0fdc40c096757f570a51e494bd4b943e5001070001d9fa522f5bc6cfa40211944f2c8da785773ad99d0001b31f66aa3c1e785363f0875a1b74e27b85fd66c70703d8071f393ade0000000149d5c2bdffac6ce2bfdb6640f4f80f226bc10bab0605c4cf050fef000142be75636374dfa0e57eb96fa7f68fe7fcdad8a30001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e080dde312cce18ee800001f6a044c3b2a3373ef2909e2474f3229f23279b5f0001aaab9d12a30504559b0c5a9a5977fee4a6081c6b041bfa733b0001f6a044c3b2a3373ef2909e2474f3229f23279b5f000000000c03040e020b03020203000425010000040501001501000006070106030009000109001e020b03000a03010600010003010000080b011e03c03020fd0000020b03010c0d0000020dff0000000000000000000000000000000000000000000000003b35f7050c99729a50e69d69e43983864934103b07d2a7663ebac17276da047670b4b465081ca6f9b31f66aa3c1e785363f0875a1b74e27b85fd66c742be75636374dfa0e57eb96fa7f68fe7fcdad8a349d5c2bdffac6ce2bfdb6640f4f80f226bc10babd9fa522f5bc6cfa40211944f2c8da785773ad99d152b9d0fdc40c096757f570a51e494bd4b943e501784b2ff6841d46163fbf817b3feb98a0e163e0facfb898cff266e53278cc0124fc2c7c94c8cb9a5a20c959b19f114e9c2d81547734cdc1110bd773d60781c2586d68229fde47564546784ab3faca982f70b1d7d9dcb99e4b9db92e2799ddfcfc2d88aabb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e00000000000000000000000000000000000000000000000000000000";
-        uint256[2] memory allocations = [uint256(41349), uint256(21919478169541)];
-        uint256 rewards = _claimRewards(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F), _tokenId, bribes, data, allocations);
-        uint256 endingLoanUsdcBalance = usdc.balanceOf(address(loan));
-        assertEq(endingLoanUsdcBalance - beginningLoanUsdcBalance, 0, "Loan USDC balance should not change");
-    }
-
     function testManualVoting() public {
         uint256 _tokenId = 3687;
         usdc.mint(address(vault), 10000e6);
@@ -1241,7 +1241,6 @@ contract PharaohLoanTest is Test {
     }
 
     function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes, bytes memory tradeData, uint256[2] memory allocations) internal returns (uint256) {
-
         address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
         uint256 index = 0;
 

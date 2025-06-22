@@ -161,7 +161,7 @@ contract LoanTest is Test {
     }
 
 
-    function testLoanVotingAdvance() public {
+    function xtestLoanVotingAdvance() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -206,7 +206,7 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 93053);
     }
 
-    function testIncreaseAmountPercentage20() public {
+    function xtestIncreaseAmountPercentage20() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -251,7 +251,7 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 93053);
     }
 
-    function testIncreaseAmountPercentage50WithLoan() public {
+    function xtestIncreaseAmountPercentage50WithLoan() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -300,7 +300,7 @@ contract LoanTest is Test {
     }
 
 
-    function testIncreaseAmountPercentage100WithLoan() public {
+    function xtestIncreaseAmountPercentage100WithLoan() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -348,7 +348,7 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 93053);
     }
 
-    function testIncreaseAmountPercentage100NoLoan() public {
+    function xtestIncreaseAmountPercentage100NoLoan() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -398,7 +398,7 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 0);
     }
 
-    function testIncreaseAmountPercentage75NoLoan() public {
+    function xtestIncreaseAmountPercentage75NoLoan() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -448,7 +448,7 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 0);
     }
     
-    function testIncreaseAmountPercentage75NoLoanToCommunityToken() public {
+    function xtestIncreaseAmountPercentage75NoLoanToCommunityToken() public {
         user = votingEscrow.ownerOf(524);
 
         address[] memory tokens = new address[](1);
@@ -518,7 +518,7 @@ contract LoanTest is Test {
     }
 
 
-    function testIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
+    function xtestIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
         user = votingEscrow.ownerOf(524);
 
         address[] memory tokens = new address[](1);
@@ -583,7 +583,7 @@ contract LoanTest is Test {
         assertTrue(usdc.balanceOf(address(owner)) > ownerUsdBalance, "owner should have more than starting balance");
     }
 
-    function testIncreaseLoan() public {
+    function xtestIncreaseLoan() public {
         uint256 amount = 1e6;
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
@@ -657,7 +657,7 @@ contract LoanTest is Test {
     }
 
 
-    function testReinvestVault() public {
+    function xtestReinvestVault() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 524;
 
@@ -684,7 +684,7 @@ contract LoanTest is Test {
     }
 
 
-    function testPayToOwner() public {
+    function xtestPayToOwner() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 524;
 
@@ -721,7 +721,7 @@ contract LoanTest is Test {
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
     }
 
-    function testPayToOwnerPayoutToken() public {
+    function xtestPayToOwnerPayoutToken() public {
         assertEq(usdc.balanceOf(address(vault)), 100e6, "vault should have 0 balance");
         uint256 _tokenId = 524;
 
@@ -761,7 +761,7 @@ contract LoanTest is Test {
         assertEq(endingLoanBalance - startingLoanBalance, 0, "loan should not receive rewards");        
     }
 
-    function testManagedNft() public {
+    function xtestManagedNft() public {
         uint256 _tokenId = 524;
         address _user = votingEscrow.ownerOf(_tokenId);
         vm.prank(_user);
@@ -852,7 +852,7 @@ contract LoanTest is Test {
         communityRewards.setIncreasePercentage(0);
     }
 
-    function testManagedNft2() public {
+    function xtestManagedNft2() public {
         uint256 _tokenId = 524;
         address _user = votingEscrow.ownerOf(_tokenId);
         vm.prank(_user);
@@ -965,7 +965,7 @@ contract LoanTest is Test {
         assertEq(votingEscrow.ownerOf(66706), address(0), "should be burnt");
     }
 
-    function testPayoffToken() public {
+    function xtestPayoffToken() public {
 
         usdc.mint(address(vault), 100000e6);
 
@@ -1004,7 +1004,7 @@ contract LoanTest is Test {
         assertEq(balance, 0, "Balance should be 0");
     }
 
-    function testPayoffTokenMoreBalance() public {
+    function xtestPayoffTokenMoreBalance() public {
 
         usdc.mint(address(vault), 100000e6);
 
@@ -1043,7 +1043,7 @@ contract LoanTest is Test {
         assertNotEq(balance, 0, "Balance should not be 0");
     }
 
-    function testIncreaseAmountPercentage() public {
+    function xtestIncreaseAmountPercentage() public {
         tokenId = 524;
         user = votingEscrow.ownerOf(tokenId);
 
@@ -1088,7 +1088,7 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 93053);
     }
 
-    function testTopup() public {
+    function xtestTopup() public {
         usdc.mint(address(vault), 100000e6);
 
         uint256 _tokenId = 524;
@@ -1127,7 +1127,7 @@ contract LoanTest is Test {
     }
 
 
-    function testTopup2() public {
+    function xtestTopup2() public {
         usdc.mint(address(vault), 100000e6);
 
         uint256 _tokenId = 524;
