@@ -480,11 +480,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _handleZeroBalance(uint256 tokenId, uint256 remaining, uint256 totalRewards, bool wasActiveLoan) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
-        remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(_usdc));
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
+            remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(_usdc));
             _usdc.approve(_vault, remaining);
             IERC4626(_vault).deposit(remaining, loan.borrower);
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, tokenId);
@@ -492,6 +492,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _usdc : IERC20(loan.preferredToken);
+        remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, remaining, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
         if(tokenId == getManagedNft()) {
@@ -540,7 +541,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         (uint256 rewardsAmount, uint256 aeroAmount) = _processRewardClaims(tokenId, fees, tokens, tradeData);
-
+        require(rewardsAmount > 0 || aeroAmount > 0);
        // if allocations[1] is lower than aero amount, set aero amount to allocations[1]
         if (allocations[1] < aeroAmount) {
             aeroAmount = allocations[1];
@@ -551,13 +552,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Handle zero balance case
         if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
             _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
-            _claimRebase(loan);
-            require(_ve.ownerOf(tokenId) == address(this));
-            return allocations[0];
+        } else {
+            // Handle active loan case
+            _handleActiveLoanClaim(loan, tokenId, allocations[0], aeroAmount, rewardsAmount);
         }
 
-        // Handle active loan case
-        _handleActiveLoanClaim(loan, tokenId, allocations[0], aeroAmount, rewardsAmount);
         _claimRebase(loan);
         require(_ve.ownerOf(tokenId) == address(this));
         
