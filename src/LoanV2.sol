@@ -36,15 +36,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
     address public _vault;
+    address public _nativeVault;
 
     bool internal _paused;
     uint256 public _outstandingCapital;
+    uint256 public _outstandingCapitalNative;
     uint256 public  _multiplier; // rewards rate multiplier
+    uint256 public _nativeLtv = 4000; // 40%
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedPools;
 
-    mapping(uint256 => uint256) public _rewardsPerEpoch;
+    mapping(uint256 => mapping(address => uint256)) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
 
     
@@ -72,6 +75,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
         bool    optInCommunityRewards; // opt in to community rewards
+        address loanAsset; // asset to be used for the loan
     }
 
     // Pools each token votes on for this epoch
@@ -210,11 +214,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 increasePercentage,
         address preferredToken,
         bool topUp,
-        bool optInCommunityRewards
+        bool optInCommunityRewards,
+        address loanAsset
     ) public virtual {
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
-
+        require(loanAsset == address(_usdc) || loanAsset == address(_aero));
         _lock(tokenId);
 
         _loanDetails[tokenId] = LoanInfo({
@@ -232,7 +237,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
             topUp: topUp,
-            optInCommunityRewards: optInCommunityRewards
+            optInCommunityRewards: optInCommunityRewards,
+            loanAsset: loanAsset
         });
 
 
@@ -252,7 +258,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // if user selects topup option, increase to the max loan amount
         if(topUp) {
-            (amount,) = getMaxLoan(tokenId);
+            (amount,) = getMaxLoan(tokenId, loanAsset);
         }
 
         if (amount > 0) {
@@ -296,14 +302,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
      */
     function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
-        (uint256 maxLoan, ) = getMaxLoan(tokenId);
+        (uint256 maxLoan, ) = getMaxLoan(tokenId, loan.loanAsset);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.unpaidFees += originationFee;
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
-        _outstandingCapital += amount;
-        _usdc.transferFrom(_vault, loan.borrower, amount);
+        if(loan.loanAsset == address(_usdc)) {
+            _outstandingCapital += amount;
+        } else {
+            _outstandingCapitalNative += amount;
+        }
+        if(loan.loanAsset == address(_usdc)) {
+            _usdc.transferFrom(_vault, loan.borrower, amount);
+        } else {
+            _aero.transferFrom(_nativeVault, loan.borrower, amount);
+        }
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
@@ -419,8 +433,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (amount == 0) {
             amount = loan.balance;
         }
-
-        _usdc.transferFrom(msg.sender, address(this), amount);
+        if(loan.loanAsset == address(_usdc)) {
+            _usdc.transferFrom(msg.sender, address(this), amount);
+        } else {
+            _aero.transferFrom(msg.sender, address(this), amount);
+        }
         _pay(tokenId, amount, true);
     }
 
@@ -461,7 +478,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount -= feesPaid;
             loan.unpaidFees -= feesPaid;
             loan.balance -= feesPaid;
-            _usdc.transfer(owner(), feesPaid);
+            if(loan.loanAsset == address(_usdc)) {
+                _usdc.transfer(owner(), feesPaid);
+            } else {
+                _aero.transfer(owner(), feesPaid);
+            }
             emit LoanPaid(tokenId, loan.borrower, feesPaid, currentEpochStart(), isManual);
             emit ProtocolFeePaid(currentEpochStart(), feesPaid, loan.borrower, tokenId, address(_usdc));
             if(amount == 0) {
@@ -481,14 +502,26 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         loan.balance -= amount;
         if (amount > loan.outstandingCapital) {
-            _outstandingCapital -= loan.outstandingCapital;
+            if(loan.loanAsset == address(_usdc)) {
+                _outstandingCapital -= loan.outstandingCapital;
+            } else {
+                _outstandingCapitalNative -= loan.outstandingCapital;
+            }
             loan.outstandingCapital = 0;
         } else {
             loan.outstandingCapital -= amount;
-            _outstandingCapital -= amount;
+            if(loan.loanAsset == address(_usdc)) {
+                _outstandingCapital -= amount;
+            } else {
+                _outstandingCapitalNative -= amount;
+            }
         }
 
-        _usdc.transfer(_vault, amount);
+        if(loan.loanAsset == address(_usdc)) {
+            _usdc.transfer(_vault, amount);
+        } else {
+            _aero.transfer(_nativeVault, amount);
+        }
         emit LoanPaid(tokenId, loan.borrower, amount, currentEpochStart(), isManual);
         // if there is an excess payment, handle it according to the zero balance option
         if (excess > 0) {
@@ -496,7 +529,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         if(!isManual && loan.topUp && confirmUsdcPrice()) {
-            (uint256 maxLoan, ) = getMaxLoan(tokenId);
+            (uint256 maxLoan, ) = getMaxLoan(tokenId, loan.loanAsset);
             if(maxLoan > .01e6) {
                 _increaseLoan(loan, tokenId, maxLoan);
             }
@@ -560,9 +593,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function requires the caller to have approved the contract to transfer the specified amount of USDC.
      * @param amount The amount of USDC to transfer to the vault and record as rewards.
      */
-    function incentivizeVault(uint256 amount) public {
-        _usdc.transferFrom(msg.sender, _vault, amount);
-        recordRewards(amount, msg.sender, type(uint256).max);
+    function incentivizeVault(address asset, uint256 amount) public {
+        require(asset == address(_usdc) || asset == address(_aero));
+        if(asset == address(_usdc)) {
+            _usdc.transferFrom(msg.sender, _vault, amount);
+        } else {
+            _aero.transferFrom(msg.sender, _nativeVault, amount);
+        }
+        recordRewards(asset, amount, msg.sender, type(uint256).max);
     }
     
     /**
@@ -682,7 +720,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // Transfer the lender premium to the vault.
         _usdc.transfer(_vault, lenderPremium);
-        recordRewards(lenderPremium, loan.borrower, tokenId);
+        recordRewards(address(_usdc), lenderPremium, loan.borrower, tokenId);
         
         // if user has an increase percentage set, increase the veNFT amount
         uint256 remaining = amount - protocolFee - lenderPremium - _increaseNft(loan, amount, false);
@@ -791,17 +829,29 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return maxLoanIgnoreSupply The maximum loan amount ignoring vault supply constraints.
      */
     function getMaxLoan(
-        uint256 tokenId
+        uint256 tokenId,
+        address loanAsset
     ) public view returns (uint256, uint256) {
-        return LoanUtils.getMaxLoanByRewardsRate(
-            tokenId,
-            address(_ve),
-            getRewardsRate(),
-            _multiplier,
-            _usdc.balanceOf(_vault),
-            _outstandingCapital,
-            _loanDetails[tokenId].balance
-        );
+        if(loanAsset == address(_usdc)) {
+            return LoanUtils.getMaxLoanByRewardsRate(
+                tokenId,
+                address(_ve),
+                getRewardsRate(),
+                _multiplier,
+                _usdc.balanceOf(_vault),
+                _outstandingCapital,
+                _loanDetails[tokenId].balance
+            );
+        } else if(loanAsset == address(_aero)) {
+            return LoanUtils.getMaxLoanByLtv(
+                tokenId,
+                address(_ve),
+                _nativeLtv,
+                _aero.balanceOf(_nativeVault),
+                _outstandingCapitalNative,
+                _loanDetails[tokenId].balance
+            );
+        }
     }
 
     /**
@@ -809,8 +859,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function adds the specified rewards to the total rewards for the current epoch.
      * @param rewards The amount of rewards to record.
      */
-    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal {
-        _rewardsPerEpoch[currentEpochStart()] += rewards;
+    function recordRewards(address asset, uint256 rewards, address borrower, uint256 tokenId) internal {
+        _rewardsPerEpoch[currentEpochStart()][asset] += rewards;
         emit RewardsReceived(currentEpochStart(), rewards, borrower, tokenId);
     }
 
@@ -879,8 +929,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function returns the value of `_outstandingCapital`, which represents the total active loans.
      * @return The total amount of active assets.
      */
-    function activeAssets() public view returns (uint256) {
-        return _outstandingCapital;
+    function activeAssets(address loanAsset) public view returns (uint256) {
+        if(loanAsset == address(_usdc)) {
+            return _outstandingCapital;
+        } else if(loanAsset == address(_aero)) {
+            return _outstandingCapitalNative;
+        }
     }
 
 
@@ -889,8 +943,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function returns the total rewards recorded for the current epoch.
      * @return The total rewards for the current epoch.
      */
-    function lastEpochReward() public view returns (uint256) {
-        return _rewardsPerEpoch[currentEpochStart()];
+    function lastEpochReward(address asset) public view returns (uint256) {
+        return _rewardsPerEpoch[currentEpochStart()][asset];
     }
 
     /* OWNER METHODS */
