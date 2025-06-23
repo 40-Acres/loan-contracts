@@ -2,23 +2,30 @@
 
 pragma solidity ^0.8.27;
 
-import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./interfaces/ILoan.sol";
 import { ProtocolTimeLibrary } from "./libraries/ProtocolTimeLibrary.sol";
 
 
-contract Vault is ERC4626 {
+contract Vault is Initializable, ERC4626Upgradeable {
     ERC20 public _asset;
     ILoan public _loanContract;
 
-    constructor(address asset, address loan, string memory name, string memory symbol) ERC4626(ERC20(asset)) ERC20(name, symbol)  {
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address asset, address loan, string memory name, string memory symbol) public initializer {
+        __ERC4626_init(ERC20(asset));
+        __ERC20_init(name, symbol);
         _asset = ERC20(asset);
         _loanContract = ILoan(loan);
         _asset.approve(loan, type(uint256).max);
     }
 
-    function epochRewardsLocked() public view returns (uint256) {
+    function epochRewardsLocked() public view virtual returns (uint256) {
         uint256 epochTimeRemaining = ProtocolTimeLibrary.epochNext(block.timestamp) - block.timestamp;
         uint256 epochRewards = _loanContract.lastEpochReward();
 
@@ -26,7 +33,7 @@ contract Vault is ERC4626 {
         return  epochTimeRemaining * epochRewards / ProtocolTimeLibrary.WEEK;
     }
 
-    function totalAssets() public view override returns (uint256) {
+    function totalAssets() public view override virtual returns (uint256) {
         return _asset.balanceOf(address(this)) + _loanContract.activeAssets() - epochRewardsLocked(); }
 
 }

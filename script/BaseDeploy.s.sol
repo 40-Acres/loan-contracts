@@ -23,7 +23,7 @@ contract BaseDeploy is Script {
     function deployLoan() public returns (LoanV2, Vault) {
         Loan loan = new Loan();
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
-        Vault vault = new Vault(address(usdc), address(proxy));
+        Vault vault = new Vault(address(usdc), address(proxy), "40op-USDC-VAULT", "40op-USDC-VAULT");
         Loan(address(proxy)).initialize(address(vault));
 
         LoanV2 loanV2 = new LoanV2();

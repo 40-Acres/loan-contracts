@@ -124,7 +124,7 @@ interface IVoter {
     // function isWhitelistedNFT(uint256 tokenId) external view returns (bool);
 
     // /// @dev Gauge => Liveness status
-    // function isAlive(address gauge) external view returns (bool);
+    function isAlive(address gauge) external view returns (bool);
 
     // /// @dev Gauge => Amount claimable
     // function claimable(address gauge) external view returns (uint256);
@@ -167,7 +167,7 @@ interface IVoter {
     // ///         Cannot reset in the same epoch that you voted in.
     // ///         Can vote or deposit into a managed NFT again after reset.
     // /// @param _tokenId Id of veNFT you are reseting.
-    // function reset(uint256 _tokenId) external;
+    function reset(uint256 _tokenId) external;
 
     // /// @notice Called by users to deposit into a managed NFT.
     // ///         Can only vote or deposit into a managed NFT once per epoch.
@@ -268,4 +268,7 @@ interface IVoter {
     // /// @dev Update claims to emissions for single gauge
     // /// @param _gauge .
     // function updateFor(address _gauge) external;
+
+    // Pharoah specific function
+    function feeDistributors(address gauge) external view returns (address);
 }
