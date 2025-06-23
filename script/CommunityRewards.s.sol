@@ -46,6 +46,19 @@ contract OpDeploy is CommunityRewardsDeploy  {
     }
 }
 
+
+contract PharaohDeploy is CommunityRewardsDeploy  {
+    function run() external {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E);
+
+        uint256 tokenId = 5418;
+        address loan = 0xf6A044c3b2a3373eF2909E2474f3229f23279B5F;
+        address ve = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
+        deploy(loan, ve, tokens, tokenId);
+    }
+}
+
 contract OpFix is Script {
     function run() external {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));

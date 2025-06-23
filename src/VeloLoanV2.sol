@@ -19,4 +19,13 @@ contract VeloLoan is Loan {
         // confirm price of usdc is $1
         return answer >= 99900000;
     }
+
+    /**
+     * @notice Returns the address of the ODOS Router contract.
+     * @dev This function is used to interact with the ODOS Router for trading and swapping tokens.
+     * @return The address of the ODOS Router contract.
+     */
+    function odosRouter() public override pure returns (address) {
+        return 0xCa423977156BB05b13A2BA3b76Bc5419E2fE9680; // ODOS Router address
+    }
 }

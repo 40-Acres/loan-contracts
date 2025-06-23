@@ -33,39 +33,6 @@ contract PharaohLoanV2 is Loan {
         return answer >= 99900000;
     }
 
-    
-    function _swapToToken(
-        uint256 amountIn,
-        address fromToken,
-        address toToken,
-        address borrower
-    ) internal override returns (uint256 amountOut) {
-        require(fromToken != address(_ve)); // Prevent swapping veNFT
-        if (fromToken == toToken || amountIn == 0) {
-            return amountIn;
-        }
-        IERC20(fromToken).approve(address(_aeroRouter), 0); // reset approval first
-        IERC20(fromToken).approve(address(_aeroRouter), amountIn);
-        ISwapper swapper = ISwapper(getSwapper());
-        IRouter.route[] memory routes = ISwapper(swapper).getBestRoute(fromToken, toToken, amountIn);
-        uint256 minimumAmountOut = ISwapper(swapper).getMinimumAmountOut(routes, amountIn);
-        
-        if (minimumAmountOut == 0) {
-            // send to borrower if the swap returns 0
-            IERC20(fromToken).transfer(borrower, amountIn);
-            return 0;
-        }
-        uint256[] memory amounts = IRouter(address(_aeroRouter)).swapExactTokensForTokens(
-                amountIn,
-                minimumAmountOut,
-                routes,
-                address(this),
-                block.timestamp
-            );
-        return amounts[amounts.length - 1];
-    }
-
-
     /**
      * @dev Internal function to handle voting for a specific loan.
      * @param tokenId The ID of the loan (NFT) for which the vote is being cast.
@@ -124,10 +91,18 @@ contract PharaohLoanV2 is Loan {
      * @param tokens An array of arrays of addresses representing the tokens to claim.
      * @return totalRewards The total amount of rewards claimed.
      */
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens) public override returns (uint256 totalRewards) {
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public override returns (uint256 totalRewards) {
         vote(tokenId);
-        // dont claim rewards unless the user has been in the pool for over an hour, or doesnt have a loan
-        LoanInfo storage loan = _loanDetails[tokenId];
-        return super.claim(tokenId, fees, tokens);
+        return super.claim(tokenId, fees, tokens, tradeData, allocations);
+    }
+
+    /**
+     * @notice Returns the address of the ODOS Router contract.
+     * @dev This function is used to interact with the ODOS Router for trading and swapping tokens.
+     * @return The address of the ODOS Router contract.
+     */
+    function odosRouter() public override pure returns (address) {
+        return 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC; // ODOS Router address
     }
 }
+
