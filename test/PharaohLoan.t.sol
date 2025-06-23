@@ -1159,16 +1159,41 @@ contract PharaohLoanTest is Test {
         vm.selectFork(_fork);
         vm.startPrank(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).owner());
         Loan loanV2 = new Loan();
-        Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).upgradeToAndCall(address(loanV2), new bytes(0));
+        Loan _loan = Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F);
+        _loan.upgradeToAndCall(address(loanV2), new bytes(0));
         vm.stopPrank();
+
+        (uint256 balance,) = _loan.getLoanDetails(_tokenId);
+        assertEq(balance, 5026342, "should have balance");
+
         uint256 beginningLoanUsdcBalance = usdc.balanceOf(address(loan));
         address[] memory bribes = new address[](0);
         bytes memory data = hex"84a7f3dd03020001f052cee512c696e91625b07ecc9484fdb6d456290a06912fe77c2e008000000001152b9d0fdc40c096757f570a51e494bd4b943e5001070001d9fa522f5bc6cfa40211944f2c8da785773ad99d0001b31f66aa3c1e785363f0875a1b74e27b85fd66c70703d8071f393ade0000000149d5c2bdffac6ce2bfdb6640f4f80f226bc10bab0605c4cf050fef000142be75636374dfa0e57eb96fa7f68fe7fcdad8a30001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e080dde312cce18ee800001f6a044c3b2a3373ef2909e2474f3229f23279b5f0001aaab9d12a30504559b0c5a9a5977fee4a6081c6b041bfa733b0001f6a044c3b2a3373ef2909e2474f3229f23279b5f000000000c03040e020b03020203000425010000040501001501000006070106030009000109001e020b03000a03010600010003010000080b011e03c03020fd0000020b03010c0d0000020dff0000000000000000000000000000000000000000000000003b35f7050c99729a50e69d69e43983864934103b07d2a7663ebac17276da047670b4b465081ca6f9b31f66aa3c1e785363f0875a1b74e27b85fd66c742be75636374dfa0e57eb96fa7f68fe7fcdad8a349d5c2bdffac6ce2bfdb6640f4f80f226bc10babd9fa522f5bc6cfa40211944f2c8da785773ad99d152b9d0fdc40c096757f570a51e494bd4b943e501784b2ff6841d46163fbf817b3feb98a0e163e0facfb898cff266e53278cc0124fc2c7c94c8cb9a5a20c959b19f114e9c2d81547734cdc1110bd773d60781c2586d68229fde47564546784ab3faca982f70b1d7d9dcb99e4b9db92e2799ddfcfc2d88aabb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e00000000000000000000000000000000000000000000000000000000";
         uint256[2] memory allocations = [uint256(41349), uint256(21919478169541)];
-        uint256 rewards = _claimRewards(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F), _tokenId, bribes, data, allocations);
+        uint256 rewards = _claimRewards(_loan, _tokenId, bribes, data, allocations);
         uint256 endingLoanUsdcBalance = usdc.balanceOf(address(loan));
         assertEq(endingLoanUsdcBalance - beginningLoanUsdcBalance, 0, "Loan USDC balance should not change");
+
+        (balance,) = _loan.getLoanDetails(_tokenId);
+        // balance should be lower
+        assertEq(balance, 5006370);
     }
+
+    // function testClaimWithIncreasePercentage2() public {
+    //     uint256 _tokenId = 5408;
+    //     vm.selectFork(_fork);
+    //     vm.startPrank(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).owner());
+    //     Loan loanV2 = new Loan();
+    //     Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).upgradeToAndCall(address(loanV2), new bytes(0));
+    //     vm.stopPrank();
+    //     uint256 beginningLoanUsdcBalance = usdc.balanceOf(address(loan));
+    //     address[] memory bribes = new address[](0);
+    //     bytes memory data = hex"84a7f3dd03020001f052cee512c696e91625b07ecc9484fdb6d456290a06912fe77c2e008000000001152b9d0fdc40c096757f570a51e494bd4b943e5001070001d9fa522f5bc6cfa40211944f2c8da785773ad99d0001b31f66aa3c1e785363f0875a1b74e27b85fd66c70703d8071f393ade0000000149d5c2bdffac6ce2bfdb6640f4f80f226bc10bab0605c4cf050fef000142be75636374dfa0e57eb96fa7f68fe7fcdad8a30001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e080dde312cce18ee800001f6a044c3b2a3373ef2909e2474f3229f23279b5f0001aaab9d12a30504559b0c5a9a5977fee4a6081c6b041bfa733b0001f6a044c3b2a3373ef2909e2474f3229f23279b5f000000000c03040e020b03020203000425010000040501001501000006070106030009000109001e020b03000a03010600010003010000080b011e03c03020fd0000020b03010c0d0000020dff0000000000000000000000000000000000000000000000003b35f7050c99729a50e69d69e43983864934103b07d2a7663ebac17276da047670b4b465081ca6f9b31f66aa3c1e785363f0875a1b74e27b85fd66c742be75636374dfa0e57eb96fa7f68fe7fcdad8a349d5c2bdffac6ce2bfdb6640f4f80f226bc10babd9fa522f5bc6cfa40211944f2c8da785773ad99d152b9d0fdc40c096757f570a51e494bd4b943e501784b2ff6841d46163fbf817b3feb98a0e163e0facfb898cff266e53278cc0124fc2c7c94c8cb9a5a20c959b19f114e9c2d81547734cdc1110bd773d60781c2586d68229fde47564546784ab3faca982f70b1d7d9dcb99e4b9db92e2799ddfcfc2d88aabb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e00000000000000000000000000000000000000000000000000000000";
+    //     uint256[2] memory allocations = [uint256(41349), uint256(21919478169541)];
+    //     uint256 rewards = _claimRewards(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F), _tokenId, bribes, data, allocations);
+    //     uint256 endingLoanUsdcBalance = usdc.balanceOf(address(loan));
+    // }
+
 
     function xtestTopup2() public {
         usdc.mint(address(vault), 100000e6);

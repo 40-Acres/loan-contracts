@@ -540,7 +540,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
 
-        (uint256 rewardsAmount, uint256 aeroAmount) = _processRewardClaims(tokenId, fees, tokens, tradeData);
+        // if any of tokens or loan.preferres token has a balance, return to owner
+        _rescueTokens(tokens, loan.preferredToken == address(0) ? address(_usdc) : loan.preferredToken);
+
+        _processRewards(fees, tokens, tokenId, tradeData);
+        uint256 rewardsAmount = _usdc.balanceOf(address(this));
+        uint256 aeroAmount = _aero.balanceOf(address(this));
+        if(rewardsAmount == 0 && loan.balance == 0) {
+            rewardsAmount = IERC20(loan.preferredToken == address(0) ? address(_usdc) : loan.preferredToken).balanceOf(address(this));
+        }
+
         require(rewardsAmount > 0 || aeroAmount > 0);
        // if allocations[1] is lower than aero amount, set aero amount to allocations[1]
         if (allocations[1] < aeroAmount) {
@@ -561,22 +570,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(_ve.ownerOf(tokenId) == address(this));
         
         return allocations[0];
-    }
-    
-
-    function _processRewardClaims(
-        uint256 tokenId,
-        address[] calldata fees,
-        address[][] calldata tokens,
-        bytes calldata tradeData
-    ) internal returns (uint256, uint256) {
-        // keep track of rewards and aero balances so wont use excess rewards
-        uint256 rewardsAmount = _usdc.balanceOf(address(this));
-        uint256 aeroAmount = _aero.balanceOf(address(this));
-        _processRewards(fees, tokens, tokenId, tradeData);
-        rewardsAmount = _usdc.balanceOf(address(this)) - rewardsAmount;
-        aeroAmount = _aero.balanceOf(address(this)) - aeroAmount;
-        return (rewardsAmount, aeroAmount);
     }
 
     function _processRewards(
@@ -1044,6 +1037,39 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function rescueERC20(address token, uint256 amount) public onlyOwner {
         IERC20(token).transfer(owner(), amount);
+    }
+
+
+    /**
+     * @notice Rescue any ERC20 tokens that are stuck in the contract.
+     * @dev This function can only be called by the owner of the contract.
+     * @param tokens An array of addresses of the ERC20 tokens to rescue.
+     * @param additionalToken The address of the asset to rescue.
+     */
+    function _rescueTokens(address[][] calldata tokens, address additionalToken) internal {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            for(uint256 j = 0; j < tokens[i].length; j++) {
+            IERC20 token = IERC20(tokens[i][j]);
+                uint256 balance = token.balanceOf(address(this));
+                if (balance > 0) {
+                    token.transfer(owner(), balance);
+                }
+            }
+        }
+        // check additional token
+        if (additionalToken != address(0)) {
+            IERC20 additional = IERC20(additionalToken);
+            uint256 additionalBalance = additional.balanceOf(address(this));
+            if (additionalBalance > 0) {
+                additional.transfer(owner(), additionalBalance);
+            }
+        }
+
+        // check aero balance
+        uint256 aeroBalance = _aero.balanceOf(address(this));
+        if (aeroBalance > 0) {
+            _aero.transfer(owner(), aeroBalance);
+        }
     }
 
     /* USER METHODS */
