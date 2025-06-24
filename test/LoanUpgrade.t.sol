@@ -199,10 +199,6 @@ contract LoanUpgradeTest is Test {
         uint256 _tokenId = 64196;
         uint256 amount = 1e6;
         (uint256 balance, address _user) = loan.getLoanDetails(_tokenId);
-        (uint256 balance2, address _user2, address loanAsset) = loan.getLoanDetailsFull(_tokenId);
-        console.log("balance", balance / 1e6);
-        console.log("user", _user);
-        console.log("loanAsset", loanAsset);
         vm.startPrank(_user);
         loan.increaseLoan(_tokenId, amount);
         vm.stopPrank();

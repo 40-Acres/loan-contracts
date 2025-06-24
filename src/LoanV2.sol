@@ -517,7 +517,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
             remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(_usdc));
-            if(loan.loanAsset == address(_usdc)) {
+            if(loan.loanAsset == address(_usdc) || loan.loanAsset == address(0)) {
                 _usdc.approve(_vault, remaining);
                 IERC4626(_vault).deposit(remaining, loan.borrower);
             } else {
@@ -719,7 +719,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) internal returns (uint256) {
         // Calculate and transfer protocol fee
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
-        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : _aero;
+        IERC20 asset = (loan.loanAsset == address(_usdc) || loan.loanAsset == address(0)) ? _usdc : _aero;
         asset.transfer(owner(), protocolFee);
         emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, tokenId, address(asset));
 
@@ -943,11 +943,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) public view returns (uint256 balance, address borrower) {
         LoanInfo storage loan = _loanDetails[tokenId];
         return (loan.balance, loan.borrower);
-    }
-
-    function getLoanDetailsFull(uint256 tokenId) public view returns (uint256 balance, address borrower, address loanAsset) {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        return (loan.balance, loan.borrower, loan.loanAsset);
     }
 
     /**
