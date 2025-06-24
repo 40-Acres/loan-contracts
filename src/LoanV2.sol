@@ -275,8 +275,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount
     ) public  {
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.loanAsset == address(_usdc) || loan.loanAsset == address(_aero));
-        if(loan.loanAsset == address(_usdc)) {
+        IERC20 asset = (loan.loanAsset == address(_usdc) || loan.loanAsset == address(0)) ? _usdc : IERC20(_aero);
+        require(asset == _usdc || asset == _aero);
+        if(asset == _usdc) {
             require(amount > .01e6);
             require(confirmUsdcPrice());
         } else {
@@ -301,13 +302,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
      */
     function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
-        (uint256 maxLoan, ) = getMaxLoan(tokenId, loan.loanAsset);
-        require(amount <= maxLoan);
+        IERC20 asset = (loan.loanAsset == address(_usdc) || loan.loanAsset == address(0)) ? _usdc : IERC20(_aero);
+        (uint256 maxLoan, ) = getMaxLoan(tokenId, address(asset));
+        require(amount <= maxLoan, "amount is greater than max loan");
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.unpaidFees += originationFee;
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
-        if(loan.loanAsset == address(_usdc)) {
+        if(asset == _usdc) {
             _outstandingCapital += amount;
             _usdc.transferFrom(_vault, loan.borrower, amount);
 
@@ -332,7 +334,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (amount == 0) {
             amount = loan.balance;
         }
-        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : IERC20(_aero);
+        IERC20 asset = (loan.loanAsset == address(_usdc) || loan.loanAsset == address(0)) ? _usdc : IERC20(_aero);
         asset.transferFrom(msg.sender, address(this), amount);
         _pay(tokenId, amount, true);
     }
@@ -364,7 +366,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         LoanInfo storage loan = _loanDetails[tokenId];
-        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : IERC20(_aero);
+        IERC20 asset = (loan.loanAsset == address(_usdc) || loan.loanAsset == address(0)) ? _usdc : IERC20(_aero);
 
         // take out unpaid fees first
         if(loan.unpaidFees > 0) {
@@ -422,7 +424,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         if(!isManual && loan.topUp && confirmUsdcPrice()) {
-            (uint256 maxLoan, ) = getMaxLoan(tokenId, loan.loanAsset);
+            (uint256 maxLoan, ) = getMaxLoan(tokenId, address(asset));
             if(maxLoan > .01e6) {
                 _increaseLoan(loan, tokenId, maxLoan);
             }
@@ -527,7 +529,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
-        IERC20 asset = loan.preferredToken == address(0) ? loan.loanAsset : IERC20(loan.preferredToken);
+        address loanAsset = loan.loanAsset == address(0) ? address(_usdc) : loan.loanAsset;
+        IERC20 asset = loan.preferredToken == address(0) ? IERC20(loanAsset) : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, remaining, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
@@ -716,13 +719,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) internal returns (uint256) {
         // Calculate and transfer protocol fee
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
-        _usdc.transfer(owner(), protocolFee);
-        emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, tokenId, address(_usdc));
+        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : _aero;
+        asset.transfer(owner(), protocolFee);
+        emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, tokenId, address(asset));
 
         // Calculate and transfer lender premium
         uint256 lenderPremium = (totalRewards * getLenderPremium()) / 10000;
-        _usdc.transfer(_vault, lenderPremium);
-        recordRewards(lenderPremium, loan.borrower, tokenId);
+        if(asset == _usdc) {
+            _usdc.transfer(_vault, lenderPremium);
+        } else {
+            _aero.transfer(getNativeVault(), lenderPremium);
+        }
+        recordRewards(address(asset), lenderPremium, loan.borrower, tokenId);
         return protocolFee + lenderPremium;
     }
 
@@ -935,6 +943,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) public view returns (uint256 balance, address borrower) {
         LoanInfo storage loan = _loanDetails[tokenId];
         return (loan.balance, loan.borrower);
+    }
+
+    function getLoanDetailsFull(uint256 tokenId) public view returns (uint256 balance, address borrower, address loanAsset) {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        return (loan.balance, loan.borrower, loan.loanAsset);
     }
 
     /**

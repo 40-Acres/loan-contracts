@@ -112,7 +112,7 @@ contract VeloLoanTest is Test {
 
 
     function testGetMaxLoan() public view {
-        (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
+        (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId, address(usdc));
         assertTrue(maxLoan / 1e6 > 10);
     }
 
@@ -128,11 +128,11 @@ contract VeloLoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
         vm.expectRevert();
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.roll(block.number+1);
 
         amount = 1e6;
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.roll(block.number+1);
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6);
@@ -163,7 +163,7 @@ contract VeloLoanTest is Test {
         assertEq(loan.activeAssets(),0, "should have 0 active assets");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > startingUserBalance, "User should have more than starting balance");
         assertEq(usdc.balanceOf(address(vault)), 99e6, "Vault should have 1e6");
@@ -209,7 +209,7 @@ contract VeloLoanTest is Test {
         assertEq(loan.activeAssets(),0, "ff");
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
 
@@ -250,7 +250,7 @@ contract VeloLoanTest is Test {
         assertEq(usdc.balanceOf(address(vault)), 100e6);
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.stopPrank();
         assertEq(usdc.balanceOf(address(user)), 1e6+startingUserBalance, "User should have 1e6");
         assertEq(usdc.balanceOf(address(vault)), 99e6, "Loan should have 97e6");

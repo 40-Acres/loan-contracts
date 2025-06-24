@@ -8,7 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IVotingEscrow} from "../src/interfaces/IVotingEscrow.sol";
 
 contract CommunityRewardsDeploy is Script {
-    function deploy(address loan, address ve, address[] memory tokens, uint256 tokenId) public  {
+    function deploy(address loan, address ve, address[] memory tokens, uint256 tokenId, address usdc) public  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         CommunityRewards _communityRewards = new CommunityRewards();
 
@@ -16,7 +16,7 @@ contract CommunityRewardsDeploy is Script {
         vm.startBroadcast(vm.envUint("VANITY_PRIVATE_KEY_1"));
         ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
         IVotingEscrow(ve).approve(address(_proxy), tokenId);
-        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, tokenId, ve);
+        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, tokenId, ve, usdc);
         vm.stopBroadcast();
     }
 }
@@ -29,7 +29,8 @@ contract BaseDeploy is CommunityRewardsDeploy {
         address loan = 0x87f18b377e625b62c708D5f6EA96EC193558EFD0;
         uint256 tokenId = 74706;
         address ve = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
-        deploy(loan, ve, tokens, tokenId);
+        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+        deploy(loan, ve, tokens, tokenId, usdc);
     }
 }
 
@@ -42,7 +43,8 @@ contract OpDeploy is CommunityRewardsDeploy  {
         uint256 tokenId = 30882;
         address loan = 0xf132bD888897254521D13e2c401e109caABa06A7;
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
-        deploy(loan, ve, tokens, tokenId);
+        address usdc = 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85;
+        deploy(loan, ve, tokens, tokenId, usdc);
     }
 }
 
@@ -55,7 +57,8 @@ contract PharaohDeploy is CommunityRewardsDeploy  {
         uint256 tokenId = 5418;
         address loan = 0xf6A044c3b2a3373eF2909E2474f3229f23279B5F;
         address ve = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
-        deploy(loan, ve, tokens, tokenId);
+        address usdc = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+        deploy(loan, ve, tokens, tokenId, usdc);
     }
 }
 

@@ -67,7 +67,7 @@ contract CommunityRewardsTest is Test {
         ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
         votingEscrow.approve(address(_proxy), tokenId);
         vm.roll(block.number + 1);
-        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, tokenId, 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 2500e18, tokenId, 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4, address(usdc));
 
 
         communityRewards = CommunityRewards(address(_proxy));

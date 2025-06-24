@@ -250,7 +250,8 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
         address[] memory _rewards,
         uint256 _threshold,
         uint256 _tokenId,
-        address _votingEscrow
+        address _votingEscrow,
+        address _usdc
     ) external initializer {
         __ERC20_init("40AcresCommunityRewards", "40A-Community-Rewards");
         __ReentrancyGuard_init();
@@ -268,7 +269,7 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
         threshold = _threshold;
         IVotingEscrow(_votingEscrow).transferFrom(msg.sender, address(this), _tokenId);
         IVotingEscrow(_votingEscrow).approve(_loanContract, _tokenId);
-        ILoan(_loanContract).requestLoan(_tokenId, 0, ILoan.ZeroBalanceOption.PayToOwner, 500, address(0), false, false);
+        ILoan(_loanContract).requestLoan(_tokenId, 0, ILoan.ZeroBalanceOption.PayToOwner, 500, address(0), false, false, _usdc);
         tokenId = _tokenId;
         loanContract = _loanContract;
     }
