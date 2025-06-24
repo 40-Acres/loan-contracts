@@ -16,6 +16,10 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(address => bool) _userPayoffTokenOption; // if user wants to pay off specific token first
         mapping(uint256 => uint256) _totalWeightPerEpoch;
         mapping(address => bool) _increaseManagedToken; // if user wants to increase community token
+        address _nativeVault;
+        uint256 _nativeLtv;
+        uint256 _outstandingCapitalNative;
+        mapping(uint256 => uint256) _rewardsPerEpochNative;
     }
 
 
@@ -121,5 +125,50 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function userIncreasesManagedToken(address user) public view returns (bool) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._increaseManagedToken[user];
+    }
+
+    function setNativeVault(address nativeVault) public onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._nativeVault = nativeVault;
+    }
+
+    function getNativeVault() public view returns (address) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._nativeVault;
+    }
+
+    function setNativeLtv(uint256 nativeLtv) public onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._nativeLtv = nativeLtv;
+    }
+
+    function getNativeLtv() public view returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._nativeLtv;
+    }
+
+    function addOutstandingCapitalNative(uint256 amount) internal {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._outstandingCapitalNative += amount;
+    }
+
+    function subOutstandingCapitalNative(uint256 amount) internal {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._outstandingCapitalNative -= amount;
+    }
+
+    function getOutstandingCapitalNative() public view returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._outstandingCapitalNative;
+    }
+
+    function setRewardsPerEpochNative(uint256 epoch, uint256 amount) internal {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._rewardsPerEpochNative[epoch] = amount;
+    }
+
+    function getRewardsPerEpochNative(uint256 epoch) public view returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._rewardsPerEpochNative[epoch];
     }
 }

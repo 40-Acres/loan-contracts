@@ -36,18 +36,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
     address public _vault;
-    address public _nativeVault;
 
     bool internal _paused;
     uint256 public _outstandingCapital;
-    uint256 public _outstandingCapitalNative;
     uint256 public  _multiplier; // rewards rate multiplier
-    uint256 public _nativeLtv = 4000; // 40%
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedPools;
 
-    mapping(uint256 => mapping(address => uint256)) public _rewardsPerEpoch;
+    mapping(uint256 => uint256) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
 
     
@@ -219,7 +216,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) public virtual {
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
-        require(loanAsset == address(_usdc) || loanAsset == address(_aero));
         _lock(tokenId);
 
         _loanDetails[tokenId] = LoanInfo({
@@ -279,11 +275,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId,
         uint256 amount
     ) public  {
-        require(amount > .01e6);
-        require(_ve.ownerOf(tokenId) == address(this));
-        require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
-
+        require(loan.loanAsset == address(_usdc) || loan.loanAsset == address(_aero));
+        if(loan.loanAsset == address(_usdc)) {
+            require(amount > .01e6);
+            require(confirmUsdcPrice());
+        } else {
+            require(amount > .01e18);
+        }
+        require(_ve.ownerOf(tokenId) == address(this));
         require(loan.borrower == msg.sender);
         _increaseLoan(loan, tokenId, amount);
 
@@ -310,13 +310,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.outstandingCapital += amount;
         if(loan.loanAsset == address(_usdc)) {
             _outstandingCapital += amount;
-        } else {
-            _outstandingCapitalNative += amount;
-        }
-        if(loan.loanAsset == address(_usdc)) {
             _usdc.transferFrom(_vault, loan.borrower, amount);
+
         } else {
-            _aero.transferFrom(_nativeVault, loan.borrower, amount);
+            addOutstandingCapitalNative(amount);
+            _aero.transferFrom(getNativeVault(), loan.borrower, amount);
+
         }
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
@@ -331,14 +330,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _getRewards(uint256 tokenId, address[] memory fees, address[][] memory tokens) internal returns (uint256 totalRewards) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        uint256 assetBalancePre = _usdc.balanceOf(address(this));
+        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : IERC20(_aero);
+        uint256 assetBalancePre = asset.balanceOf(address(this));
 
         ISwapper swapper = ISwapper(getSwapper());
         address[] memory flattenedTokens = swapper.flattenToken(tokens);
         uint256[] memory tokenBalances = swapper.getTokenBalances(flattenedTokens);
         _voter.claimFees(fees, tokens, tokenId);
-        _swapTokensToAsset(flattenedTokens, _usdc, loan.borrower, tokenBalances);
-        uint256 assetBalancePost = _usdc.balanceOf(address(this));
+        _swapTokensToAsset(flattenedTokens, asset, loan.borrower, tokenBalances);
+        uint256 assetBalancePost = asset.balanceOf(address(this));
 
         // calculate the amount of fees claimed
         return assetBalancePost - assetBalancePre;
@@ -433,11 +433,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (amount == 0) {
             amount = loan.balance;
         }
-        if(loan.loanAsset == address(_usdc)) {
-            _usdc.transferFrom(msg.sender, address(this), amount);
-        } else {
-            _aero.transferFrom(msg.sender, address(this), amount);
-        }
+        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : IERC20(_aero);
+        asset.transferFrom(msg.sender, address(this), amount);
         _pay(tokenId, amount, true);
     }
 
@@ -468,6 +465,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return;
         }
         LoanInfo storage loan = _loanDetails[tokenId];
+        IERC20 asset = loan.loanAsset == address(_usdc) ? _usdc : IERC20(_aero);
 
         // take out unpaid fees first
         if(loan.unpaidFees > 0) {
@@ -478,11 +476,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             amount -= feesPaid;
             loan.unpaidFees -= feesPaid;
             loan.balance -= feesPaid;
-            if(loan.loanAsset == address(_usdc)) {
-                _usdc.transfer(owner(), feesPaid);
-            } else {
-                _aero.transfer(owner(), feesPaid);
-            }
+            asset.transfer(owner(), feesPaid);
             emit LoanPaid(tokenId, loan.borrower, feesPaid, currentEpochStart(), isManual);
             emit ProtocolFeePaid(currentEpochStart(), feesPaid, loan.borrower, tokenId, address(_usdc));
             if(amount == 0) {
@@ -502,25 +496,25 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         loan.balance -= amount;
         if (amount > loan.outstandingCapital) {
-            if(loan.loanAsset == address(_usdc)) {
+            if(asset == _usdc) {
                 _outstandingCapital -= loan.outstandingCapital;
             } else {
-                _outstandingCapitalNative -= loan.outstandingCapital;
+                subOutstandingCapitalNative(loan.outstandingCapital);
             }
             loan.outstandingCapital = 0;
         } else {
             loan.outstandingCapital -= amount;
-            if(loan.loanAsset == address(_usdc)) {
+            if(asset == _usdc) {
                 _outstandingCapital -= amount;
             } else {
-                _outstandingCapitalNative -= amount;
+                subOutstandingCapitalNative(amount);
             }
         }
 
-        if(loan.loanAsset == address(_usdc)) {
+        if(asset == _usdc) {
             _usdc.transfer(_vault, amount);
         } else {
-            _aero.transfer(_nativeVault, amount);
+            _aero.transfer(getNativeVault(), amount);
         }
         emit LoanPaid(tokenId, loan.borrower, amount, currentEpochStart(), isManual);
         // if there is an excess payment, handle it according to the zero balance option
@@ -534,7 +528,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 _increaseLoan(loan, tokenId, maxLoan);
             }
         }
-
 
         // set default payoff token if none set
        if(payoffToken == 0 && loan.balance > 0) {
@@ -598,7 +591,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(asset == address(_usdc)) {
             _usdc.transferFrom(msg.sender, _vault, amount);
         } else {
-            _aero.transferFrom(msg.sender, _nativeVault, amount);
+            _aero.transferFrom(msg.sender, getNativeVault(), amount);
         }
         recordRewards(asset, amount, msg.sender, type(uint256).max);
     }
@@ -617,23 +610,30 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _handleZeroBalance(uint256 tokenId, uint256 amount, bool wasActiveLoan) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
-        amount -= _payZeroBalanceFee(loan.borrower, tokenId, amount, address(_usdc));
+        amount -= _payZeroBalanceFee(loan.borrower, tokenId, amount, address(loan.loanAsset));
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
-            _usdc.approve(_vault, amount);
-            IERC4626(_vault).deposit(amount, loan.borrower);
+            if(loan.loanAsset == address(_usdc)) {
+                _usdc.approve(_vault, amount);
+                IERC4626(_vault).deposit(amount, loan.borrower);
+
+            } else {
+                address nativeVault = getNativeVault();
+                _aero.approve(nativeVault, amount);
+                IERC4626(nativeVault).deposit(amount, loan.borrower);
+            }
             emit RewardsInvested(currentEpochStart(), amount, loan.borrower, tokenId);
             return;
         }
+        address asset = loan.preferredToken == address(0) ? loan.loanAsset : loan.preferredToken;
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
-        IERC20 asset = loan.preferredToken == address(0) ? _usdc : IERC20(loan.preferredToken);
-        if(asset != _usdc) {
-            amount = _swapToToken(amount, address(_usdc), address(asset), loan.borrower);
+        if(asset != loan.loanAsset) {
+            amount = _swapToToken(amount, address(loan.loanAsset), address(asset), loan.borrower);
         }
         emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, tokenId, address(asset));
-        require(asset.transfer(loan.borrower, amount));
+        require(IERC20(asset).transfer(loan.borrower, amount));
         if(tokenId == getManagedNft()) {
             ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), amount);
         }
@@ -712,15 +712,25 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Calculate the protocol fee based on the rewards amount.
         uint256 protocolFee = (feeEligibleAmount * getProtocolFee()) / 10000;
         // Transfer the protocol fee to the contract owner.
-        _usdc.transfer(owner(), protocolFee);
+        if(loan.loanAsset == address(_usdc)) {
+            _usdc.transfer(owner(), protocolFee);
+        } else {
+            _aero.transfer(owner(), protocolFee);
+        }
         emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, tokenId, address(_usdc));
 
         // Calculate the lender premium based on the rewards amount.
         uint256 lenderPremium = (feeEligibleAmount * getLenderPremium()) / 10000;
 
         // Transfer the lender premium to the vault.
-        _usdc.transfer(_vault, lenderPremium);
-        recordRewards(address(_usdc), lenderPremium, loan.borrower, tokenId);
+        if(loan.loanAsset == address(_usdc)) {
+            _usdc.transfer(_vault, lenderPremium);
+            recordRewards(address(_usdc), lenderPremium, loan.borrower, tokenId);
+
+        } else {
+            _aero.transfer(getNativeVault(), lenderPremium);
+            recordRewards(address(_aero), lenderPremium, loan.borrower, tokenId);
+        }
         
         // if user has an increase percentage set, increase the veNFT amount
         uint256 remaining = amount - protocolFee - lenderPremium - _increaseNft(loan, amount, false);
@@ -846,9 +856,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return LoanUtils.getMaxLoanByLtv(
                 tokenId,
                 address(_ve),
-                _nativeLtv,
-                _aero.balanceOf(_nativeVault),
-                _outstandingCapitalNative,
+                getNativeLtv(),
+                _aero.balanceOf(getNativeVault()),
+                getOutstandingCapitalNative(),
                 _loanDetails[tokenId].balance
             );
         }
@@ -860,7 +870,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param rewards The amount of rewards to record.
      */
     function recordRewards(address asset, uint256 rewards, address borrower, uint256 tokenId) internal {
-        _rewardsPerEpoch[currentEpochStart()][asset] += rewards;
+        if(asset == address(_usdc)) {
+            _rewardsPerEpoch[currentEpochStart()] += rewards;
+        } else if(asset == address(_aero)) {
+            setRewardsPerEpochNative(currentEpochStart(), rewards);
+        }
         emit RewardsReceived(currentEpochStart(), rewards, borrower, tokenId);
     }
 
@@ -929,11 +943,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function returns the value of `_outstandingCapital`, which represents the total active loans.
      * @return The total amount of active assets.
      */
+    function activeAssets() public view returns (uint256) {
+        return _outstandingCapital;
+    }
+
+    /**
+     * @notice Retrieves the total amount of active assets (outstanding capital).
+     * @dev This function returns the value of `_outstandingCapital`, which represents the total active loans.
+     * @return The total amount of active assets.
+     */
     function activeAssets(address loanAsset) public view returns (uint256) {
         if(loanAsset == address(_usdc)) {
             return _outstandingCapital;
         } else if(loanAsset == address(_aero)) {
-            return _outstandingCapitalNative;
+            return getOutstandingCapitalNative();
         }
     }
 
@@ -943,8 +966,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function returns the total rewards recorded for the current epoch.
      * @return The total rewards for the current epoch.
      */
-    function lastEpochReward(address asset) public view returns (uint256) {
-        return _rewardsPerEpoch[currentEpochStart()][asset];
+    function lastEpochReward() public view returns (uint256) {
+        return _rewardsPerEpoch[currentEpochStart()];
+    }
+
+    /**
+     * @notice Retrieves the rewards for the current epoch.
+     * @dev This function returns the total rewards recorded for the current epoch.
+     * @return The total rewards for the current epoch.
+     */
+    function lastEpochRewardNative() public view returns (uint256) {
+        return getRewardsPerEpochNative(currentEpochStart());
     }
 
     /* OWNER METHODS */
