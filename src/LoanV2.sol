@@ -202,6 +202,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param zeroBalanceOption The option specifying how zero balance scenarios should be handled.
      * @param increasePercentage The percentage of the rewards to reinvest into venft.
      * @param topUp Indicates whether to top up the loan amount.
+     * @param optInCommunityRewards Indicates whether to opt in to community rewards.
+     * @param loanAsset The asset to be used for the loan.
      */
     function requestLoan(
         uint256 tokenId,
@@ -874,7 +876,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Records the rewards for the current epoch.
      * @dev This function adds the specified rewards to the total rewards for the current epoch.
+     * @param asset The asset being used for the loan.
      * @param rewards The amount of rewards to record.
+     * @param borrower The address of the borrower.
+     * @param tokenId The ID of the token associated with the loan.
      */
     function recordRewards(address asset, uint256 rewards, address borrower, uint256 tokenId) internal {
         if(asset == address(_usdc)) {
