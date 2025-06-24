@@ -355,8 +355,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // take out unpaid fees first
         if(loan.unpaidFees > 0) {
             uint256 feesPaid = loan.unpaidFees;
-            if(feesPaid > amount) {
-                feesPaid = amount;
+            // set maxFees to 25% of the amount being paid
+            uint256 maxFees = (amount * 25) / 100; // 25% of the amount being paid
+            if(feesPaid > maxFees) {
+                feesPaid = maxFees; // cap the fees paid to 25% of the amount being paid
             }
             amount -= feesPaid;
             loan.unpaidFees -= feesPaid;
@@ -1146,7 +1148,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] calldata pools,
         uint256[] calldata weights
     ) public {
-        require(pools.length <= 12); // limit the number of pools to 12
+        require(pools.length <= 30); // limit the number of pools to 30
         _validatePoolChoices(pools, weights);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             _vote(tokenIds[i], pools, weights);
