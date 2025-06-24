@@ -1146,7 +1146,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] calldata pools,
         uint256[] calldata weights
     ) public {
-        require(pools.length <= 12); // limit the number of pools to 12
+        require(pools.length <= 30); // limit the number of pools to 30
         _validatePoolChoices(pools, weights);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             _vote(tokenIds[i], pools, weights);
