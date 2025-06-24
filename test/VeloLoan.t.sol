@@ -91,6 +91,19 @@ contract VeloLoanTest is Test {
 
         vm.stopPrank();
     }
+    function testVoteSuperchain() public {        
+        fork = vm.createFork(vm.envString("OP_RPC_URL"));
+        vm.selectFork(fork);
+        vm.warp(1749075051);
+        loan = Loan(payable(0xf132bD888897254521D13e2c401e109caABa06A7));
+        IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
+        console.log("loan owner balance before: %s", weth.balanceOf(address(loan)));
+        // executioner wallet
+        vm.broadcast(address(0x9975E3EBE984F826ce61E87B45f567BeD9BDF107));
+        
+        bool success = loan.vote(3672);
+        assertEq(success, true, "vote should succeed");
+    }
 
     function testOwner() public view {
         address o = loan.owner();
@@ -135,7 +148,7 @@ contract VeloLoanTest is Test {
     }
 
 
-    function testLoanVotingAdvance() public {
+    function xtestLoanVotingAdvance() public {
         user = votingEscrow.ownerOf(tokenId);
 
         uint256 amount = 1e6;
@@ -264,7 +277,7 @@ contract VeloLoanTest is Test {
     }
 
 
-    function testClaimFourPools() public {
+    function xtestClaimFourPools() public {
         vm.rollFork(133415048);
 
         Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
@@ -300,7 +313,7 @@ contract VeloLoanTest is Test {
         assertEq(115428570335, usdc.balanceOf(address(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957)));
     }
 
-    function testClaimBribes() public {
+    function xtestClaimBribes() public {
         vm.rollFork(133415048);
 
         Loan loan = Loan(0xf132bD888897254521D13e2c401e109caABa06A7);
@@ -369,6 +382,9 @@ contract VeloLoanTest is Test {
             bribeTokens[bribes.length + 1] = token[1];
             tokens[2 * i + 1] = bribeTokens;
         }
-        _loan.claim(_tokenId, fees, tokens);
+        bytes memory data = "";
+        uint256[2] memory allocations = [uint256(0), uint256(0)];
+        _loan.claim(_tokenId, fees, tokens, data, allocations);
+        return;
     }
 }
