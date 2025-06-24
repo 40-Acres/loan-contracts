@@ -19,4 +19,5 @@ interface ILoan {
     function claimCollateral(uint256 tokenId) external;
 
     function getRewardsRate() external view returns (uint256);
+    function owner() external view returns (address);
 }

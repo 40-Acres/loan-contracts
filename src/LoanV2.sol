@@ -209,7 +209,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 increasePercentage,
         address preferredToken,
         bool topUp,
-        bool optInCommunityRewards
+        bool optInCommunityRewards,
+        address loanAsset
     ) public virtual {
         // require the msg.sender to be the owner of the token
         require(_ve.ownerOf(tokenId) == msg.sender);
@@ -231,7 +232,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
             topUp: topUp,
-            optInCommunityRewards: optInCommunityRewards
+            optInCommunityRewards: optInCommunityRewards,
+            loanAsset: address(0)
         });
 
 
@@ -251,7 +253,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // if user selects topup option, increase to the max loan amount
         if(topUp) {
-            (amount,) = getMaxLoan(tokenId);
+            (amount,) = getMaxLoan(tokenId, loanAsset);
         }
 
         if (amount > 0) {
@@ -270,13 +272,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function increaseLoan(
         uint256 tokenId,
-        uint256 amount
+        uint256 amount,
+        address loanAsset
     ) public  {
-        require(amount > .01e6);
+        require(loanAsset == address(_usdc) || loanAsset == address(_aero));
         require(_ve.ownerOf(tokenId) == address(this));
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
-
+        // ensure loan asset doesnt change
+        require(loan.loanAsset == address(0) || loan.loanAsset == loanAsset);
         require(loan.borrower == msg.sender);
         _increaseLoan(loan, tokenId, amount);
 
@@ -293,9 +297,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      and if the borrower is the one requesting the increase.
      * @param tokenId The ID of the loan for which the amount is being increased.
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
+     * @param loanAsset The address of the asset to be used for the loan. Must be USDC or AERO.
      */
-    function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
-        (uint256 maxLoan, ) = getMaxLoan(tokenId);
+    function _increaseLoan(LoanInfo storage loan, uint256 tokenId, uint256 amount, address loanAsset) internal {
+        (uint256 maxLoan, ) = getMaxLoan(tokenId, loanAsset);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
         loan.unpaidFees += originationFee;
@@ -804,15 +809,44 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function getMaxLoan(
         uint256 tokenId
     ) public view returns (uint256, uint256) {
-        return LoanUtils.getMaxLoanByRewardsRate(
-            tokenId,
-            address(_ve),
-            getRewardsRate(),
-            _multiplier,
-            _usdc.balanceOf(_vault),
-            _outstandingCapital,
-            _loanDetails[tokenId].balance
-        );
+        return getMaxLoan(tokenId, address(_usdc));
+    }
+
+    /**
+     * @notice Calculates the maximum loan amount that can be borrowed for a given token ID.
+     * @dev This function forwards the call to the LoanCalculator contract.
+     * @param tokenId The ID of the loan (NFT).
+     * @param loanAsset The address of the asset used for the loan (e.g., USDC or AERO).
+     * @return maxLoan The maximum loan amount that can be borrowed.
+     * @return maxLoanIgnoreSupply The maximum loan amount ignoring vault supply constraints.
+     */
+    function getMaxLoan(
+        uint256 tokenId,
+        address loanAsset
+    ) public view returns (uint256, uint256) {
+        if(loanAsset == address(_usdc)) {
+            return LoanUtils.getMaxLoanByRewardsRate(
+                tokenId,
+                address(_ve),
+                getRewardsRate(),
+                _multiplier,
+                _usdc.balanceOf(_vault),
+                _outstandingCapital,
+                _loanDetails[tokenId].balance
+            );
+        }
+        if(loanAsset == address(_aero)) {
+            return LoanUtils.getMaxLoanByRewardsRate(
+                tokenId,
+                address(_ve),
+                getRewardsRate(),
+                _multiplier,
+                _aero.balanceOf(_vault),
+                _outstandingCapital,
+                _loanDetails[tokenId].balance
+            );
+        }
+        revert("Unsupported loan asset");
     }
 
     /**
@@ -1267,5 +1301,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     function currentEpochStart() internal view returns (uint256) {
         return ProtocolTimeLibrary.epochStart(block.timestamp);
+    }
+
+    function getVault(address asset) internal virtual pure returns (address) {
+        if (asset == address(_aero)) {
+            return 0x420000000000000000000000000000000000000003;
+        }
+        return _vault;
     }
 }

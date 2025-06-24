@@ -104,5 +104,10 @@ contract PharaohLoanV2 is Loan {
     function odosRouter() public override pure returns (address) {
         return 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC; // ODOS Router address
     }
+
+
+    function nativeVault() public override pure returns (address) {
+        return 0x420000000000000000000000000000000000000004;
+    }
 }
 

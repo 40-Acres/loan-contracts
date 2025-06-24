@@ -156,7 +156,7 @@ contract LoanUpgradeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = .001e6;
         vm.expectRevert();
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.stopPrank();
     }
 
@@ -168,11 +168,11 @@ contract LoanUpgradeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         uint256 amount = 5e18;
         vm.expectRevert();
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
 
 
         amount = 1e6;
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.stopPrank();
         assertTrue(usdc.balanceOf(address(user)) >= 1e6);
         assertTrue(usdc.balanceOf(address(vault)) < startingVaultBalance);
@@ -224,7 +224,7 @@ contract LoanUpgradeTest is Test {
         address _user = votingEscrow.ownerOf(_tokenId);
         vm.startPrank(_user);
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.stopPrank();
 
         uint256 loanWeight = loan.getTotalWeight();
@@ -252,7 +252,7 @@ contract LoanUpgradeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         vm.roll(block.number + 1);
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 1);
-        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false, address(usdc));
         vm.roll(block.number + 1);
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
         assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId));

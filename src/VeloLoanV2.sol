@@ -28,4 +28,9 @@ contract VeloLoan is Loan {
     function odosRouter() public override pure returns (address) {
         return 0xCa423977156BB05b13A2BA3b76Bc5419E2fE9680; // ODOS Router address
     }
+
+
+    function nativeVault() public override pure returns (address) {
+        return 0x420000000000000000000000000000000000000004;
+    }
 }
