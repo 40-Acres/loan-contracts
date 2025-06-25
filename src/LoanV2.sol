@@ -805,7 +805,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function getMaxLoan(
         uint256 tokenId
-    ) public view returns (uint256, uint256) {
+    ) public virtual view returns (uint256, uint256) {
         return LoanUtils.getMaxLoanByRewardsRate(
             tokenId,
             address(_ve),

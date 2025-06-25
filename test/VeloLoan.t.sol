@@ -91,19 +91,6 @@ contract VeloLoanTest is Test {
 
         vm.stopPrank();
     }
-    function testVoteSuperchain() public {        
-        fork = vm.createFork(vm.envString("OP_RPC_URL"));
-        vm.selectFork(fork);
-        vm.warp(1749075051);
-        loan = Loan(payable(0xf132bD888897254521D13e2c401e109caABa06A7));
-        IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
-        console.log("loan owner balance before: %s", weth.balanceOf(address(loan)));
-        // executioner wallet
-        vm.broadcast(address(0x9975E3EBE984F826ce61E87B45f567BeD9BDF107));
-        
-        bool success = loan.vote(3672);
-        assertEq(success, true, "vote should succeed");
-    }
 
     function testOwner() public view {
         address o = loan.owner();

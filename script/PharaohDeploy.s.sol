@@ -31,10 +31,11 @@ contract PharaohDeploy is Script {
         VaultV2 vaultImplementation = new VaultV2();
         ERC1967Proxy _vault = new ERC1967Proxy(address(vaultImplementation), "");
 
-        Vault vault = Vault(payable(_vault));
+        Vault vault = Vault(payable(_vault));        
+        VaultV2(address(vault)).initialize(address(_usdc), address(_loan), "40avax-USDC-VAULT", "40avax-USDC-VAULT");
+
         LoanV2 loan = LoanV2(payable(_loan));
-        Loan(address(loan)).initialize(address(_vault));
-        VaultV2(address(vault)).initialize(address(_usdc), address(loan), "40avax-USDC-VAULT", "40avax-USDC-VAULT");
+        Loan(address(loan)).initialize(address(_vault), _usdc);
         LoanV2 loanV2 = new LoanV2();
         loan.upgradeToAndCall(address(loanV2), new bytes(0));
         loan.setProtocolFee(500);

@@ -187,7 +187,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _disableInitializers();
     }
 
-    function initialize(address vault) initializer virtual public {
+    function initialize(address vault, address asset) initializer virtual public {
         __Ownable_init(msg.sender); //set owner to msg.sender
         __UUPSUpgradeable_init();
         address[] memory pools = new address[](1);
@@ -202,7 +202,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _vault = vault;
         _voter = IVoter(0x16613524e02ad97eDfeF371bC883F2F5d6C480A5);
         _rewardsDistributor = IRewardsDistributor(0x227f65131A261548b057215bB1D5Ab2997964C7d);
-        _usdc = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
+        _usdc = IERC20(asset);
         _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
         _ve = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
         _aeroRouter = IAerodromeRouter(0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43);
