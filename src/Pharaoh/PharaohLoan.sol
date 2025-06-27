@@ -28,7 +28,7 @@ contract PharaohLoan is Loan {
         _vault = vault;
         _voter = IVoter(0xAAAf3D9CDD3602d117c67D80eEC37a160C8d9869);
         _rewardsDistributor = IRewardsDistributor(0xAAA9Ea898ae0b7D3805aF555AF3a2e3BdF06D22C);
-        _usdc = IERC20(asset);
+        _asset = IERC20(asset);
         _aero = IERC20(0xAAAB9D12A30504559b0C5a9A5977fEE4A6081c6b);
         _ve = IVotingEscrow(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F);
         _aeroRouter = IAerodromeRouter(0xAAA45c8F5ef92a000a121d102F4e89278a711Faa);

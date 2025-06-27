@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.27;
 
-import { VeloLoan } from "./VeloLoanV2.sol";
-import { LoanUtils } from "./LoanUtils.sol";
+import { PharaohLoanV2 } from "./PharaohLoanV2.sol";
+import { LoanUtils } from "../LoanUtils.sol";
 
-contract VeloLoanNative is VeloLoan {
+contract PharaohLoanV2Native is PharaohLoanV2 {
 
         /* ORACLE */
     function confirmUsdcPrice() internal view override returns (bool) {

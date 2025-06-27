@@ -28,7 +28,7 @@ contract VeloLoan is Loan {
         _vault = vault;
         _voter = IVoter(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
         _rewardsDistributor = IRewardsDistributor(0x9D4736EC60715e71aFe72973f7885DCBC21EA99b);
-        _usdc = IERC20(asset);
+        _asset = IERC20(asset);
         _aero = IERC20(0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db);
         _ve = IVotingEscrow(0xFAf8FD17D9840595845582fCB047DF13f006787d);
         _aeroRouter = IAerodromeRouter(0xa062aE8A9c5e11aaA026fc2670B0D65cCc8B2858);

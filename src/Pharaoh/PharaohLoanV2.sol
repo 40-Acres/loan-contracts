@@ -17,7 +17,7 @@ contract PharaohLoanV2 is Loan {
      * @dev This function checks the latest round data from the Chainlink price feed for USDC.
      * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
      */
-    function confirmUsdcPrice() override internal view returns (bool) {
+    function confirmUsdcPrice() override virtual internal view returns (bool) {
         (
             /* uint80 roundID */,
             int answer ,
@@ -70,6 +70,14 @@ contract PharaohLoanV2 is Loan {
         }
     }
 
+    function _getLockedAmount(uint256 tokenId) internal view override returns (uint256) {
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(address(_ve)).locked(tokenId);
+        if (lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp)) {
+            return 0;
+        }
+        require(lockedBalance.amount >= 0);
+        return uint256(uint128(lockedBalance.amount));
+    }
     /**
      * @notice Resets the vote for a specific loan.
      * @param tokenId The ID of the loan (NFT) for which the vote is being reset.
