@@ -7,7 +7,7 @@ import { Loan } from "./LoanV2.sol";
 contract VeloLoan is Loan {
 
         /* ORACLE */
-    function confirmUsdcPrice() internal view override returns (bool) {
+    function confirmUsdcPrice() internal view override virtual returns (bool) {
         (
             ,
             /* uint80 roundID */ int answer /*uint startedAt*/ /*uint timeStamp*/ /*uint80 answeredInRound*/,

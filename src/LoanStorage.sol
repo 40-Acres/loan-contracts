@@ -16,6 +16,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(address => bool) _userPayoffTokenOption; // if user wants to pay off specific token first
         mapping(uint256 => uint256) _totalWeightPerEpoch;
         mapping(address => bool) _increaseManagedToken; // if user wants to increase community token
+        uint256 _minimumLocked; // minimum a token must have locked to be used as collateral
     }
 
 
@@ -121,5 +122,15 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function userIncreasesManagedToken(address user) public view returns (bool) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._increaseManagedToken[user];
+    }
+
+    function setMinimumLocked(uint256 minimumLocked) public onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._minimumLocked = minimumLocked;
+    }
+
+    function getMinimumLocked() public view returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._minimumLocked;
     }
 }
