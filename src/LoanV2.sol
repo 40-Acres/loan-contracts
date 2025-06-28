@@ -21,7 +21,6 @@ import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
-import { console } from "forge-std/console.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -567,8 +566,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         require(rewardsAmount > 0 || aeroAmount > 0);
-        console.log("Rewards Amount", rewardsAmount);
-        console.log("Aero Amount", aeroAmount);
         // Emit an event indicating that rewards have been claimed.
         emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId);
 
@@ -742,10 +739,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         if(allocation == 0) {
             return 0;
-        }
-        // get protocol fee 
-        if(takeFees) {
-            allocation -= _payZeroBalanceFee(loan.borrower, loan.tokenId, allocation, allocation, address(_aero));
         }
         _aero.approve(address(_ve), allocation);
         uint256 managedNft = getManagedNft();
