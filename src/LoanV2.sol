@@ -691,8 +691,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 remaining
     ) internal returns (uint256) {
         // Calculate and transfer protocol fee
-        console.log("USDC Address", address(_asset));
-        console.log("AERO Address", address(_aero));
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
         _asset.transfer(owner(), protocolFee);
         emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, tokenId, address(_asset));

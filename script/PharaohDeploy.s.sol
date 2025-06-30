@@ -148,3 +148,22 @@ contract PharaohUpgradeNative is Script {
     }
 
 }
+
+
+
+contract PharaohUpgradeVault is Script {
+    Swapper public swapper;
+    address[] public supportedTokens;
+    uint256 fork;
+
+    function run() external  {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        upgrade();
+    }
+
+    function upgrade() public {
+        VaultV2 vaultV2 = new VaultV2();
+        VaultV2(address(0x124D00b1ce4453Ffc5a5F65cE83aF13A7709baC7)).upgradeToAndCall(address(vaultV2), new bytes(0));
+    }
+
+}
