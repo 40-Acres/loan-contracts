@@ -530,7 +530,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        require(msg.sender == 0x40ac2E2891105Ea3a04CC0d8d4425fe30F38B182);
+        require(msg.sender == 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
