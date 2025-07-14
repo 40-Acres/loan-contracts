@@ -18,12 +18,14 @@ import {RateStorage} from "./RateStorage.sol";
 import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
-import { ISwapper } from "./interfaces/ISwapper.sol";
+import {ISwapper} from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
-import { LoanUtils } from "./LoanUtils.sol";
+import {LoanUtils} from "./LoanUtils.sol";
 import { IMarketViewFacet } from "./interfaces/IMarketViewFacet.sol";
+import {IFlashLoanProvider} from "./interfaces/IFlashLoanProvider.sol";
+import {IFlashLoanReceiver} from "./interfaces/IFlashLoanReceiver.sol";
 
-contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
+contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage, IFlashLoanProvider {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
     IVoter internal _voter;
@@ -39,6 +41,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     bool internal _paused;
     uint256 public _outstandingCapital;
     uint256 public  _multiplier; // rewards rate multiplier
+    
+    // Flash loan constants
+    uint256 public FLASH_LOAN_FEE = 9; // 0.09% fee (9 basis points)
+    bytes32 public constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedPools;
@@ -176,6 +182,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount, uint256 indexed fromToken);
     
+    /**
+     * @dev Emitted when a flash loan is executed.
+     * @param receiver The address of the contract receiving the funds.
+     * @param initiator The address initiating the flash loan.
+     * @param token The address of the token being borrowed.
+     * @param amount The amount of tokens being borrowed.
+     * @param fee The fee charged for the flash loan.
+     */
+    event FlashLoan(address indexed receiver, address indexed initiator, address indexed token, uint256 amount, uint256 fee);
+    
     /** ERROR CODES */
     // error TokenNotLocked();
     // error TokenLockExpired(uint256 tokenId);
@@ -184,6 +200,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     // error LoanNotFound(uint256 tokenId);
     // error NotOwnerOfToken(uint256 tokenId, address owner);
     // error LoanActive(uint256 tokenId);
+    
+    // Flash loan error codes
+    error UnsupportedToken(address token);
+    error ExceededMaxLoan(uint256 maxLoan);
+    error InvalidFlashLoanReceiver(address receiver);
 
     constructor() {
         _disableInitializers();
@@ -1473,4 +1494,103 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
     }
 
+
+    /* FLASH LOAN FUNCTIONS */
+
+    /**
+     * @notice Returns the maximum amount of tokens available for a flash loan
+     * @dev Implements the IFlashLoanProvider interface
+     * @param token The address of the token to be flash loaned
+     * @return The maximum amount of tokens available for flash loan
+     */
+    function maxFlashLoan(address token) external view override returns (uint256) {
+        if (token != address(_asset)) {
+            return 0;
+        }
+        
+        // The maximum flash loan amount is the total balance in the vault
+        return _asset.balanceOf(_vault);
+    }
+
+    /**
+     * @notice Calculates the fee for a flash loan
+     * @dev Implements the IFlashLoanProvider interface
+     * @param token The address of the token to be flash loaned
+     * @param amount The amount of tokens to be loaned
+     * @return The flash loan fee
+     */
+    function flashFee(address token, uint256 amount) external view override returns (uint256) {
+        if (token != address(_asset)) {
+            revert UnsupportedToken(token);
+        }
+        
+        return (amount * FLASH_LOAN_FEE) / 10000; // Fee is in basis points (9 basis points = 0.09%)
+    }
+
+    /**
+     * @notice Sets the flash loan fee
+     * @dev This function allows the owner to set the flash loan fee
+     * @param fee The new flash loan fee
+     */
+    function setFlashLoanFee(uint256 fee) external onlyOwner {
+        FLASH_LOAN_FEE = fee;
+    }
+
+    /**
+     * @notice Executes a flash loan
+     * @dev Implements the IFlashLoanProvider interface
+     * @param receiver The contract receiving the flash loan
+     * @param token The token to be flash loaned
+     * @param amount The amount of tokens to be loaned
+     * @param data Additional data to be passed to the receiver
+     * @return success Boolean indicating whether the flash loan was successful
+     */
+    function flashLoan(
+        IFlashLoanReceiver receiver,
+        address token,
+        uint256 amount,
+        bytes calldata data
+    ) external override nonReentrant returns (bool) {
+        // Check if the system is paused
+        require(!_paused, "Flash loans are paused");
+        
+        // Check if the token is supported
+        if (token != address(_asset)) {
+            revert UnsupportedToken(token);
+        }
+        
+        // Check if the amount exceeds the maximum available
+        uint256 maxLoan = _asset.balanceOf(_vault);
+        if (amount > maxLoan) {
+            revert ExceededMaxLoan(maxLoan);
+        }
+        
+        // Calculate the fee
+        uint256 fee = (amount * FLASH_LOAN_FEE) / 10000;
+        
+        // Transfer the loan amount from the vault to the receiver
+        // For flash loans to work, the vault needs to approve this contract to transfer funds
+        // This is similar to how _increaseLoan function works
+        _asset.transferFrom(_vault, address(receiver), amount);
+        
+        // Execute the callback on the receiver
+        if (receiver.onFlashLoan(msg.sender, token, amount, fee, data) != CALLBACK_SUCCESS) {
+            revert InvalidFlashLoanReceiver(address(receiver));
+        }
+        
+        // Ensure the contract has enough allowance to transfer the funds back to the vault
+        uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
+        require(receiverAllowance >= amount + fee, "Insufficient allowance for repayment");
+        
+        // Transfer the loan amount plus fee back to the vault
+        _asset.transferFrom(address(receiver), _vault, amount + fee);
+        
+        // Record the fee as protocol revenue
+        recordRewards(fee, msg.sender, type(uint256).max);
+        
+        // Emit the flash loan event
+        emit FlashLoan(address(receiver), msg.sender, token, amount, fee);
+        
+        return true;
+    }
 }
