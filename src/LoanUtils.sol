@@ -1,27 +1,22 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.27;
 
-import { IVotingEscrow } from "./interfaces/IVotingEscrow.sol";
+import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 
 library LoanUtils {
     function getMaxLoanByRewardsRate(
-        uint256 tokenId,
-        address veAddress,
+        uint256 veBalance,
         uint256 rewardsRate,
         uint256 multiplier,
         uint256 vaultBalance,
         uint256 outstandingCapital,
         uint256 currentLoanBalance
     ) public view returns (uint256, uint256) {
-        // Calculate the veNFT balance of the token at the current block timestamp
-        IVotingEscrow ve = IVotingEscrow(veAddress);
-        uint256 veBalance = ve.balanceOfNFTAt(tokenId, block.timestamp);
-
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             multiplier) / 1e12; // rewardsRate * veNFT balance of token
-        uint256 maxLoan = maxLoanIgnoreSupply * 10000 / (10000 + 80);
-        
+        uint256 maxLoan = (maxLoanIgnoreSupply * 10000) / (10000 + 80);
+
         // Calculate the maximum utilization ratio (80% of the vault supply)
         uint256 vaultSupply = vaultBalance + outstandingCapital;
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;
@@ -53,7 +48,6 @@ library LoanUtils {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
-
     function getMaxLoanByLtv(
         uint256 tokenId,
         address veAddress,
@@ -68,8 +62,8 @@ library LoanUtils {
 
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (veBalance * ltv) / 10000; // ltv * veNFT balance of token
-        uint256 maxLoan = maxLoanIgnoreSupply * 10000 / (10000 + 80);
-        
+        uint256 maxLoan = (maxLoanIgnoreSupply * 10000) / (10000 + 80);
+
         // Calculate the maximum utilization ratio (80% of the vault supply)
         uint256 vaultSupply = vaultBalance + outstandingCapital;
         uint256 maxUtilization = (vaultSupply * 8000) / 10000;

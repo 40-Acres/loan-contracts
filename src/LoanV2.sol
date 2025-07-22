@@ -813,8 +813,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId
     ) public virtual view returns (uint256, uint256) {
         return LoanUtils.getMaxLoanByRewardsRate(
-            tokenId,
-            address(_ve),
+            _getLockedAmount(tokenId);
             getRewardsRate(),
             _multiplier,
             _asset.balanceOf(_vault),
