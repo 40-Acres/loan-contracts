@@ -11,7 +11,7 @@ library LoanUtils {
         uint256 vaultBalance,
         uint256 outstandingCapital,
         uint256 currentLoanBalance
-    ) public view returns (uint256, uint256) {
+    ) public pure returns (uint256, uint256) {
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             multiplier) / 1e12; // rewardsRate * veNFT balance of token
@@ -49,17 +49,12 @@ library LoanUtils {
     }
 
     function getMaxLoanByLtv(
-        uint256 tokenId,
-        address veAddress,
+        uint256 veBalance,
         uint256 ltv,
         uint256 vaultBalance,
         uint256 outstandingCapital,
         uint256 currentLoanBalance
-    ) public view returns (uint256, uint256) {
-        // Calculate the veNFT balance of the token at the current block timestamp
-        IVotingEscrow ve = IVotingEscrow(veAddress);
-        uint256 veBalance = ve.balanceOfNFTAt(tokenId, block.timestamp);
-
+    ) public pure returns (uint256, uint256) {
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (veBalance * ltv) / 10000; // ltv * veNFT balance of token
         uint256 maxLoan = (maxLoanIgnoreSupply * 10000) / (10000 + 80);
