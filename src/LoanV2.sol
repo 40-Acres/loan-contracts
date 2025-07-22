@@ -813,8 +813,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId
     ) public virtual view returns (uint256, uint256) {
         return LoanUtils.getMaxLoanByRewardsRate(
-            tokenId,
-            address(_ve),
+            _getLockedAmount(tokenId),
             getRewardsRate(),
             _multiplier,
             _asset.balanceOf(_vault),
@@ -1217,9 +1216,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
     
-    function _getLockedAmount(uint256 tokenId) internal view virtual returns (uint256) {
-        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);        
-        if (lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp)) {
+
+    function _getLockedAmount(
+        uint256 tokenId
+    ) internal view virtual returns (uint256) {
+        IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
+        if (
+            !lockedBalance.isPermanent && lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp)
+        ) {
             return 0;
         }
         require(lockedBalance.amount >= 0);

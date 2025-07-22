@@ -137,7 +137,7 @@ contract PharaohLoanNativeTest is Test {
         loan.setRewardsRate(11300);
         vm.stopPrank();
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 204207);
+        assertEq(maxLoan, 3960475532867360276);
     }
 
     function testNftOwner() public view {
