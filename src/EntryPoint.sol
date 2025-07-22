@@ -16,7 +16,7 @@ contract EntryPoint {
     }
 
     function setTarget(address _target) external {
-        require(IOwnable(_target).owner() == msg.sender);
+        require(IOwnable(target).owner() == msg.sender);
         target = _target;
     }
 
