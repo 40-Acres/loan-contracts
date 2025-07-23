@@ -180,7 +180,7 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
     /* 
      * @notice Mapping of claimed flight bonuses for each account and epoch.
      */
-    mapping(address => mapping(uint256 => bool)) public flightBonusClaimed;
+    mapping(address => mapping(uint256 => uint256)) public flightBonusClaimed;
 
     /* 
      * @notice A checkpoint for marking balance.
@@ -226,6 +226,8 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
     /* 
      * @custom:oz-upgrades-unsafe-allow constructor
      */
+
+     
     constructor() {
         _disableInitializers();
     }
@@ -658,7 +660,7 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
      * @param flight The identifier of the flight for which the bonus is being claimed
      */
     function claimFlightBonus(address owner, uint256 flight) external nonReentrant returns (uint256) {
-        if (flightBonusClaimed[owner][flight]) revert();
+        uint256 claimedBonus = flightBonusClaimed[owner][flight];
 
         uint256 ownerDeposit = flightDeposits[owner][flight];
         uint256 totalDeposit = totalFlightDeposits[flight];
@@ -666,8 +668,9 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
 
         if (totalDeposit == 0 || bonus == 0 || ownerDeposit == 0) return 0; 
 
-        uint256 rewardAmount = (ownerDeposit * bonus) / totalDeposit;
-        flightBonusClaimed[owner][flight] = true;
+        uint256 rewardAmount = (ownerDeposit * bonus) / totalDeposit - claimedBonus;
+        if (rewardAmount == 0) return 0; // No bonus to claim
+        flightBonusClaimed[owner][flight] += rewardAmount;
 
         _mint(owner, rewardAmount);
         _writeCheckpoint(owner, balanceOf(owner));
