@@ -272,15 +272,6 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
         tokenId = _tokenId;
         loanContract = _loanContract;
     }
-
-
-    function upgrade() public {
-        ILoan(loanContract).claimCollateral(30882);
-        loanContract = 0xf132bD888897254521D13e2c401e109caABa06A7;
-        IVotingEscrow(0xFAf8FD17D9840595845582fCB047DF13f006787d).approve(loanContract, 30882);
-        ILoan(loanContract).requestLoan(30882, 0, ILoan.ZeroBalanceOption.PayToOwner, 500, address(0), false);
-        authorized = loanContract;
-    }
     
     /* 
      * @notice Transfers tokens to a recipient.
