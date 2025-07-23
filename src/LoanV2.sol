@@ -22,7 +22,6 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 
-import { console } from "forge-std/console.sol";
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -532,12 +531,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        
-        console.log("Claiming rewards for tokenId:", tokenId);
         require(msg.sender == _entryPoint());
         LoanInfo storage loan = _loanDetails[tokenId];
 
-        console.log("Claiming rewards for tokenId:", tokenId);
         // If the loan has no borrower or the token is not locked in the contract, exit early.
         if (loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
             return 0;
