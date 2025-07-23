@@ -452,6 +452,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (claimable > 0) {
             try _rewardsDistributor.claim(loan.tokenId) {
                 addTotalWeight(claimable);
+                _recordDepositOnManagedNft(loan.tokenId, claimable, loan.borrower);
                 loan.weight += claimable;
             } catch {
             }
