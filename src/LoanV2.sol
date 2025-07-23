@@ -1031,7 +1031,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         for (uint256 i = 0; i < pools.length; i++) {
             // confirm pool is a valid gauge
             address gauge = _voter.gauges(pools[i]);
-            require(_voter.isAlive(gauge));
+            if (enable) require(_voter.isAlive(gauge));
             _approvedPools[pools[i]] = enable;
         }
     }
