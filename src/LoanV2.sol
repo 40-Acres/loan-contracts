@@ -498,7 +498,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, remaining, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
-        if(tokenId == getManagedNft()) {
+        if(tokenId == getManagedNft() && remaining > 0) {
             ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), remaining);
         }
     }
