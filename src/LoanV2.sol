@@ -550,7 +550,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _processRewards(fees, tokens, tokenId, tradeData);
         uint256 rewardsAmount = _asset.balanceOf(address(this));
         address rewardToken = address(_asset);
-        if(loan.balance == 0) {
+        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
             rewardToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
