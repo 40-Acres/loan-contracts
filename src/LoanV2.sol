@@ -495,7 +495,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _asset : IERC20(loan.preferredToken);
-        remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, remaining, address(asset));
+        remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
         if(tokenId == getManagedNft() && remaining > 0) {
