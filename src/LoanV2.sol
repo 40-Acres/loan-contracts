@@ -746,6 +746,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.increaseAmount(tokenToIncrease, allocation);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
         addTotalWeight(allocation);
+        loan.weight += allocation;
         _recordDepositOnManagedNft(tokenToIncrease, allocation, loan.borrower);
         return allocation;
     }
@@ -765,6 +766,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.increaseAmount(tokenId, amount);
         emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
         addTotalWeight(amount);
+        LoanInfo storage loan = _loanDetails[tokenId];
+        loan.weight += amount;
         _recordDepositOnManagedNft(tokenId, amount, msg.sender);
     }
 
@@ -934,6 +937,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.merge(tokenId, managedNft);
         uint256 weightAdded = _getLockedAmount(tokenId) - beginningBalance;
         addTotalWeight(weightAdded);
+        loan.weight += weightAdded;
         (, address managedNftAddress) = getLoanDetails(managedNft);
         ICommunityRewards(managedNftAddress).notifyFlightBonus(weightAdded);
     }
@@ -952,7 +956,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(loan.borrower == msg.sender);
         uint256 beginningBalance = _getLockedAmount(to);
         _ve.merge(from, to);
-        addTotalWeight( _getLockedAmount(to) - beginningBalance);
+        uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
+        addTotalWeight(weightIncrease);
+        loan.weight += weightIncrease;
     }
     
 
