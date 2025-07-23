@@ -764,6 +764,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.increaseAmount(tokenId, amount);
         emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
         addTotalWeight(amount);
+        LoanInfo storage loan = _loanDetails[tokenId];
         loan.weight += amount;
         _recordDepositOnManagedNft(tokenId, amount, msg.sender);
     }
