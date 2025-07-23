@@ -40,11 +40,11 @@ contract VeloLoan is Loan {
     /* ORACLE */
     function confirmUsdcPrice() internal view override virtual returns (bool) {
         (
-            ,
-            int answer,
-            ,
+            /* uint80 roundID */,
+            int answer ,
+            /*uint startedAt*/,
             uint256 timestamp,
-            ,
+            /*uint80 answeredInRound*/
         ) = AggregatorV3Interface(address(0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3)).latestRoundData();
 
         // add staleness check, data updates every 24 hours
