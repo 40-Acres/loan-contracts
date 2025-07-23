@@ -595,7 +595,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] memory flattenedTokens = swapper.flattenToken(tokens);
 
         if (tradeData.length == 0) {
-            return;
+            revert(); // No trade data provided, cannot proceed with claiming rewards
         }
         // get balance before claiming rewards
         // loop through flattened tokens and set allowances
