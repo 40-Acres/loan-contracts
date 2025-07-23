@@ -9,8 +9,12 @@ import { Vault as VaultV2 } from "../VaultV2.sol";
 import "../interfaces/ILoan.sol";
 
 
+interface PharaohLoan {
+    function nextEpochReward() external view returns (uint256);
+}
+
 contract Vault is VaultV2 {
     function totalAssets() public view override returns (uint256) {
-        return _asset.balanceOf(address(this)) + _loanContract.activeAssets() - epochRewardsLocked() - _loanContract.nextEpochReward();
+        return _asset.balanceOf(address(this)) + _loanContract.activeAssets() - epochRewardsLocked() - PharaohLoan(address(_loanContract)).nextEpochReward();
     }
 }
