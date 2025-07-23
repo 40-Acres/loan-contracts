@@ -713,17 +713,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _calculateFeeEligibleAmount(LoanInfo storage loan, uint256 amount) internal view returns (uint256) {
         uint256 feeEligibleAmount = amount;
+        uint256 payoffTokenLoanBalance = 0;
         
         if (userUsesPayoffToken(loan.borrower) && getUserPayoffToken(loan.borrower) != 0 && getUserPayoffToken(loan.borrower) != loan.tokenId) {
-            uint256 payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
-            if (amount > loan.balance + payoffTokenLoanBalance) {
-                feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
-            }
+            payoffTokenLoanBalance = _loanDetails[getUserPayoffToken(loan.borrower)].balance;
+        }
+        
+        if (amount > loan.balance + payoffTokenLoanBalance) {
+            feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
         }
         
         return feeEligibleAmount;
     }
-
+    
     /**
      * @dev Internal function to increase the
       NFT-related value for a loan.
