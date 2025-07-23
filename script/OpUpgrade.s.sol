@@ -2,8 +2,8 @@
 pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
-import {VeloLoan as Loan} from "../src/VeloLoan.sol";
-import {VeloLoanNative as LoanVative} from "../src/VeloLoan.sol";
+import {VeloLoan as Loan} from "../src/VeloLoanV2.sol";
+import {VeloLoanNative as LoanNative} from "../src/VeloLoanV2Native.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -34,7 +34,7 @@ contract OpUpgradeNative is Script {
 
     function upgradeLoan(address _proxy) public {
         LoanNative loan = new LoanNative();
-        LoanNative proxy = 0x8C0Ae206A52D3FddE6D43Ea5B5CbbbE00e1C0315(payable(_proxy));
+        LoanNative proxy = LoanNative(payable(_proxy));
         proxy.upgradeToAndCall(address(loan), new bytes(0));
     }
 }

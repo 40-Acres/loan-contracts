@@ -32,6 +32,6 @@ contract VeloLoanNative is VeloLoan {
     }
 
     function _entryPoint() internal view override returns (address) {
-        return 0x98259fb9882f0a873b9eb3f547529d24412bdc2f;
+        return 0x98259FB9882f0a873B9eB3F547529d24412bdC2f;
     }
 }

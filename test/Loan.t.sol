@@ -1361,8 +1361,7 @@ contract LoanTest is Test {
             tokens[2 * i + 1] = bribeTokens;
         }
         bytes memory data = "";
-        uint256[2] memory allocations = [uint256(0), uint256(0)];
-        vm.prank(0x40ac2E2891105Ea3a04CC0d8d4425fe30F38B182);
+        vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
         return _loan.claim(_tokenId, fees, tokens, tradeData, allocations);
     }
 }

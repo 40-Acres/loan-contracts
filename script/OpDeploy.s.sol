@@ -43,20 +43,3 @@ contract OpDeploy is Script {
         return (LoanV2(address(proxy)), vault);
     }
 }
-
-contract BaseUpgradeNative is Script {
-    function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        address proxy = address(0x1Dc76341CA156e376736ddbA042aba071bD3b858);
-        upgradeLoan(proxy);
-        vm.stopBroadcast();
-    }
-
-    function upgradeLoan(address _proxy) public {
-        Loan loan = new LoanV2Native();
-        Loan proxy = LoanV2Native(payable(_proxy));
-        proxy.upgradeToAndCall(address(loan), new bytes(0));
-    }
-}
-
-// forge script script/BaseUpgrade.s.sol:BaseUpgradeNative  --chain-id 8453 --rpc-url $BASE_RPC_URL --etherscan-api-key $BASESCAN_API_KEY --broadcast --verify --via-ir
