@@ -11,6 +11,6 @@ import "../interfaces/ILoan.sol";
 
 contract Vault is VaultV2 {
     function totalAssets() public view override returns (uint256) {
-        return _asset.balanceOf(address(this)) + _loanContract.activeAssets(); 
+        return _asset.balanceOf(address(this)) + _loanContract.activeAssets() - epochRewardsLocked() - _loanContract.nextEpochReward();
     }
 }
