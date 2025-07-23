@@ -531,7 +531,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        require(msg.sender == 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
+        require(msg.sender == _entryPoint());
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
@@ -550,7 +550,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _processRewards(fees, tokens, tokenId, tradeData);
         uint256 rewardsAmount = _asset.balanceOf(address(this));
         address rewardToken = address(_asset);
-        if(rewardsAmount == 0 && loan.balance == 0) {
+        if(loan.balance == 0) {
             rewardToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
@@ -1304,5 +1304,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     function currentEpochStart() internal view returns (uint256) {
         return ProtocolTimeLibrary.epochStart(block.timestamp);
+    }
+
+    function _entryPoint() internal view virtual returns (address) {
+        return 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
     }
 }
