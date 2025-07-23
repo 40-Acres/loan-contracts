@@ -39,4 +39,4 @@ contract OpUpgradeNative is Script {
     }
 }
 
-// forge script script/OpUpgrade.s.sol:OpUpgradeNative  --chain-id 8453 --rpc-url $BASE_RPC_URL --etherscan-api-key $BASESCAN_API_KEY --broadcast --verify --via-ir
+// forge script script/OpUpgrade.s.sol:OpUpgradeNative  --chain-id 8453 --rpc-url $OP_RPC_URL --etherscan-api-key $OPSCAN_API_KEY --broadcast --verify --via-ir
