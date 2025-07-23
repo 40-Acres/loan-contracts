@@ -665,7 +665,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, totalRewards);
         
         // Process fees
-        remaining -= _processFees(loan, tokenId, totalRewards, feeEligibleAmount);
+        remaining -= _processFees(loan, tokenId, feeEligibleAmount, remaining);
         
         // Handle NFT increase
         _increaseNft(loan, amountToIncrease, false);
@@ -725,7 +725,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         return feeEligibleAmount;
     }
-    
+
     /**
      * @dev Internal function to increase the
       NFT-related value for a loan.
