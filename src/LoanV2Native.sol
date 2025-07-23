@@ -30,4 +30,8 @@ contract LoanV2Native is Loan {
             _loanDetails[tokenId].balance
         );
     }
+
+    function _entryPoint() internal view override returns (address) {
+        return 0x98259fb9882f0a873b9eb3f547529d24412bdc2f;
+    }
 }
