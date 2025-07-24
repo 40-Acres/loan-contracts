@@ -127,7 +127,7 @@ contract PharaohUpgrade is Script {
 
     function upgrade() public {
         LoanV2 loanV2 = new LoanV2();
-        Loan(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).upgradeToAndCall(address(loanV2), new bytes(0));
+        // Loan(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).upgradeToAndCall(address(loanV2), new bytes(0));
     }
 
 }

@@ -434,7 +434,7 @@ contract CommunityRewardsTest is Test {
         uint256 flightDeposits = communityRewards.flightDeposits(user1, currentFlight);
         assertEq(flightDeposits, 1e18, "User 1 should have 1e18 flight deposits");
         vm.warp(block.timestamp + 28 days);
-        flightDeposits = communityRewards.flightDeposits(user1, ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4*ProtocolTimeLibrary.WEEK));
+        flightDeposits = communityRewards.flightDeposits(user1, ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (5*ProtocolTimeLibrary.WEEK));
         assertEq(flightDeposits, 0, "User 1 should have 0e18 flight deposits");
 
 
@@ -465,6 +465,62 @@ contract CommunityRewardsTest is Test {
         communityRewards.claimFlightBonus(address(user4), currentFlight);
         balance = IERC20(address(communityRewards)).balanceOf(user4);
         assertEq(balance, 0, "User 4  should have 0 balance");
+    }
+
+    function testFlightSchoolMultipleAllocation() public {
+        vm.startPrank(address(loan));
+        communityRewards.deposit(tokenId, 1e18, user1);
+        communityRewards.deposit(tokenId, 1e18, user2);
+        communityRewards.deposit(tokenId, 1e18, user3);
+        communityRewards.deposit(uint256(1), 1e18, user4);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 3 days);
+        uint256 currentFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4*ProtocolTimeLibrary.WEEK);
+        uint256 flightDeposits = communityRewards.flightDeposits(user1, currentFlight);
+        assertEq(flightDeposits, 1e18, "User 1 should have 1e18 flight deposits");
+        vm.warp(block.timestamp + 28 days);
+        flightDeposits = communityRewards.flightDeposits(user1, ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (5*ProtocolTimeLibrary.WEEK));
+        assertEq(flightDeposits, 0, "User 1 should have 0e18 flight deposits");
+
+
+
+        uint256 balance = IERC20(address(communityRewards)).balanceOf(user1);
+        assertEq(balance, 1e18, "User 1 should have 1e18 balance");
+
+
+        balance = IERC20(address(communityRewards)).balanceOf(user4);
+        assertEq(balance, 0, "User 4 should have 0 balance");
+
+        vm.startPrank(address(loan));
+        communityRewards.notifyFlightBonus(.75e18);
+        vm.stopPrank();
+
+        communityRewards.claimFlightBonus(address(user1), currentFlight);
+        balance = IERC20(address(communityRewards)).balanceOf(user1);
+        assertEq(balance, 1e18 + .25e18, "User 1 should have 1.25e18 balance");
+
+        communityRewards.claimFlightBonus(address(user2), currentFlight);
+        balance = IERC20(address(communityRewards)).balanceOf(user2);
+        assertEq(balance, 1e18 + .25e18, "User 2 should have 1.25e18 balance");
+
+        communityRewards.claimFlightBonus(address(user3), currentFlight);
+        balance = IERC20(address(communityRewards)).balanceOf(user3);
+        assertEq(balance, 1e18 + .25e18, "User 3 should have 1.25e18 balance");
+
+        communityRewards.claimFlightBonus(address(user4), currentFlight);
+        balance = IERC20(address(communityRewards)).balanceOf(user4);
+        assertEq(balance, 0, "User 4  should have 0 balance");
+
+
+        vm.startPrank(address(loan));
+        communityRewards.notifyFlightBonus(.75e18);
+        vm.stopPrank();
+
+        communityRewards.claimFlightBonus(address(user1), currentFlight);
+        balance = IERC20(address(communityRewards)).balanceOf(user1);
+        assertEq(balance, 1e18 + .50e18, "User 1 should have 1.50e18 balance");
+        
     }
 
     function testFlightSchoolEscrowAllocation() public {

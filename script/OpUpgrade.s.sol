@@ -2,7 +2,8 @@
 pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
-import {VeloLoan} from "../src/VeloLoan.sol";
+import {VeloLoan as Loan} from "../src/VeloLoanV2.sol";
+import {VeloLoanNative as LoanNative} from "../src/VeloLoanV2Native.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Vault } from "src/Vault.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -17,9 +18,25 @@ contract OpUpgrade is Script {
     }
 
     function upgradeLoan(address _proxy) public {
-        VeloLoan loan = new VeloLoan();
-        VeloLoan proxy = VeloLoan(payable(_proxy));
+        Loan loan = new Loan();
+        Loan proxy = Loan(payable(_proxy));
         proxy.upgradeToAndCall(address(loan), new bytes(0));
     }
-    
 }
+
+contract OpUpgradeNative is Script {
+    function run() external {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        address proxy = address(0x8C0Ae206A52D3FddE6D43Ea5B5CbbbE00e1C0315);
+        upgradeLoan(proxy);
+        vm.stopBroadcast();
+    }
+
+    function upgradeLoan(address _proxy) public {
+        LoanNative loan = new LoanNative();
+        LoanNative proxy = LoanNative(payable(_proxy));
+        proxy.upgradeToAndCall(address(loan), new bytes(0));
+    }
+}
+
+// forge script script/OpUpgrade.s.sol:OpUpgradeNative  --chain-id 8453 --rpc-url $OP_RPC_URL --etherscan-api-key $OPSCAN_API_KEY --broadcast --verify --via-ir

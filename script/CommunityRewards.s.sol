@@ -58,12 +58,3 @@ contract PharaohDeploy is CommunityRewardsDeploy  {
         deploy(loan, ve, tokens, tokenId);
     }
 }
-
-contract OpFix is Script {
-    function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        CommunityRewards _communityRewards = new CommunityRewards();
-        CommunityRewards(0x40ac2e1401d6A80e894cA4dbeA7Ca46C6C4f9D3d).upgradeToAndCall(address(_communityRewards), "");
-        CommunityRewards(0x40ac2e1401d6A80e894cA4dbeA7Ca46C6C4f9D3d).upgrade();
-    }
-}

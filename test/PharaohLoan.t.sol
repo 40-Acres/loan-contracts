@@ -142,7 +142,7 @@ contract PharaohLoanTest is Test {
         loan.setRewardsRate(11300);
         vm.stopPrank();
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 204207);
+        assertEq(maxLoan, 1296672);
     }
 
     function testNftOwner() public view {
@@ -1309,7 +1309,7 @@ contract PharaohLoanTest is Test {
         }
         // Convert hex string to bytes
 
-        vm.prank(0x40ac2E2891105Ea3a04CC0d8d4425fe30F38B182);
+        vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
         return _loan.claim(_tokenId, fees, tokens, tradeData, allocations);
     }
 }

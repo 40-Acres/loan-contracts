@@ -10,11 +10,11 @@ import {IVotingEscrow} from "../src/interfaces/IVotingEscrow.sol";
 contract EntryPointDeploy is Script {
     function deploy(address loan) public  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        0xb67Bf75232EbE2dCF492E3423aF452AFe4Bb3b81.call{value: 1229802531934816}("");
+        0x7e20308796823AF8C82b6B7dF85ce2Ae46a1e1CF.call{value: 1229802531934816}("");
         vm.stopBroadcast();
         vm.startBroadcast(vm.envUint("VANITY_PRIVATE_KEY_EXECUTIONER"));
         // send a empty transaction to increase the nonce
-        0x40ac2E2891105Ea3a04CC0d8d4425fe30F38B182.call{value: 0}("");
+        0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA.call{value: 0}("");
         EntryPoint _entryPoint = new EntryPoint(loan);
         vm.stopBroadcast();
     }
@@ -40,3 +40,5 @@ contract PharaohDeploy is EntryPointDeploy  {
         deploy(loan);
     }
 }
+
+// forge script script/EntryPointDeploy.s.sol:PharaohDeploy --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify
