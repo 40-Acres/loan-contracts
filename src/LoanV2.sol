@@ -1128,13 +1128,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         _ve.approve(toContract, tokenId);
 
-        // Handle the transfer based on whether there's an existing loan
-        // Case 1: User has an existing loan that needs to be paid off
-        
-        // Calculate the amount needed to borrow from the new contract
-        uint256 originationFee = (borrowAmount * 80) / 10000; // 0.8%
-        uint256 totalBorrowAmount = borrowAmount + originationFee;
-
         // Request loan for user on the new contract
         Loan(toContract).requestLoan(
             tokenId,
