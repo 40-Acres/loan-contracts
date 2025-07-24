@@ -307,28 +307,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _asset.transferFrom(_vault, loan.borrower, amount);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
-    
-    /**
-     * @dev Increases the loan amount for a given tokenId by a specified amount and sends
-     *      the funds to the specified contract instead of the borrower.
-     *      This is used for cross-contract loan transfers.
-     * @param recipient The address to receive the borrowed funds.
-     * @param loan The loan storage reference.
-     * @param tokenId The ID of the loan for which the amount is being increased.
-     * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
-     */
-    function _increaseLoanToContract(address recipient, LoanInfo storage loan, uint256 tokenId, uint256 amount) internal {
-        (uint256 maxLoan, ) = getMaxLoan(tokenId);
-        require(amount <= maxLoan);
-        uint256 originationFee = (amount * 80) / 10000; // 0.8%
-        loan.unpaidFees += originationFee;
-        loan.balance += amount + originationFee;
-        loan.outstandingCapital += amount;
-        _outstandingCapital += amount;
-        // Send funds to the specified recipient instead of the borrower
-        _asset.transferFrom(_vault, recipient, amount);
-        emit FundsBorrowed(tokenId, loan.borrower, amount);
-    }
 
     /**
      * @notice Allows a borrower to make a payment towards their loan.
@@ -1107,26 +1085,28 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Transfers a token within the 40 Acres ecosystem from one loan contract to another
      * @param toContract The destination loan contract address
      * @param tokenId The ID of the token being transferred
-     * @param amount The amount to borrow in the new contract (if 0, no initial loan amount is taken)
+     * @param borrowAmount The amount of tokens to borrow from the new contract
      * @param tradeData The trade data for swapping tokens (if needed)
      * @return success A boolean indicating whether the transfer was successful
      */
     function transferWithin40Acres(
         address toContract,
         uint256 tokenId,
-        uint256 amount,
+        uint256 borrowAmount,
         bytes calldata tradeData
     ) external returns (bool success) {
         // Verify the contract is approved
-        require(isApprovedContract(toContract), "Destination contract not approved");
+        require(isApprovedContract(toContract));
 
         // Get loan details from source contract
         LoanInfo storage loan = _loanDetails[tokenId];
+
+        uint256 amount = loan.balance;
         
         // Verify the caller is the borrower
-        require(loan.borrower == msg.sender, "Not the borrower of the token");
+        require(loan.borrower == msg.sender);
         // Verify the token is locked in this contract
-        require(_ve.ownerOf(tokenId) == address(this), "Token not locked in this contract");
+        require(_ve.ownerOf(tokenId) == address(this));
 
         // Get settings from current loan
         ZeroBalanceOption zeroBalanceOption = loan.zeroBalanceOption;
@@ -1141,156 +1121,47 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _ve.approve(toContract, tokenId);
 
         // Handle the transfer based on whether there's an existing loan
-        if (loan.balance > 0) {
-            // Case 1: User has an existing loan that needs to be paid off
-            
-            // Calculate the amount needed to borrow from the new contract
-            uint256 originationFee = (amount * 80) / 10000; // 0.8%
-            uint256 totalBorrowAmount = amount + originationFee;
+        // Case 1: User has an existing loan that needs to be paid off
+        
+        // Calculate the amount needed to borrow from the new contract
+        uint256 originationFee = (borrowAmount * 80) / 10000; // 0.8%
+        uint256 totalBorrowAmount = borrowAmount + originationFee;
 
-            // Request loan for user on the new contract
-            Loan(toContract).requestLoanForUser(
-                msg.sender,
-                tokenId,
-                totalBorrowAmount,
-                zeroBalanceOption,
-                increasePercentage,
-                preferredToken,
-                topUp,
-                optInCommunityRewards,
-                true
-            );
+        // Request loan for user on the new contract
+        Loan(toContract).requestLoan(
+            tokenId,
+            borrowAmount,
+            zeroBalanceOption,
+            increasePercentage,
+            preferredToken,
+            topUp,
+            optInCommunityRewards
+        );
 
-            // Swap the borrowed token to our token (if different) to pay off the loan
-            if (address(targetAsset) != address(_asset)) {
-                // Approve the router to spend the borrowed asset
-                targetAsset.approve(odosRouter(), amount);
-                
-                // Execute the swap using ODOS router
-                (bool swapSuccess,) = odosRouter().call(tradeData);
-                require(swapSuccess, "Swap failed");
-                
-                // Verify we received enough to pay off the loan
-                require(_asset.balanceOf(address(this)) >= loan.balance, "Insufficient funds after swap");
-            }
-
-            // Pay off the loan
-            _pay(tokenId, loan.balance, true);
+        // Swap the borrowed token to our token (if different) to pay off the loan
+        if (address(targetAsset) != address(_asset) && amount > 0) {
+            // Approve the router to spend the borrowed asset
+            targetAsset.approve(odosRouter(), borrowAmount);
             
-            // Clean up the loan details
-            subTotalWeight(loan.weight);
-            delete _loanDetails[tokenId];
-
-            targetAsset.transfer(msg.sender, targetAsset.balanceOf(address(this)));
-        } else {
-            // Case 2: User does not have an existing loan, just transfer settings
-            
-            // Request loan for user on the new contract with the user's settings
-            Loan(toContract).requestLoanForUser(
-                msg.sender,
-                tokenId,
-                amount,
-                zeroBalanceOption,
-                increasePercentage,
-                preferredToken,
-                topUp,
-                optInCommunityRewards,
-                false
-            );
-            
-            // Clean up the loan details
-            subTotalWeight(loan.weight);
-            delete _loanDetails[tokenId];
+            // Execute the swap using ODOS router
+            (bool swapSuccess,) = odosRouter().call(tradeData);
+            require(swapSuccess);
         }
+
+        // Pay off the loan
+        _pay(tokenId, amount, true);
+        
+        // Clean up the loan details
+        subTotalWeight(loan.weight);
+        delete _loanDetails[tokenId];
+
+        // targetAsset.transfer(msg.sender, targetAsset.balanceOf(address(this)));
+
+        Loan(toContract).setBorrower(tokenId, msg.sender);
 
         emit CollateralWithdrawn(tokenId, msg.sender);
         return true;
-    }
-
-    /**
-     * @notice Requests a loan for a user by locking a token as collateral.
-     * @dev This function allows another approved loan contract to request a loan for a user.
-     * @param user The address of the user requesting the loan.
-     * @param tokenId The ID of the token being used as collateral.
-     * @param amount The amount of the loan requested. If 0, no initial loan amount is added.
-     * @param zeroBalanceOption The option specifying how zero balance scenarios should be handled.
-     * @param increasePercentage The percentage of the rewards to reinvest into venft.
-     * @param preferredToken The preferred token for receiving rewards or payments.
-     * @param topUp Indicates whether to top up the loan amount automatically.
-     * @param optInCommunityRewards Indicates whether to opt in to community rewards.
-     */
-    function requestLoanForUser(
-        address user,
-        uint256 tokenId,
-        uint256 amount,
-        ZeroBalanceOption zeroBalanceOption,
-        uint256 increasePercentage,
-        address preferredToken,
-        bool topUp,
-        bool optInCommunityRewards,
-        bool sendToContract
-    ) external {
-        // Verify the calling contract is approved
-        require(isApprovedContract(msg.sender), "Caller contract not approved");
-        
-        // The token should be owned by the calling contract
-        require(_ve.ownerOf(tokenId) == msg.sender, "Token not owned by caller");
-        
-        // Lock the token permanently
-        _lock(tokenId);
-
-        // Initialize loan details
-        _loanDetails[tokenId] = LoanInfo({
-            balance: 0,
-            borrower: user,
-            timestamp: block.timestamp,
-            outstandingCapital: 0,
-            tokenId: tokenId,
-            zeroBalanceOption: zeroBalanceOption,
-            pools: new address[](0),
-            voteTimestamp: 0,
-            claimTimestamp: 0,
-            weight: 0,
-            unpaidFees: 0,
-            preferredToken: preferredToken,
-            increasePercentage: increasePercentage,
-            topUp: topUp,
-            optInCommunityRewards: optInCommunityRewards
-        });
-
-        // Transfer the token to this contract
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this), "Token transfer failed");
-        emit CollateralAdded(tokenId, user, zeroBalanceOption);
-
-        // Validate settings
-        require(increasePercentage <= 10000, "Increase percentage too high");
-        if(preferredToken != address(0)) {
-            require(isApprovedToken(preferredToken), "Preferred token not approved");
-        }
-        
-        // Update weight
-        _loanDetails[tokenId].weight = _getLockedAmount(tokenId);
-        require(_loanDetails[tokenId].weight >= getMinimumLocked(), "Token has insufficient lock");
-        addTotalWeight(_loanDetails[tokenId].weight);
-
-        // If user selects topup option, increase to the max loan amount
-        if(topUp) {
-            (amount,) = getMaxLoan(tokenId);
-        }
-
-        // Process loan if amount > 0
-        if (amount > 0) {
-            if(sendToContract) {
-                _increaseLoanToContract(msg.sender, _loanDetails[tokenId], tokenId, amount);
-            } else {
-                increaseLoan(tokenId, amount);
-            }
-        }
-
-        // Vote with the token
-        vote(tokenId);
-    }
+}
 
     /* USER METHODS */
     /**
@@ -1306,6 +1177,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
         loan.zeroBalanceOption = option;
+    }
+
+    /**
+     * @notice Sets the borrower for a specific loan.
+     * @dev This function can only be called by an approved contract.
+     * @param tokenId The ID of the loan (NFT).
+     * @param borrower The address of the borrower.
+     */
+    function setBorrower(uint256 tokenId, address borrower) public {
+        require(isApprovedContract(msg.sender));
+        LoanInfo storage loan = _loanDetails[tokenId];
+        loan.borrower = borrower;
     }
 
 

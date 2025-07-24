@@ -126,8 +126,11 @@ contract LoanSwitchTest is Test {
         usdc.mint(address(usdcVault), 100e6);
         
         // Mint some AERO to the AERO vault
-        vm.prank(0x40EbC1Ac8d4Fedd2E144b75fe9C0420BE82750c6); // AERO whale
+        vm.startPrank(0x40EbC1Ac8d4Fedd2E144b75fe9C0420BE82750c6); // AERO whale
         aero.transfer(address(aeroVault), 100 ether);
+        aero.transfer(user, 10 ether);
+        vm.stopPrank();
+
     }
 
     function testSwitchWithoutLoan() public {
@@ -153,7 +156,7 @@ contract LoanSwitchTest is Test {
         usdcLoan.transferWithin40Acres(
             address(aeroLoan),
             tokenId,
-            0 ether, // Borrow 1 AERO in the new contract
+            0,
             "" // No swap needed since we don't have an outstanding loan
         );
         
@@ -163,7 +166,7 @@ contract LoanSwitchTest is Test {
         // Verify settings were transferred
         (uint256 balance, address borrower) = aeroLoan.getLoanDetails(tokenId);
         assertEq(borrower, user);
-        assertEq(balance, 0); // 1 AERO + 0.8% fee
+        assertEq(balance, 0);
         
         // Test that we can claim the collateral from the AERO contract
         aeroLoan.pay(tokenId, balance);
@@ -197,9 +200,9 @@ contract LoanSwitchTest is Test {
      */
     function mintUsdc(address minter, address to, uint256 amount) external {
         // No restriction on caller in tests
-        vm.startPrank(minter);
+        // vm.startPrank(minter);
         IUSDC(address(usdc)).mint(to, amount);
-        vm.stopPrank();
+        // vm.stopPrank();
     }
     
     function testSwitchWithLoan() public {
@@ -209,11 +212,13 @@ contract LoanSwitchTest is Test {
         // Set up the initial loan in USDC
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(usdcLoan), tokenId);
+
+        (uint256 usdcMaxLoan,) = usdcLoan.getMaxLoan(tokenId);
         
         // Request a loan with 10 USDC
         usdcLoan.requestLoan(
             tokenId, 
-            10e6, // 10 USDC
+            usdcMaxLoan, // 10 USDC
             Loan.ZeroBalanceOption.DoNothing, 
             5000, // 50% increase percentage
             address(0), 
@@ -227,19 +232,27 @@ contract LoanSwitchTest is Test {
         // Verify loan balance
         (uint256 usdcBalance, address borrower) = usdcLoan.getLoanDetails(tokenId);
         assertEq(borrower, user);
-        assertEq(usdcBalance, 10.08e6); // 10 USDC + 0.8% fee
+        assertEq(usdcBalance, usdcMaxLoan * 1008 / 1000); // 10 USDC + 0.8% fee
         
-        // Create mock trade data for the ODOS router
-        bytes memory mockTradeData = abi.encodePacked(uint256(1), uint256(2), uint256(3));
+        // Calculate the new AERO loan amount that would cover the USDC loan (with fee)
+        (uint256 aeroLoanAmount,) = aeroLoan.getMaxLoan(tokenId); // 0.001 AERO
+        uint256 aeroLoanWithFee = aeroLoanAmount * 1008 / 1000; // 0.001 AERO + 0.8% fee = 0.001008 AERO
         
-        // Prepare approvals for AERO to be spent
-        aero.approve(address(aeroLoan), 100 ether);
+        // Create mock trade data for the ODOS router with the proper function signature
+        // Encode the executeSwap function call with parameters
+        bytes memory mockTradeData = abi.encodeWithSelector(
+            MockOdosRouter.executeSwap.selector,
+            address(aero),     // tokenIn
+            address(usdc),     // tokenOut
+            aeroLoanAmount,       // amountIn (amount of USDC to swap - the entire loan balance)
+            usdcBalance     // amountOut (amount of AERO to receive)
+        );
         
         // Now switch to AERO contract
         usdcLoan.transferWithin40Acres(
             address(aeroLoan),
             tokenId,
-            0.001 ether, // Borrow 0.0015 AERO in the new contract
+            aeroLoanAmount,
             mockTradeData // Mock trade data
         );
         
@@ -249,13 +262,14 @@ contract LoanSwitchTest is Test {
         // Verify loan in AERO contract
         (uint256 aeroBalance, address aeroBorrower) = aeroLoan.getLoanDetails(tokenId);
         assertEq(aeroBorrower, user);
-        assertEq(aeroBalance, 0.001008 ether); // 0.001 AERO + 0.8% fee
+        assertEq(aeroBalance, aeroLoanWithFee); // Verify the AERO loan amount with fee
         
         // Verify the USDC loan has been paid off
         (uint256 usdcBalanceAfter, ) = usdcLoan.getLoanDetails(tokenId);
         assertEq(usdcBalanceAfter, 0); // Loan should be paid off
         
         // Test that we can claim the collateral from the AERO contract
+        aero.approve(address(aeroLoan), aeroBalance);
         aeroLoan.pay(tokenId, aeroBalance);
         aeroLoan.claimCollateral(tokenId);
         
@@ -266,35 +280,33 @@ contract LoanSwitchTest is Test {
     
     // Helper to deploy a mock ODOS router that actually performs swaps
     function deployMockOdosRouter() internal returns (address) {
-        // Deploy the MockOdosRouter contract
-        MockOdosRouter mockRouter = new MockOdosRouter();
+        // Get the hardcoded ODOS router address from the Loan contract
+        address hardcodedOdosRouter = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
         
-        // Configure the router with token addresses and test environment
+        // Deploy a new mock router to get its bytecode
+        MockOdosRouter mockRouter = new MockOdosRouter();
         mockRouter.setup(address(usdc), address(aero), address(this));
         
-        // Mock the ODOS router address in the loan contracts
-        vm.mockCall(
-            address(usdcLoan),
-            abi.encodeWithSignature("odosRouter()"),
-            abi.encode(address(mockRouter))
-        );
+        // Get the code of our mock router
+        bytes memory mockCode = address(mockRouter).code;
         
-        vm.mockCall(
-            address(aeroLoan),
-            abi.encodeWithSignature("odosRouter()"),
-            abi.encode(address(mockRouter))
-        );
+        // Replace the code at the hardcoded router address with our mock code
+        vm.etch(hardcodedOdosRouter, mockCode);
         
-        return address(mockRouter);
+        // Initialize the router at the replaced address
+        MockOdosRouter(payable(hardcodedOdosRouter)).setup(address(usdc), address(aero), address(this));
+        
+        console.log("Mock router deployed at hardcoded address:", hardcodedOdosRouter);
+        
+        return hardcodedOdosRouter;
     }
 }
 
-// Mock ODOS Router contract that simulates swaps
+// Mock ODOS Router contract that simulates swaps based on trade data
 contract MockOdosRouter {
     IERC20 public usdcToken;
     IERC20 public aeroToken;
     address public testContract;
-    uint256 public constant SWAP_RATE = 10; // 1 AERO = 10 USDC (price ratio)
     
     function setup(address _usdcToken, address _aeroToken, address _testContract) external {
         usdcToken = IERC20(_usdcToken);
@@ -302,63 +314,49 @@ contract MockOdosRouter {
         testContract = _testContract;
     }
     
-    // Function to handle incoming calls (fallback)
-    fallback() external {
-        // Process the swap based on approvals and balances
-        processSwap();
-    }
-    
-    // Handle specific call for router to maintain compatibility
+    // Handle receive function for compatibility
     receive() external payable {
-        processSwap();
+        // Simple fallback - would be triggered if ETH is sent
     }
     
-    function processSwap() internal {
-        // Check which token has been approved to this contract
-        uint256 usdcAllowance = usdcToken.allowance(msg.sender, address(this));
-        uint256 aeroAllowance = aeroToken.allowance(msg.sender, address(this));
-        
-        if (usdcAllowance > 0) {
+    // Execute the swap with properly defined function interface
+    function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external returns (bool) {
+        // Process the swap based on token addresses
+        if (tokenIn == address(usdcToken) && tokenOut == address(aeroToken)) {
             // USDC to AERO swap
-            uint256 usdcAmount = usdcAllowance;
+            // Transfer the exact amount of USDC from sender to this contract
+            usdcToken.transferFrom(msg.sender, address(this), amountIn);
             
-            // Transfer USDC from sender to this contract
-            usdcToken.transferFrom(msg.sender, address(this), usdcAmount);
-            
-            // Calculate AERO amount (1 USDC = 0.1 AERO)
-            uint256 aeroAmount = usdcAmount / SWAP_RATE;
-            
-            // Mint AERO to the sender
+            // Mint the specified amount of AERO to the sender
             address aeroWhale = 0x40EbC1Ac8d4Fedd2E144b75fe9C0420BE82750c6;
             
             // Call the test contract to mint tokens
             (bool success,) = testContract.call(
                 abi.encodeWithSignature(
                     "mintAero(address,address,uint256)",
-                    aeroWhale, msg.sender, aeroAmount
+                    aeroWhale, msg.sender, amountOut
                 )
             );
+            require(success, "Failed to mint AERO");
         } 
-        else if (aeroAllowance > 0) {
+        else if (tokenIn == address(aeroToken) && tokenOut == address(usdcToken)) {
             // AERO to USDC swap
-            uint256 aeroAmount = aeroAllowance;
+            // Transfer the exact amount of AERO from sender to this contract
+            aeroToken.transferFrom(msg.sender, address(this), amountIn);
             
-            // Transfer AERO from sender to this contract
-            aeroToken.transferFrom(msg.sender, address(this), aeroAmount);
-            
-            // Calculate USDC amount (1 AERO = 10 USDC)
-            uint256 usdcAmount = aeroAmount * SWAP_RATE;
-            
-            // Mint USDC to the sender
+            // Mint the specified amount of USDC to the sender
             address usdcMinter = IUSDC(address(usdcToken)).masterMinter();
             
             // Call the test contract to mint tokens
             (bool success,) = testContract.call(
                 abi.encodeWithSignature(
                     "mintUsdc(address,address,uint256)",
-                    usdcMinter, msg.sender, usdcAmount
+                    usdcMinter, msg.sender, amountOut
                 )
             );
+            require(success, "Failed to mint USDC");
         }
+        
+        return true;
     }
 }
