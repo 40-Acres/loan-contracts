@@ -139,9 +139,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount of rewards claimed.
      * @param borrower The address of the borrower claiming the rewards.
      * @param tokenId The ID of the token representing the loan.
+     * @param token The address of the token in which the rewards are claimed.
      */
     
-    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when rewards are paid to the owner of the loan.
      * @param epoch The epoch during which the rewards were paid.
@@ -550,7 +551,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _processRewards(fees, tokens, tokenId, tradeData);
         uint256 rewardsAmount = _asset.balanceOf(address(this));
         address rewardToken = address(_asset);
-        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+        // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
+        // then it means the loan is fully paid off.
+        // If the zero balance option is set to PayToOwner, we will pay the rewards to the owner in the desired token.
+        if (loan.balance == 0 && 
+            (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0) && 
+            loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
             rewardToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
@@ -568,7 +574,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         require(rewardsAmount > 0 || aeroAmount > 0);
         // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId);
+        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId, address(rewardToken));
 
 
         // Handle zero balance case
