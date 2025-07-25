@@ -146,7 +146,6 @@ contract PharaohUpgradeNative is Script {
         LoanV2Native loanV2 = new LoanV2Native();
         Loan(address(0xd3E726b681C9a1E2a620cef9fE0EcE49822B11d4)).upgradeToAndCall(address(loanV2), new bytes(0));
     }
-
 }
 
 
@@ -167,3 +166,5 @@ contract PharaohUpgradeVault is Script {
     }
 
 }
+
+// forge script script/PharoahDeploy.s.sol:PharaohUpgradeNative  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
