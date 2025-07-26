@@ -839,9 +839,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function adds the specified rewards to the total rewards for the current epoch.
      * @param rewards The amount of rewards to record.
      */
-    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal {
-        _rewardsPerEpoch[currentEpochStart()] += rewards;
-        emit RewardsReceived(currentEpochStart(), rewards, borrower, tokenId);
+    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal virtual {
+        if (rewards > 0) {
+            _rewardsPerEpoch[currentEpochStart()] += rewards;
+            emit RewardsReceived(currentEpochStart(), rewards, borrower, tokenId);
+        }
     }
 
     /* Rate Methods */
