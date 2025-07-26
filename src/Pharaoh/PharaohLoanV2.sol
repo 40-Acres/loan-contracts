@@ -112,5 +112,25 @@ contract PharaohLoanV2 is Loan {
     function odosRouter() public override pure returns (address) {
         return 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC; // ODOS Router address
     }
-}
 
+
+    /**
+     * @notice Returns the rewards for next epoch.
+     * @return The amount of rewards for the next epoch.
+     */
+    function nextEpochReward() public view returns (uint256) {
+        return _rewardsPerEpoch[ProtocolTimeLibrary.epochNext(block.timestamp)];
+    }
+
+    /**
+     * @notice Records the rewards for the current epoch.
+     * @dev This function adds the specified rewards to the total rewards for the current epoch.
+     * @param rewards The amount of rewards to record.
+     */
+    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal override {
+        if (rewards > 0) {
+            _rewardsPerEpoch[ProtocolTimeLibrary.epochNext(block.timestamp)] += rewards;
+            emit RewardsReceived(ProtocolTimeLibrary.epochNext(block.timestamp), rewards, borrower, tokenId);
+        }
+    }
+}

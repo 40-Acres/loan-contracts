@@ -23,12 +23,15 @@ contract VeloLoanNative is VeloLoan {
         uint256 tokenId
     ) public override view returns (uint256, uint256) {
         return LoanUtils.getMaxLoanByLtv(
-            tokenId,
-            address(_ve),
+            _getLockedAmount(tokenId),
             getRewardsRate(),
             _asset.balanceOf(_vault),
             _outstandingCapital,
             _loanDetails[tokenId].balance
         );
+    }
+
+    function _entryPoint() internal view override returns (address) {
+        return 0x98259FB9882f0a873B9eB3F547529d24412bdC2f;
     }
 }
