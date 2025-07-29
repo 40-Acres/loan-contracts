@@ -48,6 +48,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedPools;
+    mapping(address => bool) public _approvedMarketContracts; // New mapping for market contracts
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
@@ -187,6 +188,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param fee The fee charged for the flash loan.
      */
     event FlashLoan(address indexed receiver, address indexed initiator, address indexed token, uint256 amount, uint256 fee);
+    
+    /**
+     * @dev Emitted when the ownership of a loan is transferred.
+     * @param tokenId The ID of the loan whose ownership is transferred.
+     * @param previousOwner The address of the previous owner.
+     * @param newOwner The address of the new owner.
+     */
+    event LoanOwnershipTransferred(uint256 indexed tokenId, address indexed previousOwner, address indexed newOwner);
     
     /** ERROR CODES */
     // error TokenNotLocked();
@@ -1084,6 +1093,54 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         IERC20(token).transfer(owner(), amount);
     }
 
+    /**
+     * @notice Transfers ownership of a loan from one address to another.
+     * @dev This function can only be called by authorized market contracts.
+     *      The new owner assumes all rights and obligations of the loan.
+     * @param tokenId The ID of the loan to transfer ownership.
+     * @param newOwner The address that will become the new owner of the loan.
+     */
+    function transferLoanOwnership(uint256 tokenId, address newOwner) public {
+        require(isApprovedMarketContract(msg.sender), "Only approved market contracts can transfer loan ownership");
+        
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower != address(0), "Loan does not exist");
+        require(newOwner != address(0), "New owner cannot be zero address");
+        require(newOwner != loan.borrower, "New owner is already the current owner");
+        
+        address previousOwner = loan.borrower;
+        loan.borrower = newOwner;
+        
+        // Update payoff token mappings if the previous owner was using this loan as payoff token
+        if (getUserPayoffToken(previousOwner) == tokenId) {
+            _setUserPayoffToken(previousOwner, 0); // Reset previous owner's payoff token
+        }
+        
+        // Emit an event for the ownership transfer
+        emit LoanOwnershipTransferred(tokenId, previousOwner, newOwner);
+    }
+
+    /**
+     * @notice Allows the owner to set the approved market contracts.
+     * @dev This function can only be called by the owner of the contract.
+     * @param marketContracts An array of addresses representing the market contracts to be approved or disapproved.
+     * @param enable A boolean indicating whether to approve or disapprove the market contracts.
+     */
+    function setApprovedMarketContracts(address[] calldata marketContracts, bool enable) public onlyOwner {
+        for (uint256 i = 0; i < marketContracts.length; i++) {
+            _approvedMarketContracts[marketContracts[i]] = enable;
+        }
+    }
+
+    /**
+     * @notice Checks if a given address is an approved market contract.
+     * @dev This function is used to verify if a caller is authorized to transfer loan ownership.
+     * @param marketContract The address to check.
+     * @return bool indicating whether the address is an approved market contract.
+     */
+    function isApprovedMarketContract(address marketContract) public view returns (bool) {
+        return _approvedMarketContracts[marketContract];
+    }
 
     /**
      * @notice Rescue any ERC20 tokens that are stuck in the contract.
