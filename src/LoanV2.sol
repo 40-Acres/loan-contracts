@@ -309,7 +309,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
 
-        require(loan.borrower == msg.sender);
+        // Allow either the borrower themselves or an approved market contract to increase the loan
+        require(loan.borrower == msg.sender || isApprovedMarketContract(msg.sender), "Only borrower or approved market contract can increase loan");
         _increaseLoan(loan, tokenId, amount);
 
        // set a default payoff token if not set
