@@ -335,7 +335,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
-        _asset.transferFrom(_vault, loan.borrower, amount);
+        
+        // If an approved market contract is calling, send funds to the market contract
+        // Otherwise send to the borrower as usual
+        address recipient = isApprovedMarketContract(msg.sender) ? msg.sender : loan.borrower;
+        _asset.transferFrom(_vault, recipient, amount);
+        
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
