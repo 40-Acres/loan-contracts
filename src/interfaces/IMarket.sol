@@ -34,8 +34,7 @@ interface IMarket is IFlashLoanReceiver {
         uint256 tokenId, 
         uint256 price, 
         address paymentToken, 
-        uint256 expiresAt, 
-        ILoanV2.ZeroBalanceOption zbo
+        uint256 expiresAt
     ) external;
     
     function updateListing(

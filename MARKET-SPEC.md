@@ -101,9 +101,9 @@ event FeeRecipientChanged(address newRecipient);
 ## External Functions
 
 ### Listing management
-* **makeListing**(`uint256 tokenId, uint256 price, address paymentToken, uint256 expiresAt, LoanV2.ZeroBalanceOption zbo`)
+  * If veNFT is in caller's wallet ⇒ UI calls `LoanV2.requestLoan(tokenId, 0, 0, address(0), false, false)` to move custody. must happen before calling makeListing.
+* **makeListing**(`uint256 tokenId, uint256 price, address paymentToken, uint256 expiresAt`)
   * Caller must be **borrower** of token OR approved operator.
-  * If veNFT is in caller's wallet ⇒ Market calls `LoanV2.requestLoan(tokenId, 0, zbo, 0, address(0), false, false)` to move custody.
   * Checks current loan balance to set `hasOutstandingLoan` flag.
   * Stores listing and emits `ListingCreated`.
 
@@ -146,8 +146,7 @@ event FeeRecipientChanged(address newRecipient);
 ## Transaction Flows
 ### A. Listing Creation (`makeListing`)
 1. Verify paymentToken is allowed; if `expiresAt!=0` ensure future timestamp.
-2. If veNFT **not** yet in `LoanV2` custody ⇒
-   * Market calls `LoanV2.requestLoan(tokenId, 0, zbo, 0, address(0), false, false)` to move custody.
+2. Verify veNFT is already in `LoanV2` custody (user must call `LoanV2.requestLoan()` first via UI).
 3. Check if token has loan balance in LoanV2, set hasOutstandingLoan accordingly.
 4. Record Listing using `MarketStorage`, emit `ListingCreated`.
 

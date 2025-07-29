@@ -105,19 +105,28 @@ contract Market is
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 expiresAt,
-        ILoanV2.ZeroBalanceOption zbo
+        uint256 expiresAt
     ) external nonReentrant whenNotPaused {
+        _makeListing(tokenId, price, paymentToken, expiresAt, msg.sender);
+    }
+
+    function _makeListing(
+        uint256 tokenId,
+        uint256 price,
+        address paymentToken,
+        uint256 expiresAt,
+        address caller
+    ) internal {
         if (!_getAllowedPaymentToken(paymentToken)) revert InvalidPaymentToken();
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert InvalidExpiration();
         
         // Check if caller can operate this token
         address tokenOwner = _getTokenOwnerOrBorrower(tokenId);
-        if (!_canOperate(tokenOwner, msg.sender)) revert Unauthorized();
+        if (!_canOperate(tokenOwner, caller)) revert Unauthorized();
         
-        // If veNFT is not in LoanV2, deposit it first
-        if (_votingEscrow.ownerOf(tokenId) == msg.sender) {
-            _loan.requestLoan(tokenId, 0, zbo, 0, address(0), false, false);
+        // If veNFT is not in LoanV2, require it to be deposited first
+        if (_votingEscrow.ownerOf(tokenId) == caller) {
+            revert("veNFT must be deposited into LoanV2 before listing. Call loan.requestLoan() first.");
         }
         
         // Check for outstanding loan
@@ -165,6 +174,10 @@ contract Market is
     }
 
     function takeListing(uint256 tokenId) external payable nonReentrant whenNotPaused {
+        _takeListing(tokenId, msg.sender);
+    }
+
+    function _takeListing(uint256 tokenId, address buyer) internal {
         Listing memory listing = _getListing(tokenId);
         if (listing.owner == address(0)) revert ListingNotFound();
         if (!_isListingActive(tokenId)) revert ListingExpired();
@@ -172,7 +185,7 @@ contract Market is
         (uint256 total, uint256 listingPrice, uint256 loanBalance,) = _getTotalCost(tokenId);
         
         // Transfer payment from buyer
-        IERC20(listing.paymentToken).safeTransferFrom(msg.sender, address(this), total);
+        IERC20(listing.paymentToken).safeTransferFrom(buyer, address(this), total);
         
         // Pay off loan if exists
         if (listing.hasOutstandingLoan && loanBalance > 0) {
@@ -190,11 +203,11 @@ contract Market is
         IERC20(listing.paymentToken).safeTransfer(listing.owner, sellerAmount);
         
         // Transfer ownership
-        _loan.transferLoanOwnership(tokenId, msg.sender);
+        _loan.transferLoanOwnership(tokenId, buyer);
         
         // Clean up
         _deleteListing(tokenId);
-        emit ListingTaken(tokenId, msg.sender, listingPrice, fee);
+        emit ListingTaken(tokenId, buyer, listingPrice, fee);
     }
 
     function borrowAndTake(
@@ -207,12 +220,12 @@ contract Market is
         if (!_isListingActive(tokenId)) revert ListingExpired();
         if (!listing.hasOutstandingLoan) revert("No outstanding loan");
         
-        (uint256 total, uint256 listingPrice, uint256 loanBalance,) = _getTotalCost(tokenId);
+        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance,) = _getTotalCost(tokenId);
         
         if (!useFlashLoan) {
             // Simple case: buyer pays everything
             if (payoffFromBuyer != loanBalance) revert InsufficientPayment();
-            this.takeListing(tokenId);
+            _takeListing(tokenId, msg.sender);
             return;
         }
         
@@ -319,12 +332,11 @@ contract Market is
         (uint256 tokenId, address buyer, uint256 listingPrice, uint256 payoffFromBuyer) = 
             abi.decode(data, (uint256, address, uint256, uint256));
         
-        Listing memory listing = _getListing(tokenId);
+        address seller = _getListing(tokenId).owner;
         
         // Pay off the loan using flash loan + buyer funds
-        uint256 totalPayoff = amount + payoffFromBuyer;
-        IERC20(token).approve(address(_loan), totalPayoff);
-        _loan.pay(tokenId, totalPayoff);
+        IERC20(token).approve(address(_loan), amount + payoffFromBuyer);
+        _loan.pay(tokenId, amount + payoffFromBuyer);
         
         // Transfer ownership to buyer
         _loan.transferLoanOwnership(tokenId, buyer);
@@ -333,17 +345,15 @@ contract Market is
         _loan.increaseLoan(tokenId, amount);
         
         // Approve flash loan repayment
-        uint256 repayAmount = amount + fee;
-        IERC20(token).approve(address(_loan), repayAmount);
+        IERC20(token).approve(address(_loan), amount + fee);
         
         // Calculate and distribute listing price fees
         uint256 marketFee = (listingPrice * _getMarketFeeBps()) / 10000;
-        uint256 sellerAmount = listingPrice - marketFee;
         
         if (marketFee > 0) {
             IERC20(token).safeTransfer(_getFeeRecipient(), marketFee);
         }
-        IERC20(token).safeTransfer(listing.owner, sellerAmount);
+        IERC20(token).safeTransfer(seller, listingPrice - marketFee);
         
         // Clean up listing
         _deleteListing(tokenId);

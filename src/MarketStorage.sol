@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {IMarket} from "./interfaces/IMarket.sol";
 
 abstract contract MarketStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:MarketStorage
@@ -9,18 +10,9 @@ abstract contract MarketStorage is Ownable2StepUpgradeable {
         // Market-specific storage
         uint16 marketFeeBps;                                          // fee in basis points, max 1000 (10%)
         address feeRecipient;                                         // fee recipient address
-        mapping(uint256 => Listing) listings;                        // tokenId => Listing
+        mapping(uint256 => IMarket.Listing) listings;                        // tokenId => Listing
         mapping(address => mapping(address => bool)) isOperatorFor;   // owner => operator => approved
         mapping(address => bool) allowedPaymentToken;                 // whitelisted payment tokens
-    }
-
-    struct Listing {
-        address owner;                    // LoanV2.borrower
-        uint256 tokenId;
-        uint256 price;                    // in paymentToken decimals
-        address paymentToken;             // whitelisted token
-        bool hasOutstandingLoan;          // if true, buyer must also pay current loan balance
-        uint256 expiresAt;                // 0 = never
     }
 
     // keccak256(abi.encode(uint256(keccak256("erc7201:storage:MarketStorage")) - 1)) & ~bytes32(uint256(0xff))
@@ -53,7 +45,7 @@ abstract contract MarketStorage is Ownable2StepUpgradeable {
         $.feeRecipient = recipient;
     }
 
-    function _getListing(uint256 tokenId) internal view returns (Listing storage) {
+    function _getListing(uint256 tokenId) internal view returns (IMarket.Listing storage) {
         MarketStorageStruct storage $ = _getMarketStorage();
         return $.listings[tokenId];
     }
