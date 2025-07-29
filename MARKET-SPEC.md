@@ -10,6 +10,13 @@ All veNFT custody remains inside `LoanV2`; the Market only orchestrates loan set
 
 The contract is **upgradeable (UUPS)**, **pausable**, and protected by **ReentrancyGuard**.
 
+## Required LoanV2 Changes
+**Critical**: LoanV2 must be upgraded with these changes for Market to function:
+1. **Market Authorization**: `increaseLoan()` modified to allow approved market contracts (line 313)
+2. **Fund Routing**: `_increaseLoan()` sends funds to Market when called by approved contracts (line 341)  
+3. **Market Approval**: New `setApprovedMarketContracts()` and `isApprovedMarketContract()` functions
+4. **Flash Loan Support**: Added `IFlashLoanProvider` interface implementation for `borrowAndTake` flow
+
 ---
 
 ## Contract Architecture
