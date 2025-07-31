@@ -10,8 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IMarket} from "./interfaces/IMarket.sol";
-import {ILoanV2} from "./interfaces/ILoanV2.sol";
-import {IFlashLoanReceiver} from "./interfaces/IFlashLoanReceiver.sol";
+import {ILoan} from "./interfaces/ILoan.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {MarketStorage} from "./MarketStorage.sol";
 
@@ -28,13 +27,12 @@ contract Market is
 
     // ============ IMMUTABLE VARIABLES ============
     
-    ILoanV2 private immutable _loan;
+    ILoan private immutable _loan;
     IVotingEscrow private immutable _votingEscrow;
 
     // ============ CONSTANTS ============
     
     uint16 private constant MAX_FEE_BPS = 1000; // 10%
-    bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
 
     // ============ ERRORS ============
     
@@ -45,12 +43,11 @@ contract Market is
     error ListingExpired();
     error Unauthorized();
     error InsufficientPayment();
-    error FlashLoanFailed();
 
     // ============ CONSTRUCTOR & INITIALIZATION ============
 
     constructor(address _loanAddress, address _votingEscrowAddress) {
-        _loan = ILoanV2(_loanAddress);
+        _loan = ILoan(_loanAddress);
         _votingEscrow = IVotingEscrow(_votingEscrowAddress);
         _disableInitializers();
     }
@@ -203,51 +200,11 @@ contract Market is
         IERC20(listing.paymentToken).safeTransfer(listing.owner, sellerAmount);
         
         // Transfer ownership
-        _loan.transferLoanOwnership(tokenId, buyer);
+        _loan.setBorrower(tokenId, buyer);
         
         // Clean up
         _deleteListing(tokenId);
         emit ListingTaken(tokenId, buyer, listingPrice, fee);
-    }
-
-    function borrowAndTake(
-        uint256 tokenId,
-        uint256 payoffFromBuyer,
-        bool useFlashLoan
-    ) external payable nonReentrant whenNotPaused {
-        Listing memory listing = _getListing(tokenId);
-        if (listing.owner == address(0)) revert ListingNotFound();
-        if (!_isListingActive(tokenId)) revert ListingExpired();
-        if (!listing.hasOutstandingLoan) revert("No outstanding loan");
-        
-        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance,) = _getTotalCost(tokenId);
-        
-        if (!useFlashLoan) {
-            // Simple case: buyer pays everything
-            if (payoffFromBuyer != loanBalance) revert InsufficientPayment();
-            _takeListing(tokenId, msg.sender);
-            return;
-        }
-        
-        // Flash loan case
-        uint256 flashAmount = loanBalance - payoffFromBuyer;
-        uint256 buyerPayment = payoffFromBuyer + listingPrice;
-        
-        // Transfer buyer payment
-        IERC20(listing.paymentToken).safeTransferFrom(msg.sender, address(this), buyerPayment);
-        
-        // Prepare flash loan data
-        bytes memory data = abi.encode(tokenId, msg.sender, listingPrice, payoffFromBuyer);
-        
-        // Execute flash loan
-        bool success = _loan.flashLoan(
-            IFlashLoanReceiver(this),
-            listing.paymentToken,
-            flashAmount,
-            data
-        );
-        
-        if (!success) revert FlashLoanFailed();
     }
 
     function setOperatorApproval(address operator, bool approved) external {
@@ -315,51 +272,6 @@ contract Market is
 
     function unpause() external onlyOwner {
         _unpause();
-    }
-
-    // ============ FLASH LOAN RECEIVER ============
-
-    function onFlashLoan(
-        address initiator,
-        address token,
-        uint256 amount,
-        uint256 fee,
-        bytes calldata data
-    ) external override returns (bytes32) {
-        if (msg.sender != address(_loan)) revert Unauthorized();
-        if (initiator != address(this)) revert Unauthorized();
-        
-        (uint256 tokenId, address buyer, uint256 listingPrice, uint256 payoffFromBuyer) = 
-            abi.decode(data, (uint256, address, uint256, uint256));
-        
-        address seller = _getListing(tokenId).owner;
-        
-        // Pay off the loan using flash loan + buyer funds
-        IERC20(token).approve(address(_loan), amount + payoffFromBuyer);
-        _loan.pay(tokenId, amount + payoffFromBuyer);
-        
-        // Transfer ownership to buyer
-        _loan.transferLoanOwnership(tokenId, buyer);
-        
-        // Re-borrow flash amount for the buyer
-        _loan.increaseLoan(tokenId, amount);
-        
-        // Approve flash loan repayment
-        IERC20(token).approve(address(_loan), amount + fee);
-        
-        // Calculate and distribute listing price fees
-        uint256 marketFee = (listingPrice * _getMarketFeeBps()) / 10000;
-        
-        if (marketFee > 0) {
-            IERC20(token).safeTransfer(_getFeeRecipient(), marketFee);
-        }
-        IERC20(token).safeTransfer(seller, listingPrice - marketFee);
-        
-        // Clean up listing
-        _deleteListing(tokenId);
-        emit ListingTaken(tokenId, buyer, listingPrice, marketFee);
-        
-        return CALLBACK_SUCCESS;
     }
 
     // ============ INTERNAL FUNCTIONS ============

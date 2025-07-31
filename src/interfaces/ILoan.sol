@@ -38,6 +38,13 @@ interface ILoan {
     function pay(uint256 tokenId, uint256 amount) external;
     
     /**
+     * @notice Sets the borrower for a specific loan
+     * @param tokenId The ID of the loan (NFT)
+     * @param borrower The address of the new borrower
+     */
+    function setBorrower(uint256 tokenId, address borrower) external;
+    
+    /**
      * @notice Transfers a token within the 40 Acres ecosystem
      * @param toContract The destination loan contract address
      * @param tokenId The ID of the token being transferred

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.27;
 
-import {IFlashLoanReceiver} from "./IFlashLoanReceiver.sol";
-import {ILoanV2} from "./ILoanV2.sol";
+import {ILoan} from "./ILoan.sol";
 
-interface IMarket is IFlashLoanReceiver {
+interface IMarket {
     // ============ STRUCTS ============
     
     struct Listing {
@@ -48,12 +47,6 @@ interface IMarket is IFlashLoanReceiver {
     
     // Purchase paths
     function takeListing(uint256 tokenId) external payable;
-    
-    function borrowAndTake(
-        uint256 tokenId, 
-        uint256 payoffFromBuyer, 
-        bool useFlashLoan
-    ) external payable;
     
     // Operator management
     function setOperatorApproval(address operator, bool approved) external;

@@ -4,18 +4,13 @@
 The **Market** contract allows users to list and purchase **veNFTs** that are used as collateral in the `LoanV2` lending system.  Purchases can occur when the veNFT has:
 1. **No outstanding loan**
 2. **Outstanding loan paid by the buyer** (from wallet)
-3. **Outstanding loan paid via flash-loan** (`borrowAndTake`) where part or all of the payoff is borrowed against the veNFT itself in a single atomic transaction.
 
 All veNFT custody remains inside `LoanV2`; the Market only orchestrates loan settlement, ownership transfer, price settlement, and fee collection.
 
 The contract is **upgradeable (UUPS)**, **pausable**, and protected by **ReentrancyGuard**.
 
 ## Required LoanV2 Changes
-**Critical**: LoanV2 must be upgraded with these changes for Market to function:
-1. **Market Authorization**: `increaseLoan()` modified to allow approved market contracts (line 313)
-2. **Fund Routing**: `_increaseLoan()` sends funds to Market when called by approved contracts (line 341)  
-3. **Market Approval**: New `setApprovedMarketContracts()` and `isApprovedMarketContract()` functions
-4. **Flash Loan Support**: Added `IFlashLoanProvider` interface implementation for `borrowAndTake` flow
+Market contract now uses `setBorrower()` function which already exists in LoanV2. The contract must be approved via `setApprovedContract(address(market), true)`.
 
 ---
 
@@ -80,7 +75,7 @@ struct Listing {
 }
 
 // Immutable variables (set in constructor)
-ILoanV2 private immutable _loan;                         // LoanV2 contract reference
+ILoan private immutable _loan;                           // LoanV2 contract reference
 IVotingEscrow private immutable _votingEscrow;           // VotingEscrow contract reference
 ```
 
@@ -119,7 +114,6 @@ event FeeRecipientChanged(address newRecipient);
 
 ### Purchase paths
 * **takeListing**(`uint256 tokenId`) – simple cases (no loan OR buyer pays full outstanding from wallet).
-* **borrowAndTake**(`uint256 tokenId, uint256 payoffFromBuyer, bool useFlashLoan`) – advanced path allowing partial wallet payoff and optional flash-loan.
 
 ### Operator management
 * **setOperatorApproval**(`address operator, bool approved`) – user function.
@@ -162,7 +156,7 @@ event FeeRecipientChanged(address newRecipient);
 2. Buyer transfers `price` in `paymentToken`.
 3. Compute `fee = price * marketFeeBps / 10000`.
 4. Send fee to `feeRecipient`, remainder to seller.
-5. `LoanV2.transferLoanOwnership(tokenId, buyer)`.
+5. `LoanV2.setBorrower(tokenId, buyer)`.
 6. Delete listing from storage, emit `ListingTaken`.
 
 ### C. Purchase – Buyer Pays Outstanding Loan (`takeListing`)
@@ -170,52 +164,6 @@ event FeeRecipientChanged(address newRecipient);
 2. Buyer transfers total amount.
 3. Market calls `LoanV2.pay(tokenId, loanBalance)`.
 4. Steps 3-6 of flow B (compute fee on price only).
-
-### D. Purchase – Flash-Loan Assisted (`borrowAndTake`)
-Inputs: `payoffFromBuyer`, `useFlashLoan`.
-1. Get total cost breakdown via `getTotalCost`.
-2. `flashAmount = loanBalance - payoffFromBuyer` (0 if not using flashLoan).
-3. Pull `payoffFromBuyer + listingPrice` from buyer wallet.
-4. If `flashAmount>0` ⇒ invoke `LoanV2.flashLoan` (Market = receiver).
-5. Inside `onFlashLoan`:
-   1. Pay loan in full using wallet funds + flash.
-   2. Transfer ownership to buyer.
-   3. If `flashAmount>0` ⇒ immediately call `LoanV2.increaseLoan(tokenId, flashAmount)` on behalf of buyer (**LoanV2 upgrade must whitelist Market**).
-   4. Repay flash loan + fee.
-6. Settle listing price / fee as in flow B (delete listing).
-
-Gas: `borrowAndTake` is single-transaction, amortising storage updates.
-
----
-
-## Flash Loan Integration
-
-Market implements `IFlashLoanReceiver` to handle complex purchase flows:
-
-```solidity
-function onFlashLoan(
-    address initiator,
-    address token,
-    uint256 amount,
-    uint256 fee,
-    bytes calldata data
-) external override returns (bytes32)
-```
-
-**Security checks:**
-- Only callable by LoanV2 contract
-- Only when Market is the initiator
-- Returns `CALLBACK_SUCCESS` constant
-
-**Flow inside callback:**
-1. Decode purchase parameters from data
-2. Pay off loan using flash funds + buyer wallet funds
-3. Transfer veNFT ownership to buyer
-4. Re-borrow flash amount for buyer (creating new loan)
-5. Distribute listing price to seller (minus market fee)
-6. Approve flash loan repayment
-
----
 
 ## Security Considerations
 * **Reentrancy**: all payable external functions are `nonReentrant`.
@@ -243,9 +191,3 @@ This ensures that Market storage is completely isolated from inherited contracts
 * Batch listing / batch take operations.
 * Integration with meta-transactions.
 * Cross-chain listing support.
-
----
-
-## Revision History
-* _v0.3 – 2025-01-30_: Updated to reflect final implementation with MarketStorage pattern and all view functions.
-* _v0.2 – 2025-01-29_: Initial detailed specification replacing previous stub.

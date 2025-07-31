@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {Market} from "../src/Market.sol";
 import {IMarket} from "../src/interfaces/IMarket.sol";
-import {ILoanV2} from "../src/interfaces/ILoanV2.sol";
+import {ILoan} from "../src/interfaces/ILoan.sol";
 import {Loan} from "../src/LoanV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
@@ -145,9 +145,7 @@ contract MarketTest is Test {
         loan.upgradeToAndCall(address(newLoanImpl), "");
         
         // Approve market contract in loan contract  
-        address[] memory marketContracts = new address[](1);
-        marketContracts[0] = address(market);
-        loan.setApprovedMarketContracts(marketContracts, true);
+        loan.setApprovedContract(address(market), true);
         
         // Set USDC as allowed payment token
         market.setAllowedPaymentToken(address(usdc), true);
@@ -420,7 +418,7 @@ contract MarketTest is Test {
         vm.startPrank(address(unauthorizedMarket));
         
         vm.expectRevert(); // Should revert for unauthorized market
-        loan.transferLoanOwnership(tokenId, buyer);
+        loan.setBorrower(tokenId, buyer);
         
         vm.stopPrank();
     }
@@ -430,16 +428,14 @@ contract MarketTest is Test {
         
         vm.startPrank(owner);
         
-        address[] memory marketContracts = new address[](1);
-        marketContracts[0] = newMarketContract;
-        loan.setApprovedMarketContracts(marketContracts, true);
+        loan.setApprovedContract(newMarketContract, true);
         
         // Verify approval (assuming this function exists)
-        // assertTrue(loan.isApprovedMarketContract(newMarketContract));
+        // assertTrue(loan.isApprovedContract(newMarketContract));
         
         // Remove approval
-        loan.setApprovedMarketContracts(marketContracts, false);
-        // assertFalse(loan.isApprovedMarketContract(newMarketContract));
+        loan.setApprovedContract(newMarketContract, false);
+        // assertFalse(loan.isApprovedContract(newMarketContract));
         
         vm.stopPrank();
     }
@@ -507,99 +503,6 @@ contract MarketTest is Test {
         assertEq(newBorrower, buyer);
         
         console.log("Flow B - No Outstanding Loan test passed");
-    }
-
-    function testBorrowAndTakeWithFlashLoan() public {
-        // Create listing with outstanding loan
-        vm.startPrank(user);
-        market.makeListing(
-            tokenId,
-            LISTING_PRICE,
-            address(usdc),
-            0
-        );
-        vm.stopPrank();
-        
-        // Get loan details
-        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance,) = market.getTotalCost(tokenId);
-        
-        // Test partial wallet payment + flash loan
-        uint256 payoffFromBuyer = loanBalance / 2; // Pay half from wallet
-        uint256 flashAmount = loanBalance - payoffFromBuyer; // Flash loan the rest
-        uint256 buyerPayment = payoffFromBuyer + listingPrice;
-        
-        vm.startPrank(buyer);
-        
-        // Approve buyer payment (partial loan payoff + full listing price)
-        usdc.approve(address(market), buyerPayment);
-        
-        uint256 buyerInitialBalance = usdc.balanceOf(buyer);
-        uint256 sellerInitialBalance = usdc.balanceOf(user);
-        
-        // Execute flash-loan assisted purchase
-        market.borrowAndTake(tokenId, payoffFromBuyer, true);
-        
-        vm.stopPrank();
-        
-        // Verify buyer paid the reduced amount
-        assertEq(usdc.balanceOf(buyer), buyerInitialBalance - buyerPayment);
-        
-        // Verify seller received listing price minus fee
-        uint256 expectedFee = (listingPrice * market.marketFeeBps()) / 10000;
-        assertEq(usdc.balanceOf(user), sellerInitialBalance + listingPrice - expectedFee);
-        
-        // Verify ownership transfer
-        (, address newBorrower) = loan.getLoanDetails(tokenId);
-        assertEq(newBorrower, buyer);
-        
-        // Verify buyer now has a loan for the flash amount
-        (uint256 newLoanBalance,) = loan.getLoanDetails(tokenId);
-        assertGt(newLoanBalance, 0); // Should have flash amount + fees
-        
-        console.log("Flow D - Flash Loan Assisted test passed");
-        console.log("Buyer paid:", buyerPayment);
-        console.log("Flash amount:", flashAmount);
-        console.log("New loan balance:", newLoanBalance);
-    }
-
-    function testBorrowAndTakeWithoutFlashLoan() public {
-        // Create listing with outstanding loan
-        vm.startPrank(user);
-        market.makeListing(
-            tokenId,
-            LISTING_PRICE,
-            address(usdc),
-            0
-        );
-        vm.stopPrank();
-        
-        // Get loan details
-        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance,) = market.getTotalCost(tokenId);
-        
-        vm.startPrank(buyer);
-        
-        // Pay full loan amount from wallet (no flash loan)
-        usdc.approve(address(market), totalCost);
-        
-        uint256 buyerInitialBalance = usdc.balanceOf(buyer);
-        
-        // This should redirect to takeListing
-        market.borrowAndTake(tokenId, loanBalance, false);
-        
-        vm.stopPrank();
-        
-        // Verify full payment was made
-        assertEq(usdc.balanceOf(buyer), buyerInitialBalance - totalCost);
-        
-        // Verify ownership transfer
-        (, address newBorrower) = loan.getLoanDetails(tokenId);
-        assertEq(newBorrower, buyer);
-        
-        // Verify loan is paid off
-        (uint256 newLoanBalance,) = loan.getLoanDetails(tokenId);
-        assertEq(newLoanBalance, 0);
-        
-        console.log("borrowAndTake without flash loan test passed");
     }
 
     function testListingExpiration() public {

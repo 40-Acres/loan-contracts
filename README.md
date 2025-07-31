@@ -8,7 +8,7 @@ The system is built using upgradeable contracts with the following key component
 
 - **Vault**: Holds loan assets (typically USDC) and manages asset accounting
 - **Loan**: Core loan logic with rewards handling and repayment mechanics
-- **Market**: Enables trading of veNFTs with or without outstanding loans and supports the use of flash loans to purchase veNFTs.
+- **Market**: Enables trading of veNFTs with or without outstanding loans
 - **Voter**: Interfaces with external voting systems for protocol governance
 - **Swapper**: Handles token swaps for rewards distribution
 - **RateStorage**: Stores protocol fee rates and other parameters
@@ -19,7 +19,7 @@ Contracts use UUPS upgradeability pattern and inherit from OpenZeppelin's upgrad
 
 - [LoanV2](src/LoanV2.sol) - Main loan contract with rewards rate-based lending and manages the veNFTs.
 - [LoanV2Native](src/LoanV2Native.sol) - Native token version of LoanV2
-- [Market](src/Market.sol) - Marketplace for veNFTs with outstanding loans and supports the use of flash loans to purchase veNFTs.
+- [Market](src/Market.sol) - Marketplace for veNFTs with outstanding loans
 - [Vault](src/Vault.sol) - Base vault contract implementing ERC4626 to hold the loan assets (typically USDC) and use the veNFT rewards to repay the loan automatically.
 - [VaultV2](src/VaultV2.sol) - Upgradeable version of the vault
 - [Voter](src/interfaces/IVoter.sol) - Interface for external voting systems
@@ -55,5 +55,4 @@ Contracts use UUPS upgradeability pattern and inherit from OpenZeppelin's upgrad
 
 ## Key Features
 - Automatic loan repayment using veNFT rewards
-- Flash loan functionality
 - Purchase of veNFTs with outstanding loans
