@@ -430,12 +430,12 @@ contract MarketTest is Test {
         
         loan.setApprovedContract(newMarketContract, true);
         
-        // Verify approval (assuming this function exists)
-        // assertTrue(loan.isApprovedContract(newMarketContract));
+        // Verify approval
+        assertTrue(loan.isApprovedContract(newMarketContract));
         
         // Remove approval
         loan.setApprovedContract(newMarketContract, false);
-        // assertFalse(loan.isApprovedContract(newMarketContract));
+        assertFalse(loan.isApprovedContract(newMarketContract));
         
         vm.stopPrank();
     }
