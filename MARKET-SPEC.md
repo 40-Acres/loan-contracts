@@ -410,5 +410,3 @@ struct Offer {
 // Offer-specific state
 uint256 private _offerCounter;        // auto-incrementing offer ID
 ```
-
-### External Functions

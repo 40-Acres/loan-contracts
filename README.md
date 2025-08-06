@@ -18,7 +18,7 @@ Contracts use UUPS upgradeability pattern and inherit from OpenZeppelin's upgrad
 ## Contracts
 
 - [LoanV2](src/LoanV2.sol) - Main loan contract with rewards rate-based lending and manages the veNFTs.
-- [LoanV2Native](src/LoanV2Native.sol) - Native token version of LoanV2
+- [LoanV2Native](src/LoanV2Native.sol) - Inherits LoanV2 but overrides the USDC oracle since do not need to verify usdc price
 - [Market](src/Market.sol) - Marketplace for veNFTs with outstanding loans
 - [Vault](src/Vault.sol) - Base vault contract implementing ERC4626 to hold the loan assets (typically USDC) and use the veNFT rewards to repay the loan automatically.
 - [VaultV2](src/VaultV2.sol) - Upgradeable version of the vault
