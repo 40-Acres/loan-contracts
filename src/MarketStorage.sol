@@ -13,6 +13,10 @@ abstract contract MarketStorage is Ownable2StepUpgradeable {
         mapping(uint256 => IMarket.Listing) listings;                        // tokenId => Listing
         mapping(address => mapping(address => bool)) isOperatorFor;   // owner => operator => approved
         mapping(address => bool) allowedPaymentToken;                 // whitelisted payment tokens
+        
+        // Offer-specific storage
+        mapping(uint256 => IMarket.Offer) offers;                     // offerId => Offer
+        uint256 _offerCounter;                                         // auto-incrementing offer ID
     }
 
     // keccak256(abi.encode(uint256(keccak256("erc7201:storage:MarketStorage")) - 1)) & ~bytes32(uint256(0xff))
@@ -73,5 +77,26 @@ abstract contract MarketStorage is Ownable2StepUpgradeable {
     function _deleteListing(uint256 tokenId) internal {
         MarketStorageStruct storage $ = _getMarketStorage();
         delete $.listings[tokenId];
+    }
+
+    // Offer-specific storage functions
+    function _getOffer(uint256 offerId) internal view returns (IMarket.Offer storage) {
+        MarketStorageStruct storage $ = _getMarketStorage();
+        return $.offers[offerId];
+    }
+
+    function _getOfferCounter() internal view returns (uint256) {
+        MarketStorageStruct storage $ = _getMarketStorage();
+        return $._offerCounter;
+    }
+
+    function _incrementOfferCounter() internal returns (uint256) {
+        MarketStorageStruct storage $ = _getMarketStorage();
+        return ++$._offerCounter;
+    }
+
+    function _deleteOffer(uint256 offerId) internal {
+        MarketStorageStruct storage $ = _getMarketStorage();
+        delete $.offers[offerId];
     }
 }

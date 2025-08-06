@@ -43,6 +43,14 @@ contract Market is
     error ListingExpired();
     error Unauthorized();
     error InsufficientPayment();
+    error OfferNotFound();
+    error OfferExpired();
+    error InvalidWeightRange();
+    error InvalidLockTime();
+    error InsufficientDebtTolerance();
+    error InsufficientWeight();
+    error ExcessiveWeight();
+    error ExcessiveLockTime();
 
     // ============ CONSTRUCTOR & INITIALIZATION ============
 
@@ -207,6 +215,157 @@ contract Market is
         emit ListingTaken(tokenId, buyer, listingPrice, fee);
     }
 
+    // ============ OFFER FUNCTIONS ============
+
+    function createOffer(
+        uint256 minWeight,
+        uint256 maxWeight,
+        uint256 debtTolerance,
+        uint256 price,
+        address paymentToken,
+        uint256 maxLockTime,
+        uint256 expiresAt
+    ) external payable nonReentrant whenNotPaused {
+        if (!_getAllowedPaymentToken(paymentToken)) revert InvalidPaymentToken();
+        if (minWeight > maxWeight) revert InvalidWeightRange();
+        if (expiresAt != 0 && expiresAt <= block.timestamp) revert InvalidExpiration();
+        
+        // Transfer full offer price from caller
+        IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), price);
+        
+        // Create offer
+        uint256 offerId = _incrementOfferCounter();
+        Offer storage offer = _getOffer(offerId);
+        offer.creator = msg.sender;
+        offer.minWeight = minWeight;
+        offer.maxWeight = maxWeight;
+        offer.debtTolerance = debtTolerance;
+        offer.price = price;
+        offer.paymentToken = paymentToken;
+        offer.maxLockTime = maxLockTime;
+        offer.expiresAt = expiresAt;
+        offer.offerId = offerId;
+        
+        emit OfferCreated(offerId, msg.sender, minWeight, maxWeight, debtTolerance, price, paymentToken, maxLockTime, expiresAt);
+    }
+
+    function updateOffer(
+        uint256 offerId,
+        uint256 newMinWeight,
+        uint256 newMaxWeight,
+        uint256 newDebtTolerance,
+        uint256 newPrice,
+        address newPaymentToken,
+        uint256 newMaxLockTime,
+        uint256 newExpiresAt
+    ) external nonReentrant whenNotPaused {
+        Offer storage offer = _getOffer(offerId);
+        if (offer.creator == address(0)) revert OfferNotFound();
+        if (offer.creator != msg.sender) revert Unauthorized();
+        if (!_getAllowedPaymentToken(newPaymentToken)) revert InvalidPaymentToken();
+        if (newMinWeight > newMaxWeight) revert InvalidWeightRange();
+        if (newExpiresAt != 0 && newExpiresAt <= block.timestamp) revert InvalidExpiration();
+        
+        // Handle price change
+        if (newPrice != offer.price) {
+            if (newPrice > offer.price) {
+                // Transfer additional amount
+                IERC20(newPaymentToken).safeTransferFrom(msg.sender, address(this), newPrice - offer.price);
+            } else {
+                // Refund excess amount
+                IERC20(offer.paymentToken).safeTransfer(msg.sender, offer.price - newPrice);
+            }
+        }
+        
+        // Update offer
+        offer.minWeight = newMinWeight;
+        offer.maxWeight = newMaxWeight;
+        offer.debtTolerance = newDebtTolerance;
+        offer.price = newPrice;
+        offer.paymentToken = newPaymentToken;
+        offer.maxLockTime = newMaxLockTime;
+        offer.expiresAt = newExpiresAt;
+        
+        emit OfferUpdated(offerId, newMinWeight, newMaxWeight, newDebtTolerance, newPrice, newPaymentToken, newMaxLockTime, newExpiresAt);
+    }
+
+    function cancelOffer(uint256 offerId) external nonReentrant {
+        Offer storage offer = _getOffer(offerId);
+        if (offer.creator == address(0)) revert OfferNotFound();
+        if (offer.creator != msg.sender) revert Unauthorized();
+        
+        // Refund the offer price
+        IERC20(offer.paymentToken).safeTransfer(msg.sender, offer.price);
+        
+        // Delete offer
+        _deleteOffer(offerId);
+        emit OfferCancelled(offerId);
+    }
+
+    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external nonReentrant whenNotPaused {
+        Offer memory offer = _getOffer(offerId);
+        if (offer.creator == address(0)) revert OfferNotFound();
+        if (!_isOfferActive(offerId)) revert OfferExpired();
+        
+        // Verify seller owns the veNFT
+        address tokenOwner = _getTokenOwnerOrBorrower(tokenId);
+        if (!_canOperate(tokenOwner, msg.sender)) revert Unauthorized();
+        
+        // Validate veNFT against offer criteria
+        _validateOfferCriteria(tokenId, offer, isInLoanV2);
+        
+        // Calculate and distribute fees
+        uint256 fee = (offer.price * _getMarketFeeBps()) / 10000;
+        uint256 sellerAmount = offer.price - fee;
+        
+        if (fee > 0) {
+            IERC20(offer.paymentToken).safeTransfer(_getFeeRecipient(), fee);
+        }
+        IERC20(offer.paymentToken).safeTransfer(msg.sender, sellerAmount);
+        
+        // Transfer ownership
+        if (isInLoanV2) {
+            _loan.setBorrower(tokenId, offer.creator);
+        } else {
+            // Transfer from wallet to offer creator
+            _votingEscrow.transferFrom(msg.sender, offer.creator, tokenId);
+        }
+        
+        // Delete offer
+        _deleteOffer(offerId);
+        emit OfferAccepted(offerId, tokenId, msg.sender, offer.price, fee);
+    }
+
+    function matchOfferWithListing(uint256 offerId, uint256 tokenId) external nonReentrant whenNotPaused {
+        Offer memory offer = _getOffer(offerId);
+        if (offer.creator == address(0)) revert OfferNotFound();
+        if (!_isOfferActive(offerId)) revert OfferExpired();
+        
+        Listing memory listing = _getListing(tokenId);
+        if (listing.owner == address(0)) revert ListingNotFound();
+        if (!_isListingActive(tokenId)) revert ListingExpired();
+        
+        // Validate veNFT against offer criteria
+        _validateOfferCriteria(tokenId, offer);
+        
+        // Calculate and distribute fees
+        uint256 fee = (offer.price * _getMarketFeeBps()) / 10000 ;
+        uint256 sellerAmount = offer.price - fee;
+        
+        if (fee > 0) {
+            IERC20(offer.paymentToken).safeTransfer(_getFeeRecipient(), fee);
+        }
+        IERC20(offer.paymentToken).safeTransfer(listing.owner, sellerAmount);
+        
+        // Transfer ownership
+        _loan.setBorrower(tokenId, offer.creator);
+        
+        // Clean up
+        _deleteListing(tokenId);
+        _deleteOffer(offerId);
+        emit OfferMatched(offerId, tokenId, offer.creator, offer.price, fee);
+    }
+
     function setOperatorApproval(address operator, bool approved) external {
         _setIsOperatorFor(msg.sender, operator, approved);
         emit OperatorApproved(msg.sender, operator, approved);
@@ -240,8 +399,35 @@ contract Market is
         return _getTotalCost(tokenId);
     }
 
+    function getOffer(uint256 offerId) external view returns (
+        address creator,
+        uint256 minWeight,
+        uint256 maxWeight,
+        uint256 debtTolerance,
+        uint256 price,
+        address paymentToken,
+        uint256 maxLockTime,
+        uint256 expiresAt
+    ) {
+        Offer memory offer = _getOffer(offerId);
+        return (
+            offer.creator,
+            offer.minWeight,
+            offer.maxWeight,
+            offer.debtTolerance,
+            offer.price,
+            offer.paymentToken,
+            offer.maxLockTime,
+            offer.expiresAt
+        );
+    }
+
     function isListingActive(uint256 tokenId) external view returns (bool) {
         return _isListingActive(tokenId);
+    }
+
+    function isOfferActive(uint256 offerId) external view returns (bool) {
+        return _isOfferActive(offerId);
     }
 
     function canOperate(address owner, address operator) external view returns (bool) {
@@ -297,6 +483,12 @@ contract Market is
                (listing.expiresAt == 0 || block.timestamp < listing.expiresAt);
     }
 
+    function _isOfferActive(uint256 offerId) internal view returns (bool) {
+        Offer memory offer = _getOffer(offerId);
+        return offer.creator != address(0) && 
+               (offer.expiresAt == 0 || block.timestamp < offer.expiresAt);
+    }
+
     function _getTotalCost(uint256 tokenId) internal view returns (
         uint256 total,
         uint256 listingPrice,
@@ -314,5 +506,47 @@ contract Market is
         }
         
         total = listingPrice + loanBalance;
+    }
+
+    function _validateOfferCriteria(uint256 tokenId, Offer memory offer) internal view {
+        // Get veNFT weight - check if it's in LoanV2 first, otherwise use current VotingEscrow weight
+        uint256 weight = _getVeNFTWeight(tokenId);
+        
+        if (weight < offer.minWeight) revert InsufficientWeight();
+        if (weight > offer.maxWeight) revert ExcessiveWeight();
+        
+        // Get loan balance
+        (uint256 loanBalance,) = _loan.getLoanDetails(tokenId);
+        if (loanBalance > offer.debtTolerance) revert InsufficientDebtTolerance();
+        
+        // Get lock time from VotingEscrow
+        IVotingEscrow.LockedBalance memory lockedBalance = _votingEscrow.locked(tokenId);
+        if (lockedBalance.end > offer.maxLockTime) revert ExcessiveLockTime();
+    }
+
+    function _validateOfferCriteria(uint256 tokenId, Offer memory offer, bool isInLoanV2) internal view {
+        // Get veNFT weight based on location
+        uint256 weight = isInLoanV2 ? _loan.getLoanWeight(tokenId) : _getVeNFTWeight(tokenId);
+        
+        if (weight < offer.minWeight) revert InsufficientWeight();
+        if (weight > offer.maxWeight) revert ExcessiveWeight();
+        
+        // Get loan balance (same for both cases)
+        (uint256 loanBalance,) = _loan.getLoanDetails(tokenId);
+        if (loanBalance > offer.debtTolerance) revert InsufficientDebtTolerance();
+        
+        // Get lock time from VotingEscrow
+        IVotingEscrow.LockedBalance memory lockedBalance = _votingEscrow.locked(tokenId);
+        if (lockedBalance.end > offer.maxLockTime) revert ExcessiveLockTime();
+    }
+
+    function _getVeNFTWeight(uint256 tokenId) internal view returns (uint256) {
+        // veNFT is in wallet - use current VotingEscrow weight
+        IVotingEscrow.LockedBalance memory lockedBalance = _votingEscrow.locked(tokenId);
+        if (!lockedBalance.isPermanent && lockedBalance.end < block.timestamp) {
+            return 0;
+        }
+        require(lockedBalance.amount >= 0);
+        return uint256(uint128(lockedBalance.amount));
     }
 }

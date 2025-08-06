@@ -900,6 +900,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
+     * @notice Gets the loan weight for a specific token ID.
+     * @param tokenId The ID of the loan (NFT).
+     * @return weight The weight of the loan.
+     */
+    function getLoanWeight(
+        uint256 tokenId
+    ) public view returns (uint256 weight) {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        return loan.weight;
+    }
+
+    /**
      * @notice Retrieves the total amount of active assets (outstanding capital).
      * @dev This function returns the value of `_outstandingCapital`, which represents the total active loans.
      * @return The total amount of active assets.

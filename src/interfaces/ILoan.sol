@@ -31,6 +31,13 @@ interface ILoan {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
     
     /**
+     * @notice Gets the loan weight for a specific token ID.
+     * @param tokenId The ID of the loan (NFT).
+     * @return weight The weight of the loan.
+     */
+    function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);
+    
+    /**
      * @notice Pays an amount towards a loan
      * @param tokenId The ID of the loan (NFT).
      * @param amount The amount to pay. If 0, the full loan balance is paid.

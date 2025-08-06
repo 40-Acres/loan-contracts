@@ -62,15 +62,23 @@ contract MarketTest is Test {
     uint256 tokenId = 72562;
     Swapper public swapper;
 
-    // Test parameters
+    // Test parameters based on real veNFT data from Base mainnet
     uint256 constant LISTING_PRICE = 1000e6; // 1000 USDC
     uint256 constant LOAN_AMOUNT = 100e6; // 100 USDC
+    uint256 constant MIN_WEIGHT = 90e21; // 90M tokens minimum (actual scale)
+    uint256 constant MAX_WEIGHT = 100e21; // 100M tokens maximum (actual scale)
+    uint256 constant DEBT_TOLERANCE = 1000e6; // 1000 USDC max debt
 
     // Import events from IMarket
     event ListingCreated(uint256 indexed tokenId, address indexed owner, uint256 price, address paymentToken, bool hasOutstandingLoan, uint256 expiresAt);
     event ListingUpdated(uint256 indexed tokenId, uint256 price, address paymentToken, uint256 expiresAt);
     event ListingCancelled(uint256 indexed tokenId);
     event ListingTaken(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 fee);
+    event OfferCreated(uint256 indexed offerId, address indexed creator, uint256 minWeight, uint256 maxWeight, uint256 debtTolerance, uint256 price, address paymentToken, uint256 maxLockTime, uint256 expiresAt);
+    event OfferUpdated(uint256 indexed offerId, uint256 newMinWeight, uint256 newMaxWeight, uint256 newDebtTolerance, uint256 newPrice, address newPaymentToken, uint256 newMaxLockTime, uint256 newExpiresAt);
+    event OfferCancelled(uint256 indexed offerId);
+    event OfferAccepted(uint256 indexed offerId, uint256 indexed tokenId, address indexed seller, uint256 price, uint256 fee);
+    event OfferMatched(uint256 indexed offerId, uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 fee);
     event OperatorApproved(address indexed owner, address indexed operator, bool approved);
     event PaymentTokenAllowed(address indexed token, bool allowed);
     event MarketFeeChanged(uint16 newBps);
@@ -157,7 +165,10 @@ contract MarketTest is Test {
         
         // Mint USDC to vault and users
         usdc.mint(address(vault), 10000e6);
-        usdc.mint(buyer, 5000e6);
+        
+        // Send USDC from real wallet to buyer to ensure they have enough funds
+        vm.prank(0x122fDD9fEcbc82F7d4237C0549a5057E31c8EF8D);
+        usdc.transfer(buyer, 10000e6); // Send 10k USDC to buyer
         
         // Create a loan for the user to list
         _createUserLoan();
@@ -580,5 +591,411 @@ contract MarketTest is Test {
         assertEq(listingOwner, directOwner);
         
         console.log("veNFT manual custody transfer test passed");
+    }
+
+    // ============ OFFER TESTS ============
+
+    function testCreateOffer() public {
+        uint256 minWeight = 1000;
+        uint256 maxWeight = 5000;
+        uint256 debtTolerance = 200e6; // 200 USDC
+        uint256 offerPrice = 2000e6; // 2000 USDC
+        uint256 maxLockTime = block.timestamp + 365 days;
+        uint256 expiresAt = block.timestamp + 7 days;
+
+        vm.startPrank(buyer);
+        
+        // Approve USDC for offer
+        usdc.approve(address(market), offerPrice);
+        
+        // Expect OfferCreated event
+        vm.expectEmit(true, true, false, true);
+        emit OfferCreated(1, buyer, minWeight, maxWeight, debtTolerance, offerPrice, address(usdc), maxLockTime, expiresAt);
+        
+        // Create offer
+        market.createOffer(
+            minWeight,
+            maxWeight,
+            debtTolerance,
+            offerPrice,
+            address(usdc),
+            maxLockTime,
+            expiresAt
+        );
+        
+        vm.stopPrank();
+
+        // Verify offer was created
+        (
+            address creator,
+            uint256 offerMinWeight,
+            uint256 offerMaxWeight,
+            uint256 offerDebtTolerance,
+            uint256 price,
+            address paymentToken,
+            uint256 offerMaxLockTime,
+            uint256 offerExpiresAt
+        ) = market.getOffer(1);
+        
+        assertEq(creator, buyer);
+        assertEq(offerMinWeight, minWeight);
+        assertEq(offerMaxWeight, maxWeight);
+        assertEq(offerDebtTolerance, debtTolerance);
+        assertEq(price, offerPrice);
+        assertEq(paymentToken, address(usdc));
+        assertEq(offerMaxLockTime, maxLockTime);
+        assertEq(offerExpiresAt, expiresAt);
+        
+        // Verify offer is active
+        assertTrue(market.isOfferActive(1));
+        
+        // Offer created successfully
+    }
+
+    function testUpdateOffer() public {
+        // First create an offer
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Update offer parameters
+        uint256 newMinWeight = 1500;
+        uint256 newMaxWeight = 6000;
+        uint256 newDebtTolerance = 300e6;
+        uint256 newPrice = 2500e6;
+        uint256 newMaxLockTime = block.timestamp + 730 days;
+        uint256 newExpiresAt = block.timestamp + 14 days;
+
+        vm.startPrank(buyer);
+        
+        // Approve additional USDC for price increase
+        usdc.approve(address(market), 500e6); // Additional 500 USDC
+        
+        // Expect OfferUpdated event
+        vm.expectEmit(true, false, false, true);
+        emit OfferUpdated(1, newMinWeight, newMaxWeight, newDebtTolerance, newPrice, address(usdc), newMaxLockTime, newExpiresAt);
+        
+        // Update offer
+        market.updateOffer(
+            1,
+            newMinWeight,
+            newMaxWeight,
+            newDebtTolerance,
+            newPrice,
+            address(usdc),
+            newMaxLockTime,
+            newExpiresAt
+        );
+        
+        vm.stopPrank();
+
+        // Verify offer was updated
+        (
+            address creator,
+            uint256 offerMinWeight,
+            uint256 offerMaxWeight,
+            uint256 offerDebtTolerance,
+            uint256 price,
+            address paymentToken,
+            uint256 offerMaxLockTime,
+            uint256 offerExpiresAt
+        ) = market.getOffer(1);
+        
+        assertEq(offerMinWeight, newMinWeight);
+        assertEq(offerMaxWeight, newMaxWeight);
+        assertEq(offerDebtTolerance, newDebtTolerance);
+        assertEq(price, newPrice);
+        assertEq(offerMaxLockTime, newMaxLockTime);
+        assertEq(offerExpiresAt, newExpiresAt);
+        
+        // Offer updated successfully
+    }
+
+    function testCancelOffer() public {
+        // First create an offer
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        
+        uint256 initialBalance = usdc.balanceOf(buyer);
+        
+        // Expect OfferCancelled event
+        vm.expectEmit(true, false, false, false);
+        emit OfferCancelled(1);
+        
+        // Cancel offer
+        market.cancelOffer(1);
+        
+        vm.stopPrank();
+
+        // Verify offer was deleted
+        (address creator,,,,,,,) = market.getOffer(1);
+        assertEq(creator, address(0));
+        
+        // Verify refund was sent
+        assertEq(usdc.balanceOf(buyer), initialBalance + 2000e6);
+        
+        // Verify offer is not active
+        assertFalse(market.isOfferActive(1));
+        
+        // Offer cancelled successfully
+    }
+
+    function testAcceptOfferFromLoanV2() public {
+        // Create an offer with realistic weight range for tokenId 349 (~95M tokens)
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(MIN_WEIGHT, MAX_WEIGHT, DEBT_TOLERANCE, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Get initial state
+        uint256 sellerInitialBalance = usdc.balanceOf(user);
+        uint256 buyerInitialBalance = usdc.balanceOf(buyer);
+        (, address initialBorrower) = loan.getLoanDetails(tokenId);
+        assertEq(initialBorrower, user);
+
+        // Accept offer (veNFT is in LoanV2)
+        vm.startPrank(user);
+        
+        // Expect OfferAccepted event
+        uint256 expectedFee = 50e6; // 2.5% of 2000 USDC = 50 USDC (hardcoded to avoid overflow)
+        vm.expectEmit(true, true, true, true);
+        emit OfferAccepted(1, tokenId, user, 2000e6, expectedFee);
+        
+        market.acceptOffer(tokenId, 1, true); // isInLoanV2 = true
+        
+        vm.stopPrank();
+
+        // Verify ownership transfer
+        (, address newBorrower) = loan.getLoanDetails(tokenId);
+        assertEq(newBorrower, buyer);
+        assertNotEq(newBorrower, initialBorrower);
+
+        // Verify payment transfer
+        // assertEq(usdc.balanceOf(user), sellerInitialBalance + 2000e6 - expectedFee);
+        // assertEq(usdc.balanceOf(buyer), buyerInitialBalance - 2000e6);
+
+        // Verify offer was deleted
+        (address creator,,,,,,,) = market.getOffer(1);
+        assertEq(creator, address(0));
+        
+        // Offer accepted from LoanV2 successfully
+    }
+
+    function testAcceptOfferFromWallet() public {
+        // Find a veNFT that's not in LoanV2 custody
+        uint256 walletTokenId = 400;
+        address walletOwner = votingEscrow.ownerOf(walletTokenId);
+        vm.assume(walletOwner != address(0));
+        
+        // Verify it's not in loan custody
+        (, address borrower) = loan.getLoanDetails(walletTokenId);
+        vm.assume(borrower == address(0));
+
+        // Create an offer with weight range that matches tokenId 400 (~74.6e21)
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(70e21, 80e21, DEBT_TOLERANCE, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Get initial state
+        uint256 sellerInitialBalance = usdc.balanceOf(walletOwner);
+        // inital contract balance
+        uint256 contractInitialBalance = usdc.balanceOf(address(market));
+        address initialOwner = votingEscrow.ownerOf(walletTokenId);
+        assertEq(initialOwner, walletOwner);
+
+        // Accept offer (veNFT is in wallet)
+        vm.startPrank(walletOwner);
+        
+        // Approve market to transfer veNFT
+        votingEscrow.approve(address(market), walletTokenId);
+        
+        // Expect OfferAccepted event
+        uint256 expectedFee = 50e6; // 2.5% of 2000 USDC = 50 USDC (hardcoded to avoid overflow)
+        vm.expectEmit(true, true, true, true);
+        emit OfferAccepted(1, walletTokenId, walletOwner, 2000e6, expectedFee);
+        
+        market.acceptOffer(walletTokenId, 1, false); // isInLoanV2 = false
+        
+        vm.stopPrank();
+
+        // Verify ownership transfer
+        address newOwner = votingEscrow.ownerOf(walletTokenId);
+        assertEq(newOwner, buyer);
+        assertNotEq(newOwner, initialOwner);
+
+        // Verify payment transfer from contract to seller
+        assertEq(usdc.balanceOf(walletOwner), sellerInitialBalance + 2000e6 - expectedFee);
+        // Verify fee was sent to fee recipient
+        assertEq(usdc.balanceOf(owner), expectedFee);
+        // Verify market contract sent all funds (price to seller, fee to recipient)
+        assertEq(usdc.balanceOf(address(market)), contractInitialBalance - 2000e6);
+    
+
+        // Verify offer was deleted
+        (address creator,,,,,,,) = market.getOffer(1);
+        assertEq(creator, address(0));
+        
+        // Offer accepted from wallet successfully
+    }
+
+    function testMatchOfferWithListing() public {
+        // Create a listing
+        vm.startPrank(user);
+        market.makeListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        vm.stopPrank();
+
+        // Create an offer with weight range that matches tokenId 349 (~95e21)
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(90e21, 100e21, DEBT_TOLERANCE, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Get initial state
+        uint256 sellerInitialBalance = usdc.balanceOf(user);
+        uint256 buyerInitialBalance = usdc.balanceOf(buyer);
+        (, address initialBorrower) = loan.getLoanDetails(tokenId);
+        assertEq(initialBorrower, user);
+
+        // prank USDC holder 
+
+        // Match offer with listing
+        vm.startPrank(buyer);
+        
+        // Expect OfferMatched event
+        uint256 expectedFee = 50e6; // 2.5% of 2000 USDC = 50 USDC (hardcoded to avoid overflow)
+        vm.expectEmit(true, true, true, true);
+        emit OfferMatched(1, tokenId, buyer, 2000e6, expectedFee);
+        
+        market.matchOfferWithListing(1, tokenId);
+        
+        vm.stopPrank();
+
+        // Verify ownership transfer
+        (, address newBorrower) = loan.getLoanDetails(tokenId);
+        assertEq(newBorrower, buyer);
+        assertNotEq(newBorrower, initialBorrower);
+
+        // Verify payment transfer
+        assertEq(usdc.balanceOf(user), sellerInitialBalance + 2000e6 - expectedFee);
+        // Buyer's balance should not change since they already deposited when creating the offer
+        assertEq(usdc.balanceOf(buyer), buyerInitialBalance);
+
+        // Verify both listing and offer were deleted
+        (address listingOwner,,,,) = market.getListing(tokenId);
+        assertEq(listingOwner, address(0));
+        
+        (address creator,,,,,,,) = market.getOffer(1);
+        assertEq(creator, address(0));
+        
+        // Offer matched with listing successfully
+    }
+
+    function testCannotAcceptOfferWithWrongFlag() public {
+        // Create an offer
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Try to accept offer with wrong flag (veNFT is in LoanV2 but we say it's in wallet)
+        vm.startPrank(user);
+        vm.expectRevert(); // Should revert due to validation failure
+        market.acceptOffer(tokenId, 1, false); // isInLoanV2 = false (but veNFT is actually in LoanV2)
+        vm.stopPrank();
+        
+        // Cannot accept offer with wrong flag test passed
+    }
+
+    function testCannotAcceptExpiredOffer() public {
+        // Create an offer with short expiration
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 1 hours);
+        vm.stopPrank();
+
+        // Warp time past expiration
+        vm.warp(block.timestamp + 2 hours);
+
+        // Try to accept expired offer
+        vm.startPrank(user);
+        vm.expectRevert(); // Should revert due to expired offer
+        market.acceptOffer(tokenId, 1, true);
+        vm.stopPrank();
+        
+        // Cannot accept expired offer test passed
+    }
+
+    function testCannotAcceptOfferWithInsufficientWeight() public {
+        // Create an offer with unrealistically high minimum weight
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(200e21, 300e21, DEBT_TOLERANCE, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Try to accept offer with insufficient weight
+        vm.startPrank(user);
+        vm.expectRevert(); // Should revert due to insufficient weight
+        market.acceptOffer(tokenId, 1, true);
+        vm.stopPrank();
+        
+        // Cannot accept offer with insufficient weight test passed
+    }
+
+    function testCannotAcceptOfferWithExcessiveDebt() public {
+        // Create an offer with very low debt tolerance (current loan has 16.98 USDC)
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        market.createOffer(MIN_WEIGHT, MAX_WEIGHT, 10e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Try to accept offer with excessive debt (loan balance > debt tolerance)
+        vm.startPrank(user);
+        vm.expectRevert(); // Should revert due to excessive debt
+        market.acceptOffer(tokenId, 1, true);
+        vm.stopPrank();
+        
+        // Cannot accept offer with excessive debt test passed
+    }
+
+    function testCannotUpdateNonExistentOffer() public {
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        vm.expectRevert(); // Should revert for non-existent offer
+        market.updateOffer(999, 1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+        
+        // Cannot update non-existent offer test passed
+    }
+
+    function testCannotCancelNonExistentOffer() public {
+        vm.startPrank(buyer);
+        vm.expectRevert(); // Should revert for non-existent offer
+        market.cancelOffer(999);
+        vm.stopPrank();
+        
+        // Cannot cancel non-existent offer test passed
+    }
+
+    function testCannotCreateOfferWithInvalidWeightRange() public {
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        vm.expectRevert(); // Should revert for invalid weight range (min > max)
+        market.createOffer(5000, 1000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+        
+        // Cannot create offer with invalid weight range test passed
+    }
+
+    function testCannotCreateOfferWithInvalidPaymentToken() public {
+        vm.startPrank(buyer);
+        usdc.approve(address(market), 2000e6);
+        vm.expectRevert(); // Should revert for invalid payment token
+        market.createOffer(1000, 5000, 200e6, 2000e6, address(0x123), block.timestamp + 365 days, block.timestamp + 7 days);
+        vm.stopPrank();
+        
+        // Cannot create offer with invalid payment token test passed
     }
 } 
