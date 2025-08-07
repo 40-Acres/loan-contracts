@@ -24,6 +24,26 @@ contract RedeemCommunityShares is Initializable, UUPSUpgradeable, ReentrancyGuar
     error NotAuthorized();
 
     /* 
+     * @notice Error thrown when a zero redemption is attempted.
+     */
+    error ZeroRedemption();
+
+    /* 
+     * @notice Error thrown when a transfer fails.
+     */
+    error TransferFailed();
+
+    /* 
+     * @notice Error thrown when the user does not have enough shares to redeem.
+     */
+    error InsufficientShares();
+
+    /* 
+     * @notice Error thrown when the contract does not have enough payout tokens to redeem.
+     */
+    error InsufficientPayoutTokens();
+
+    /* 
      * @notice Emitted when shares are redeemed.
      * @param user The address of the user who redeemed the shares.
      * @param totalSharesRedeemed The amount of shares redeemed and sent to the owner of the loan contract.
@@ -70,23 +90,25 @@ contract RedeemCommunityShares is Initializable, UUPSUpgradeable, ReentrancyGuar
      * @dev Owner of the loan contract cannot redeem.
      */
     function redeem(uint256 totalSharesToRedeem) external nonReentrant {
+        require(totalSharesToRedeem > 0, ZeroRedemption());
         // require not owner of the loan contract
-        require(msg.sender != IOwnable(loanContract).owner(), "Owner cannot redeem");
+        require(msg.sender != IOwnable(loanContract).owner(), NotAuthorized());
+
 
         // check total payout available. Shares are paid 1:1 to the payout token
-        require(payoutToken.balanceOf(address(this)) >= totalSharesToRedeem, "Insufficient payout tokens");
+        require(payoutToken.balanceOf(address(this)) >= totalSharesToRedeem, InsufficientPayoutTokens());
 
         // get the amount of shares the user has
         uint256 userShares = communityRewards.balanceOf(msg.sender);
 
         // check if the user has enough shares to redeem
-        require(userShares >= totalSharesToRedeem, "Insufficient shares");
+        require(userShares >= totalSharesToRedeem, InsufficientShares());
 
         // Send shares to owner of the loan contract
-        require(communityRewards.transferFrom(msg.sender, IOwnable(loanContract).owner(), totalSharesToRedeem), "Transfer failed: shares");
+        require(communityRewards.transferFrom(msg.sender, IOwnable(loanContract).owner(), totalSharesToRedeem), TransferFailed());
 
         // transfer the payout token to the user
-        require(payoutToken.transfer(msg.sender, totalSharesToRedeem), "Transfer failed: payout token");
+        require(payoutToken.transfer(msg.sender, totalSharesToRedeem), TransferFailed());
 
         emit Redeemed(msg.sender, totalSharesToRedeem, totalSharesToRedeem);
     }
