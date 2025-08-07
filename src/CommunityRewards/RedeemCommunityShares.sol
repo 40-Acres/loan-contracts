@@ -90,12 +90,4 @@ contract RedeemCommunityShares is Initializable, UUPSUpgradeable, ReentrancyGuar
 
         emit Redeemed(msg.sender, totalSharesToRedeem, totalSharesToRedeem);
     }
-
-    /* 
-     * @notice Deposits payout tokens into the contract.
-     * @param amount The amount of payout tokens to deposit.
-     */
-    function depositPayoutToken(uint256 amount) external {
-        payoutToken.transferFrom(msg.sender, address(this), amount);
-    }
 }
