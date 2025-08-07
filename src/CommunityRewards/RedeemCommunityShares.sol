@@ -56,7 +56,9 @@ contract RedeemCommunityShares is Initializable, UUPSUpgradeable, ReentrancyGuar
         address _loanContract,
         address _communityRewards
     ) external initializer {
+        __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
+        
         payoutToken = IERC20(_payoutToken);
         loanContract = _loanContract;
         communityRewards = IERC20(_communityRewards);
