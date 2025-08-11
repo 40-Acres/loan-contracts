@@ -959,7 +959,6 @@ contract PharaohLoanTest is Test {
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
         vm.startPrank(_user);
-
         voter.reset(_tokenId);
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);

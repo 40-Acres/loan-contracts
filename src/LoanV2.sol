@@ -465,7 +465,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function requires the caller to have approved the contract to transfer the specified amount of USDC.
      * @param amount The amount of USDC to transfer to the vault and record as rewards.
      */
-    function incentivizeVault(uint256 amount) public {
+    function incentivizeVault(uint256 amount) virtual public {
         _asset.transferFrom(msg.sender, _vault, amount);
         recordRewards(amount, msg.sender, type(uint256).max);
     }
@@ -958,7 +958,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param from The ID of the token to merge from.
      * @param to The ID of the token to merge to.
      */
-    function merge(uint256 from, uint256 to) public {
+    function merge(uint256 from, uint256 to) virtual public {
         require(_ve.ownerOf(to) == address(this));
         require(_ve.ownerOf(from) == msg.sender);
         LoanInfo storage loan = _loanDetails[to];
@@ -968,21 +968,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
         addTotalWeight(weightIncrease);
         loan.weight += weightIncrease;
-    }
-    
-
-    /**
-     * @notice Sets the managed NFT for the contract
-     * @dev Transfers the NFT from the sender to the contract, updates the managed NFT state
-     *    The managed NFT is used to represent the community owned veNFT, the owner of the managed NFT will be the managedNFT contract itself.
-     *    The only special case a managedNFT has within this contract is the ability to merge unowned venfts into it
-     * @param tokenId The ID of the NFT to be managed by the contract.
-     */
-    function setManagedNft(uint256 tokenId) public onlyOwner override {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower != address(0));
-        require(getManagedNft() == 0);
-        super.setManagedNft(tokenId);
     }
 
     /**
