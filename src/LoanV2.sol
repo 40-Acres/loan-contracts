@@ -308,16 +308,27 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
+    /**
+     * @dev Consolidates a loan into another loan.
+     *      This function transfers the balance of the original loan to the target loan
+     *      The outstanding capital and unpaid fees are transferred proportionally to the target loan.
+     * @param originalLoanId The ID of the original loan to consolidate.
+     * @param targetLoanId The ID of the target loan to consolidate into.
+     * @param amount The amount of the original loan to consolidate. If 0, the entire balance will be consolidated.
+     */
     function consolidateLoan(uint256 originalLoanId, uint256 targetLoanId, uint256 amount) public nonReentrant {
+        require(originalLoanId != targetLoanId, "Cannot consolidate loan with itself");
         LoanInfo storage originalLoan = _loanDetails[originalLoanId];
         LoanInfo storage targetLoan = _loanDetails[targetLoanId];
-        require(originalLoan.borrower == msg.sender);
+        require(originalLoan.borrower == msg.sender, "Not original loan borrower");
+        require(targetLoan.borrower == msg.sender, "Not target loan borrower");
         require(originalLoan.balance > 0, "Loan has no balance to transfer");
-        require(targetLoan.borrower == msg.sender);
 
         if (amount == 0) {
             amount = originalLoan.balance;
         }
+        require(amount <= originalLoan.balance, "Amount exceeds loan balance");
+
 
         // Check if target loan can accept the additional balance
         (uint256 maxLoan, ) = getMaxLoan(targetLoanId);
