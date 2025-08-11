@@ -308,6 +308,41 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
+    function consolidateLoan(uint256 originalLoanId, uint256 targetLoanId, uint256 amount) public nonReentrant {
+        LoanInfo storage originalLoan = _loanDetails[originalLoanId];
+        LoanInfo storage targetLoan = _loanDetails[targetLoanId];
+        require(originalLoan.borrower == msg.sender);
+        require(originalLoan.balance > 0, "Loan has no balance to transfer");
+        require(targetLoan.borrower == msg.sender);
+
+        if (amount == 0) {
+            amount = originalLoan.balance;
+        }
+
+        // Check if target loan can accept the additional balance
+        (uint256 maxLoan, ) = getMaxLoan(targetLoanId);
+        require(maxLoan >= targetLoan.balance + amount);
+
+        // Calculate principal portion (this may truncate)
+        uint256 principalPortion = (amount * originalLoan.outstandingCapital) / originalLoan.balance;
+        
+        // Calculate fee portion as the exact remainder to guarantee no rounding errors
+        uint256 feePortion = amount - principalPortion;
+
+        // Verify our math (should always be true, but good for system integrity)
+        assert(principalPortion + feePortion == amount);
+        
+        // Transfer all components
+        originalLoan.balance -= amount;
+        targetLoan.balance += amount;
+        
+        originalLoan.outstandingCapital -= principalPortion;
+        targetLoan.outstandingCapital += principalPortion;
+        
+        originalLoan.unpaidFees -= feePortion;
+        targetLoan.unpaidFees += feePortion;
+    }
+
     /**
      * @notice Allows a borrower to make a payment towards their loan.
      * @dev If the `amount` parameter is set to 0, the entire remaining loan balance will be paid.
