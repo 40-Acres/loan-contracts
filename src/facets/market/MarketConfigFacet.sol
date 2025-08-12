@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {LibDiamond} from "../../libraries/LibDiamond.sol";
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketConfigFacet} from "../../interfaces/IMarketConfigFacet.sol";
-import {AccessRoleLib} from "../../libraries/MarketSystemRoleLib.sol";
+import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import "../../libraries/Errors.sol";
 
@@ -13,7 +13,6 @@ import "../../libraries/Errors.sol";
  * @dev Facet for managing market configuration
  */
 contract MarketConfigFacet is IMarketConfigFacet {
-
     // ============ CONSTANTS ==========
     uint16 private constant MAX_FEE_BPS = 1000; // 10%
 
