@@ -28,6 +28,10 @@ contract MarketViewFacet is IMarketViewFacet {
         return MarketStorage.configLayout().feeRecipient;
     }
 
+    function loanAsset() external view returns (address) {
+        return MarketStorage.configLayout().loanAsset;
+    }
+
     function isOperatorFor(address owner, address operator) external view returns (bool) {
         return MarketStorage.orderbookLayout().isOperatorFor[owner][operator];
     }

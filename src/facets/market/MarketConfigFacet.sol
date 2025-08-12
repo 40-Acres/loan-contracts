@@ -49,7 +49,7 @@ contract MarketConfigFacet is IMarketConfigFacet {
     ) external onlyOwner {
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
         require(cfg.loan == address(0) && cfg.votingEscrow == address(0), "Already initialized");
-        require(loan != address(0) && votingEscrow != address(0), "Zero address");
+        require(votingEscrow != address(0), Errors.ZeroAddress());
         require(marketFeeBps <= MAX_FEE_BPS, "Invalid fee");
 
         cfg.loan = loan;
@@ -60,6 +60,11 @@ contract MarketConfigFacet is IMarketConfigFacet {
         if (defaultPaymentToken != address(0)) {
             MarketStorage.configLayout().allowedPaymentToken[defaultPaymentToken] = true;
             emit PaymentTokenAllowed(defaultPaymentToken, true);
+            // If a loan is configured, default the loanAsset to the default payment token
+            if (loan != address(0)) {
+                cfg.loanAsset = defaultPaymentToken;
+                emit LoanAssetSet(defaultPaymentToken);
+            }
         }
 
         // Init reentrancy status and unpause
@@ -109,5 +114,16 @@ contract MarketConfigFacet is IMarketConfigFacet {
     function setAccessManager(address accessManager) external onlyOwnerOrSystemAdmin {
         if (accessManager == address(0)) revert Errors.ZeroAddress();
         MarketStorage.configLayout().accessManager = accessManager;
+    }
+
+    // ============ LOAN ASSET CONFIG ==========
+    function setLoanAsset(address asset) external onlyOwnerOrSystemAdmin {
+        if (asset == address(0)) revert Errors.ZeroAddress();
+        MarketStorage.configLayout().loanAsset = asset;
+        emit LoanAssetSet(asset);
+    }
+
+    function loanAsset() external view returns (address) {
+        return MarketStorage.configLayout().loanAsset;
     }
 }

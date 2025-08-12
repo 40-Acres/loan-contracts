@@ -8,6 +8,7 @@ interface IMarketConfigFacet {
     event FeeRecipientChanged(address newRecipient);
     event MarketInitialized(address loan, address votingEscrow, uint16 marketFeeBps, address feeRecipient, address defaultPaymentToken);
     event MarketPauseStatusChanged(bool isPaused);
+    event LoanAssetSet(address asset);
 
     // Initializer
     function initMarket(
@@ -28,6 +29,10 @@ interface IMarketConfigFacet {
     // AccessManager
     function initAccessManager(address _accessManager) external;
     function setAccessManager(address accessManager) external;
+
+    // Loan asset configuration for settlement on loan chains
+    function setLoanAsset(address asset) external;
+    function loanAsset() external view returns (address);
 }
 
 

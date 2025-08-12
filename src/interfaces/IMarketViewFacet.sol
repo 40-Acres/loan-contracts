@@ -6,6 +6,7 @@ interface IMarketViewFacet {
     function loan() external view returns (address);
     function marketFeeBps() external view returns (uint16);
     function feeRecipient() external view returns (address);
+    function loanAsset() external view returns (address);
     function isOperatorFor(address owner, address operator) external view returns (bool);
     function allowedPaymentToken(address token) external view returns (bool);
 

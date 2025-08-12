@@ -51,6 +51,7 @@ library MarketStorage {
         address loan;                                                 // ILoan address
         address votingEscrow;                                         // IVotingEscrow address
         address accessManager;                                        // AccessManager for role-based auth
+        address loanAsset;                                            // payment asset expected by Loan for pay() (e.g., USDC)
         uint256[48] _gap;
     }
 

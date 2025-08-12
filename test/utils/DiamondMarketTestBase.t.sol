@@ -16,12 +16,20 @@ import {OwnershipFacet} from "src/facets/core/OwnershipFacet.sol";
 // Market facets
 import {MarketConfigFacet} from "src/facets/market/MarketConfigFacet.sol";
 import {MarketViewFacet} from "src/facets/market/MarketViewFacet.sol";
-import {MarketOperationsFacet} from "src/facets/market/MarketOperationsFacet.sol";
+import {MarketListingsLoanFacet} from "src/facets/market/MarketListingsLoanFacet.sol";
+import {MarketListingsWalletFacet} from "src/facets/market/MarketListingsWalletFacet.sol";
+import {MarketOfferFacet} from "src/facets/market/MarketOfferFacet.sol";
+import {MarketMatchingFacet} from "src/facets/market/MarketMatchingFacet.sol";
+import {MarketOperatorFacet} from "src/facets/market/MarketOperatorFacet.sol";
 
 // Market facet interfaces
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
-import {IMarketOperationsFacet} from "src/interfaces/IMarketOperationsFacet.sol";
+import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
+import {IMarketListingsWalletFacet} from "src/interfaces/IMarketListingsWalletFacet.sol";
+import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
+import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
+import {IMarketOperatorFacet} from "src/interfaces/IMarketOperatorFacet.sol";
 
 abstract contract DiamondMarketTestBase is Test {
     address internal diamond;
@@ -34,7 +42,11 @@ abstract contract DiamondMarketTestBase is Test {
     // Market facets
     MarketConfigFacet internal marketConfigFacet;
     MarketViewFacet internal marketViewFacet;
-    MarketOperationsFacet internal marketOpsFacet;
+    MarketListingsLoanFacet internal loanListingsFacet;
+    MarketListingsWalletFacet internal walletListingsFacet;
+    MarketOfferFacet internal offerFacet;
+    MarketMatchingFacet internal matchingFacet;
+    MarketOperatorFacet internal operatorFacet;
 
     // Helper to assemble facet cut entry
     function _cutAdd(address facet, bytes4[] memory selectors) internal pure returns (IDiamondCut.FacetCut memory) {
@@ -50,7 +62,11 @@ abstract contract DiamondMarketTestBase is Test {
         // Deploy market facets
         marketConfigFacet = new MarketConfigFacet();
         marketViewFacet = new MarketViewFacet();
-        marketOpsFacet = new MarketOperationsFacet();
+        loanListingsFacet = new MarketListingsLoanFacet();
+        walletListingsFacet = new MarketListingsWalletFacet();
+        offerFacet = new MarketOfferFacet();
+        matchingFacet = new MarketMatchingFacet();
+        operatorFacet = new MarketOperatorFacet();
 
         // Deploy diamond root with this test contract as initial owner
         diamond = address(new DiamondHitch(address(this), address(diamondCutFacet)));
@@ -86,7 +102,7 @@ abstract contract DiamondMarketTestBase is Test {
         cfgSelectors[7] = IMarketConfigFacet.setAccessManager.selector;
 
         // Market View selectors
-        bytes4[] memory viewSelectors = new bytes4[](11);
+        bytes4[] memory viewSelectors = new bytes4[](12);
         viewSelectors[0] = IMarketViewFacet.loan.selector;
         viewSelectors[1] = IMarketViewFacet.marketFeeBps.selector;
         viewSelectors[2] = IMarketViewFacet.feeRecipient.selector;
@@ -98,29 +114,56 @@ abstract contract DiamondMarketTestBase is Test {
         viewSelectors[8] = IMarketViewFacet.isListingActive.selector;
         viewSelectors[9] = IMarketViewFacet.isOfferActive.selector;
         viewSelectors[10] = IMarketViewFacet.canOperate.selector;
+        viewSelectors[11] = IMarketViewFacet.loanAsset.selector;
 
-        // Market Ops selectors
-        bytes4[] memory opsSelectors = new bytes4[](10);
-        opsSelectors[0] = IMarketOperationsFacet.makeListing.selector;
-        opsSelectors[1] = IMarketOperationsFacet.updateListing.selector;
-        opsSelectors[2] = IMarketOperationsFacet.cancelListing.selector;
-        opsSelectors[3] = IMarketOperationsFacet.takeListing.selector;
-        opsSelectors[4] = IMarketOperationsFacet.createOffer.selector;
-        opsSelectors[5] = IMarketOperationsFacet.updateOffer.selector;
-        opsSelectors[6] = IMarketOperationsFacet.cancelOffer.selector;
-        opsSelectors[7] = IMarketOperationsFacet.acceptOffer.selector;
-        opsSelectors[8] = IMarketOperationsFacet.matchOfferWithListing.selector;
-        opsSelectors[9] = IMarketOperationsFacet.setOperatorApproval.selector;
+        // Loan listings selectors
+        bytes4[] memory loanSelectors = new bytes4[](5);
+        loanSelectors[0] = IMarketListingsLoanFacet.makeLoanListing.selector;
+        loanSelectors[1] = IMarketListingsLoanFacet.updateLoanListing.selector;
+        loanSelectors[2] = IMarketListingsLoanFacet.cancelLoanListing.selector;
+        loanSelectors[3] = IMarketListingsLoanFacet.takeLoanListing.selector;
+        loanSelectors[4] = IMarketListingsLoanFacet.takeLoanListingWithDebt.selector;
 
-        IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](5);
+        // Wallet listings selectors
+        bytes4[] memory walletSelectors = new bytes4[](4);
+        walletSelectors[0] = IMarketListingsWalletFacet.makeWalletListing.selector;
+        walletSelectors[1] = IMarketListingsWalletFacet.updateWalletListing.selector;
+        walletSelectors[2] = IMarketListingsWalletFacet.cancelWalletListing.selector;
+        walletSelectors[3] = IMarketListingsWalletFacet.takeWalletListing.selector;
+
+        // Offers selectors
+        bytes4[] memory offerSelectors = new bytes4[](4);
+        offerSelectors[0] = IMarketOfferFacet.createOffer.selector;
+        offerSelectors[1] = IMarketOfferFacet.updateOffer.selector;
+        offerSelectors[2] = IMarketOfferFacet.cancelOffer.selector;
+        offerSelectors[3] = IMarketOfferFacet.acceptOffer.selector;
+
+        // Matching selectors
+        bytes4[] memory matchingSelectors = new bytes4[](2);
+        matchingSelectors[0] = IMarketMatchingFacet.matchOfferWithLoanListing.selector;
+        matchingSelectors[1] = IMarketMatchingFacet.matchOfferWithWalletListing.selector;
+
+        // Operator selectors
+        bytes4[] memory operatorSelectors = new bytes4[](1);
+        operatorSelectors[0] = IMarketOperatorFacet.setOperatorApproval.selector;
+
+        IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](8);
         cut[0] = _cutAdd(address(diamondLoupeFacet), loupeSelectors);
         cut[1] = _cutAdd(address(ownershipFacet), ownSelectors);
         cut[2] = _cutAdd(address(marketConfigFacet), cfgSelectors);
         cut[3] = _cutAdd(address(marketViewFacet), viewSelectors);
-        cut[4] = _cutAdd(address(marketOpsFacet), opsSelectors);
+        cut[4] = _cutAdd(address(loanListingsFacet), loanSelectors);
+        cut[5] = _cutAdd(address(walletListingsFacet), walletSelectors);
+        cut[6] = _cutAdd(address(offerFacet), offerSelectors);
+        cut[7] = _cutAdd(address(matchingFacet), matchingSelectors);
 
         // Perform cut
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
+
+        // Add operator selectors
+        IDiamondCut.FacetCut[] memory cut2 = new IDiamondCut.FacetCut[](1);
+        cut2[0] = _cutAdd(address(operatorFacet), operatorSelectors);
+        IDiamondCut(diamond).diamondCut(cut2, address(0), "");
     }
 
     function _initMarket(address loan, address votingEscrow, uint16 feeBps, address feeRecipient, address defaultToken) internal {
