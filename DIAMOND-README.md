@@ -1,3 +1,13 @@
+# Diamond Market implementation README
+
+## Goals for the market functionality
+- Buy and sell veNFTs in a 40Acre LoanV2 contract
+  - requires the veNFT to be in the 40Acre LoanV2 contract
+- Buy and sell veNFTs not in a 40Acre on network's where the LoanV2 contract is not deployed
+  - requires listings and offers on veNFTs (not in the 40Acre LoanV2 contract) in user wallet and we need admin functions to remove ones that are invalid because they removed approvals
+- Buy veNFT from another market (aggregate veNFT markets into ours)
+  - new facet for each external market
+
 ## Diamond architecture (EIP-2535)
 
 This repo implements a modular diamond for the Market domain following EIP-2535. The diamond aggregates multiple facets behind a single proxy address, enabling fine‑grained upgrades and clear separation of concerns.
