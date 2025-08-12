@@ -30,6 +30,8 @@ Contracts use UUPS upgradeability pattern and inherit from OpenZeppelin's upgrad
 - [VeloLoanV2](src/VeloLoanV2.sol) - Upgradeable Velo loan contract
 - [VeloLoanV2Native](src/VeloLoanV2Native.sol) - Native token version of VeloLoanV2
 
+For information about the planned diamond implementation, see [DIAMOND-README.md](DIAMOND-README.md)
+
 ## Testing
 
 ### Test Files
