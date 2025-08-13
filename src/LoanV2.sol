@@ -80,6 +80,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     // Time when the default pools were last changed
     uint256 public _defaultPoolChangeTime;
 
+    address public _proposer;
+    address public proposedUpgrade;
+    uint256 public proposedUpgradeTime;
+
+    // Governance events for upgrade flow
+    event ProposerSet(address proposer);
+    event UpgradeProposed(address implementation, uint256 eligibleAfter);
+    event UpgradeAccepted(address implementation);
+    event UpgradeCancelled();
+
     
     /**
      * @dev Emitted when collateral is added to a loan.
@@ -188,10 +198,49 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @dev This function is used to authorize upgrades to the contract.
      *      It restricts the upgradeability to only the contract owner.
+     *      It also checks that the proposed upgrade is the same as the one submitted and that the timelock has expired.
      * @param newImplementation The address of the new implementation contract.
      */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        require(proposedUpgradeTime > 0, "No proposal submitted");
+        require(newImplementation == proposedUpgrade, "Implementation differs from proposed");
+        require(block.timestamp >= proposedUpgradeTime, "Timelock not expired");
+        // clear proposal so a new one must be submitted for future upgrades
+        proposedUpgrade = address(0);
+        proposedUpgradeTime = 0;
+        emit UpgradeAccepted(newImplementation);
+    }
 
+    /**
+     * @dev Sets the proposer for the upgrade process.
+     * @param proposer The address of the proposer.
+     */
+    function setProposer(address proposer) public onlyOwner {
+        _proposer = proposer;
+        emit ProposerSet(proposer);
+    }
+
+    /**
+     * @dev Proposes an upgrade to the contract.
+     * @param newImplementation The address of the new implementation contract.
+     */
+    function proposeUpgrade(address newImplementation) public {
+        require(msg.sender == _proposer);
+        require(newImplementation != address(0));
+        proposedUpgrade = newImplementation;
+        proposedUpgradeTime = block.timestamp + 1 days;
+        emit UpgradeProposed(newImplementation, proposedUpgradeTime);
+    }
+
+    /**
+     * @dev Cancels a proposed upgrade.
+     */
+    function cancelProposedUpgrade() public {
+        require(msg.sender == _proposer || msg.sender == owner());
+        proposedUpgrade = address(0);
+        proposedUpgradeTime = 0;
+        emit UpgradeCancelled();
+    }
 
     /**
      * @notice Allows the owner of a token to request a loan by locking the token as collateral.
