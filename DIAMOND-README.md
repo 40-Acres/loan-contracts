@@ -88,6 +88,13 @@ To support multi‑chain deployments, market aggregation, and clearer upgrade bo
   - `SwapAdapterFacet`: best‑effort swaps from buyer’s payment token to `loanAsset` during loan settlement.
   - `BridgeAdapterFacet`: escrow/intents for cross‑chain settlement.
 
+Example external adapter implemented:
+- `VexyAdapterFacet` (interface `IVexyAdapterFacet`)
+  - `buyVexyListing(marketplace, listingId, expectedCurrency, maxPrice)`:
+    - Verifies Vexy listing state and endTime, checks our `allowedPaymentToken`, enforces currency match and maxPrice.
+    - Pulls funds from buyer, approves the Vexy marketplace, executes `buyListing`, and forwards the acquired NFT to the buyer.
+  - Events: `VexyListingPurchased`.
+
 All of the above read/write the same `MarketStorage` mappings: a single shared orderbook (`listings`, `offers`, `isOperatorFor`) and config/pause storage.
 
 Notes on naming: explicit function names improve clarity where different asset modes exist. Examples: `makeLoanListing`, `takeLoanListingWithDebt`, `matchOfferWithWalletListing`.

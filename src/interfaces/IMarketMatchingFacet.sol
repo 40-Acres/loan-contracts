@@ -7,6 +7,7 @@ interface IMarketMatchingFacet {
 
     function matchOfferWithLoanListing(uint256 offerId, uint256 tokenId) external;
     function matchOfferWithWalletListing(uint256 offerId, uint256 tokenId) external;
+    function matchOfferWithVexyListing(uint256 offerId, address vexy, uint256 listingId, uint256 maxPrice) external;
 }
 
 

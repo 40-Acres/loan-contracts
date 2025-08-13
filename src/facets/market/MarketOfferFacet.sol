@@ -48,7 +48,7 @@ contract MarketOfferFacet is IMarketOfferFacet {
         require(minWeight <= maxWeight, "InvalidWeightRange");
         if (expiresAt != 0) require(expiresAt > block.timestamp, "InvalidExpiration");
 
-        IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), price);
+        // Approval-based offers: no escrow pull at creation
 
         uint256 offerId = ++MarketStorage.orderbookLayout()._offerCounter;
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
@@ -82,13 +82,7 @@ contract MarketOfferFacet is IMarketOfferFacet {
         require(newMinWeight <= newMaxWeight, "InvalidWeightRange");
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, "InvalidExpiration");
 
-        if (newPrice != offer.price) {
-            if (newPrice > offer.price) {
-                IERC20(newPaymentToken).safeTransferFrom(msg.sender, address(this), newPrice - offer.price);
-            } else {
-                IERC20(offer.paymentToken).safeTransfer(msg.sender, offer.price - newPrice);
-            }
-        }
+        // Approval-based offers: price changes do not move funds at update time
 
         offer.minWeight = newMinWeight;
         offer.maxWeight = newMaxWeight;
@@ -105,7 +99,7 @@ contract MarketOfferFacet is IMarketOfferFacet {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), "OfferNotFound");
         require(offer.creator == msg.sender, "Unauthorized");
-        IERC20(offer.paymentToken).safeTransfer(msg.sender, offer.price);
+        // Approval-based offers: nothing to refund; just delete the offer
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferCancelled(offerId);
     }
@@ -120,6 +114,8 @@ contract MarketOfferFacet is IMarketOfferFacet {
 
         _validateOfferCriteria(tokenId, offer, isInLoanV2);
 
+        // Pull full offer amount at fill time from offer creator
+        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
         uint256 fee = (offer.price * MarketStorage.configLayout().marketFeeBps) / 10000;
         uint256 sellerAmount = offer.price - fee;
         if (fee > 0) {

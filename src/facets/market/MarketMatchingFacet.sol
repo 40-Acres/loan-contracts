@@ -6,6 +6,8 @@ import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {IMarketMatchingFacet} from "../../interfaces/IMarketMatchingFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IVexyMarketplace} from "../../interfaces/external/IVexyMarketplace.sol";
+import {IVexyAdapterFacet} from "../../interfaces/IVexyAdapterFacet.sol";
 
 interface ILoanMinimalOpsMM {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -51,6 +53,9 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
 
         _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
 
+        // Pull funds from offer creator at fill-time
+        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
+
         uint256 fee = (offer.price * MarketStorage.configLayout().marketFeeBps) / 10000;
         uint256 sellerAmount = offer.price - fee;
         if (fee > 0) {
@@ -65,6 +70,73 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         emit OfferMatched(offerId, tokenId, offer.creator, offer.price, fee);
     }
 
+    // Match an internal offer by buying an external Vexy listing and delivering the NFT to the offer creator
+    function matchOfferWithVexyListing(
+        uint256 offerId,
+        address vexy,
+        uint256 listingId,
+        uint256 maxPrice
+    ) external nonReentrant onlyWhenNotPaused {
+        MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
+        require(offer.creator != address(0), "OfferNotFound");
+        require(MarketLogicLib.isOfferActive(offerId), "OfferExpired");
+
+        // Read Vexy listing details
+        (
+            ,
+            ,
+            address nftCollection,
+            uint256 tokenId,
+            address currency,
+            ,
+            ,
+            ,
+            ,
+            uint64 endTime,
+            uint64 soldTime
+        ) = IVexyMarketplace(vexy).listings(listingId);
+
+        require(nftCollection == MarketStorage.configLayout().votingEscrow, "WrongCollection");
+        require(soldTime == 0 && endTime >= block.timestamp, "ListingInactive");
+
+        // Validate offer criteria using wallet/no-loan path (Vexy listings are wallet-held)
+        _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
+
+        // Price and currency checks
+        uint256 extPrice = IVexyMarketplace(vexy).listingPrice(listingId);
+        require(extPrice > 0 && extPrice <= maxPrice, "PriceOutOfBounds");
+        require(MarketStorage.configLayout().allowedPaymentToken[currency], "CurrencyNotAllowed");
+
+        // Compute fee on the external price
+        uint256 fee = (extPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
+
+        if (offer.paymentToken == currency) {
+            // Pull total cost in exact listing currency
+            uint256 totalCost = extPrice + fee;
+            require(totalCost <= offer.price, "OfferTooLow");
+            IERC20(currency).safeTransferFrom(offer.creator, address(this), totalCost);
+            if (fee > 0) {
+                IERC20(currency).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
+            }
+            // Buy listing using internal escrow path
+            IVexyAdapterFacet(address(this)).buyVexyListing(vexy, listingId, currency, extPrice);
+        } else {
+            // Swap path: pull offer.price in offer.paymentToken, swap to currency, enforce minOut
+            IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
+
+            // Perform swap using Swapper-like policy (external to this code; assumed available via loan's swapper config if needed)
+            // For now, require direct currency match; swap integration can be added here using router similar to LoanV2
+            revert("SwapNotImplemented");
+        }
+
+        // Transfer acquired NFT to the offer creator
+        IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
+
+        // Finalize: delete internal offer record
+        delete MarketStorage.orderbookLayout().offers[offerId];
+        emit OfferMatched(offerId, tokenId, offer.creator, extPrice, fee);
+    }
+
     function _matchOfferWithLoanListingCommon(uint256 offerId, uint256 tokenId) internal {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), "OfferNotFound");
@@ -75,6 +147,9 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
 
         _validateOfferCriteriaLoan(tokenId, offer);
+
+        // Pull funds from offer creator at fill-time
+        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
 
         uint256 fee = (offer.price * MarketStorage.configLayout().marketFeeBps) / 10000;
         uint256 sellerAmount = offer.price - fee;
