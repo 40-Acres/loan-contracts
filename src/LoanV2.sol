@@ -82,11 +82,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     address public _proposer;
     address public proposedUpgrade;
-    uint256 public proposedUpgradeTime;
 
     // Governance events for upgrade flow
     event ProposerSet(address proposer);
-    event UpgradeProposed(address implementation, uint256 eligibleAfter);
+    event UpgradeProposed(address implementation);
     event UpgradeAccepted(address implementation);
     event UpgradeCancelled();
 
@@ -202,12 +201,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param newImplementation The address of the new implementation contract.
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
-        require(proposedUpgradeTime > 0, "No proposal submitted");
+        require(proposedUpgrade != address(0), "No proposal submitted");
         require(newImplementation == proposedUpgrade, "Implementation differs from proposed");
-        require(block.timestamp >= proposedUpgradeTime, "Timelock not expired");
         // clear proposal so a new one must be submitted for future upgrades
         proposedUpgrade = address(0);
-        proposedUpgradeTime = 0;
         emit UpgradeAccepted(newImplementation);
     }
 
@@ -228,8 +225,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(msg.sender == _proposer);
         require(newImplementation != address(0));
         proposedUpgrade = newImplementation;
-        proposedUpgradeTime = block.timestamp + 1 days;
-        emit UpgradeProposed(newImplementation, proposedUpgradeTime);
+        emit UpgradeProposed(newImplementation);
     }
 
     /**
@@ -238,7 +234,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function cancelProposedUpgrade() public {
         require(msg.sender == _proposer || msg.sender == owner());
         proposedUpgrade = address(0);
-        proposedUpgradeTime = 0;
         emit UpgradeCancelled();
     }
 

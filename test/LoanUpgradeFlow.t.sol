@@ -16,7 +16,7 @@ contract LoanUpgradeFlowTest is Test {
 
     // Events mirrored from LoanV2 for expectEmit checks
     event ProposerSet(address proposer);
-    event UpgradeProposed(address implementation, uint256 eligibleAfter);
+    event UpgradeProposed(address implementation);
     event UpgradeAccepted(address implementation);
     event UpgradeCancelled();
 
@@ -36,36 +36,23 @@ contract LoanUpgradeFlowTest is Test {
         vm.stopPrank();
     }
 
-    function test_success_upgrade_after_timelock() public {
+    function test_success_owner_upgrades_after_proposer_sets() public {
         // New implementation to upgrade to
         LoanV2Contract newImplementation = new LoanV2Contract();
 
         // Proposer submits proposal
         vm.startPrank(proposer);
         vm.expectEmit(true, true, true, true, address(loan));
-        emit UpgradeProposed(address(newImplementation), block.timestamp + 1 days);
+        emit UpgradeProposed(address(newImplementation));
         loan.proposeUpgrade(address(newImplementation));
         vm.stopPrank();
-
-        // Attempt early upgrade should revert (timelock not expired)
         vm.startPrank(ownerAddress);
-        vm.expectRevert();
-        loan.upgradeToAndCall(address(newImplementation), new bytes(0));
-
-        // Warp to just before expiry and still expect revert
-        vm.warp(block.timestamp + 1 days - 1);
-        vm.expectRevert();
-        loan.upgradeToAndCall(address(newImplementation), new bytes(0));
-
-        // Warp past timelock; upgrade should succeed
-        vm.warp(block.timestamp + 2);
         vm.expectEmit(true, true, true, true, address(loan));
         emit UpgradeAccepted(address(newImplementation));
         loan.upgradeToAndCall(address(newImplementation), new bytes(0));
 
         // Proposal is cleared after acceptance
         assertEq(loan.proposedUpgrade(), address(0));
-        assertEq(loan.proposedUpgradeTime(), 0);
         vm.stopPrank();
     }
 
@@ -85,7 +72,6 @@ contract LoanUpgradeFlowTest is Test {
         // Owner cancels proposal
         loan.cancelProposedUpgrade();
         assertEq(loan.proposedUpgrade(), address(0));
-        assertEq(loan.proposedUpgradeTime(), 0);
 
         // Without a proposal, upgrade should revert
         vm.expectRevert();
@@ -129,17 +115,12 @@ contract LoanUpgradeFlowTest is Test {
         vm.stopPrank();
     }
 
-    function test_success_repropose_updates_impl_and_time() public {
+    function test_success_repropose_overwrites_previous_impl() public {
         vm.startPrank(proposer);
         LoanV2Contract impl1 = new LoanV2Contract();
         loan.proposeUpgrade(address(impl1));
-        uint256 t1 = loan.proposedUpgradeTime();
-        // advance time to ensure a strictly larger eligibleAfter on repropose
-        vm.warp(block.timestamp + 1 hours);
         LoanV2Contract impl2 = new LoanV2Contract();
         loan.proposeUpgrade(address(impl2));
-        uint256 t2 = loan.proposedUpgradeTime();
-        assertTrue(t2 > t1);
         assertEq(loan.proposedUpgrade(), address(impl2));
         vm.stopPrank();
         // cleanup
@@ -160,12 +141,11 @@ contract LoanUpgradeFlowTest is Test {
         vm.stopPrank();
     }
 
-    function test_revert_upgrade_by_nonOwner_even_after_timelock() public {
+    function test_revert_upgrade_by_nonOwner() public {
         LoanV2Contract impl = new LoanV2Contract();
         vm.startPrank(proposer);
         loan.proposeUpgrade(address(impl));
         vm.stopPrank();
-        vm.warp(block.timestamp + 1 days + 1);
         address attacker = address(0xDEAD);
         vm.startPrank(attacker);
         vm.expectRevert();
@@ -177,31 +157,6 @@ contract LoanUpgradeFlowTest is Test {
         vm.stopPrank();
     }
 
-    function test_revert_upgrade_before_timelock_just_before_and_success_at_boundary() public {
-        LoanV2Contract impl = new LoanV2Contract();
-        vm.startPrank(proposer);
-        loan.proposeUpgrade(address(impl));
-        vm.stopPrank();
-        vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days - 1);
-        vm.expectRevert();
-        loan.upgradeToAndCall(address(impl), new bytes(0));
-        vm.stopPrank();
-    }
-
-    function test_success_upgrade_at_timelock_boundary() public {
-        LoanV2Contract impl = new LoanV2Contract();
-        vm.startPrank(proposer);
-        loan.proposeUpgrade(address(impl));
-        vm.stopPrank();
-        vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days);
-        vm.expectEmit(true, true, true, true, address(loan));
-        emit UpgradeAccepted(address(impl));
-        loan.upgradeToAndCall(address(impl), new bytes(0));
-        vm.stopPrank();
-    }
-
     function test_revert_upgrade_to_different_impl_than_proposed() public {
         LoanV2Contract proposed = new LoanV2Contract();
         LoanV2Contract different = new LoanV2Contract();
@@ -209,7 +164,6 @@ contract LoanUpgradeFlowTest is Test {
         loan.proposeUpgrade(address(proposed));
         vm.stopPrank();
         vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days + 1);
         vm.expectRevert();
         loan.upgradeToAndCall(address(different), new bytes(0));
         // cleanup
@@ -225,9 +179,8 @@ contract LoanUpgradeFlowTest is Test {
         LoanV2Contract impl2 = new LoanV2Contract();
         loan.proposeUpgrade(address(impl2));
         vm.stopPrank();
-        // after timelock only impl2 is valid
+        // only the latest proposal is valid
         vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days + 1);
         vm.expectRevert();
         loan.upgradeToAndCall(address(impl1), new bytes(0));
         vm.stopPrank();
@@ -241,22 +194,20 @@ contract LoanUpgradeFlowTest is Test {
         loan.proposeUpgrade(address(impl2));
         vm.stopPrank();
         vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days + 1);
         vm.expectEmit(true, true, true, true, address(loan));
         emit UpgradeAccepted(address(impl2));
         loan.upgradeToAndCall(address(impl2), new bytes(0));
         vm.stopPrank();
     }
 
-    function test_revert_upgrade_to_non_uups_implementation_after_timelock() public {
+    function test_revert_upgrade_to_non_uups_implementation() public {
         // propose a non-UUPS implementation
         NotUUPS bad = new NotUUPS();
         vm.startPrank(proposer);
         loan.proposeUpgrade(address(bad));
         vm.stopPrank();
-        // after timelock, OZ UUPS guard should revert
+        // OZ UUPS guard should revert
         vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days + 1);
         vm.expectRevert();
         loan.upgradeToAndCall(address(bad), new bytes(0));
         vm.stopPrank();
@@ -266,13 +217,12 @@ contract LoanUpgradeFlowTest is Test {
         vm.stopPrank();
     }
 
-    function test_success_after_accept_upgrade_requires_new_proposal() public {
+    function test_revert_accept_upgrade_requires_new_proposal() public {
         LoanV2Contract impl = new LoanV2Contract();
         vm.startPrank(proposer);
         loan.proposeUpgrade(address(impl));
         vm.stopPrank();
         vm.startPrank(ownerAddress);
-        vm.warp(block.timestamp + 1 days + 1);
         loan.upgradeToAndCall(address(impl), new bytes(0));
         // second upgrade without new proposal should revert
         LoanV2Contract impl2 = new LoanV2Contract();
@@ -322,7 +272,6 @@ contract LoanUpgradeFlowTest is Test {
 
         // ensure cleared
         assertEq(loan.proposedUpgrade(), address(0));
-        assertEq(loan.proposedUpgradeTime(), 0);
     }
 
     function test_success_proposer_can_cancel() public {
@@ -337,7 +286,6 @@ contract LoanUpgradeFlowTest is Test {
         vm.stopPrank();
         // ensure cleared
         assertEq(loan.proposedUpgrade(), address(0));
-        assertEq(loan.proposedUpgradeTime(), 0);
     }
 }
 
