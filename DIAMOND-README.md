@@ -39,7 +39,7 @@ Facets must compose these libraries; do not bypass them:
 
 - DebtSettlementLib
   - Compute payoff and call loan `pay()` with the correct asset; handle residuals; canonical events.
-  - LBO primitives: compute max borrow with LTV discount; apply LBO fees; distribute lender premium; ensure no origination fee path.
+  - LBO primitives: compute max borrow; apply financed LBO fee; distribute lender premium; ensure no origination fee path.
 
 - ListingValidationLib
   - Owner/operator checks; approval/expiry; price/currency allowlist; optional signature schema for off‑chain orders.
@@ -77,9 +77,24 @@ Facets must compose these libraries; do not bypass them:
 
 - Leveraged Buyout (LBO)
   - Buyer acquires a veNFT and simultaneously opens a loan to finance it.
-  - Fees: 2% LBO fee (buyer), 1% seller fee; no origination for the LBO loan; LTV discount of 1% (configurable) for safety.
-  - Wallet/external source: diamond temporarily escrows the NFT, locks into loan custodian, opens loan for buyer with LTV minus discount, directs proceeds to settle purchase, then assigns borrower.
+  - Fees: 2% LBO fee (buyer), 1% seller fee; no origination for the LBO loan.
+  - Financing model: a portion of the LBO fee (default 1%) is financed (added to principal) and the remaining 1% is charged explicitly at checkout. Enforcement ensures total borrowed (purchase principal + financed fee) never exceeds the configured LTV cap.
+  - Wallet/external source: diamond temporarily escrows the NFT, locks into loan custodian, opens loan for buyer with principal sized to (maxLtvBps − financedFeeBps), adds financed fee on top (financedFeeBps), directs proceeds to settle purchase, then assigns borrower.
   - LoanV2 listing source: pay off existing debt, assign borrower, optionally open a new loan immediately under the LBO rules.
+
+### External LBO (adapter purchase financed by new loan)
+- Atomicity: executed as a single transaction. If any sub‑step fails, the entire transaction reverts (including the external market purchase), ensuring funds and state roll back.
+- Steps:
+  1) Pre‑validate external listing (seller, collection, tokenId, currency, dynamic price) and cap price via maxPrice.
+  2) Collect buyer funds (if any downpayment) and, if needed, draw a temporary credit from our vault (bounded by per‑tx/per‑user limits).
+  3) Execute adapter buy; require NFT custody transfers to the diamond; verify via `ownerOf` post‑condition.
+  4) Immediately lock NFT into loan custody and open loan for buyer. Compute principal and financed fee so that (principal + financed fee) ≤ max LTV.
+  5) Route loan proceeds to repay the temporary credit; settle explicit fee and external aggregation fee; assign borrower.
+- Guardrails:
+  - Allowed marketplaces and currencies only; price/time bounds and balance‑delta checks; approvals zeroed post‑swap.
+  - Vault credit caps (per‑tx, daily, and global), min buyer downpayment (configurable), and a kill‑switch to pause external LBO.
+  - Post‑purchase assertion that custody is with the diamond before loan operations; otherwise revert.
+- Availability: external LBO is enabled on chains where a loan custodian (LoanV2 or future LoanV3) and a funding vault are configured; otherwise disabled.
 
 ---
 
@@ -87,15 +102,17 @@ Facets must compose these libraries; do not bypass them:
 
 - Regular sell fee: 100 bps on sale price (seller pays).
 - External aggregation fee: 100 bps collected from buyer on purchases fulfilled via external markets; included in the upfront quote so the buyer sees the total price. Combined with the regular sell fee, external buys total 200 bps.
-- LBO fee: 200 bps paid by buyer; default split 50 bps to lenders as premium and 150 bps to protocol treasury; both shares configurable.
-- LBO LTV discount: 100 bps subtracted from max LTV for LBO because it is borrowed as the fee (effectively baking ~1% of cost into the loan capacity). The remaining 1% of the LBO fee is charged explicitly at checkout.
+- LBO fee: 200 bps paid by buyer; composed of:
+  - Financed fee: 100 bps added to loan principal (no upfront payment).
+  - Explicit fee: 100 bps charged at checkout.
+  - Default split on the total 200 bps: 50 bps to lenders as premium and 150 bps to protocol treasury; both shares configurable.
 - No origination fee on LBO loans. Other loan protocol fees remain per loan contract policy.
 
 ### Scenario matrix (who pays what)
 - Internal buy (wallet/LoanV2 listing), no LBO: seller 1%; buyer 0%.
-- Internal buy with LBO: seller 1%; buyer 2% (1% via LTV reduction [because it is borrowed as part of the LBO], 1% explicit at checkout).
+- Internal buy with LBO: seller 1%; buyer 2% (1% financed into principal, 1% explicit at checkout).
 - External buy (aggregated), no LBO: buyer 2% total (1% external buy fee + 1% platform fee), quoted upfront.
-- External buy with LBO: buyer 4% total (2% external aggregate + 2% LBO where 1% is via LTV reduction [because it is borrowed as part of the LBO] and 1% explicit), quoted upfront.
+- External buy with LBO: buyer 4% total (2% external aggregate + 2% LBO where 1% is financed and 1% explicit), quoted upfront.
 
 ### Distribution
 - LBO lender premium share (default 50 bps) is routed to lenders (configurable recipient, e.g., vault or rewards distributor). Remainder goes to protocol treasury (`feeRecipient`).
@@ -161,7 +178,8 @@ Phase A (market core)
 
 Phase B (LBO on LoanV2 chains)
 - [ ] LoanV2 whitelisting and minimal hooks
-- [ ] LBO orchestration + fee distribution (config: `sellerFeeBps`, `lboFeeBps`, `lboLenderPremiumShareBps`, `lboLtvDiscountBps`)
+- [ ] LBO orchestration + fee distribution (config: `sellerFeeBps`, `externalAggregationFeeBps`, `lboFinancedFeeBps`, `lboExplicitFeeBps`, `lboLenderPremiumShareBps`)
+- [ ] External LBO safeguards (vault credit caps, min downpayment, allowed marketplaces, post‑purchase custody checks, full‑tx atomicity)
 - [ ] E2E: wallet listing LBO, LoanV2 listing LBO, Vexy LBO
 
 Phase C (LoanV3 facets in‑diamond)
