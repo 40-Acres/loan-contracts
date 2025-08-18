@@ -1,247 +1,184 @@
-# Diamond Market implementation README
+## Diamond Market: lean, secure, and extensible
 
-## Goals for the market functionality
-- Buy and sell veNFTs in a 40Acre LoanV2 contract
-  - requires the veNFT to be in the 40Acre LoanV2 contract
-- Buy and sell veNFTs not in a 40Acre on network's where the LoanV2 contract is not deployed
-  - requires listings and offers on veNFTs (not in the 40Acre LoanV2 contract) in user wallet and we need admin functions to remove ones that are invalid because they removed approvals
-- Buy veNFT from another market (aggregate veNFT markets into ours)
-  - new facet for each external market
+### Mission
+Be the simplest way to buy and sell veNFTs across chains and markets, with optional leveraged buyout (LBO). Start by interoperating with existing `LoanV2`, then introduce an internal LoanV3 inside this diamond.
 
-## Diamond architecture (EIP-2535)
+### Phases
+- Phase A (now): Diamond market works with or without `LoanV2` on a chain. Wallet listings, LoanV2 listings (full payoff before transfer), external adapters (Vexy).
+- Phase B: Add LBO checkout. Minimal, whitelisted `LoanV2` hooks; no‑origination for LBO; fee policy enforced by the diamond.
+- Phase C: Launch LoanV3 facets inside this diamond. Support migration from LoanV2; unified listings/offers for both custody modes.
 
-This repo implements a modular diamond for the Market domain following EIP-2535. The diamond aggregates multiple facets behind a single proxy address, enabling fine‑grained upgrades and clear separation of concerns.
+---
 
-### Key contracts
-- Core facets
-  - `src/facets/core/DiamondCutFacet.sol`: adds/replaces/removes function selectors on the diamond.
-  - `src/facets/core/DiamondLoupeFacet.sol`: standard loupe view functions for tooling and discovery.
-  - `src/facets/core/OwnershipFacet.sol`: IERC173-compatible ownership with 2‑step handover (Ownable2Step semantics).
-- Market facets (current split)
-  - `src/facets/market/MarketConfigFacet.sol` (implements `IMarketConfigFacet`): admin and initialization for Market. Supports optional LoanV2 and `loanAsset` configuration.
-  - `src/facets/market/MarketViewFacet.sol` (implements `IMarketViewFacet`): read‑only views.
-  - `src/facets/market/MarketListingsLoanFacet.sol` (implements `IMarketListingsLoanFacet`): listings and takes for veNFTs in LoanV2 custody, including debt‑tolerant take.
-  - `src/facets/market/MarketListingsWalletFacet.sol` (implements `IMarketListingsWalletFacet`): listings and takes for wallet‑held veNFTs (no LoanV2 custody).
-  - `src/facets/market/MarketOfferFacet.sol` (implements `IMarketOfferFacet`): offer lifecycle and accept.
-  - `src/facets/market/MarketMatchingFacet.sol` (implements `IMarketMatchingFacet`): match offers with loan or wallet listings.
-  - `src/facets/market/MarketOperatorFacet.sol` (implements `IMarketOperatorFacet`): operator approvals per account.
-- Diamond entry
-  - `src/diamonds/DiamondHitch.sol`: the diamond root contract that delegates to facets using LibDiamond.
+## Architecture (EIP‑2535)
 
-### Storage layout (ERC‑7201)
-Market state is isolated in `src/libraries/storage/MarketStorage.sol`:
+Facets are thin orchestrators. Cross‑cutting safety and settlement live in internal libraries. Storage uses ERC‑7201 layouts in `src/libraries/storage/MarketStorage.sol`.
 
-- MarketConfigLayout (slot: `market.config.storage`)
-  - `uint16 marketFeeBps`
-  - `address feeRecipient`
-  - `mapping(address => bool) allowedPaymentToken`
-  - `address loan`
-  - `address votingEscrow`
-  - `address accessManager`
-  - `address loanAsset` (expected asset for `LoanV2.pay()`, e.g., USDC)
+Core facets: `DiamondCutFacet`, `DiamondLoupeFacet`, `OwnershipFacet`.
 
-- MarketPauseLayout (slot: `market.pause.storage`)
-  - `bool marketPaused`
-  - `uint256 reentrancyStatus` (1 = NOT_ENTERED, 2 = ENTERED)
+Market facets:
+- `MarketConfigFacet` (init/admin/pause/allowlists; expected `loanAsset`)
+- `MarketViewFacet` (readonly)
+- `MarketListingsWalletFacet` (wallet‑held listings/takes)
+- `MarketListingsLoanFacet` (LoanV2/LoanV3‑held listings/takes; enforces payoff before transfer)
+- `MarketOfferFacet` (offers)
+- `MarketMatchingFacet` (single entry; routes to wallet/loan/external flows)
+- Adapter facets (per external market). Example implemented: `src/facets/market/VexyAdapterFacet.sol`.
 
-- MarketOrderbookLayout (slot: `market.orderbook.storage`)
-  - `mapping(address => mapping(address => bool)) isOperatorFor`
-  - `mapping(uint256 => Listing) listings`
-  - `mapping(uint256 => Offer) offers`
-  - `uint256 _offerCounter`
+All facets call shared internal libraries for invariants and settlement to guarantee consistent safety.
 
-- Types defined alongside storage
-  - `struct Listing { address owner; uint256 tokenId; uint256 price; address paymentToken; bool hasOutstandingLoan; uint256 expiresAt; }`
-  - `struct Offer { address creator; uint256 minWeight; uint256 maxWeight; uint256 debtTolerance; uint256 price; address paymentToken; uint256 maxLockTime; uint256 expiresAt; uint256 offerId; }`
+---
 
-This co‑location ensures types match storage shape and avoids cross‑interface type coupling.
+## Safety by construction (internal libraries)
 
-### Current facet split
-To support multi‑chain deployments, market aggregation, and clearer upgrade boundaries, responsibilities are split while sharing a single orderbook and config storage.
+Facets must compose these libraries; do not bypass them:
 
-- Core/admin/views (keep):
-  - `MarketConfigFacet` (admin, init, `setLoanAsset`, allowlists, pause)
-  - `MarketViewFacet` (views: `loan()`, `loanAsset()`, `marketFeeBps()`, `getListing()`, `getOffer()`, etc.)
+- TransferGuardsLib
+  - Enforce no‑debt‑before‑transfer when veNFT is loan‑custodied.
+  - Check permanent lock state; ensure receiver is allowed; zero approvals after transfers/swaps.
 
-- Order creation (separate facets per asset mode):
-  - `MarketListingsLoanFacet`
-    - `makeLoanListing`, `updateLoanListing`, `cancelLoanListing`
-    - `takeLoanListing` (full payoff) and `takeLoanListingWithDebt(debtTolerance)` for buyer‑tolerant residual debt
-    - Enforces `listing.paymentToken == loanAsset` for payoff. A swap adapter can be introduced later if `LoanV2.pay()` requires a specific asset.
-  - `MarketListingsWalletFacet`
-    - `makeWalletListing`, `updateWalletListing`, `cancelWalletListing`
-    - `takeWalletListing` (direct `votingEscrow.transferFrom` path)
+- DebtSettlementLib
+  - Compute payoff and call loan `pay()` with the correct asset; handle residuals; canonical events.
+  - LBO primitives: compute max borrow with LTV discount; apply LBO fees; distribute lender premium; ensure no origination fee path.
 
-- Offers and matching:
-  - `MarketOfferFacet`
-    - `createOffer`, `updateOffer`, `cancelOffer`, `acceptOffer(tokenId, offerId, isInLoanV2)`
-  - `MarketMatchingFacet`
-    - `matchOfferWithLoanListing`, `matchOfferWithWalletListing`
-    - Future: `matchExternal{Market}` variants (see adapters below)
+- ListingValidationLib
+  - Owner/operator checks; approval/expiry; price/currency allowlist; optional signature schema for off‑chain orders.
 
-- Operators:
-  - `MarketOperatorFacet`
-    - `setOperatorApproval(operator, approved)`
+- SwapRouterLib
+  - Unified swap via ODOS; allowance bump/reset; balance‑delta slippage checks; safe low‑level calls.
 
-- Adapter facets (future, optional):
-  - External market adapters (e.g., `ExternalMarketAdapterFacet`, `ExternalXAdapterFacet`): quote/take/accept against external orderbooks.
-  - `SwapAdapterFacet`: best‑effort swaps from buyer’s payment token to `loanAsset` during loan settlement.
-  - `BridgeAdapterFacet`: escrow/intents for cross‑chain settlement.
+- ExternalMarketLib
+  - Standard adapter interface: read listing, validate, purchase, return NFT custody to diamond.
 
-Example external adapter implemented:
-- `VexyAdapterFacet` (interface `IVexyAdapterFacet`)
-  - `buyVexyListing(marketplace, listingId, expectedCurrency, maxPrice)`:
-    - Verifies Vexy listing state and endTime, checks our `allowedPaymentToken`, enforces currency match and maxPrice.
-    - Pulls funds from buyer, approves the Vexy marketplace, executes `buyListing`, and forwards the acquired NFT to the buyer.
-  - Events: `VexyListingPurchased`.
+- AccessControlLib
+  - Owner and optional AccessManager role gates (MARKET_ADMIN) for config/fees/pausing.
 
-All of the above read/write the same `MarketStorage` mappings: a single shared orderbook (`listings`, `offers`, `isOperatorFor`) and config/pause storage.
+---
 
-Notes on naming: explicit function names improve clarity where different asset modes exist. Examples: `makeLoanListing`, `takeLoanListingWithDebt`, `matchOfferWithWalletListing`.
+## Core invariants
 
-### Code sharing: prefer libraries over base facet inheritance
-Facets are units of upgrade and replacement. Inheriting from a shared "base facet" couples unrelated selectors together, increases facet bytecode size, and makes method-resolution-order and storage access harder to reason about during upgrades. Instead:
+- If a veNFT is in loan custody (LoanV2/LoanV3), outstanding debt must be fully paid before any transfer away from the custodian.
+- All flows follow CEI, are nonReentrant, and perform external calls last.
+- Payoff asset must equal `loanAsset()` unless a swap is executed with explicit slippage bounds.
+- Infinite approvals granted only when necessary and zeroed immediately after use.
 
-- Put shared, side‑effect‑free helpers in small internal libraries (e.g., `MarketLogicLib`) that operate on `MarketStorage` layouts.
-- Keep facets thin and focused on orchestrating flows and emitting events.
-- Override behavior by swapping the facet, not by overriding inherited virtuals spread across multiple selectors.
+---
 
-Benefits:
-- Lower coupling between facets; safer, targeted upgrades.
-- Smaller facet code size; easier audits.
-- Clearer boundaries (each facet composes logic via libraries rather than inherits it).
+## Primary flows
 
-### Ownership and access control
-- Ownership (two‑step): `OwnershipFacet`
-  - `transferOwnership(newOwner)`: owner can stage a transfer. Passing `address(0)` cancels any pending transfer.
-  - `acceptOwnership()`: pending owner accepts.
-  - `renounceOwnership()`: owner sets owner to `address(0)` and clears pending transfer.
+- Wallet listing → take
+  - Validate listing; pull funds; transfer via `votingEscrow.transferFrom(seller → buyer)`; apply marketplace fees; optional royalties.
 
-- Role‑based admin (optional, via OZ AccessManager)
-  - `MarketConfigFacet` supports `initAccessManager(address)` and `setAccessManager(address)`.
-  - A role id of `MARKET_ADMIN` (uint64 = 1) is checked via `IAccessManager.hasRole(roleId, account)`.
-  - All admin functions (fee updates, pause, token allowlist) are gated by Owner OR MARKET_ADMIN.
-  - You can further bind selectors to roles using `IAccessManager.setTargetFunctionRole(diamond, selectors, roleId)`.
+- LoanV2 listing → take (payoff required)
+  - Validate; collect funds; swap to `loanAsset` if needed; `DebtSettlementLib.payoff(LoanV2, tokenId)`; set borrower to buyer via `LoanV2.setBorrower` (diamond must be approved/whitelisted). By default we do not transfer the veNFT out; it remains in loan custody so the buyer can borrow later. If the buyer wishes to withdraw, they can call `claimCollateral()` themselves; for intra‑40 Acres moves, use `LoanV2.transferWithin40Acres`.
 
-### Initialization flow
-Call these once (via a diamond cut initializer or a post‑deployment transaction):
+- External listing (e.g., Vexy) → take
+  - Validate external state/price/currency; pull buyer funds; include external aggregation fee in upfront quote; `VexyAdapterFacet.buyVexyListing`; deliver NFT to buyer (or keep in escrow for LBO).
 
-1) Configure AccessManager (optional)
-```solidity
-IMarketConfigFacet(diamond).initAccessManager(accessManager);
-```
+- Leveraged Buyout (LBO)
+  - Buyer acquires a veNFT and simultaneously opens a loan to finance it.
+  - Fees: 2% LBO fee (buyer), 1% seller fee; no origination for the LBO loan; LTV discount of 1% (configurable) for safety.
+  - Wallet/external source: diamond temporarily escrows the NFT, locks into loan custodian, opens loan for buyer with LTV minus discount, directs proceeds to settle purchase, then assigns borrower.
+  - LoanV2 listing source: pay off existing debt, assign borrower, optionally open a new loan immediately under the LBO rules.
 
-2) Initialize Market
-```solidity
-IMarketConfigFacet(diamond).initMarket({
-  loan: loanAddress,
-  votingEscrow: veAddress,
-  marketFeeBps: 50, // 0.5%
-  feeRecipient: treasury,
-  defaultPaymentToken: usdc
-});
-```
+---
 
-Optional: set the expected `loanAsset` for loan settlement (e.g., USDC) if different from the default payment token.
-```solidity
-IMarketConfigFacet(diamond).setLoanAsset(usdc);
-```
+## Fees (bps; configurable)
 
-### Public surface (selected)
+- Regular sell fee: 100 bps on sale price (seller pays).
+- External aggregation fee: 100 bps collected from buyer on purchases fulfilled via external markets; included in the upfront quote so the buyer sees the total price. Combined with the regular sell fee, external buys total 200 bps.
+- LBO fee: 200 bps paid by buyer; default split 50 bps to lenders as premium and 150 bps to protocol treasury; both shares configurable.
+- LBO LTV discount: 100 bps subtracted from max LTV for LBO because it is borrowed as the fee (effectively baking ~1% of cost into the loan capacity). The remaining 1% of the LBO fee is charged explicitly at checkout.
+- No origination fee on LBO loans. Other loan protocol fees remain per loan contract policy.
 
-- Market view (via `IMarketViewFacet`)
-  - `loan()`, `marketFeeBps()`, `feeRecipient()`, `loanAsset()`
-  - `allowedPaymentToken(token)`, `isOperatorFor(owner, operator)`
-  - `getListing(tokenId)`, `getOffer(offerId)`
-  - `getTotalCost(tokenId)`
-  - `isListingActive(tokenId)`, `isOfferActive(offerId)`, `canOperate(owner, operator)`
+### Scenario matrix (who pays what)
+- Internal buy (wallet/LoanV2 listing), no LBO: seller 1%; buyer 0%.
+- Internal buy with LBO: seller 1%; buyer 2% (1% via LTV reduction [because it is borrowed as part of the LBO], 1% explicit at checkout).
+- External buy (aggregated), no LBO: buyer 2% total (1% external buy fee + 1% platform fee), quoted upfront.
+- External buy with LBO: buyer 4% total (2% external aggregate + 2% LBO where 1% is via LTV reduction [because it is borrowed as part of the LBO] and 1% explicit), quoted upfront.
 
-- Loan listings (via `IMarketListingsLoanFacet`)
-  - `makeLoanListing`, `updateLoanListing`, `cancelLoanListing`
-  - `takeLoanListing`, `takeLoanListingWithDebt(tokenId, debtTolerance)`
+### Distribution
+- LBO lender premium share (default 50 bps) is routed to lenders (configurable recipient, e.g., vault or rewards distributor). Remainder goes to protocol treasury (`feeRecipient`).
+- Regular sell fee (1%) and external aggregation fee (1%) are credited to protocol treasury by default (configurable recipient).
 
-- Wallet listings (via `IMarketListingsWalletFacet`)
-  - `makeWalletListing`, `updateWalletListing`, `cancelWalletListing`
-  - `takeWalletListing`
+---
 
-- Offers (via `IMarketOfferFacet`)
-  - `createOffer`, `updateOffer`, `cancelOffer`, `acceptOffer(tokenId, offerId, isInLoanV2)`
+## Minimal LoanV2 hooks (diamond‑only)
 
-- Matching (via `IMarketMatchingFacet`)
-  - `matchOfferWithLoanListing`, `matchOfferWithWalletListing`
+Whitelisted, narrowly scoped methods (when feasible per chain):
 
-- Operators (via `IMarketOperatorFacet`)
-  - `setOperatorApproval(operator, approved)`
+- setApprovedContract(diamond, enable): allow privileged flows from the diamond.
+- setBorrower(tokenId, borrower): already available; diamond must be approved and token must be in custody.
+- requestLoanForBorrower(tokenId, amount, params..., borrower): mirror of `requestLoan` but borrower is explicit; enforce permanent lock; callable only by diamond.
+- increaseLoanForLbo(tokenId, amount, receiver): increase without origination for LBO when `msg.sender` is the diamond; send proceeds to `receiver` (diamond) to settle purchase.
 
-- Market admin (via `IMarketConfigFacet`)
-  - `setMarketFee(bps)`, `setFeeRecipient(addr)`, `setAllowedPaymentToken(token, allowed)`
-  - `pause()`, `unpause()`
+Optional (not required for core flows):
+- marketTransferIfNoDebt(tokenId, to): only if the protocol wants the diamond to programmatically withdraw to a wallet address. Preferred flows keep the veNFT in loan custody; users can withdraw via `claimCollateral()` or move within the ecosystem via `transferWithin40Acres`.
+
+If hooks are not acceptable on a chain, LBO can occur post‑purchase (buyer borrows as a separate step) without no‑origination.
 
 Notes:
-- All mutating ops are protected by `nonReentrant` (storage-based guard) and `marketPaused`.
-- Token transfers use OpenZeppelin `SafeERC20` directly (no LibTransfer). Fee‑on‑transfer tokens are supported via balance deltas where needed.
+- LoanV2 is upgradeable; we will keep on‑chain changes minimal, tightly scoped, and documented here. This diamond will be explicitly whitelisted for the above hooks per chain.
 
-### Events
-- From listing facets (`IMarketListingsLoanFacet`, `IMarketListingsWalletFacet`):
-  - `ListingCreated`, `ListingUpdated`, `ListingCancelled`, `ListingTaken`
-- From offers (`IMarketOfferFacet`):
-  - `OfferCreated`, `OfferUpdated`, `OfferCancelled`, `OfferAccepted`
-- From matching (`IMarketMatchingFacet`):
-  - `OfferMatched`
-- From operators (`IMarketOperatorFacet`):
-  - `OperatorApproved`
-- From config (`IMarketConfigFacet`):
-  - `MarketInitialized`, `PaymentTokenAllowed`, `MarketFeeChanged`, `FeeRecipientChanged`, `MarketPauseStatusChanged`
+---
 
-### Upgrades (diamond cuts)
-- Use `DiamondCutFacet.diamondCut(FacetCut[], _init, _calldata)` to add/replace/remove function selectors.
-- Typical workflow:
-  1. Deploy new facet.
-  2. Build `FacetCut[]` with action Add/Replace and list of selectors.
-  3. Optionally pass `_init` and `_calldata` to run an initialization call in the same transaction.
+## LoanV3 inside the diamond (future)
 
-Example: replace a function in `MarketOfferFacet` and run no initializer
-```solidity
-IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](1);
-cut[0] = IDiamondCut.FacetCut({
-  facetAddress: address(newFacet),
-  action: IDiamondCut.FacetCutAction.Replace,
-  functionSelectors: selectorsArray
-});
-IDiamondCut(diamond).diamondCut(cut, address(0), bytes("");
-```
+- Implement as facets (LoanCoreFacet, LoanAccountingFacet, LoanRewardsFacet) with ERC‑7201 storage; reuse the same libraries.
+- `migrateFromLoanV2(tokenId)`: prefer `LoanV2.transferWithin40Acres(toContract=diamond, ...)` to hand custody into LoanV3 facets without leaving the loan system; reconstruct position and parameters; optionally incentivize migration.
+- Unified marketplace supports both LoanV2 and LoanV3 custody during transition.
 
-### Deployment tips
-- Deploy the diamond root (e.g., `DiamondHitch`), core facets, then market facets.
-- Perform an Add cut for each facet with the desired selectors.
-- Initialize AccessManager (optional) and `initMarket` via a final cut or direct calls.
+---
 
-### Testing
-- Unit test facets directly using Foundry by calling through the diamond address.
-- Verify pause and reentrancy guard behaviors in concurrent calls.
-- Exercise all flows: listing lifecycle, offer lifecycle, match paths, fee distribution.
+## External adapters and cross‑chain
 
-### Security considerations
-- Reentrancy guard is storage‑based; all state‑changing functions in ops facet are `nonReentrant`.
-- Pausable guard for ops to halt the market during incidents.
-- Two‑step ownership reduces risk of accidental ownership loss.
-- AccessManager integration allows delegation to a system admin role without giving away full ownership.
+- Existing: `VexyAdapterFacet`.
+- Planned adapters (roadmap): OpenXswap, Vexy (expanded features), Salvor on AVAX (support PHAR and Blackhole veNFTs). Each adapter implements the standard adapter surface and is wired through `MarketMatchingFacet`.
+- Cross‑chain can be supported via a `BridgeAdapterFacet` (escrow + intent), but inherits the same safety libraries.
 
-Payment asset safety:
-- For loan listings, settlement calls `LoanV2.pay()`. Until a swap adapter is added, the market enforces that `listing.paymentToken == loanAsset` to avoid asset mismatch.
+---
 
-### Design choices
-- Types are defined next to their storage to ensure shape fidelity and easier refactors.
-- Events are defined on interfaces and emitted by facets to keep ABI consistent.
+## Configuration
 
-### Extensibility roadmap
-- External market aggregation
-  - Add adapter facets per external protocol. The `MarketMatchingFacet` routes matches between our orderbook and external orders.
-- Cross‑chain support
-  - Introduce a bridge adapter to escrow funds and emit settlement intents. A relayer finalizes on the destination chain.
-- Richer matching and quotes
-  - Add additional quote/preview views (e.g., `quoteTakeLoanListingWithDebt`) for better frontend UX and off‑chain matchers.
-- Feature gating per chain
-  - Omit facets that are not applicable (e.g., loan listings where LoanV2 isn’t deployed), keeping a single diamond address with a consistent view surface.
+- `loan()` optional; when unset, loan‑custody and LBO features are disabled.
+- `loanAsset()` defines the payoff asset (e.g., USDC). Swaps to this asset use `SwapRouterLib` with slippage constraints.
+- `allowedPaymentToken(token)` per chain.
+- Fee recipients and bps are upgradeable via `MarketConfigFacet`.
+
+### Governance and roles
+- Owner and (optional) `MARKET_ADMIN` roles can manage: fee parameters (seller, external, LBO fee and split), adapter allowlists, LBO enable/disable per chain, pausing, and loan integration settings.
+- Roles provide the security base as the diamond grows into a full veNFT market and lending platform.
+
+---
+
+## Roadmap & checklist
+
+Phase A (market core)
+- [ ] Implement TransferGuardsLib, DebtSettlementLib, ListingValidationLib, SwapRouterLib, ExternalMarketLib
+- [ ] Finish `MarketListingsWalletFacet`, `MarketListingsLoanFacet`, `MarketOfferFacet`, `MarketMatchingFacet`
+- [ ] Vexy adapter buy path (no LBO), tests for invariants and CEI
+- [ ] Add adapters: OpenXswap, Salvor (AVAX; PHAR/Blackhole collections)
+
+Phase B (LBO on LoanV2 chains)
+- [ ] LoanV2 whitelisting and minimal hooks
+- [ ] LBO orchestration + fee distribution (config: `sellerFeeBps`, `lboFeeBps`, `lboLenderPremiumShareBps`, `lboLtvDiscountBps`)
+- [ ] E2E: wallet listing LBO, LoanV2 listing LBO, Vexy LBO
+
+Phase C (LoanV3 facets in‑diamond)
+- [ ] Define ERC‑7201 storage + facets; parity with LoanV2 where reasonable
+- [ ] Migration flow and optional incentives; dual‑custody support in market
+
+Phase D (aggregation and polish)
+- [ ] Additional external adapters; preview/quote endpoints; batch routes
+- [ ] Royalties (optional), richer operator approvals, audits/formal checks, mainnet rollout
+
+---
+
+## Reference
+
+- See `src/LoanV2.sol` for current loan logic (locking, payoff, fees, borrower handover via `setBorrower`).
+- See `src/facets/market/VexyAdapterFacet.sol` for the external adapter pattern.
+
+The diamond enforces safety through internal libraries so new adapters and future cross‑chain integrations can be added without compromising invariants.
 
 
