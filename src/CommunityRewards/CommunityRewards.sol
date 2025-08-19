@@ -554,14 +554,14 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
     }
 
     function _deposit(uint256 _amount, address _owner) internal {
-        _mint(_owner, _amount);
+        // _mint(_owner, _amount);
 
-        _writeCheckpoint(_owner, balanceOf(_owner));
-        _writeSupplyCheckpoint();
+        // _writeCheckpoint(_owner, balanceOf(_owner));
+        // _writeSupplyCheckpoint();
 
-        uint256 currentFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4 * ProtocolTimeLibrary.WEEK);
-        flightDeposits[_owner][currentFlight] += _amount;
-        totalFlightDeposits[currentFlight] += _amount;
+        // uint256 currentFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4 * ProtocolTimeLibrary.WEEK);
+        // flightDeposits[_owner][currentFlight] += _amount;
+        // totalFlightDeposits[currentFlight] += _amount;
 
         emit Deposit(_owner, _amount);
     }
