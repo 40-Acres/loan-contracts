@@ -554,15 +554,16 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
     }
 
     function _deposit(uint256 _amount, address _owner) internal {
-        _mint(_owner, _amount);
+        // NOTE: Minting functionality has been deprecated
+        // Community reward shares are no longer minted on deposits
 
-        _writeCheckpoint(_owner, balanceOf(_owner));
-        _writeSupplyCheckpoint();
+        // NOTE: Checkpoint writing has been deprecated along with minting
+        // Balance and supply tracking is no longer needed without share minting
 
-        uint256 currentFlight = ProtocolTimeLibrary.epochStart(block.timestamp) - ProtocolTimeLibrary.epochStart(block.timestamp) % (4 * ProtocolTimeLibrary.WEEK);
-        flightDeposits[_owner][currentFlight] += _amount;
-        totalFlightDeposits[currentFlight] += _amount;
+        // NOTE: Flight deposit tracking has been deprecated
+        // Flight deposit tracking is no longer needed
 
+        // Deposit will still emit an event for accountability
         emit Deposit(_owner, _amount);
     }
 
