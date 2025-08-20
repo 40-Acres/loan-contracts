@@ -3,6 +3,8 @@ pragma solidity ^0.8.28;
 
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
+import {TransferGuardsLib} from "../../libraries/TransferGuardsLib.sol";
+import {Errors} from "../../libraries/Errors.sol";
 import {IMarketMatchingFacet} from "../../interfaces/IMarketMatchingFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -25,13 +27,13 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
     using SafeERC20 for IERC20;
 
     modifier onlyWhenNotPaused() {
-        require(!MarketStorage.managerPauseLayout().marketPaused, "Paused");
+        if (MarketStorage.managerPauseLayout().marketPaused) revert Errors.Paused();
         _;
     }
 
     modifier nonReentrant() {
         MarketStorage.MarketPauseLayout storage pause = MarketStorage.managerPauseLayout();
-        require(pause.reentrancyStatus != 2, "Reentrancy");
+        if (pause.reentrancyStatus == 2) revert Errors.Reentrancy();
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
@@ -43,13 +45,13 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
 
     function matchOfferWithWalletListing(uint256 offerId, uint256 tokenId) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
-        require(offer.creator != address(0), "OfferNotFound");
-        require(MarketLogicLib.isOfferActive(offerId), "OfferExpired");
+        if (offer.creator == address(0)) revert Errors.OfferNotFound();
+        if (!MarketLogicLib.isOfferActive(offerId)) revert Errors.OfferExpired();
 
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
-        require(!listing.hasOutstandingLoan, "LoanListing");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
 
         _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
 
@@ -78,8 +80,8 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         uint256 maxPrice
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
-        require(offer.creator != address(0), "OfferNotFound");
-        require(MarketLogicLib.isOfferActive(offerId), "OfferExpired");
+        if (offer.creator == address(0)) revert Errors.OfferNotFound();
+        if (!MarketLogicLib.isOfferActive(offerId)) revert Errors.OfferExpired();
 
         // Read Vexy listing details
         (
@@ -96,16 +98,16 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             uint64 soldTime
         ) = IVexyMarketplace(vexy).listings(listingId);
 
-        require(nftCollection == MarketStorage.configLayout().votingEscrow, "WrongCollection");
-        require(soldTime == 0 && endTime >= block.timestamp, "ListingInactive");
+        if (nftCollection != MarketStorage.configLayout().votingEscrow) revert Errors.WrongVotingEscrow();
+        if (!(soldTime == 0 && endTime >= block.timestamp)) revert Errors.ListingInactive();
 
         // Validate offer criteria using wallet/no-loan path (Vexy listings are wallet-held)
         _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
 
         // Price and currency checks
         uint256 extPrice = IVexyMarketplace(vexy).listingPrice(listingId);
-        require(extPrice > 0 && extPrice <= maxPrice, "PriceOutOfBounds");
-        require(MarketStorage.configLayout().allowedPaymentToken[currency], "CurrencyNotAllowed");
+        if (!(extPrice > 0 && extPrice <= maxPrice)) revert Errors.PriceOutOfBounds();
+        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert Errors.CurrencyNotAllowed();
 
         // Compute fee on the external price
         uint256 fee = (extPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
@@ -113,20 +115,22 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         if (offer.paymentToken == currency) {
             // Pull total cost in exact listing currency
             uint256 totalCost = extPrice + fee;
-            require(totalCost <= offer.price, "OfferTooLow");
+            if (totalCost > offer.price) revert Errors.OfferTooLow();
             IERC20(currency).safeTransferFrom(offer.creator, address(this), totalCost);
             if (fee > 0) {
                 IERC20(currency).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
             }
             // Buy listing using internal escrow path
             IVexyAdapterFacet(address(this)).buyVexyListing(vexy, listingId, currency, extPrice);
+            // Ensure custody is with the diamond before forwarding to user
+            TransferGuardsLib.requireCustody(MarketStorage.configLayout().votingEscrow, tokenId, address(this));
         } else {
             // Swap path: pull offer.price in offer.paymentToken, swap to currency, enforce minOut
             IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
 
             // Perform swap using Swapper-like policy (external to this code; assumed available via loan's swapper config if needed)
             // For now, require direct currency match; swap integration can be added here using router similar to LoanV2
-            revert("SwapNotImplemented");
+            revert Errors.NotImplemented();
         }
 
         // Transfer acquired NFT to the offer creator

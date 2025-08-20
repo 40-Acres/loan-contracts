@@ -37,18 +37,8 @@ Facets must compose these libraries; do not bypass them:
   - Enforce no‑debt‑before‑transfer when veNFT is loan‑custodied.
   - Check permanent lock state; ensure receiver is allowed; zero approvals after transfers/swaps.
 
-- DebtSettlementLib
-  - Compute payoff and call loan `pay()` with the correct asset; handle residuals; canonical events.
-  - LBO primitives: compute max borrow; apply financed LBO fee; distribute lender premium; ensure no origination fee path.
-
-- ListingValidationLib
-  - Owner/operator checks; approval/expiry; price/currency allowlist; optional signature schema for off‑chain orders.
-
 - SwapRouterLib
   - Unified swap via ODOS; allowance bump/reset; balance‑delta slippage checks; safe low‑level calls.
-
-- ExternalMarketLib
-  - Standard adapter interface: read listing, validate, purchase, return NFT custody to diamond.
 
 - AccessControlLib
   - Owner and optional AccessManager role gates (MARKET_ADMIN) for config/fees/pausing.
@@ -75,6 +65,43 @@ Facets must compose these libraries; do not bypass them:
 - External listing (e.g., Vexy) → take
   - Validate external state/price/currency; pull buyer funds; include external aggregation fee in upfront quote; `VexyAdapterFacet.buyVexyListing`; deliver NFT to buyer (or keep in escrow for LBO).
 
+## Quoting and buying API (enum‑driven)
+
+We define an enum route type and a registry of external markets per chain.
+
+- Route enum (`RouteLib.BuyRoute`): `InternalWallet`, `InternalLoan`, `ExternalAdapter`.
+- External markets are identified by `bytes32` keys (e.g., `VEXY`, `OPENX`, `SALVOR`) resolved to adapter addresses in config.
+- Single‑veNFT per diamond: each deployment binds to one `votingEscrow`. All token IDs refer to this veNFT. For a new veNFT market/lending, deploy a new diamond. This simplifies routing and reduces attack surface.
+
+Selectors
+- quoteToken(route, marketKey, tokenId, quoteData) → (price, marketFee, total, currency)
+  - Internal routes ignore `marketKey`; external routes use it to find the adapter. `quoteData` is adapter‑specific (Phase A default: `abi.encode(listingId, expectedCurrency, maxPrice)`).
+- buyToken(route, marketKey, tokenId, maxTotal, buyData, optionalPermit2)
+  - Executes the purchase through the selected path and enforces `total <= maxTotal`. For external routes, `buyData` must match the adapter’s expected tuple; optional Permit2 payload allows single‑tx funds pull.
+
+Registry and allowlists
+- `marketKey → adapter` registry controlled by governance; unknown keys revert.
+- `votingEscrow` allowlist controlled by governance; adapters may also maintain per‑adapter allowlists.
+
+This keeps the API stable while allowing new external venues via governance without changing selectors.
+
+### RFQ off‑chain orders and Permit2
+- EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, marketKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(buyData)`.
+- On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and `keccak256(buyData)` equality, then calls `buyToken` with the same (route, marketKey, votingEscrow, tokenId, maxTotal, buyData).
+- Makers can cancel via nonce bump or explicit cancel. Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals.
+
+### LBO UX and indexing for external venues
+- UI calls `quoteToken` with `ExternalAdapter` and `abi.encode(listingId, expectedCurrency, maxPrice)` and displays: price, fees, total, projected loan principal, financed LBO fee portion, and max LTV.
+- Required indexed fields per listing: `(votingEscrow, tokenId)`, `marketKey`, `listingId`, `expectedCurrency`, current price, endTime/sold flag. Loan inputs for preview: `loanAsset`, LTV caps, LBO fee config.
+- `buyToken` with LBO flag performs: adapter buy to diamond custody → custody assert → lock into loan → open loan sized to LTV + financed fee → settle seller and fees → assign borrower.
+
+### Why a single routed API (with optional wrappers)
+- Pros: stable ABI, easy integrations (one quote/buy path), consistent fees/safety, governance can add adapters without changing selectors.
+- Cons: a small routing overhead and use of `bytes` for adapter data.
+- Pattern: keep `quoteToken/buyToken` as core; expose optional convenience wrappers (e.g., `buyInternalWallet`, `buyInternalLoan`, `buyVexy`) that forward to the router for readability.
+
+---
+
 - Leveraged Buyout (LBO)
   - Buyer acquires a veNFT and simultaneously opens a loan to finance it.
   - Fees: 2% LBO fee (buyer), 1% seller fee; no origination for the LBO loan.
@@ -85,7 +112,7 @@ Facets must compose these libraries; do not bypass them:
 ### External LBO (adapter purchase financed by new loan)
 - Atomicity: executed as a single transaction. If any sub‑step fails, the entire transaction reverts (including the external market purchase), ensuring funds and state roll back.
 - Steps:
-  1) Pre‑validate external listing (seller, collection, tokenId, currency, dynamic price) and cap price via maxPrice.
+  1) Pre‑validate external listing (seller, venue votingEscrow, tokenId, currency, dynamic price) and cap price via maxPrice.
   2) Collect buyer funds (if any downpayment) and, if needed, draw a temporary credit from our vault (bounded by per‑tx/per‑user limits).
   3) Execute adapter buy; require NFT custody transfers to the diamond; verify via `ownerOf` post‑condition.
   4) Immediately lock NFT into loan custody and open loan for buyer. Compute principal and financed fee so that (principal + financed fee) ≤ max LTV.
@@ -171,7 +198,7 @@ Notes:
 ## Roadmap & checklist
 
 Phase A (market core)
-- [ ] Implement TransferGuardsLib, DebtSettlementLib, ListingValidationLib, SwapRouterLib, ExternalMarketLib
+- [ ] Implement TransferGuardsLib, DebtSettlementLib, SwapRouterLib
 - [ ] Finish `MarketListingsWalletFacet`, `MarketListingsLoanFacet`, `MarketOfferFacet`, `MarketMatchingFacet`
 - [ ] Vexy adapter buy path (no LBO), tests for invariants and CEI
 - [ ] Add adapters: OpenXswap, Salvor (AVAX; PHAR/Blackhole collections)

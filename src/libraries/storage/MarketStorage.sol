@@ -52,6 +52,9 @@ library MarketStorage {
         address votingEscrow;                                         // IVotingEscrow address
         address accessManager;                                        // AccessManager for role-based auth
         address loanAsset;                                            // payment asset expected by Loan for pay() (e.g., USDC)
+        mapping(address => bool) allowedVotingEscrow;                 // allowed veNFT contracts
+        mapping(bytes32 => address) externalAdapter;                  // marketKey => adapter facet address
+        mapping(bytes32 => address) externalMarketplace;              // marketKey => marketplace address (if needed by adapter)
         uint256[48] _gap;
     }
 
