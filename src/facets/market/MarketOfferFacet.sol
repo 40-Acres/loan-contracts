@@ -41,7 +41,6 @@ contract MarketOfferFacet is IMarketOfferFacet {
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,
-        uint256 maxLockTime,
         uint256 expiresAt
     ) external payable nonReentrant onlyWhenNotPaused {
         require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], "InvalidPaymentToken");
@@ -58,11 +57,10 @@ contract MarketOfferFacet is IMarketOfferFacet {
         offer.debtTolerance = debtTolerance;
         offer.price = price;
         offer.paymentToken = paymentToken;
-        offer.maxLockTime = maxLockTime;
         offer.expiresAt = expiresAt;
         offer.offerId = offerId;
 
-        emit OfferCreated(offerId, msg.sender, minWeight, maxWeight, debtTolerance, price, paymentToken, maxLockTime, expiresAt);
+        emit OfferCreated(offerId, msg.sender, minWeight, maxWeight, debtTolerance, price, paymentToken, expiresAt);
     }
 
     function updateOffer(
@@ -72,7 +70,6 @@ contract MarketOfferFacet is IMarketOfferFacet {
         uint256 newDebtTolerance,
         uint256 newPrice,
         address newPaymentToken,
-        uint256 newMaxLockTime,
         uint256 newExpiresAt
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
@@ -89,10 +86,9 @@ contract MarketOfferFacet is IMarketOfferFacet {
         offer.debtTolerance = newDebtTolerance;
         offer.price = newPrice;
         offer.paymentToken = newPaymentToken;
-        offer.maxLockTime = newMaxLockTime;
         offer.expiresAt = newExpiresAt;
 
-        emit OfferUpdated(offerId, newMinWeight, newMaxWeight, newDebtTolerance, newPrice, newPaymentToken, newMaxLockTime, newExpiresAt);
+        emit OfferUpdated(offerId, newMinWeight, newMaxWeight, newDebtTolerance, newPrice, newPaymentToken, newExpiresAt);
     }
 
     function cancelOffer(uint256 offerId) external nonReentrant {
@@ -142,7 +138,6 @@ contract MarketOfferFacet is IMarketOfferFacet {
         (uint256 loanBalance,) = ILoanMinimalOpsOF(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
         IVotingEscrowMinimalOpsOF.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsOF(MarketStorage.configLayout().votingEscrow).locked(tokenId);
-        require(lockedBalance.end <= offer.maxLockTime, "ExcessiveLockTime");
     }
 }
 

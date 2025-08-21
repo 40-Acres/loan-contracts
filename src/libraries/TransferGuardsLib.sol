@@ -3,15 +3,15 @@ pragma solidity ^0.8.28;
 
 import {Errors} from "./Errors.sol";
 
+interface ILoanMinimalBalance {
+    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
+}
+
+interface IVotingEscrowMinimalOwnerOf {
+    function ownerOf(uint256 tokenId) external view returns (address);
+}
+
 library TransferGuardsLib {
-    interface ILoanMinimalBalance {
-        function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-    }
-
-    interface IVotingEscrowMinimalOwnerOf {
-        function ownerOf(uint256 tokenId) external view returns (address);
-    }
-
     function enforceNoDebtBeforeTransfer(address loan, uint256 tokenId) internal view {
         (uint256 balance,) = ILoanMinimalBalance(loan).getLoanDetails(tokenId);
         if (balance != 0) revert Errors.DebtNotCleared();

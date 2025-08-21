@@ -33,7 +33,6 @@ interface IMarketViewFacet {
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,
-        uint256 maxLockTime,
         uint256 expiresAt
     );
 

@@ -24,7 +24,6 @@ library MarketStorage {
         uint256 debtTolerance;            // max acceptable loan balance
         uint256 price;                    // offer price in paymentToken
         address paymentToken;             // whitelisted token
-        uint256 maxLockTime;              // maximum acceptable lock time for veNFT
         uint256 expiresAt;                // 0 = never
         uint256 offerId;                  // unique offer identifier
     }

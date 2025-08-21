@@ -68,7 +68,6 @@ contract MarketViewFacet is IMarketViewFacet {
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,
-        uint256 maxLockTime,
         uint256 expiresAt
     ) {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
@@ -79,7 +78,6 @@ contract MarketViewFacet is IMarketViewFacet {
             offer.debtTolerance,
             offer.price,
             offer.paymentToken,
-            offer.maxLockTime,
             offer.expiresAt
         );
     }

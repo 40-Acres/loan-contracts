@@ -98,7 +98,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             uint64 soldTime
         ) = IVexyMarketplace(vexy).listings(listingId);
 
-        if (nftCollection != MarketStorage.configLayout().votingEscrow) revert Errors.WrongVotingEscrow();
+        if (nftCollection != MarketStorage.configLayout().votingEscrow) revert Errors.WrongMarketVotingEscrow();
         if (!(soldTime == 0 && endTime >= block.timestamp)) revert Errors.ListingInactive();
 
         // Validate offer criteria using wallet/no-loan path (Vexy listings are wallet-held)
@@ -176,7 +176,6 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         (uint256 loanBalance,) = ILoanMinimalOpsMM(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
         IVotingEscrowMinimalOpsMM.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).locked(tokenId);
-        require(lockedBalance.end <= offer.maxLockTime, "ExcessiveLockTime");
     }
 
     function _validateOfferCriteriaWalletOrNoLoan(uint256 tokenId, MarketStorage.Offer storage offer) internal view {
@@ -189,7 +188,6 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
         }
         IVotingEscrowMinimalOpsMM.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).locked(tokenId);
-        require(lockedBalance.end <= offer.maxLockTime, "ExcessiveLockTime");
     }
 }
 

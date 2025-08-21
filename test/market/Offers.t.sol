@@ -59,12 +59,12 @@ contract OffersTest is DiamondMarketTestBase {
     function test_create_update_cancel_offer() public {
         vm.startPrank(buyer);
         usdcErc.approve(diamond, 2_500e6);
-        IMarketOfferFacet(diamond).createOffer(1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
-        IMarketOfferFacet(diamond).updateOffer(1, 1500, 6000, 300e6, 2500e6, address(usdc), block.timestamp + 730 days, block.timestamp + 14 days);
+        IMarketOfferFacet(diamond).createOffer(1000, 5000, 200e6, 2000e6, address(usdc), block.timestamp + 7 days);
+        IMarketOfferFacet(diamond).updateOffer(1, 1500, 6000, 300e6, 2500e6, address(usdc), block.timestamp + 14 days);
         IMarketOfferFacet(diamond).cancelOffer(1);
         vm.stopPrank();
 
-        (address creator,,,,,,,) = IMarketViewFacet(diamond).getOffer(1);
+        (address creator,,,,,,) = IMarketViewFacet(diamond).getOffer(1);
         assertEq(creator, address(0));
     }
 
@@ -78,7 +78,7 @@ contract OffersTest is DiamondMarketTestBase {
         // Create matching offer
         vm.startPrank(buyer);
         usdcErc.approve(diamond, 2_000e6);
-        IMarketOfferFacet(diamond).createOffer(90e21, 100e21, 1_000e6, 2_000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        IMarketOfferFacet(diamond).createOffer(90e21, 100e21, 1_000e6, 2_000e6, address(usdc), block.timestamp + 7 days);
         vm.stopPrank();
 
         // Accept from loan
@@ -100,7 +100,7 @@ contract OffersTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         usdcErc.approve(diamond, 2_000e6);
-        IMarketOfferFacet(diamond).createOffer(70e21, 80e21, 1_000e6, 2_000e6, address(usdc), block.timestamp + 365 days, block.timestamp + 7 days);
+        IMarketOfferFacet(diamond).createOffer(70e21, 80e21, 1_000e6, 2_000e6, address(usdc), block.timestamp + 7 days);
         vm.stopPrank();
 
         vm.startPrank(walletOwner);

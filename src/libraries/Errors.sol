@@ -29,7 +29,6 @@ library Errors {
     error InsufficientWeight();
     error ExcessiveWeight();
     error InsufficientDebtTolerance();
-    error ExcessiveLockTime();
 
     // Settlement / swaps / custody
     error Slippage();

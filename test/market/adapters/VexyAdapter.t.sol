@@ -184,7 +184,6 @@ contract VexyAdapterTest is DiamondMarketTestBase {
             debtTolerance: type(uint256).max,
             price: offerPrice,
             paymentToken: currency,
-            maxLockTime: type(uint256).max,
             expiresAt: block.timestamp + 7 days
         });
         vm.stopPrank();
