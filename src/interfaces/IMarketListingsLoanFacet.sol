@@ -24,7 +24,15 @@ interface IMarketListingsLoanFacet {
 
     function cancelLoanListing(uint256 tokenId) external;
 
-    function quoteLoanListing(uint256 tokenId, address inputToken) external view returns (uint256 price, uint256 marketFee, uint256 total, address currency);
+    function quoteLoanListing(
+        uint256 tokenId,
+        address inputToken
+    ) external view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    );
 
     function takeLoanListing(uint256 tokenId, address inputToken) external payable;
 

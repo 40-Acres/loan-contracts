@@ -267,7 +267,7 @@ library SwapRouterLib {
         uint256 deadline
     ) internal returns (uint256[] memory amounts) {
         IRouter.Route[] memory routes = getBestRoute(tokenIn, tokenOut, amountIn, supportedTokens, factory, IRouter(router));
-        require(routes.length > 0, "NoValidRoute");
+        if (routes.length == 0) revert Errors.NoValidRoute();
         // Execute swap and forward proceeds to `to`
         return IRouter(router).swapExactTokensForTokens(
             amountIn,
@@ -290,7 +290,7 @@ library SwapRouterLib {
         uint256 deadline
     ) internal returns (uint256[] memory amounts) {
         IRouter.Route[] memory routes = getBestRoute(tokenIn, tokenOut, amountIn, supportedTokens, factory, IRouter(router));
-        require(routes.length > 0, "NoValidRoute");
+        if (routes.length == 0) revert Errors.NoValidRoute();
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         IERC20(tokenIn).forceApprove(router, amountIn);
         amounts = IRouter(router).swapExactTokensForTokens(
@@ -344,7 +344,7 @@ library SwapRouterLib {
         // Build best route assuming WETH as tokenIn
         address weth = address(IRouter(router).weth());
         IRouter.Route[] memory routes = getBestRoute(weth, tokenOut, amountInETH, supportedTokens, factory, IRouter(router));
-        require(routes.length > 0, "NoValidRoute");
+        if (routes.length == 0) revert Errors.NoValidRoute();
         // Execute swap with ETH
         return IRouter(router).swapExactETHForTokens{value: amountInETH}(minAmountOut, routes, to, deadline);
     }
@@ -363,7 +363,7 @@ library SwapRouterLib {
         MarketStorage.MarketConfigLayout storage c = MarketStorage.configLayout();
         router = c.swapRouter;
         factory = c.swapFactory;
-        require(router != address(0) && factory != address(0), "SwapNotConfigured");
+        if (router == address(0) || factory == address(0)) revert Errors.SwapNotConfigured();
     }
 
     // ===== From-config wrappers =====

@@ -28,13 +28,13 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
     using SafeERC20 for IERC20;
 
     modifier onlyWhenNotPaused() {
-        require(!MarketStorage.managerPauseLayout().marketPaused, "Paused");
+        if (MarketStorage.managerPauseLayout().marketPaused) revert Errors.Paused();
         _;
     }
 
     modifier nonReentrant() {
         MarketStorage.MarketPauseLayout storage pause = MarketStorage.managerPauseLayout();
-        require(pause.reentrancyStatus != 2, "Reentrancy");
+        if (pause.reentrancyStatus == 2) revert Errors.Reentrancy();
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
@@ -46,17 +46,17 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         address paymentToken,
         uint256 expiresAt
     ) external nonReentrant onlyWhenNotPaused {
-        require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], "InvalidPaymentToken");
-        if (expiresAt != 0) require(expiresAt > block.timestamp, "InvalidExpiration");
+        if (!MarketStorage.configLayout().allowedPaymentToken[paymentToken]) revert Errors.CurrencyNotAllowed();
+        if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
         address tokenOwner = IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
-        require(tokenOwner == msg.sender, "Unauthorized");
+        if (tokenOwner != msg.sender) revert Errors.NotAuthorized();
 
         // Must not be in Loan custody (borrower must be zero if loan configured)
         address loanAddr = MarketStorage.configLayout().loan;
         if (loanAddr != address(0)) {
             (, address borrower) = ILoanMinimalOpsWL(loanAddr).getLoanDetails(tokenId);
-            require(borrower == address(0), "InLoanCustody");
+            if (borrower != address(0)) revert Errors.InLoanCustody();
         }
 
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
@@ -77,8 +77,8 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         uint256 newExpiresAt
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.canOperate(listing.owner, msg.sender), "Unauthorized");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.canOperate(listing.owner, msg.sender)) revert Errors.NotAuthorized();
         require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], "InvalidPaymentToken");
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, "InvalidExpiration");
 
@@ -100,14 +100,14 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
     function takeWalletListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
         // Single validation pass
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
-        require(!listing.hasOutstandingLoan, "LoanListing");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
         if (inputToken == address(0)) {
-            require(msg.value > 0, "NoETH");
+            if (msg.value == 0) revert Errors.InsufficientETH();
         } else {
-            require(MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
-            require(msg.value == 0, "NoETHForTokenPayment");
+            if (!MarketStorage.configLayout().allowedPaymentToken[inputToken]) revert Errors.InputTokenNotAllowed();
+            if (msg.value != 0) revert Errors.NoETHForTokenPayment();
         }
 
         _takeWalletListing(tokenId, inputToken);
@@ -120,9 +120,9 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         bytes calldata signature
     ) external payable nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
-        require(!listing.hasOutstandingLoan, "LoanListing");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
 
         if (inputToken == address(0)) {
             // ETH path ignores permit; delegate to normal take
@@ -130,15 +130,15 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
             return;
         }
 
-        require(MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
-        require(msg.value == 0, "NoETHForTokenPayment");
+        if (!MarketStorage.configLayout().allowedPaymentToken[inputToken]) revert Errors.InputTokenNotAllowed();
+        if (msg.value != 0) revert Errors.NoETHForTokenPayment();
 
         (uint256 price, uint256 marketFee, uint256 total, address paymentToken) = _quoteWalletListing(tokenId, inputToken);
 
         address router = MarketStorage.configLayout().swapRouter;
         address factory = MarketStorage.configLayout().swapFactory;
         address[] memory supportedTokens = MarketStorage.configLayout().supportedSwapTokens;
-        require(router != address(0) && factory != address(0), "SwapNotConfigured");
+        if (router == address(0) || factory == address(0)) revert Errors.SwapNotConfigured();
 
         // Call Permit2 to set allowance and then transfer input tokens to this contract
         address permit2 = MarketStorage.configLayout().permit2;
@@ -171,34 +171,51 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         emit ListingTaken(tokenId, msg.sender, price, marketFee);
     }
 
-    function quoteWalletListing(uint256 tokenId, address inputToken) external view returns (uint256 price, uint256 marketFee, uint256 total, address paymentToken) {
+    function quoteWalletListing(
+        uint256 tokenId,
+        address inputToken
+    ) external view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
         require(inputToken == address(0) || MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
-        return _quoteWalletListing(tokenId, inputToken);
+        (uint256 a, uint256 b, uint256 c, address d) = _quoteWalletListing(tokenId, inputToken);
+        return (a, b, c, d);
     }
 
-    function _quoteWalletListing(uint256 tokenId, address inputToken) internal view returns (uint256 price, uint256 marketFee, uint256 total, address paymentToken) {
+    function _quoteWalletListing(
+        uint256 tokenId,
+        address inputToken
+    ) internal view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         // listing validity is checked in the public entry path to avoid duplicate gas here
         
-        price = listing.price;
+        listingPriceInPaymentToken = listing.price;
         paymentToken = listing.paymentToken;
-        marketFee = _calculateMarketFee(price);
+        protocolFeeInPaymentToken = _calculateMarketFee(listingPriceInPaymentToken);
         
         // If input token is the same as payment token, no swap needed
         if (inputToken == paymentToken) {
-            return (price, marketFee, price, paymentToken);
+            return (listingPriceInPaymentToken, protocolFeeInPaymentToken, listingPriceInPaymentToken, paymentToken);
         }
 
         // Calculate how much input is needed to get exactly `price` in payment token (seller pays fee)
         if (inputToken == address(0)) {
-            total = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, price);
+            requiredInputTokenAmount = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, listingPriceInPaymentToken);
         } else {
-            total = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, price);
+            requiredInputTokenAmount = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, listingPriceInPaymentToken);
         }
-        return (price, marketFee, total, paymentToken);
+        return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
     }
 
     function _takeWalletListing(uint256 tokenId, address inputToken) internal {
@@ -211,14 +228,14 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         IERC20(inputToken).safeTransferFrom(msg.sender, address(this), total);
         } else if (inputToken == address(0)) {
             // ETH → payment token
-            require(msg.value >= total, "InsufficientETH");
+            if (msg.value < total) revert Errors.InsufficientETH();
             uint256[] memory amounts = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(
                 paymentToken,
                 total,
                 price,
                 address(this)
             );
-            require(amounts[amounts.length - 1] >= price, "InsufficientSwapOutput");
+            if (amounts[amounts.length - 1] < price) revert Errors.Slippage();
             if (msg.value > total) {
                 (bool ok,) = msg.sender.call{value: msg.value - total}("");
                 require(ok);
@@ -232,7 +249,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
                 price,
                 address(this)
             );
-            require(amounts[amounts.length - 1] >= price, "InsufficientSwapOutput");
+            if (amounts[amounts.length - 1] < price) revert Errors.Slippage();
         }
 
         // At this point we have the correct payment token and enough to pay for the listing

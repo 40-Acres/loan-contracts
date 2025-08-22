@@ -9,6 +9,7 @@ library Errors {
     error Paused();
     error Reentrancy();
     error NotImplemented();
+    error InvalidRoute();
 
     // Matching / orderbook
     error OfferNotFound();
@@ -16,6 +17,7 @@ library Errors {
     error OfferExpired();
     error ListingExpired();
     error LoanListingNotAllowed();
+    error InLoanCustody();
 
     // External adapters
     error WrongMarketVotingEscrow();
@@ -24,16 +26,27 @@ library Errors {
     error PriceOutOfBounds();
     error OfferTooLow();
     error UnknownAdapter();
+    error MaxTotalExceeded();
 
     // Validation
     error InsufficientWeight();
     error ExcessiveWeight();
     error InsufficientDebtTolerance();
+    error InvalidExpiration();
 
     // Settlement / swaps / custody
     error Slippage();
     error DebtNotCleared();
     error BadCustody();
+    error CurrencyNotAllowed();
+    error InputTokenNotAllowed();
+    error NoETHForTokenPayment();
+    error InsufficientETH();
+    error SwapNotConfigured();
+    error Permit2NotSet();
+    error NoValidRoute();
+    error WrongPaymentAsset();
+    error LoanNotConfigured();
 }
 
 

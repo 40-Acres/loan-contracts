@@ -10,7 +10,12 @@ interface IMarketRouterFacet {
         uint256 tokenId,
         address inputToken,
         bytes calldata quoteData
-    ) external view returns (uint256 price, uint256 marketFee, uint256 total, address currency);
+    ) external view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    );
 
     function buyToken(
         RouteLib.BuyRoute route,

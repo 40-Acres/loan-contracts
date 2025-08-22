@@ -17,13 +17,13 @@ contract MarketRouterFacet is IMarketRouterFacet {
     using SafeERC20 for IERC20;
 
     modifier onlyWhenNotPaused() {
-        require(!MarketStorage.managerPauseLayout().marketPaused, "Paused");
+        if (MarketStorage.managerPauseLayout().marketPaused) revert Errors.Paused();
         _;
     }
 
     modifier nonReentrant() {
         MarketStorage.MarketPauseLayout storage pause = MarketStorage.managerPauseLayout();
-        require(pause.reentrancyStatus != 2, "Reentrancy");
+        if (pause.reentrancyStatus == 2) revert Errors.Reentrancy();
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
@@ -35,7 +35,12 @@ contract MarketRouterFacet is IMarketRouterFacet {
         uint256 tokenId,
         address inputToken,
         bytes calldata quoteData
-        ) external view returns (uint256 price, uint256 marketFee, uint256 total, address currency) {
+        ) external view returns (
+            uint256 listingPriceInPaymentToken,
+            uint256 protocolFeeInPaymentToken,
+            uint256 requiredInputTokenAmount,
+            address paymentToken
+        ) {
         if (route == RouteLib.BuyRoute.InternalWallet) {
             return _quoteInternalWallet(tokenId, inputToken);
         }
@@ -64,15 +69,15 @@ contract MarketRouterFacet is IMarketRouterFacet {
             // Pre-quote and enforce maxTotal
             (uint256 total,,,) = _quoteInternalWallet(tokenId, inputToken);
             // TODO: custom error for max total exceeded
-            require(total <= maxTotal, "MaxTotalExceeded");
-            _buyInternalWallet(tokenId, inputToken);
+            if (total > maxTotal) revert Errors.MaxTotalExceeded();
+            _buyInternalWallet(tokenId, inputToken, optionalPermit2);
 
         } else if (route == RouteLib.BuyRoute.InternalLoan) {
             // Get total cost of listing
             (uint256 total,,,) = _quoteInternalLoan(tokenId, inputToken);
             // TODO: custom error for max total exceeded
-            require(total <= maxTotal, "MaxTotalExceeded");
-            _buyInternalLoan(tokenId, inputToken);
+            if (total > maxTotal) revert Errors.MaxTotalExceeded();
+            _buyInternalLoan(tokenId, inputToken, optionalPermit2);
 
         } else if (route == RouteLib.BuyRoute.ExternalAdapter) {
             // Look up adapter for the given key
@@ -86,26 +91,46 @@ contract MarketRouterFacet is IMarketRouterFacet {
                 RevertHelper.revertWithData(result);
             }
         } else {
-            revert("InvalidRoute");
+            revert Errors.InvalidRoute();
         }
-        // Silence warnings for unused params in some routes
-        optionalPermit2;
     }
 
     // internal functions for internal routes
-    function _quoteInternalWallet(uint256 tokenId, address inputToken) internal view returns (uint256 price, uint256 marketFee, uint256 total, address currency) {
+    function _quoteInternalWallet(uint256 tokenId, address inputToken) internal view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    ) {
         return IMarketListingsWalletFacet(address(this)).quoteWalletListing(tokenId, inputToken);
     }
 
-    function _buyInternalWallet(uint256 tokenId, address inputToken) internal {
+    function _buyInternalWallet(uint256 tokenId, address inputToken, bytes calldata optionalPermit2) internal {
+        if (inputToken != address(0) && optionalPermit2.length > 0) {
+            (IMarketListingsWalletFacet.PermitSingle memory permit, bytes memory sig) =
+                abi.decode(optionalPermit2, (IMarketListingsWalletFacet.PermitSingle, bytes));
+            IMarketListingsWalletFacet(address(this)).takeWalletListingWithPermit(tokenId, inputToken, permit, sig);
+            return;
+        }
         IMarketListingsWalletFacet(address(this)).takeWalletListing(tokenId, inputToken);
     }
 
-    function _quoteInternalLoan(uint256 tokenId, address inputToken) internal view returns (uint256 price, uint256 marketFee, uint256 total, address currency) {
+    function _quoteInternalLoan(uint256 tokenId, address inputToken) internal view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    ) {
         return IMarketListingsLoanFacet(address(this)).quoteLoanListing(tokenId, inputToken);
     }
 
-    function _buyInternalLoan(uint256 tokenId, address inputToken) internal {
+    function _buyInternalLoan(uint256 tokenId, address inputToken, bytes calldata optionalPermit2) internal {
+        if (inputToken != address(0) && optionalPermit2.length > 0) {
+            (IMarketListingsLoanFacet.PermitSingle memory permit, bytes memory sig) =
+                abi.decode(optionalPermit2, (IMarketListingsLoanFacet.PermitSingle, bytes));
+            IMarketListingsLoanFacet(address(this)).takeLoanListingWithPermit(tokenId, inputToken, permit, sig);
+            return;
+        }
         IMarketListingsLoanFacet(address(this)).takeLoanListing(tokenId, inputToken);
     }
 }

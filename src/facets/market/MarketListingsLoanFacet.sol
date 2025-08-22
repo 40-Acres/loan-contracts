@@ -29,13 +29,13 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     using SafeERC20 for IERC20;
 
     modifier onlyWhenNotPaused() {
-        require(!MarketStorage.managerPauseLayout().marketPaused, "Paused");
+        if (MarketStorage.managerPauseLayout().marketPaused) revert Errors.Paused();
         _;
     }
 
     modifier nonReentrant() {
         MarketStorage.MarketPauseLayout storage pause = MarketStorage.managerPauseLayout();
-        require(pause.reentrancyStatus != 2, "Reentrancy");
+        if (pause.reentrancyStatus == 2) revert Errors.Reentrancy();
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
@@ -129,7 +129,15 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         _settleLoanListing(tokenId, msg.sender, inputToken, total);
     }
 
-    function quoteLoanListing(uint256 tokenId, address inputToken) external view returns (uint256 price, uint256 marketFee, uint256 total, address currency) {
+    function quoteLoanListing(
+        uint256 tokenId,
+        address inputToken
+    ) external view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    ) {
         return _quoteLoanListing(tokenId, inputToken);
     }
 
@@ -150,36 +158,44 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         total = listingPrice + loanBalance;
     }
 
-    function _quoteLoanListing(uint256 tokenId, address inputToken) internal view returns (uint256 price, uint256 marketFee, uint256 total, address currency) {
+    function _quoteLoanListing(
+        uint256 tokenId,
+        address inputToken
+    ) internal view returns (
+        uint256 listingPriceInPaymentToken,
+        uint256 protocolFeeInPaymentToken,
+        uint256 requiredInputTokenAmount,
+        address paymentToken
+    ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         require(listing.owner != address(0), "ListingNotFound");
         require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
-        
-        price = listing.price;
-        currency = listing.paymentToken;
+
+        listingPriceInPaymentToken = listing.price;
+        paymentToken = listing.paymentToken;
         (uint256 totalCost, , uint256 loanBalance, ) = _getTotalCostOfListingAndDebt(tokenId);
         address loanAsset = MarketStorage.configLayout().loanAsset;
         // Fee is denominated in listing currency; seller pays; not added on top.
-        marketFee = (price * MarketStorage.configLayout().marketFeeBps) / 10000;
+        protocolFeeInPaymentToken = (listingPriceInPaymentToken * MarketStorage.configLayout().marketFeeBps) / 10000;
 
-        if (inputToken == currency) {
+        if (inputToken == paymentToken) {
             // Buyer supplies listing token for price, plus extra listing token to cover loan payoff conversion
-            uint256 listingForPayoff = SwapRouterLib.getAmountInForExactOutFromConfig(currency, loanAsset, loanBalance);
-            total = price + listingForPayoff;
-            return (price, marketFee, total, currency);
+            uint256 listingForPayoff = SwapRouterLib.getAmountInForExactOutFromConfig(paymentToken, loanAsset, loanBalance);
+            requiredInputTokenAmount = listingPriceInPaymentToken + listingForPayoff;
+            return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
         }
         if (inputToken == address(0)) {
             // ETH leg for price in listing token + ETH leg for loan payoff in USDC
-            uint256 ethForListing = SwapRouterLib.getAmountInETHForExactOutFromConfig(currency, price);
+            uint256 ethForListing = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, listingPriceInPaymentToken);
             uint256 ethForLoan = SwapRouterLib.getAmountInETHForExactOutFromConfig(MarketStorage.configLayout().loanAsset, loanBalance);
-            total = ethForListing + ethForLoan;
+            requiredInputTokenAmount = ethForListing + ethForLoan;
         } else {
             // ERC20 input: sum of input required for both legs
-            uint256 inForListing = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, currency, price);
+            uint256 inForListing = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, listingPriceInPaymentToken);
             uint256 inForLoan = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, loanAsset, loanBalance);
-            total = inForListing + inForLoan;
+            requiredInputTokenAmount = inForListing + inForLoan;
         }
-        return (price, marketFee, total, currency);
+        return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
     }
 
     function _takeLoanListing(uint256 tokenId, address buyer, address inputToken) internal {
@@ -193,7 +209,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     function _settleLoanListing(uint256 tokenId, address buyer, address inputToken, uint256 prePulledAmount) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
-        require(MarketStorage.configLayout().loan != address(0), "LoanNotConfigured");
+            require(MarketStorage.configLayout().loan != address(0), "LoanNotConfigured");
         address loanAsset = MarketStorage.configLayout().loanAsset;
 
         // If not pre-pulled, collect funds and/or swap via from-config helpers
