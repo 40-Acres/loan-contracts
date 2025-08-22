@@ -5,6 +5,7 @@ import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFacet.sol";
 import {SwapRouterLib} from "../../libraries/SwapRouterLib.sol";
+import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -47,16 +48,14 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         address paymentToken,
         uint256 expiresAt
     ) external nonReentrant onlyWhenNotPaused {
-        require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], "InvalidPaymentToken");
-        if (expiresAt != 0) require(expiresAt > block.timestamp, "InvalidExpiration");
+        if (!MarketStorage.configLayout().allowedPaymentToken[paymentToken]) revert Errors.CurrencyNotAllowed();
+        if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
         address tokenOwner = MarketLogicLib.getTokenOwnerOrBorrower(tokenId);
-        // TODO: custom error for unauthorized
-        require(MarketLogicLib.canOperate(tokenOwner, msg.sender), "Unauthorized");
+        if (!MarketLogicLib.canOperate(tokenOwner, msg.sender)) revert Errors.NotAuthorized();
 
         // Ensure token is in Loan custody (not wallet): ownerOf(tokenId) != msg.sender
-        // TODO: custom error for wallet held
-        require(IVotingEscrowMinimalOpsLL(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) != msg.sender, "WalletHeld");
+        if (IVotingEscrowMinimalOpsLL(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) == msg.sender) revert Errors.BadCustody();
 
         (uint256 balance,) = ILoanMinimalOpsLL(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         bool hasOutstandingLoan = balance > 0;
@@ -79,8 +78,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         uint256 newExpiresAt
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.canOperate(listing.owner, msg.sender), "Unauthorized");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.canOperate(listing.owner, msg.sender)) revert Errors.NotAuthorized();
         require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], "InvalidPaymentToken");
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, "InvalidExpiration");
 
@@ -105,8 +104,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
 
     function takeLoanListingWithPermit(uint256 tokenId, address inputToken, IPermit2MinimalLL.PermitSingle calldata permitSingle, bytes calldata signature) external payable nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
         
         // full payoff path only
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
@@ -168,8 +167,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         address paymentToken
     ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
 
         listingPriceInPaymentToken = listing.price;
         paymentToken = listing.paymentToken;
@@ -209,7 +208,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     function _settleLoanListing(uint256 tokenId, address buyer, address inputToken, uint256 prePulledAmount) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
-            require(MarketStorage.configLayout().loan != address(0), "LoanNotConfigured");
+            if (MarketStorage.configLayout().loan == address(0)) revert Errors.LoanNotConfigured();
         address loanAsset = MarketStorage.configLayout().loanAsset;
 
         // If not pre-pulled, collect funds and/or swap via from-config helpers
@@ -218,13 +217,13 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 // ETH path: split into two legs
                 uint256 ethForListing = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, listingPrice);
                 uint256 ethForLoan = SwapRouterLib.getAmountInETHForExactOutFromConfig(loanAsset, loanBalance);
-                require(msg.value >= ethForListing + ethForLoan, "InsufficientETH");
+                if (msg.value < ethForListing + ethForLoan) revert Errors.InsufficientETH();
                 // swap ETH -> listing token for price
                 uint256[] memory a1 = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(paymentToken, ethForListing, listingPrice, address(this));
-                require(a1[a1.length - 1] >= listingPrice, "InsufficientSwapOutput");
+                if (a1[a1.length - 1] < listingPrice) revert Errors.Slippage();
                 // swap ETH -> USDC for payoff
                 uint256[] memory a2 = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(loanAsset, ethForLoan, loanBalance, address(this));
-                require(a2[a2.length - 1] >= loanBalance, "InsufficientSwapOutput");
+                if (a2[a2.length - 1] < loanBalance) revert Errors.Slippage();
                 if (msg.value > ethForListing + ethForLoan) {
                     (bool ok,) = msg.sender.call{value: msg.value - (ethForListing + ethForLoan)}("");
                     require(ok);
@@ -234,15 +233,15 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 uint256 inForLoan = SwapRouterLib.getAmountInForExactOutFromConfig(paymentToken, loanAsset, loanBalance);
                 IERC20(paymentToken).safeTransferFrom(buyer, address(this), listingPrice + inForLoan);
                 uint256[] memory a = SwapRouterLib.swapExactInBestRouteFromConfig(paymentToken, loanAsset, inForLoan, loanBalance, address(this));
-                require(a[a.length - 1] >= loanBalance, "InsufficientSwapOutput");
+                if (a[a.length - 1] < loanBalance) revert Errors.Slippage();
             } else {
                 // Pull input token separately for both legs
                 uint256 inForListing = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, listingPrice);
                 uint256 inForLoan = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, loanAsset, loanBalance);
                 uint256[] memory a1 = SwapRouterLib.swapExactInBestRouteFromUserFromConfig(inputToken, paymentToken, inForListing, listingPrice, address(this));
-                require(a1[a1.length - 1] >= listingPrice, "InsufficientSwapOutput");
+                if (a1[a1.length - 1] < listingPrice) revert Errors.Slippage();
                 uint256[] memory a2 = SwapRouterLib.swapExactInBestRouteFromUserFromConfig(inputToken, loanAsset, inForLoan, loanBalance, address(this));
-                require(a2[a2.length - 1] >= loanBalance, "InsufficientSwapOutput");
+                if (a2[a2.length - 1] < loanBalance) revert Errors.Slippage();
             }
         }
 

@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWalletFacet.sol";
+import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SwapRouterLib} from "../../libraries/SwapRouterLib.sol";
@@ -79,8 +80,8 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.canOperate(listing.owner, msg.sender)) revert Errors.NotAuthorized();
-        require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], "InvalidPaymentToken");
-        if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, "InvalidExpiration");
+        if (!MarketStorage.configLayout().allowedPaymentToken[newPaymentToken]) revert Errors.CurrencyNotAllowed();
+        if (newExpiresAt != 0 && newExpiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
         listing.price = newPrice;
         listing.paymentToken = newPaymentToken;
@@ -91,8 +92,8 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
 
     function cancelWalletListing(uint256 tokenId) external nonReentrant {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.canOperate(listing.owner, msg.sender), "Unauthorized");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.canOperate(listing.owner, msg.sender)) revert Errors.NotAuthorized();
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingCancelled(tokenId);
     }
@@ -142,7 +143,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
 
         // Call Permit2 to set allowance and then transfer input tokens to this contract
         address permit2 = MarketStorage.configLayout().permit2;
-        require(permit2 != address(0), "Permit2NotSet");
+        if (permit2 == address(0)) revert Errors.Permit2NotSet();
         IPermit2Minimal(permit2).permit(msg.sender, permitSingle, signature);
         IPermit2Minimal(permit2).transferFrom(msg.sender, address(this), uint160(total), inputToken);
 
