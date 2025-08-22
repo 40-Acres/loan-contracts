@@ -70,29 +70,29 @@ Facets must compose these libraries; do not bypass them:
 We define an enum route type and a registry of external markets per chain.
 
 - Route enum (`RouteLib.BuyRoute`): `InternalWallet`, `InternalLoan`, `ExternalAdapter`.
-- External markets are identified by `bytes32` keys (e.g., `VEXY`, `OPENX`, `SALVOR`) resolved to adapter addresses in config.
+- External market adapters are identified by `bytes32` keys (e.g., `VEXY`, `OPENX`, `SALVOR`) resolved to adapter addresses in config.
 - Single‑veNFT per diamond: each deployment binds to one `votingEscrow`. All token IDs refer to this veNFT. For a new veNFT market/lending, deploy a new diamond. This simplifies routing and reduces attack surface.
 
 Selectors
-- quoteToken(route, marketKey, tokenId, quoteData) → (price, marketFee, total, currency)
-  - Internal routes ignore `marketKey`; external routes use it to find the adapter. `quoteData` is adapter‑specific (Phase A default: `abi.encode(listingId, expectedCurrency, maxPrice)`).
-- buyToken(route, marketKey, tokenId, maxTotal, buyData, optionalPermit2)
+- quoteToken(route, adapterKey, tokenId, quoteData) → (price, marketFee, total, currency)
+  - Internal routes ignore `adapterKey`; external routes use it to find the adapter. `quoteData` is adapter‑specific (Phase A default: `abi.encode(listingId, expectedCurrency, maxPrice)`).
+- buyToken(route, adapterKey, tokenId, maxTotal, buyData, optionalPermit2)
   - Executes the purchase through the selected path and enforces `total <= maxTotal`. For external routes, `buyData` must match the adapter’s expected tuple; optional Permit2 payload allows single‑tx funds pull.
 
 Registry and allowlists
-- `marketKey → adapter` registry controlled by governance; unknown keys revert.
+- `adapterKey → adapter` registry controlled by governance; unknown keys revert.
 - `votingEscrow` allowlist controlled by governance; adapters may also maintain per‑adapter allowlists.
 
 This keeps the API stable while allowing new external venues via governance without changing selectors.
 
 ### RFQ off‑chain orders and Permit2
-- EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, marketKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(buyData)`.
-- On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and `keccak256(buyData)` equality, then calls `buyToken` with the same (route, marketKey, votingEscrow, tokenId, maxTotal, buyData).
+- EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, adapterKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(buyData)`.
+- On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and `keccak256(buyData)` equality, then calls `buyToken` with the same (route, adapterKey, votingEscrow, tokenId, maxTotal, buyData).
 - Makers can cancel via nonce bump or explicit cancel. Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals.
 
 ### LBO UX and indexing for external venues
 - UI calls `quoteToken` with `ExternalAdapter` and `abi.encode(listingId, expectedCurrency, maxPrice)` and displays: price, fees, total, projected loan principal, financed LBO fee portion, and max LTV.
-- Required indexed fields per listing: `(votingEscrow, tokenId)`, `marketKey`, `listingId`, `expectedCurrency`, current price, endTime/sold flag. Loan inputs for preview: `loanAsset`, LTV caps, LBO fee config.
+- Required indexed fields per listing: `(votingEscrow, tokenId)`, `adapterKey`, `listingId`, `expectedCurrency`, current price, endTime/sold flag. Loan inputs for preview: `loanAsset`, LTV caps, LBO fee config.
 - `buyToken` with LBO flag performs: adapter buy to diamond custody → custody assert → lock into loan → open loan sized to LTV + financed fee → settle seller and fees → assign borrower.
 
 ### Why a single routed API (with optional wrappers)

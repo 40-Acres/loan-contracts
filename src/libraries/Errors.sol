@@ -23,7 +23,7 @@ library Errors {
     error CurrencyNotAllowed();
     error PriceOutOfBounds();
     error OfferTooLow();
-    error UnknownExternalMarket();
+    error UnknownAdapter();
 
     // Validation
     error InsufficientWeight();

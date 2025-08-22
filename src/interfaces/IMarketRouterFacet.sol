@@ -6,15 +6,17 @@ import {RouteLib} from "../libraries/RouteLib.sol";
 interface IMarketRouterFacet {
     function quoteToken(
         RouteLib.BuyRoute route,
-        bytes32 marketKey,
+        bytes32 adapterKey,
         uint256 tokenId,
+        address inputToken,
         bytes calldata quoteData
     ) external view returns (uint256 price, uint256 marketFee, uint256 total, address currency);
 
     function buyToken(
         RouteLib.BuyRoute route,
-        bytes32 marketKey,
+        bytes32 adapterKey,
         uint256 tokenId,
+        address inputToken,
         uint256 maxTotal,
         bytes calldata buyData,
         bytes calldata optionalPermit2

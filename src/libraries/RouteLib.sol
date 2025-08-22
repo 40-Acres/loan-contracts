@@ -12,10 +12,10 @@ library RouteLib {
 
     // Keys for external markets are chain-specific and configured by governance
     // e.g., bytes32("VEXY"), bytes32("OPENX"), bytes32("SALVOR")
-    type MarketKey is bytes32;
+    type adapterKey is bytes32;
 
-    function toKey(string memory name) internal pure returns (MarketKey) {
-        return MarketKey.wrap(keccak256(abi.encodePacked(name)));
+    function toKey(string memory name) internal pure returns (adapterKey) {
+        return adapterKey.wrap(keccak256(abi.encodePacked(name)));
     }
 }
 

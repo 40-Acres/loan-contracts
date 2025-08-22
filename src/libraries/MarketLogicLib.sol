@@ -37,22 +37,6 @@ library MarketLogicLib {
         return owner == operator || MarketStorage.orderbookLayout().isOperatorFor[owner][operator];
     }
 
-    function getTotalCost(uint256 tokenId) internal view returns (
-        uint256 total,
-        uint256 listingPrice,
-        uint256 loanBalance,
-        address paymentToken
-    ) {
-        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        listingPrice = listing.price;
-        paymentToken = listing.paymentToken;
-        if (listing.hasOutstandingLoan) {
-            (loanBalance,) = ILoanMinimalOpsLib(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
-        }
-        total = listingPrice + loanBalance;
-    }
-
     function getVeNFTWeight(uint256 tokenId) internal view returns (uint256) {
         IVotingEscrowMinimalOpsLib.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsLib(MarketStorage.configLayout().votingEscrow).locked(tokenId);
         if (!lockedBalance.isPermanent && lockedBalance.end < block.timestamp) {

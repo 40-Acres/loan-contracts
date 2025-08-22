@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketViewFacet} from "../../interfaces/IMarketViewFacet.sol";
+import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 
 interface ILoanMinimal {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -52,15 +53,6 @@ contract MarketViewFacet is IMarketViewFacet {
         return (listing.owner, listing.price, listing.paymentToken, listing.hasOutstandingLoan, listing.expiresAt);
     }
 
-    function getTotalCost(uint256 tokenId) external view returns (
-        uint256 total,
-        uint256 listingPrice,
-        uint256 loanBalance,
-        address paymentToken
-    ) {
-        (total, listingPrice, loanBalance, paymentToken) = _getTotalCost(tokenId);
-    }
-
     function getOffer(uint256 offerId) external view returns (
         address creator,
         uint256 minWeight,
@@ -83,7 +75,7 @@ contract MarketViewFacet is IMarketViewFacet {
     }
 
     function isListingActive(uint256 tokenId) external view returns (bool) {
-        return _isListingActive(tokenId);
+        return MarketLogicLib.isListingActive(tokenId);
     }
 
     function isOfferActive(uint256 offerId) external view returns (bool) {
@@ -111,22 +103,6 @@ contract MarketViewFacet is IMarketViewFacet {
     function _isOfferActive(uint256 offerId) internal view returns (bool) {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         return offer.creator != address(0) && (offer.expiresAt == 0 || block.timestamp < offer.expiresAt);
-    }
-
-    function _getTotalCost(uint256 tokenId) internal view returns (
-        uint256 total,
-        uint256 listingPrice,
-        uint256 loanBalance,
-        address paymentToken
-    ) {
-        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        listingPrice = listing.price;
-        paymentToken = listing.paymentToken;
-        if (listing.hasOutstandingLoan) {
-            (loanBalance,) = ILoanMinimal(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
-        }
-        total = listingPrice + loanBalance;
     }
 
     function _canOperate(address owner, address operator) internal view returns (bool) {

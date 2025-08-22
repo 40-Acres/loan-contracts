@@ -165,7 +165,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
         vm.stopPrank();
 
-        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance, ) = IMarketViewFacet(diamond).getTotalCost(tokenId);
+        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance, ) = IMarketListingsLoanFacet(diamond).quoteLoanListing(tokenId);
         vm.startPrank(buyer);
         usdc.approve(diamond, totalCost);
 
@@ -298,7 +298,9 @@ contract LoanListingsTest is DiamondMarketTestBase {
         IMarketListingsLoanFacet(diamond).makeLoanListing(newTokenId, LISTING_PRICE, address(usdc), 0);
         vm.stopPrank();
 
-        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance,) = IMarketViewFacet(diamond).getTotalCost(newTokenId);
+
+        uint256 totalCost = IMarketListingsLoanFacet(diamond).quoteLoanListing(newTokenId);
+
         assertEq(totalCost, LISTING_PRICE);
         assertEq(listingPrice, LISTING_PRICE);
         assertEq(loanBalance, 0);

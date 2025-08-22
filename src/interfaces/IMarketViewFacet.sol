@@ -19,13 +19,6 @@ interface IMarketViewFacet {
         uint256 expiresAt
     );
 
-    function getTotalCost(uint256 tokenId) external view returns (
-        uint256 total,
-        uint256 listingPrice,
-        uint256 loanBalance,
-        address paymentToken
-    );
-
     function getOffer(uint256 offerId) external view returns (
         address creator,
         uint256 minWeight,

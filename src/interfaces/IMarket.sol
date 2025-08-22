@@ -102,13 +102,6 @@ interface IMarket {
         bool hasOutstandingLoan,
         uint256 expiresAt
     );
-
-    function getTotalCost(uint256 tokenId) external view returns (
-        uint256 total,           // price + loan balance (if any)
-        uint256 listingPrice,    // just the listing price
-        uint256 loanBalance,     // current loan balance from LoanV2
-        address paymentToken     // token needed for payment
-    );
     
     function getOffer(uint256 offerId) external view returns (
         address creator,

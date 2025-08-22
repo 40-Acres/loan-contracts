@@ -24,7 +24,14 @@ interface IMarketListingsWalletFacet {
 
     function cancelWalletListing(uint256 tokenId) external;
 
-    function takeWalletListing(uint256 tokenId) external payable;
+    function takeWalletListing(uint256 tokenId, address inputToken) external payable;
+    
+    // Optional Permit2 wrapper
+    struct TokenPermissions { address token; uint256 amount; }
+    struct PermitSingle { TokenPermissions permitted; uint256 nonce; uint256 deadline; address spender; }
+    function takeWalletListingWithPermit(uint256 tokenId, address inputToken, PermitSingle calldata permitSingle, bytes calldata signature) external payable;
+    
+    function quoteWalletListing(uint256 tokenId, address inputToken) external view returns (uint256 price, uint256 marketFee, uint256 total, address paymentToken);
 }
 
 

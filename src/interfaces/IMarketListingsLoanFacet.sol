@@ -24,9 +24,14 @@ interface IMarketListingsLoanFacet {
 
     function cancelLoanListing(uint256 tokenId) external;
 
-    function takeLoanListing(uint256 tokenId) external payable;
+    function quoteLoanListing(uint256 tokenId, address inputToken) external view returns (uint256 price, uint256 marketFee, uint256 total, address currency);
 
-    function takeLoanListingWithDebt(uint256 tokenId, uint256 debtTolerance) external payable;
+    function takeLoanListing(uint256 tokenId, address inputToken) external payable;
+
+    // Optional Permit2 wrapper (parity with wallet facet)
+    struct TokenPermissions { address token; uint256 amount; }
+    struct PermitSingle { TokenPermissions permitted; uint256 nonce; uint256 deadline; address spender; }
+    function takeLoanListingWithPermit(uint256 tokenId, address inputToken, PermitSingle calldata permitSingle, bytes calldata signature) external payable;
 }
 
 

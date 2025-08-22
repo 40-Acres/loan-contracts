@@ -4,8 +4,9 @@ pragma solidity ^0.8.28;
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWalletFacet.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SwapRouterLib} from "../../libraries/SwapRouterLib.sol";
 
 interface ILoanMinimalOpsWL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -14,6 +15,13 @@ interface ILoanMinimalOpsWL {
 interface IVotingEscrowMinimalOpsWL {
     function ownerOf(uint256 tokenId) external view returns (address);
     function transferFrom(address from, address to, uint256 tokenId) external;
+}
+
+interface IPermit2Minimal {
+    struct TokenPermissions { address token; uint256 amount; }
+    struct PermitSingle { TokenPermissions permitted; uint256 nonce; uint256 deadline; address spender; }
+    function permit(address owner, PermitSingle calldata permitSingle, bytes calldata signature) external;
+    function transferFrom(address from, address to, uint160 amount, address token) external;
 }
 
 contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
@@ -89,27 +97,166 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         emit ListingCancelled(tokenId);
     }
 
-    function takeWalletListing(uint256 tokenId) external payable nonReentrant onlyWhenNotPaused {
+    function takeWalletListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
+        // Single validation pass
+        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+        require(listing.owner != address(0), "ListingNotFound");
+        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        require(!listing.hasOutstandingLoan, "LoanListing");
+        if (inputToken == address(0)) {
+            require(msg.value > 0, "NoETH");
+        } else {
+            require(MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
+            require(msg.value == 0, "NoETHForTokenPayment");
+        }
+
+        _takeWalletListing(tokenId, inputToken);
+    }
+
+    function takeWalletListingWithPermit(
+        uint256 tokenId,
+        address inputToken,
+        IPermit2Minimal.PermitSingle calldata permitSingle,
+        bytes calldata signature
+    ) external payable nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         require(listing.owner != address(0), "ListingNotFound");
         require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
         require(!listing.hasOutstandingLoan, "LoanListing");
 
-        uint256 listingPrice = listing.price;
-        IERC20(listing.paymentToken).safeTransferFrom(msg.sender, address(this), listingPrice);
-
-        uint256 fee = (listingPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
-        uint256 sellerAmount = listingPrice - fee;
-        if (fee > 0) {
-            IERC20(listing.paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
+        if (inputToken == address(0)) {
+            // ETH path ignores permit; delegate to normal take
+            _takeWalletListing(tokenId, inputToken);
+            return;
         }
-        IERC20(listing.paymentToken).safeTransfer(listing.owner, sellerAmount);
+
+        require(MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
+        require(msg.value == 0, "NoETHForTokenPayment");
+
+        (uint256 price, uint256 marketFee, uint256 total, address paymentToken) = _quoteWalletListing(tokenId, inputToken);
+
+        address router = MarketStorage.configLayout().swapRouter;
+        address factory = MarketStorage.configLayout().swapFactory;
+        address[] memory supportedTokens = MarketStorage.configLayout().supportedSwapTokens;
+        require(router != address(0) && factory != address(0), "SwapNotConfigured");
+
+        // Call Permit2 to set allowance and then transfer input tokens to this contract
+        address permit2 = MarketStorage.configLayout().permit2;
+        require(permit2 != address(0), "Permit2NotSet");
+        IPermit2Minimal(permit2).permit(msg.sender, permitSingle, signature);
+        IPermit2Minimal(permit2).transferFrom(msg.sender, address(this), uint160(total), inputToken);
+
+        if (inputToken != paymentToken) {
+            // Swap from this contract balance to payment token
+            SwapRouterLib.swapExactInBestRoute(
+                inputToken,
+                paymentToken,
+                total,
+                price,
+                supportedTokens,
+                factory,
+                router,
+                address(this),
+                block.timestamp + 300
+            );
+        }
+
+        // Settle: fee then seller
+        if (marketFee > 0) {
+            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, marketFee);
+        }
+        IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, msg.sender, tokenId);
+        IERC20(paymentToken).safeTransfer(listing.owner, price - marketFee);
+        delete MarketStorage.orderbookLayout().listings[tokenId];
+        emit ListingTaken(tokenId, msg.sender, price, marketFee);
+    }
+
+    function quoteWalletListing(uint256 tokenId, address inputToken) external view returns (uint256 price, uint256 marketFee, uint256 total, address paymentToken) {
+        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+        require(listing.owner != address(0), "ListingNotFound");
+        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        require(inputToken == address(0) || MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
+        return _quoteWalletListing(tokenId, inputToken);
+    }
+
+    function _quoteWalletListing(uint256 tokenId, address inputToken) internal view returns (uint256 price, uint256 marketFee, uint256 total, address paymentToken) {
+        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+        // listing validity is checked in the public entry path to avoid duplicate gas here
+        
+        price = listing.price;
+        paymentToken = listing.paymentToken;
+        marketFee = _calculateMarketFee(price);
+        
+        // If input token is the same as payment token, no swap needed
+        if (inputToken == paymentToken) {
+            return (price, marketFee, price, paymentToken);
+        }
+
+        // Calculate how much input is needed to get exactly `price` in payment token (seller pays fee)
+        if (inputToken == address(0)) {
+            total = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, price);
+        } else {
+            total = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, price);
+        }
+        return (price, marketFee, total, paymentToken);
+    }
+
+    function _takeWalletListing(uint256 tokenId, address inputToken) internal {
+        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+        
+        // Listing validity has already been checked in public entry
+        (uint256 price, uint256 marketFee, uint256 total, address paymentToken) = _quoteWalletListing(tokenId, inputToken);
+        if (inputToken == paymentToken) {
+            // Direct payment - no swap needed
+        IERC20(inputToken).safeTransferFrom(msg.sender, address(this), total);
+        } else if (inputToken == address(0)) {
+            // ETH → payment token
+            require(msg.value >= total, "InsufficientETH");
+            uint256[] memory amounts = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(
+                paymentToken,
+                total,
+                price,
+                address(this)
+            );
+            require(amounts[amounts.length - 1] >= price, "InsufficientSwapOutput");
+            if (msg.value > total) {
+                (bool ok,) = msg.sender.call{value: msg.value - total}("");
+                require(ok);
+            }
+        } else {
+            // Cross-token payment - swap via library wrappers
+            uint256[] memory amounts = SwapRouterLib.swapExactInBestRouteFromUserFromConfig(
+                inputToken,
+                paymentToken,
+                total,
+                price,
+                address(this)
+            );
+            require(amounts[amounts.length - 1] >= price, "InsufficientSwapOutput");
+        }
+
+        // At this point we have the correct payment token and enough to pay for the listing
+
+        // Seller pays fee: distribute price - fee to seller, fee to recipient
+        if (marketFee > 0) {
+            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, marketFee);
+        }
 
         // Transfer veNFT from seller wallet to buyer
         IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, msg.sender, tokenId);
 
+        // Send net proceeds to seller (price - fee)
+        IERC20(paymentToken).safeTransfer(listing.owner, price - marketFee);
+
+        // Delete listing
         delete MarketStorage.orderbookLayout().listings[tokenId];
-        emit ListingTaken(tokenId, msg.sender, listingPrice, fee);
+
+        emit ListingTaken(tokenId, msg.sender, price, marketFee);
+    }
+
+    function _calculateMarketFee(uint256 price) internal view returns (uint256 marketFee) {
+        // TODO: calculate market fee
+        return (price * MarketStorage.configLayout().marketFeeBps) / 10000;
     }
 }
 
