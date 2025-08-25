@@ -74,7 +74,7 @@ contract WalletListingsTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         usdcErc.approve(diamond, 100e6);
-        IMarketListingsWalletFacet(diamond).takeWalletListing(walletTokenId);
+        IMarketListingsWalletFacet(diamond).takeWalletListing(walletTokenId, address(usdc), 100e6, bytes(""), bytes(""));
         vm.stopPrank();
 
         assertEq(votingEscrow.ownerOf(walletTokenId), buyer);

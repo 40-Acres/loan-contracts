@@ -165,24 +165,25 @@ contract LoanListingsTest is DiamondMarketTestBase {
         IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
         vm.stopPrank();
 
-        (uint256 totalCost, uint256 listingPrice, uint256 loanBalance, ) = IMarketListingsLoanFacet(diamond).quoteLoanListing(tokenId);
+        (uint256 listingPrice, uint256 protocolFeeInPaymentToken, uint256 requiredInputTokenAmount, address paymentToken) =
+            IMarketListingsLoanFacet(diamond).quoteLoanListing(tokenId, address(usdc));
         vm.startPrank(buyer);
-        usdc.approve(diamond, totalCost);
+        usdc.approve(diamond, requiredInputTokenAmount);
 
         uint16 feeBps = IMarketViewFacet(diamond).marketFeeBps();
         uint256 expectedFee = (listingPrice * feeBps) / 10000;
         uint256 buyerInitial = usdc.balanceOf(buyer);
         uint256 sellerInitial = usdc.balanceOf(user);
 
-        IMarketListingsLoanFacet(diamond).takeLoanListing(tokenId);
+        IMarketListingsLoanFacet(diamond).takeLoanListing(tokenId, address(usdc));
         vm.stopPrank();
 
         (, address newBorrower) = loan.getLoanDetails(tokenId);
         assertEq(newBorrower, buyer);
 
-        assertEq(usdc.balanceOf(buyer), buyerInitial - totalCost);
+        assertEq(usdc.balanceOf(buyer), buyerInitial - requiredInputTokenAmount);
         assertEq(usdc.balanceOf(user), sellerInitial + listingPrice - expectedFee);
-        assertTrue(loanBalance > 0);
+        // loan payoff is handled internally; not asserting loanBalance here as interface changed
 
         (address listingOwner,,,,) = IMarketViewFacet(diamond).getListing(tokenId);
         assertEq(listingOwner, address(0));
@@ -199,7 +200,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         vm.startPrank(buyer);
         usdc.approve(diamond, LISTING_PRICE);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).takeLoanListing(999999);
+        IMarketListingsLoanFacet(diamond).takeLoanListing(999999, address(usdc));
         vm.stopPrank();
     }
 
@@ -297,17 +298,16 @@ contract LoanListingsTest is DiamondMarketTestBase {
         loan.requestLoan(newTokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         IMarketListingsLoanFacet(diamond).makeLoanListing(newTokenId, LISTING_PRICE, address(usdc), 0);
         vm.stopPrank();
+        (uint256 listingPriceInPaymentToken,, uint256 requiredInputTokenAmount, address paymentToken) =
+            IMarketListingsLoanFacet(diamond).quoteLoanListing(newTokenId, address(usdc));
 
-
-        uint256 totalCost = IMarketListingsLoanFacet(diamond).quoteLoanListing(newTokenId);
-
-        assertEq(totalCost, LISTING_PRICE);
-        assertEq(listingPrice, LISTING_PRICE);
-        assertEq(loanBalance, 0);
+        assertEq(listingPriceInPaymentToken, LISTING_PRICE);
+        assertEq(requiredInputTokenAmount, LISTING_PRICE);
+        assertEq(paymentToken, address(usdc));
 
         vm.startPrank(buyer);
         usdc.approve(diamond, LISTING_PRICE);
-        IMarketListingsLoanFacet(diamond).takeLoanListing(newTokenId);
+        IMarketListingsLoanFacet(diamond).takeLoanListing(newTokenId, address(usdc));
         vm.stopPrank();
 
         (, address newBorrower) = loan.getLoanDetails(newTokenId);

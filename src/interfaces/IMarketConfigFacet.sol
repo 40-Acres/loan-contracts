@@ -33,6 +33,8 @@ interface IMarketConfigFacet {
     // Loan asset configuration for settlement on loan chains
     function setLoanAsset(address asset) external;
     function loanAsset() external view returns (address);
+
+    function setPermit2(address permit2) external;
 }
 
 

@@ -8,12 +8,10 @@ interface IMarketRouterFacet {
         RouteLib.BuyRoute route,
         bytes32 adapterKey,
         uint256 tokenId,
-        address inputToken,
         bytes calldata quoteData
     ) external view returns (
         uint256 listingPriceInPaymentToken,
         uint256 protocolFeeInPaymentToken,
-        uint256 requiredInputTokenAmount,
         address paymentToken
     );
 

@@ -7,7 +7,7 @@ import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWallet
 import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SwapRouterLib} from "../../libraries/SwapRouterLib.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 interface ILoanMinimalOpsWL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -98,104 +98,125 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         emit ListingCancelled(tokenId);
     }
 
-    function takeWalletListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
-        // Single validation pass
-        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        if (listing.owner == address(0)) revert Errors.ListingNotFound();
-        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
-        if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
-        if (inputToken == address(0)) {
-            if (msg.value == 0) revert Errors.InsufficientETH();
-        } else {
-            if (!MarketStorage.configLayout().allowedPaymentToken[inputToken]) revert Errors.InputTokenNotAllowed();
-            if (msg.value != 0) revert Errors.NoETHForTokenPayment();
-        }
-
-        _takeWalletListing(tokenId, inputToken);
-    }
-
-    function takeWalletListingWithPermit(
+    function takeWalletListing(
         uint256 tokenId,
         address inputToken,
-        IPermit2Minimal.PermitSingle calldata permitSingle,
-        bytes calldata signature
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
     ) external payable nonReentrant onlyWhenNotPaused {
+        _takeWalletListingFor(tokenId, msg.sender, inputToken, amountInMax, tradeData, optionalPermit2);
+    }
+
+    function takeWalletListingFor(
+        uint256 tokenId,
+        address buyer,
+        address inputToken,
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external payable nonReentrant onlyWhenNotPaused {
+        // Router-only: callable only via the diamond itself
+        if (msg.sender != address(this)) revert Errors.NotAuthorized();
+        _takeWalletListingFor(tokenId, buyer, inputToken, amountInMax, tradeData, optionalPermit2);
+    }
+
+    function _takeWalletListingFor(
+        uint256 tokenId,
+        address buyer,
+        address inputToken,
+        uint256 amountInMax,
+        bytes memory tradeData,
+        bytes memory optionalPermit2
+    ) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
         if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
 
-        if (inputToken == address(0)) {
-            // ETH path ignores permit; delegate to normal take
-            _takeWalletListing(tokenId, inputToken);
-            return;
+        (uint256 price, uint256 marketFee, address paymentToken) = _quoteWalletListing(tokenId);
+
+        // Optional Permit2 decode
+        IPermit2Minimal.PermitSingle memory p2;
+        bytes memory sig;
+        if (optionalPermit2.length > 0) {
+            (p2, sig) = abi.decode(optionalPermit2, (IPermit2Minimal.PermitSingle, bytes));
         }
 
-        if (!MarketStorage.configLayout().allowedPaymentToken[inputToken]) revert Errors.InputTokenNotAllowed();
-        if (msg.value != 0) revert Errors.NoETHForTokenPayment();
-
-        (uint256 price, uint256 marketFee, uint256 total, address paymentToken) = _quoteWalletListing(tokenId, inputToken);
-
-        address router = MarketStorage.configLayout().swapRouter;
-        address factory = MarketStorage.configLayout().swapFactory;
-        address[] memory supportedTokens = MarketStorage.configLayout().supportedSwapTokens;
-        if (router == address(0) || factory == address(0)) revert Errors.SwapNotConfigured();
-
-        // Call Permit2 to set allowance and then transfer input tokens to this contract
-        address permit2 = MarketStorage.configLayout().permit2;
-        if (permit2 == address(0)) revert Errors.Permit2NotSet();
-        IPermit2Minimal(permit2).permit(msg.sender, permitSingle, signature);
-        IPermit2Minimal(permit2).transferFrom(msg.sender, address(this), uint160(total), inputToken);
-
-        if (inputToken != paymentToken) {
-            // Swap from this contract balance to payment token
-            SwapRouterLib.swapExactInBestRoute(
-                inputToken,
-                paymentToken,
-                total,
-                price,
-                supportedTokens,
-                factory,
-                router,
-                address(this),
-                block.timestamp + 300
-            );
+        if (inputToken == paymentToken && tradeData.length == 0) {
+            // No swap path
+            if (inputToken == address(0)) {
+                if (msg.value < price) revert Errors.InsufficientETH();
+            } else {
+                if (optionalPermit2.length > 0) {
+                    address permit2 = MarketStorage.configLayout().permit2;
+                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
+                    IPermit2Minimal(permit2).permit(buyer, p2, sig);
+                    IPermit2Minimal(permit2).transferFrom(buyer, address(this), uint160(price), inputToken);
+                } else {
+                    IERC20(inputToken).safeTransferFrom(buyer, address(this), price);
+                }
+            }
+        } else if (inputToken != paymentToken && tradeData.length > 0) {
+            // Odos swap path
+            address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+            if (inputToken == address(0)) {
+                if (msg.value == 0) revert Errors.InsufficientETH();
+                (bool success,) = odos.call{value: msg.value}(tradeData);
+                require(success);
+            } else {
+                if (optionalPermit2.length > 0) {
+                    address permit2 = MarketStorage.configLayout().permit2;
+                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
+                    IPermit2Minimal(permit2).permit(buyer, p2, sig);
+                    IPermit2Minimal(permit2).transferFrom(buyer, address(this), uint160(amountInMax), inputToken);
+                } else {
+                    IERC20(inputToken).safeTransferFrom(buyer, address(this), amountInMax);
+                }
+                IERC20(inputToken).approve(odos, amountInMax);
+                (bool success2,) = odos.call{value: 0}(tradeData);
+                require(success2);
+                IERC20(inputToken).approve(odos, 0);
+            }
+            // Must have at least price of payment token
+            if (IERC20(paymentToken).balanceOf(address(this)) < price) revert Errors.Slippage();
+        } else {
+            revert Errors.InvalidRoute();
         }
 
-        // Settle: fee then seller
+        // Settle
         if (marketFee > 0) {
             IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, marketFee);
         }
-        IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, msg.sender, tokenId);
+        IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, buyer, tokenId);
         IERC20(paymentToken).safeTransfer(listing.owner, price - marketFee);
         delete MarketStorage.orderbookLayout().listings[tokenId];
-        emit ListingTaken(tokenId, msg.sender, price, marketFee);
+        emit ListingTaken(tokenId, buyer, price, marketFee);
     }
 
+    // Removed separate Permit2 function; handled within unified takeWalletListing
+
+    // Removed legacy helper
+
     function quoteWalletListing(
-        uint256 tokenId,
-        address inputToken
+        uint256 tokenId
     ) external view returns (
         uint256 listingPriceInPaymentToken,
         uint256 protocolFeeInPaymentToken,
-        uint256 requiredInputTokenAmount,
         address paymentToken
     ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
-        require(inputToken == address(0) || MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
-        (uint256 a, uint256 b, uint256 c, address d) = _quoteWalletListing(tokenId, inputToken);
-        return (a, b, c, d);
+        (uint256 a, uint256 b, address d) = _quoteWalletListing(tokenId);
+        return (a, b, d);
     }
 
     function _quoteWalletListing(
-        uint256 tokenId,
-        address inputToken
+        uint256 tokenId
     ) internal view returns (
         uint256 listingPriceInPaymentToken,
         uint256 protocolFeeInPaymentToken,
-        uint256 requiredInputTokenAmount,
         address paymentToken
     ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
@@ -204,53 +225,19 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         listingPriceInPaymentToken = listing.price;
         paymentToken = listing.paymentToken;
         protocolFeeInPaymentToken = _calculateMarketFee(listingPriceInPaymentToken);
-        
-        // If input token is the same as payment token, no swap needed
-        if (inputToken == paymentToken) {
-            return (listingPriceInPaymentToken, protocolFeeInPaymentToken, listingPriceInPaymentToken, paymentToken);
-        }
-
-        // Calculate how much input is needed to get exactly `price` in payment token (seller pays fee)
-        if (inputToken == address(0)) {
-            requiredInputTokenAmount = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, listingPriceInPaymentToken);
-        } else {
-            requiredInputTokenAmount = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, listingPriceInPaymentToken);
-        }
-        return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
+        return (listingPriceInPaymentToken, protocolFeeInPaymentToken, paymentToken);
     }
 
     function _takeWalletListing(uint256 tokenId, address inputToken) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         
         // Listing validity has already been checked in public entry
-        (uint256 price, uint256 marketFee, uint256 total, address paymentToken) = _quoteWalletListing(tokenId, inputToken);
+        (uint256 price, uint256 marketFee, address paymentToken) = _quoteWalletListing(tokenId);
         if (inputToken == paymentToken) {
             // Direct payment - no swap needed
-        IERC20(inputToken).safeTransferFrom(msg.sender, address(this), total);
-        } else if (inputToken == address(0)) {
-            // ETH → payment token
-            if (msg.value < total) revert Errors.InsufficientETH();
-            uint256[] memory amounts = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(
-                paymentToken,
-                total,
-                price,
-                address(this)
-            );
-            if (amounts[amounts.length - 1] < price) revert Errors.Slippage();
-            if (msg.value > total) {
-                (bool ok,) = msg.sender.call{value: msg.value - total}("");
-                require(ok);
-            }
+            IERC20(inputToken).safeTransferFrom(msg.sender, address(this), price);
         } else {
-            // Cross-token payment - swap via library wrappers
-            uint256[] memory amounts = SwapRouterLib.swapExactInBestRouteFromUserFromConfig(
-                inputToken,
-                paymentToken,
-                total,
-                price,
-                address(this)
-            );
-            if (amounts[amounts.length - 1] < price) revert Errors.Slippage();
+            revert Errors.InputTokenNotAllowed();
         }
 
         // At this point we have the correct payment token and enough to pay for the listing

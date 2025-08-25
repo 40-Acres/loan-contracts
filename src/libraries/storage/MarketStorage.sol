@@ -53,11 +53,8 @@ library MarketStorage {
         address loanAsset;                                            // payment asset expected by Loan for pay() (e.g., USDC)
         mapping(address => bool) allowedVotingEscrow;                 // allowed veNFT contracts
         mapping(bytes32 => address) externalAdapter;                  // adapterKey => adapter facet address
-        address swapRouter;                                           // Router address for token swaps
-        address swapFactory;                                          // Factory address for pool creation
-        address[] supportedSwapTokens;                               // Supported intermediate tokens for swaps
         address permit2;                                              // Uniswap Permit2 address (optional)
-        uint256[46] _gap;
+        uint256[49] _gap;
     }
 
     // @custom:storage-location erc7201:market.orderbook.storage

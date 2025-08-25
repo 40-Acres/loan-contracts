@@ -35,6 +35,23 @@ interface IMarketListingsLoanFacet {
     );
 
     function takeLoanListing(uint256 tokenId, address inputToken) external payable;
+    function takeLoanListing(
+        uint256 tokenId,
+        address inputToken,
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external payable;
+
+    // Router-only entry allowing explicit buyer forwarding
+    function takeLoanListingFor(
+        uint256 tokenId,
+        address buyer,
+        address inputToken,
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external payable;
 
     // Optional Permit2 wrapper (parity with wallet facet)
     struct TokenPermissions { address token; uint256 amount; }

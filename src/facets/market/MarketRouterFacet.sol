@@ -33,23 +33,23 @@ contract MarketRouterFacet is IMarketRouterFacet {
         RouteLib.BuyRoute route,
         bytes32 adapterKey,
         uint256 tokenId,
-        address inputToken,
         bytes calldata quoteData
         ) external view returns (
             uint256 listingPriceInPaymentToken,
             uint256 protocolFeeInPaymentToken,
-            uint256 requiredInputTokenAmount,
             address paymentToken
         ) {
         if (route == RouteLib.BuyRoute.InternalWallet) {
-            return _quoteInternalWallet(tokenId, inputToken);
+            (uint256 p,uint256 f,address pay) = _quoteInternalWallet(tokenId);
+            return (p,f,pay);
         }
         if (route == RouteLib.BuyRoute.InternalLoan) {
-            return _quoteInternalLoan(tokenId, inputToken);
+            (uint256 p,uint256 f,address pay) = _quoteInternalLoan(tokenId);
+            return (p,f,pay);
         }
         // External adapters quote via adapterKey/quoteData path (Phase A stub)
-        adapterKey; quoteData; inputToken;
-        return (0, 0, 0, address(0));
+        adapterKey; quoteData;
+        return (0, 0, address(0));
     }
 
     function buyToken(
@@ -66,18 +66,31 @@ contract MarketRouterFacet is IMarketRouterFacet {
         // Single-veNFT per diamond: no escrow parameter; cfg.votingEscrow is authoritative
 
         if (route == RouteLib.BuyRoute.InternalWallet) {
-            // Pre-quote and enforce maxTotal
-            (uint256 total,,,) = _quoteInternalWallet(tokenId, inputToken);
-            // TODO: custom error for max total exceeded
-            if (total > maxTotal) revert Errors.MaxTotalExceeded();
-            _buyInternalWallet(tokenId, inputToken, optionalPermit2);
+            (uint256 price, uint256 fee, address paymentToken) = _quoteInternalWallet(tokenId);
+            uint256 total = price; // seller pays fee; total user spend bounded by maxTotal
+            if (inputToken == paymentToken) {
+                if (total > maxTotal) revert Errors.MaxTotalExceeded();
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputToken, 0, bytes(""), optionalPermit2);
+            } else {
+                if (buyData.length == 0) revert Errors.NoTradeData();
+                (uint256 amountIn, bytes memory tradeData) = abi.decode(buyData, (uint256, bytes));
+                if (amountIn > maxTotal) revert Errors.MaxTotalExceeded();
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputToken, amountIn, tradeData, optionalPermit2);
+            }
 
         } else if (route == RouteLib.BuyRoute.InternalLoan) {
             // Get total cost of listing
-            (uint256 total,,,) = _quoteInternalLoan(tokenId, inputToken);
-            // TODO: custom error for max total exceeded
+            (uint256 total,,) = _quoteInternalLoan(tokenId);
             if (total > maxTotal) revert Errors.MaxTotalExceeded();
-            _buyInternalLoan(tokenId, inputToken, optionalPermit2);
+            // Route to unified loan entry. If swap needed, buyData must carry (amountIn, tradeData)
+            if (buyData.length == 0) {
+                // No tradeData path
+                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputToken, 0, bytes(""), optionalPermit2);
+            } else {
+                (uint256 amountIn, bytes memory tradeData) = abi.decode(buyData, (uint256, bytes));
+                if (amountIn > maxTotal) revert Errors.MaxTotalExceeded();
+                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputToken, amountIn, tradeData, optionalPermit2);
+            }
 
         } else if (route == RouteLib.BuyRoute.ExternalAdapter) {
             // Look up adapter for the given key
@@ -96,43 +109,26 @@ contract MarketRouterFacet is IMarketRouterFacet {
     }
 
     // internal functions for internal routes
-    function _quoteInternalWallet(uint256 tokenId, address inputToken) internal view returns (
+    function _quoteInternalWallet(uint256 tokenId) internal view returns (
         uint256 listingPriceInPaymentToken,
         uint256 protocolFeeInPaymentToken,
-        uint256 requiredInputTokenAmount,
         address paymentToken
     ) {
-        return IMarketListingsWalletFacet(address(this)).quoteWalletListing(tokenId, inputToken);
+        return IMarketListingsWalletFacet(address(this)).quoteWalletListing(tokenId);
     }
 
-    function _buyInternalWallet(uint256 tokenId, address inputToken, bytes calldata optionalPermit2) internal {
-        if (inputToken != address(0) && optionalPermit2.length > 0) {
-            (IMarketListingsWalletFacet.PermitSingle memory permit, bytes memory sig) =
-                abi.decode(optionalPermit2, (IMarketListingsWalletFacet.PermitSingle, bytes));
-            IMarketListingsWalletFacet(address(this)).takeWalletListingWithPermit(tokenId, inputToken, permit, sig);
-            return;
-        }
-        IMarketListingsWalletFacet(address(this)).takeWalletListing(tokenId, inputToken);
-    }
+    // Removed; router now calls unified takeWalletListing directly
 
-    function _quoteInternalLoan(uint256 tokenId, address inputToken) internal view returns (
+    function _quoteInternalLoan(uint256 tokenId) internal view returns (
         uint256 listingPriceInPaymentToken,
         uint256 protocolFeeInPaymentToken,
-        uint256 requiredInputTokenAmount,
         address paymentToken
     ) {
-        return IMarketListingsLoanFacet(address(this)).quoteLoanListing(tokenId, inputToken);
+        (uint256 a,uint256 b,,address d) = IMarketListingsLoanFacet(address(this)).quoteLoanListing(tokenId, address(0));
+        return (a,b,d);
     }
 
-    function _buyInternalLoan(uint256 tokenId, address inputToken, bytes calldata optionalPermit2) internal {
-        if (inputToken != address(0) && optionalPermit2.length > 0) {
-            (IMarketListingsLoanFacet.PermitSingle memory permit, bytes memory sig) =
-                abi.decode(optionalPermit2, (IMarketListingsLoanFacet.PermitSingle, bytes));
-            IMarketListingsLoanFacet(address(this)).takeLoanListingWithPermit(tokenId, inputToken, permit, sig);
-            return;
-        }
-        IMarketListingsLoanFacet(address(this)).takeLoanListing(tokenId, inputToken);
-    }
+    // Removed legacy internal helper; router now calls takeLoanListingFor directly
 }
 
 

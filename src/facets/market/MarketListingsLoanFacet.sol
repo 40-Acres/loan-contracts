@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFacet.sol";
-import {SwapRouterLib} from "../../libraries/SwapRouterLib.sol";
 import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -99,10 +98,106 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     }
 
     function takeLoanListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
-        _takeLoanListing(tokenId, msg.sender, inputToken);
+        _takeLoanUnifiedFor(tokenId, msg.sender, inputToken, 0, new bytes(0), new bytes(0));
     }
 
-    function takeLoanListingWithPermit(uint256 tokenId, address inputToken, IPermit2MinimalLL.PermitSingle calldata permitSingle, bytes calldata signature) external payable nonReentrant onlyWhenNotPaused {
+    function takeLoanListing(
+        uint256 tokenId,
+        address inputToken,
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) public payable nonReentrant onlyWhenNotPaused {
+        _takeLoanUnifiedFor(tokenId, msg.sender, inputToken, amountInMax, tradeData, optionalPermit2);
+    }
+
+    function takeLoanListingFor(
+        uint256 tokenId,
+        address buyer,
+        address inputToken,
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external payable nonReentrant onlyWhenNotPaused {
+        if (msg.sender != address(this)) revert Errors.NotAuthorized();
+        _takeLoanUnifiedFor(tokenId, buyer, inputToken, amountInMax, tradeData, optionalPermit2);
+    }
+
+    function _takeLoanUnifiedFor(
+        uint256 tokenId,
+        address buyer,
+        address inputToken,
+        uint256 amountInMax,
+        bytes memory tradeData,
+        bytes memory optionalPermit2
+    ) internal {
+        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
+
+        IPermit2MinimalLL.PermitSingle memory p2; bytes memory sig;
+        if (optionalPermit2.length > 0) {
+            (p2, sig) = abi.decode(optionalPermit2, (IPermit2MinimalLL.PermitSingle, bytes));
+        }
+
+        if (inputToken == paymentToken && tradeData.length == 0) {
+            if (inputToken == address(0)) {
+                if (msg.value < total) revert Errors.InsufficientETH();
+            } else {
+                if (optionalPermit2.length > 0) {
+                    address permit2 = MarketStorage.configLayout().permit2;
+                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
+                    IPermit2MinimalLL(permit2).permit(buyer, p2, sig);
+                    IPermit2MinimalLL(permit2).transferFrom(buyer, address(this), uint160(total), inputToken);
+                } else {
+                    IERC20(inputToken).safeTransferFrom(buyer, address(this), total);
+                }
+            }
+        } else if (tradeData.length > 0) {
+            address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+            if (inputToken == address(0)) {
+                if (msg.value == 0) revert Errors.InsufficientETH();
+                (bool success,) = odos.call{value: msg.value}(tradeData);
+                require(success);
+            } else {
+                if (optionalPermit2.length > 0) {
+                    address permit2 = MarketStorage.configLayout().permit2;
+                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
+                    IPermit2MinimalLL(permit2).permit(buyer, p2, sig);
+                    IPermit2MinimalLL(permit2).transferFrom(buyer, address(this), uint160(amountInMax), inputToken);
+                } else {
+                    IERC20(inputToken).safeTransferFrom(buyer, address(this), amountInMax);
+                }
+                IERC20(inputToken).approve(odos, amountInMax);
+                (bool success2,) = odos.call{value: 0}(tradeData);
+                require(success2);
+                IERC20(inputToken).approve(odos, 0);
+            }
+            // After Odos, require balances sufficient for listing price + loan payoff
+            address loanAsset = MarketStorage.configLayout().loanAsset;
+            if (IERC20(paymentToken).balanceOf(address(this)) < listingPrice) revert Errors.Slippage();
+            if (loanBalance > 0 && IERC20(loanAsset).balanceOf(address(this)) < loanBalance) revert Errors.Slippage();
+            if (loanBalance > 0) {
+                IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
+                ILoanMinimalOpsLL(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
+            }
+        } else {
+            revert Errors.InvalidRoute();
+        }
+
+        // Settle listing proceeds
+        uint256 feeListing = (listingPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
+        if (feeListing > 0) {
+            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, feeListing);
+        }
+        IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
+        ILoanMinimalOpsLL(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
+        delete MarketStorage.orderbookLayout().listings[tokenId];
+        emit ListingTaken(tokenId, buyer, listingPrice, feeListing);
+    }
+
+    function takeLoanListingWithPermit(uint256 tokenId, address inputToken, IMarketListingsLoanFacet.PermitSingle calldata permitSingle, bytes calldata signature) external payable nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
@@ -122,7 +217,13 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
 
         address permit2 = MarketStorage.configLayout().permit2;
         require(permit2 != address(0), "Permit2NotSet");
-        IPermit2MinimalLL(permit2).permit(msg.sender, permitSingle, signature);
+        IPermit2MinimalLL.PermitSingle memory p2 = IPermit2MinimalLL.PermitSingle({
+            permitted: IPermit2MinimalLL.TokenPermissions({token: permitSingle.permitted.token, amount: permitSingle.permitted.amount}),
+            nonce: permitSingle.nonce,
+            deadline: permitSingle.deadline,
+            spender: permitSingle.spender
+        });
+        IPermit2MinimalLL(permit2).permit(msg.sender, p2, signature);
         IPermit2MinimalLL(permit2).transferFrom(msg.sender, address(this), uint160(total), inputToken);
 
         _settleLoanListing(tokenId, msg.sender, inputToken, total);
@@ -130,14 +231,25 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
 
     function quoteLoanListing(
         uint256 tokenId,
-        address inputToken
+        address /*inputToken*/
     ) external view returns (
         uint256 listingPriceInPaymentToken,
         uint256 protocolFeeInPaymentToken,
         uint256 requiredInputTokenAmount,
         address paymentToken
     ) {
-        return _quoteLoanListing(tokenId, inputToken);
+        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        (uint256 total, uint256 listingPrice, uint256 loanBalance, address payToken) = _getTotalCostOfListingAndDebt(tokenId);
+        address loanAsset = MarketStorage.configLayout().loanAsset;
+        // Only quote when no cross-asset payoff required (i.e., payoff asset equals listing payment token)
+        if (loanBalance > 0 && loanAsset != payToken) revert Errors.NoValidRoute();
+        listingPriceInPaymentToken = listingPrice;
+        protocolFeeInPaymentToken = (listingPriceInPaymentToken * MarketStorage.configLayout().marketFeeBps) / 10000;
+        requiredInputTokenAmount = total;
+        paymentToken = payToken;
+        return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
     }
 
     function _getTotalCostOfListingAndDebt(uint256 tokenId) internal view returns (
@@ -157,45 +269,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         total = listingPrice + loanBalance;
     }
 
-    function _quoteLoanListing(
-        uint256 tokenId,
-        address inputToken
-    ) internal view returns (
-        uint256 listingPriceInPaymentToken,
-        uint256 protocolFeeInPaymentToken,
-        uint256 requiredInputTokenAmount,
-        address paymentToken
-    ) {
-        MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        if (listing.owner == address(0)) revert Errors.ListingNotFound();
-        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
-
-        listingPriceInPaymentToken = listing.price;
-        paymentToken = listing.paymentToken;
-        (uint256 totalCost, , uint256 loanBalance, ) = _getTotalCostOfListingAndDebt(tokenId);
-        address loanAsset = MarketStorage.configLayout().loanAsset;
-        // Fee is denominated in listing currency; seller pays; not added on top.
-        protocolFeeInPaymentToken = (listingPriceInPaymentToken * MarketStorage.configLayout().marketFeeBps) / 10000;
-
-        if (inputToken == paymentToken) {
-            // Buyer supplies listing token for price, plus extra listing token to cover loan payoff conversion
-            uint256 listingForPayoff = SwapRouterLib.getAmountInForExactOutFromConfig(paymentToken, loanAsset, loanBalance);
-            requiredInputTokenAmount = listingPriceInPaymentToken + listingForPayoff;
-            return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
-        }
-        if (inputToken == address(0)) {
-            // ETH leg for price in listing token + ETH leg for loan payoff in USDC
-            uint256 ethForListing = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, listingPriceInPaymentToken);
-            uint256 ethForLoan = SwapRouterLib.getAmountInETHForExactOutFromConfig(MarketStorage.configLayout().loanAsset, loanBalance);
-            requiredInputTokenAmount = ethForListing + ethForLoan;
-        } else {
-            // ERC20 input: sum of input required for both legs
-            uint256 inForListing = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, listingPriceInPaymentToken);
-            uint256 inForLoan = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, loanAsset, loanBalance);
-            requiredInputTokenAmount = inForListing + inForLoan;
-        }
-        return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
-    }
+    // Removed swap-based quoting. Use Odos for swap-required cases.
 
     function _takeLoanListing(uint256 tokenId, address buyer, address inputToken) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
@@ -204,55 +278,19 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         _settleLoanListing(tokenId, buyer, inputToken, 0);
     }
 
-    // Full payoff only
+    // Settlement: supports no-swap path; swap path handled in new unified entry with Odos
     function _settleLoanListing(uint256 tokenId, address buyer, address inputToken, uint256 prePulledAmount) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
-            if (MarketStorage.configLayout().loan == address(0)) revert Errors.LoanNotConfigured();
-        address loanAsset = MarketStorage.configLayout().loanAsset;
-
-        // If not pre-pulled, collect funds and/or swap via from-config helpers
+        ( , uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
+        if (MarketStorage.configLayout().loan == address(0)) revert Errors.LoanNotConfigured();
+        if (loanBalance > 0) revert Errors.NoValidRoute();
         if (prePulledAmount == 0) {
-            if (inputToken == address(0)) {
-                // ETH path: split into two legs
-                uint256 ethForListing = SwapRouterLib.getAmountInETHForExactOutFromConfig(paymentToken, listingPrice);
-                uint256 ethForLoan = SwapRouterLib.getAmountInETHForExactOutFromConfig(loanAsset, loanBalance);
-                if (msg.value < ethForListing + ethForLoan) revert Errors.InsufficientETH();
-                // swap ETH -> listing token for price
-                uint256[] memory a1 = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(paymentToken, ethForListing, listingPrice, address(this));
-                if (a1[a1.length - 1] < listingPrice) revert Errors.Slippage();
-                // swap ETH -> USDC for payoff
-                uint256[] memory a2 = SwapRouterLib.swapExactETHInBestRouteFromUserFromConfig(loanAsset, ethForLoan, loanBalance, address(this));
-                if (a2[a2.length - 1] < loanBalance) revert Errors.Slippage();
-                if (msg.value > ethForListing + ethForLoan) {
-                    (bool ok,) = msg.sender.call{value: msg.value - (ethForListing + ethForLoan)}("");
-                    require(ok);
-                }
-            } else if (inputToken == paymentToken) {
-                // Pull listing token for price and convert part to USDC for payoff
-                uint256 inForLoan = SwapRouterLib.getAmountInForExactOutFromConfig(paymentToken, loanAsset, loanBalance);
-                IERC20(paymentToken).safeTransferFrom(buyer, address(this), listingPrice + inForLoan);
-                uint256[] memory a = SwapRouterLib.swapExactInBestRouteFromConfig(paymentToken, loanAsset, inForLoan, loanBalance, address(this));
-                if (a[a.length - 1] < loanBalance) revert Errors.Slippage();
-            } else {
-                // Pull input token separately for both legs
-                uint256 inForListing = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, paymentToken, listingPrice);
-                uint256 inForLoan = SwapRouterLib.getAmountInForExactOutFromConfig(inputToken, loanAsset, loanBalance);
-                uint256[] memory a1 = SwapRouterLib.swapExactInBestRouteFromUserFromConfig(inputToken, paymentToken, inForListing, listingPrice, address(this));
-                if (a1[a1.length - 1] < listingPrice) revert Errors.Slippage();
-                uint256[] memory a2 = SwapRouterLib.swapExactInBestRouteFromUserFromConfig(inputToken, loanAsset, inForLoan, loanBalance, address(this));
-                if (a2[a2.length - 1] < loanBalance) revert Errors.Slippage();
-            }
+            require(inputToken == paymentToken && inputToken != address(0));
+            IERC20(paymentToken).safeTransferFrom(buyer, address(this), listingPrice);
         }
 
         // Compute fee in listing currency based on listing price
         uint256 feeListing = (listingPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
-
-        // Pay off the loan if needed
-        if (loanBalance > 0) {
-            IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
-            ILoanMinimalOpsLL(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
-        }
 
         // Distribute: fee in listing currency; seller gets remainder
         if (feeListing > 0) {

@@ -5,7 +5,7 @@ import {LibDiamond} from "../../libraries/LibDiamond.sol";
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketConfigFacet} from "../../interfaces/IMarketConfigFacet.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
-import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import "../../libraries/Errors.sol";
 
 /**
@@ -125,5 +125,13 @@ contract MarketConfigFacet is IMarketConfigFacet {
 
     function loanAsset() external view returns (address) {
         return MarketStorage.configLayout().loanAsset;
+    }
+
+    // ============ PERMIT2 CONFIG ==========
+    event Permit2Set(address permit2);
+
+    function setPermit2(address permit2) external onlyOwnerOrSystemAdmin {
+        MarketStorage.configLayout().permit2 = permit2;
+        emit Permit2Set(permit2);
     }
 }

@@ -10,6 +10,7 @@ library Errors {
     error Reentrancy();
     error NotImplemented();
     error InvalidRoute();
+    error NoTradeData();
 
     // Matching / orderbook
     error OfferNotFound();
@@ -38,7 +39,6 @@ library Errors {
     error Slippage();
     error DebtNotCleared();
     error BadCustody();
-    error CurrencyNotAllowed();
     error InputTokenNotAllowed();
     error NoETHForTokenPayment();
     error InsufficientETH();
