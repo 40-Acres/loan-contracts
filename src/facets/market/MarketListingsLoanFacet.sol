@@ -9,6 +9,7 @@ import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.so
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {FeeLib} from "../../libraries/FeeLib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
+import {Permit2Lib, IPermit2} from "../../libraries/Permit2Lib.sol";
 
 interface ILoanMinimalOpsLL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -20,12 +21,7 @@ interface IVotingEscrowMinimalOpsLL {
     function ownerOf(uint256 tokenId) external view returns (address);
 }
 
-interface IPermit2MinimalLL {
-    struct TokenPermissions { address token; uint256 amount; }
-    struct PermitSingle { TokenPermissions permitted; uint256 nonce; uint256 deadline; address spender; }
-    function permit(address owner, PermitSingle calldata permitSingle, bytes calldata signature) external;
-    function transferFrom(address from, address to, uint160 amount, address token) external;
-}
+// Permit2 handled via Permit2Lib
 
 contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     using SafeERC20 for IERC20;
@@ -138,23 +134,20 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
 
-        IPermit2MinimalLL.PermitSingle memory p2; bytes memory sig;
-        if (optionalPermit2.length > 0) {
-            (p2, sig) = abi.decode(optionalPermit2, (IPermit2MinimalLL.PermitSingle, bytes));
-        }
+        // Optional Permit2 handled via Permit2Lib
 
         if (inputToken == paymentToken && tradeData.length == 0) {
-            if (inputToken == address(0)) {
-                if (msg.value < total) revert Errors.InsufficientETH();
-            } else {
-                if (optionalPermit2.length > 0) {
-                    address permit2 = MarketStorage.configLayout().permit2;
-                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
-                    IPermit2MinimalLL(permit2).permit(buyer, p2, sig);
-                    IPermit2MinimalLL(permit2).transferFrom(buyer, address(this), uint160(total), inputToken);
-                } else {
-                    IERC20(inputToken).safeTransferFrom(buyer, address(this), total);
-                }
+            // Pull exactly listing price + loan payoff; seller pays protocol fee from proceeds
+            Permit2Lib.permitAndPull(buyer, address(this), inputToken, total, optionalPermit2);
+            if (optionalPermit2.length == 0) {
+                IERC20(inputToken).safeTransferFrom(buyer, address(this), total);
+            }
+            // If there is outstanding loan balance, pay it directly in the same currency
+            if (loanBalance > 0) {
+                address loanAsset = MarketStorage.configLayout().loanAsset;
+                if (loanAsset != paymentToken) revert Errors.NoValidRoute();
+                IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
+                ILoanMinimalOpsLL(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
             }
         } else if (tradeData.length > 0) {
             address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
@@ -163,12 +156,9 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 (bool success,) = odos.call{value: msg.value}(tradeData);
                 require(success);
             } else {
-                if (optionalPermit2.length > 0) {
-                    address permit2 = MarketStorage.configLayout().permit2;
-                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
-                    IPermit2MinimalLL(permit2).permit(buyer, p2, sig);
-                    IPermit2MinimalLL(permit2).transferFrom(buyer, address(this), uint160(amountInMax), inputToken);
-                } else {
+                // Pull max input via Permit2 if provided; otherwise fallback
+                Permit2Lib.permitAndPull(buyer, address(this), inputToken, amountInMax, optionalPermit2);
+                if (optionalPermit2.length == 0) {
                     IERC20(inputToken).safeTransferFrom(buyer, address(this), amountInMax);
                 }
                 IERC20(inputToken).approve(odos, amountInMax);
@@ -217,16 +207,15 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         require(MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
         require(msg.value == 0, "NoETHForTokenPayment");
 
-        address permit2 = MarketStorage.configLayout().permit2;
-        require(permit2 != address(0), "Permit2NotSet");
-        IPermit2MinimalLL.PermitSingle memory p2 = IPermit2MinimalLL.PermitSingle({
-            permitted: IPermit2MinimalLL.TokenPermissions({token: permitSingle.permitted.token, amount: permitSingle.permitted.amount}),
+        // Encode permit payload and use Permit2Lib to perform permit+pull.
+        IPermit2.PermitSingle memory p2 = IPermit2.PermitSingle({
+            permitted: IPermit2.TokenPermissions({ token: permitSingle.permitted.token, amount: permitSingle.permitted.amount }),
             nonce: permitSingle.nonce,
             deadline: permitSingle.deadline,
             spender: permitSingle.spender
         });
-        IPermit2MinimalLL(permit2).permit(msg.sender, p2, signature);
-        IPermit2MinimalLL(permit2).transferFrom(msg.sender, address(this), uint160(total), inputToken);
+        bytes memory encodedPermit = abi.encode(p2, signature);
+        Permit2Lib.permitAndPull(msg.sender, address(this), inputToken, total, encodedPermit);
 
         _settleLoanListing(tokenId, msg.sender, inputToken, total);
     }
@@ -267,7 +256,6 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         if (listing.hasOutstandingLoan) {
             (loanBalance,) = ILoanMinimalOpsLL(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         }
-        // TODO: calculate market fee
         total = listingPrice + loanBalance;
     }
 

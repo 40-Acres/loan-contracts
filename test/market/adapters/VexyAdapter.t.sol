@@ -162,8 +162,9 @@ contract VexyAdapterTest is DiamondMarketTestBase {
 
         // Allow the currency and fund offer creator (buyer) with enough to cover external price + our fee
         IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);
-        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, extPrice);
-        uint256 offerPrice = extPrice + fee; // minimal to cover fee
+        uint16 bps = IMarketViewFacet(diamond).marketFeeBps(RouteLib.BuyRoute.ExternalAdapter);
+        uint256 fee = (extPrice * bps) / 10000;
+        uint256 offerPrice = extPrice + fee; // minimal to cover fee per diamond config
 
         // Fund buyer in listing currency
         if (currency == USDC) {

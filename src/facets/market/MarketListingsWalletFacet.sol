@@ -7,9 +7,9 @@ import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWallet
 import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {FeeLib} from "../../libraries/FeeLib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
+import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 
 interface ILoanMinimalOpsWL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -20,12 +20,7 @@ interface IVotingEscrowMinimalOpsWL {
     function transferFrom(address from, address to, uint256 tokenId) external;
 }
 
-interface IPermit2Minimal {
-    struct TokenPermissions { address token; uint256 amount; }
-    struct PermitSingle { TokenPermissions permitted; uint256 nonce; uint256 deadline; address spender; }
-    function permit(address owner, PermitSingle calldata permitSingle, bytes calldata signature) external;
-    function transferFrom(address from, address to, uint160 amount, address token) external;
-}
+// Permit2 handled via Permit2Lib
 
 contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
     using SafeERC20 for IERC20;
@@ -139,24 +134,16 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         (uint256 price, , address paymentToken) = _quoteWalletListing(tokenId);
         uint256 marketFee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, price);
 
-        // Optional Permit2 decode
-        IPermit2Minimal.PermitSingle memory p2;
-        bytes memory sig;
-        if (optionalPermit2.length > 0) {
-            (p2, sig) = abi.decode(optionalPermit2, (IPermit2Minimal.PermitSingle, bytes));
-        }
+        // Optional Permit2 handled via Permit2Lib
 
         if (inputToken == paymentToken && tradeData.length == 0) {
             // No swap path
             if (inputToken == address(0)) {
                 if (msg.value < price) revert Errors.InsufficientETH();
             } else {
-                if (optionalPermit2.length > 0) {
-                    address permit2 = MarketStorage.configLayout().permit2;
-                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
-                    IPermit2Minimal(permit2).permit(buyer, p2, sig);
-                    IPermit2Minimal(permit2).transferFrom(buyer, address(this), uint160(price), inputToken);
-                } else {
+                // If optionalPermit2 provided, use Permit2; otherwise fallback to standard transferFrom
+                Permit2Lib.permitAndPull(buyer, address(this), inputToken, price, optionalPermit2);
+                if (optionalPermit2.length == 0) {
                     IERC20(inputToken).safeTransferFrom(buyer, address(this), price);
                 }
             }
@@ -168,12 +155,9 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
                 (bool success,) = odos.call{value: msg.value}(tradeData);
                 require(success);
             } else {
-                if (optionalPermit2.length > 0) {
-                    address permit2 = MarketStorage.configLayout().permit2;
-                    if (permit2 == address(0)) revert Errors.Permit2NotSet();
-                    IPermit2Minimal(permit2).permit(buyer, p2, sig);
-                    IPermit2Minimal(permit2).transferFrom(buyer, address(this), uint160(amountInMax), inputToken);
-                } else {
+                // Pull max input via Permit2 if provided; otherwise fallback
+                Permit2Lib.permitAndPull(buyer, address(this), inputToken, amountInMax, optionalPermit2);
+                if (optionalPermit2.length == 0) {
                     IERC20(inputToken).safeTransferFrom(buyer, address(this), amountInMax);
                 }
                 IERC20(inputToken).approve(odos, amountInMax);
