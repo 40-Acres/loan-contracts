@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {LibDiamond} from "../../libraries/LibDiamond.sol";
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketConfigFacet} from "../../interfaces/IMarketConfigFacet.sol";
+import {RouteLib} from "../../libraries/RouteLib.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import "../../libraries/Errors.sol";
@@ -54,7 +55,9 @@ contract MarketConfigFacet is IMarketConfigFacet {
 
         cfg.loan = loan;
         cfg.votingEscrow = votingEscrow;
-        cfg.marketFeeBps = marketFeeBps;
+        cfg.feeBps[RouteLib.BuyRoute.InternalWallet] = marketFeeBps;
+        cfg.feeBps[RouteLib.BuyRoute.InternalLoan] = marketFeeBps;
+        cfg.feeBps[RouteLib.BuyRoute.ExternalAdapter] = marketFeeBps;
         cfg.feeRecipient = feeRecipient == address(0) ? LibDiamond.contractOwner() : feeRecipient;
 
         if (defaultPaymentToken != address(0)) {
@@ -76,9 +79,10 @@ contract MarketConfigFacet is IMarketConfigFacet {
     }
 
     // ============ ADMIN ==========
-    function setMarketFee(uint16 bps) external onlyOwnerOrSystemAdmin {
+    function setMarketFee(RouteLib.BuyRoute routeType, uint16 bps) external onlyOwnerOrSystemAdmin {
         require(bps <= MAX_FEE_BPS, "Invalid fee");
-        MarketStorage.configLayout().marketFeeBps = bps;
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        cfg.feeBps[routeType] = bps;
         emit MarketFeeChanged(bps);
     }
 

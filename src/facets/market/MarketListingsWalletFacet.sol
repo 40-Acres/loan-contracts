@@ -8,6 +8,8 @@ import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {FeeLib} from "../../libraries/FeeLib.sol";
+import {RouteLib} from "../../libraries/RouteLib.sol";
 
 interface ILoanMinimalOpsWL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -134,7 +136,8 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
         if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
 
-        (uint256 price, uint256 marketFee, address paymentToken) = _quoteWalletListing(tokenId);
+        (uint256 price, , address paymentToken) = _quoteWalletListing(tokenId);
+        uint256 marketFee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, price);
 
         // Optional Permit2 decode
         IPermit2Minimal.PermitSingle memory p2;
@@ -185,9 +188,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         }
 
         // Settle
-        if (marketFee > 0) {
-            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, marketFee);
-        }
+        if (marketFee > 0) IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), marketFee);
         IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, buyer, tokenId);
         IERC20(paymentToken).safeTransfer(listing.owner, price - marketFee);
         delete MarketStorage.orderbookLayout().listings[tokenId];
@@ -224,7 +225,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         
         listingPriceInPaymentToken = listing.price;
         paymentToken = listing.paymentToken;
-        protocolFeeInPaymentToken = _calculateMarketFee(listingPriceInPaymentToken);
+        protocolFeeInPaymentToken = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, listingPriceInPaymentToken);
         return (listingPriceInPaymentToken, protocolFeeInPaymentToken, paymentToken);
     }
 
@@ -244,7 +245,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
 
         // Seller pays fee: distribute price - fee to seller, fee to recipient
         if (marketFee > 0) {
-            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, marketFee);
+            IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), marketFee);
         }
 
         // Transfer veNFT from seller wallet to buyer
@@ -257,11 +258,6 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         delete MarketStorage.orderbookLayout().listings[tokenId];
 
         emit ListingTaken(tokenId, msg.sender, price, marketFee);
-    }
-
-    function _calculateMarketFee(uint256 price) internal view returns (uint256 marketFee) {
-        // TODO: calculate market fee
-        return (price * MarketStorage.configLayout().marketFeeBps) / 10000;
     }
 }
 

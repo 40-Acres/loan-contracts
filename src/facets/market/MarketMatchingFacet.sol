@@ -10,6 +10,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVexyMarketplace} from "../../interfaces/external/IVexyMarketplace.sol";
 import {IVexyAdapterFacet} from "../../interfaces/IVexyAdapterFacet.sol";
+import {FeeLib} from "../../libraries/FeeLib.sol";
+import {RouteLib} from "../../libraries/RouteLib.sol";
 
 interface ILoanMinimalOpsMM {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -58,10 +60,10 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         // Pull funds from offer creator at fill-time
         IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
 
-        uint256 fee = (offer.price * MarketStorage.configLayout().marketFeeBps) / 10000;
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, offer.price);
         uint256 sellerAmount = offer.price - fee;
         if (fee > 0) {
-            IERC20(offer.paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
+            IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
         }
         IERC20(offer.paymentToken).safeTransfer(listing.owner, sellerAmount);
 
@@ -110,7 +112,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert Errors.CurrencyNotAllowed();
 
         // Compute fee on the external price
-        uint256 fee = (extPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, extPrice);
 
         if (offer.paymentToken == currency) {
             // Pull total cost in exact listing currency
@@ -118,7 +120,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             if (totalCost > offer.price) revert Errors.OfferTooLow();
             IERC20(currency).safeTransferFrom(offer.creator, address(this), totalCost);
             if (fee > 0) {
-                IERC20(currency).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
+                IERC20(currency).safeTransfer(FeeLib.feeRecipient(), fee);
             }
             // Buy listing using internal escrow path
             IVexyAdapterFacet(address(this)).buyVexyListing(vexy, listingId, currency, extPrice);
@@ -155,10 +157,10 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         // Pull funds from offer creator at fill-time
         IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
 
-        uint256 fee = (offer.price * MarketStorage.configLayout().marketFeeBps) / 10000;
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalLoan, offer.price);
         uint256 sellerAmount = offer.price - fee;
         if (fee > 0) {
-            IERC20(offer.paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
+            IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
         }
         IERC20(offer.paymentToken).safeTransfer(listing.owner, sellerAmount);
 

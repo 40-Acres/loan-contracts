@@ -52,17 +52,15 @@ contract RouterLoanTest is DiamondMarketTestBase {
     function setUp() public {
         uint256 fork = vm.createFork("https://mainnet.base.org");
         vm.selectFork(fork);
-        vm.rollFork(28494354);
+        vm.rollFork(34683000);
 
         _deployDiamondAndFacets();
 
-        // Deploy our own Loan/Vault to control custody in tests
-        BaseDeploy deployer = new BaseDeploy();
-        (loan, vault) = deployer.deployLoan();
-
         feeRecipient = IOwnableMinimal_LR(LOAN_CANONICAL).owner();
-        _initMarket(address(loan), VE, 250, feeRecipient, USDC);
-
+        upgradeCanonicalLoan();
+        _initMarket(LOAN_CANONICAL, VE, 250, feeRecipient, USDC);
+        loan = Loan(LOAN_CANONICAL);
+        
         IMarketConfigFacet(diamond).setAllowedPaymentToken(USDC, true);
         IMarketConfigFacet(diamond).setAllowedPaymentToken(AERO, true);
 
@@ -82,7 +80,7 @@ contract RouterLoanTest is DiamondMarketTestBase {
 
     function test_success_quoteToken_basic() public {
         // choose a token and move it to loan custody
-        uint256 tokenId = 349;
+        uint256 tokenId = 65424;
         IVotingEscrow ve = IVotingEscrow(VE);
         seller = ve.ownerOf(tokenId);
         vm.assume(seller != address(0));
@@ -123,7 +121,7 @@ contract RouterLoanTest is DiamondMarketTestBase {
 
 contract RouterLoanBuyTest is RouterLoanTest {
     function test_success_buyToken_AEROInput_USDCPayment() public {
-        uint256 tokenId = 349;
+        uint256 tokenId = 65424;
         IVotingEscrow ve = IVotingEscrow(VE);
         seller = ve.ownerOf(tokenId);
         vm.assume(seller != address(0));

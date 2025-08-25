@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
+import {RouteLib} from "../libraries/RouteLib.sol";
 
 interface IMarketConfigFacet {
     // Events
@@ -20,7 +21,7 @@ interface IMarketConfigFacet {
     ) external;
 
     // Admin
-    function setMarketFee(uint16 bps) external;
+    function setMarketFee(RouteLib.BuyRoute routeType, uint16 bps) external;
     function setFeeRecipient(address recipient) external;
     function setAllowedPaymentToken(address token, bool allowed) external;
     function pause() external;

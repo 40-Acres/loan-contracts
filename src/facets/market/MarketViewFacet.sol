@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketViewFacet} from "../../interfaces/IMarketViewFacet.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
+import {RouteLib} from "../../libraries/RouteLib.sol";
 
 interface ILoanMinimal {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -21,8 +22,8 @@ contract MarketViewFacet is IMarketViewFacet {
         return MarketStorage.configLayout().loan;
     }
 
-    function marketFeeBps() external view returns (uint16) {
-        return MarketStorage.configLayout().marketFeeBps;
+    function marketFeeBps(RouteLib.BuyRoute routeType) external view returns (uint16) {
+        return MarketStorage.configLayout().feeBps[routeType];
     }
 
     function feeRecipient() external view returns (address) {

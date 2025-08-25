@@ -15,6 +15,8 @@ import {IVexyMarketplace} from "src/interfaces/external/IVexyMarketplace.sol";
 import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
 import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
+import {FeeLib} from "src/libraries/FeeLib.sol";
+import {RouteLib} from "src/libraries/RouteLib.sol";
 
 interface IUSDC {
     function masterMinter() external view returns (address);
@@ -160,8 +162,7 @@ contract VexyAdapterTest is DiamondMarketTestBase {
 
         // Allow the currency and fund offer creator (buyer) with enough to cover external price + our fee
         IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);
-        uint16 feeBps = IMarketViewFacet(diamond).marketFeeBps();
-        uint256 fee = (extPrice * feeBps) / 10000;
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, extPrice);
         uint256 offerPrice = extPrice + fee; // minimal to cover fee
 
         // Fund buyer in listing currency

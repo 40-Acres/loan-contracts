@@ -6,6 +6,8 @@ import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {IMarketOfferFacet} from "../../interfaces/IMarketOfferFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {FeeLib} from "../../libraries/FeeLib.sol";
+import {RouteLib} from "../../libraries/RouteLib.sol";
 
 interface ILoanMinimalOpsOF {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -112,10 +114,10 @@ contract MarketOfferFacet is IMarketOfferFacet {
 
         // Pull full offer amount at fill time from offer creator
         IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
-        uint256 fee = (offer.price * MarketStorage.configLayout().marketFeeBps) / 10000;
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, offer.price);
         uint256 sellerAmount = offer.price - fee;
         if (fee > 0) {
-            IERC20(offer.paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, fee);
+            IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
         }
         IERC20(offer.paymentToken).safeTransfer(msg.sender, sellerAmount);
 

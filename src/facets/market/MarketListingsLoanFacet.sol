@@ -7,6 +7,8 @@ import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFace
 import {Errors} from "../../libraries/Errors.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {FeeLib} from "../../libraries/FeeLib.sol";
+import {RouteLib} from "../../libraries/RouteLib.sol";
 
 interface ILoanMinimalOpsLL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -187,9 +189,9 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         }
 
         // Settle listing proceeds
-        uint256 feeListing = (listingPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
+        uint256 feeListing = FeeLib.calculateFee(RouteLib.BuyRoute.InternalLoan, listingPrice);
         if (feeListing > 0) {
-            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, feeListing);
+            IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), feeListing);
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
         ILoanMinimalOpsLL(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
@@ -246,7 +248,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         // Only quote when no cross-asset payoff required (i.e., payoff asset equals listing payment token)
         if (loanBalance > 0 && loanAsset != payToken) revert Errors.NoValidRoute();
         listingPriceInPaymentToken = listingPrice;
-        protocolFeeInPaymentToken = (listingPriceInPaymentToken * MarketStorage.configLayout().marketFeeBps) / 10000;
+        protocolFeeInPaymentToken = FeeLib.calculateFee(RouteLib.BuyRoute.InternalLoan, listingPrice);
         requiredInputTokenAmount = total;
         paymentToken = payToken;
         return (listingPriceInPaymentToken, protocolFeeInPaymentToken, requiredInputTokenAmount, paymentToken);
@@ -290,11 +292,11 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         }
 
         // Compute fee in listing currency based on listing price
-        uint256 feeListing = (listingPrice * MarketStorage.configLayout().marketFeeBps) / 10000;
+        uint256 feeListing = FeeLib.calculateFee(RouteLib.BuyRoute.InternalLoan, listingPrice);
 
         // Distribute: fee in listing currency; seller gets remainder
         if (feeListing > 0) {
-            IERC20(paymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, feeListing);
+            IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), feeListing);
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
 

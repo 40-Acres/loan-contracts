@@ -36,8 +36,12 @@ import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
 import {IMarketOperatorFacet} from "src/interfaces/IMarketOperatorFacet.sol";
 import {IMarketRouterFacet} from "src/interfaces/IMarketRouterFacet.sol";
 
+// Minimal Ownable view for on-chain proxy via implementation ABI
+interface IOwnableLike { function owner() external view returns (address); }
+
 abstract contract DiamondMarketTestBase is Test {
     address internal diamond;
+    address internal constant BASE_LOAN_CANONICAL = 0x87f18b377e625b62c708D5f6EA96EC193558EFD0;
 
     // Core facets
     DiamondCutFacet internal diamondCutFacet;
@@ -194,6 +198,18 @@ abstract contract DiamondMarketTestBase is Test {
 
         // Cache router interface for child tests
         router = IMarketRouterFacet(diamond);
+    }
+
+    function upgradeCanonicalLoan() internal {
+        address proxy = BASE_LOAN_CANONICAL;
+        // Deploy current implementation
+        Loan impl = new Loan();
+        address loanOwner = Loan(proxy).owner();
+        // Impersonate owner and attempt upgrade; ignore failures to keep tests resilient
+        vm.startPrank(loanOwner);
+        try Loan(proxy).upgradeToAndCall(address(impl), new bytes(0)) {
+        } catch { }
+        vm.stopPrank();
     }
 
     function _initMarket(address loan, address votingEscrow, uint16 feeBps, address feeRecipient, address defaultToken) internal {

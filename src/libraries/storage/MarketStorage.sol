@@ -6,6 +6,8 @@ pragma solidity ^0.8.28;
  * @dev Provides isolated storage structures for different market mechanisms
  * Each component has its own storage slot to prevent collisions
  */
+import {RouteLib} from "../../libraries/RouteLib.sol";
+
 library MarketStorage {
     // ============ Market structs ============
     struct Listing {
@@ -44,7 +46,7 @@ library MarketStorage {
 
     // @custom:storage-location erc7201:market.config.storage
     struct MarketConfigLayout {
-        uint16 marketFeeBps;                                          // fee in basis points, max 1000 (10%)
+        mapping(RouteLib.BuyRoute => uint16) feeBps;                  // fee in basis points, max 1000 (10%)
         address feeRecipient;                                         // fee recipient address
         mapping(address => bool) allowedPaymentToken;                 // whitelisted payment tokens
         address loan;                                                 // ILoan address

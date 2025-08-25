@@ -39,8 +39,7 @@ contract WalletListingsTest is DiamondMarketTestBase {
         BaseDeploy deployer = new BaseDeploy();
         (loan, vault) = deployer.deployLoan();
         _deployDiamondAndFacets();
-        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 250, address(this), address(usdc));
-        IMarketConfigFacet(diamond).setAllowedPaymentToken(address(usdc), true);
+        _initMarket(address(loan), address(votingEscrow), 250, address(this), address(usdc));
 
         // Mint USDC to test and fund buyer
         vm.prank(usdc.masterMinter());

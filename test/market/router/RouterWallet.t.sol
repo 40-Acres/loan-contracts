@@ -51,12 +51,14 @@ contract RouterWalletTest is DiamondMarketTestBase {
     function setUp() public {
         uint256 fork = vm.createFork("https://mainnet.base.org");
         vm.selectFork(fork);
-        vm.rollFork(28494354);
+        vm.rollFork(34683000);
 
         _deployDiamondAndFacets();
 
         feeRecipient = IOwnableMinimal(LOAN).owner();
-        _initMarket(LOAN, VE, 250, feeRecipient, USDC);
+        // ensure canonical loan proxy is upgraded on fork before market init
+        upgradeCanonicalLoan();
+        _initMarket(BASE_LOAN_CANONICAL, VE, 250, feeRecipient, USDC);
 
         // allow payment tokens (AERO, USDC, WETH)
         IMarketConfigFacet(diamond).setAllowedPaymentToken(USDC, true);
@@ -67,8 +69,8 @@ contract RouterWalletTest is DiamondMarketTestBase {
         IMarketConfigFacet(diamond).setPermit2(PERMIT2);
 
 
-        // prepare a real wallet listing for tokenId 349 priced in USDC
-        uint256 tokenId = 349;
+        // prepare a real wallet listing for tokenId 65424 priced in USDC
+        uint256 tokenId = 65424;
         IVotingEscrow ve = IVotingEscrow(VE);
         seller = ve.ownerOf(tokenId);
         vm.assume(seller != address(0));
@@ -95,7 +97,7 @@ contract RouterWalletTest is DiamondMarketTestBase {
     }
 
     function test_success_quoteToken_basic() public {
-        uint256 tokenId = 349;
+        uint256 tokenId = 65424;
         (uint256 price, uint256 fee, address payToken) = router.quoteToken(
             RouteLib.BuyRoute.InternalWallet,
             bytes32(0),
@@ -109,7 +111,7 @@ contract RouterWalletTest is DiamondMarketTestBase {
     }
 
     function test_success_buyToken_WETHInput_USDCPayment() public {
-        uint256 tokenId = 349;
+        uint256 tokenId = 65424;
         (uint256 price, uint256 fee, address payToken) = router.quoteToken(
             RouteLib.BuyRoute.InternalWallet,
             bytes32(0),

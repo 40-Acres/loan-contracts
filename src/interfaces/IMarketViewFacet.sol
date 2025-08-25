@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
+import {RouteLib} from "../libraries/RouteLib.sol";
+
 interface IMarketViewFacet {
     // State getters
     function loan() external view returns (address);
-    function marketFeeBps() external view returns (uint16);
+    function marketFeeBps(RouteLib.BuyRoute routeType) external view returns (uint16);
     function feeRecipient() external view returns (address);
     function loanAsset() external view returns (address);
     function isOperatorFor(address owner, address operator) external view returns (bool);

@@ -8,6 +8,8 @@ import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
 import {IMarketOperatorFacet} from "src/interfaces/IMarketOperatorFacet.sol";
+import {RouteLib} from "src/libraries/RouteLib.sol";
+import {FeeLib} from "src/libraries/FeeLib.sol";
 
 import {ILoan} from "src/interfaces/ILoan.sol";
 import {Loan} from "src/LoanV2.sol";
@@ -86,7 +88,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
         _deployDiamondAndFacets();
 
-        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 250, owner, address(usdc));
+        IMarketConfigFacet(diamond).initMarket(BASE_LOAN_CANONICAL, address(votingEscrow), 250, owner, address(usdc));
 
         vm.startPrank(owner);
         loan.setApprovedContract(diamond, true);
@@ -110,7 +112,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
     }
 
     function testInitAndConfig() public {
-        assertEq(IMarketViewFacet(diamond).marketFeeBps(), 250);
+        assertEq(IMarketViewFacet(diamond).marketFeeBps(RouteLib.BuyRoute.InternalLoan), 250);
         assertEq(IMarketViewFacet(diamond).feeRecipient(), owner);
         assertTrue(IMarketViewFacet(diamond).allowedPaymentToken(address(usdc)));
     }
@@ -170,8 +172,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         vm.startPrank(buyer);
         usdc.approve(diamond, requiredInputTokenAmount);
 
-        uint16 feeBps = IMarketViewFacet(diamond).marketFeeBps();
-        uint256 expectedFee = (listingPrice * feeBps) / 10000;
+        uint256 expectedFee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalLoan, listingPrice);
         uint256 buyerInitial = usdc.balanceOf(buyer);
         uint256 sellerInitial = usdc.balanceOf(user);
 
@@ -242,10 +243,10 @@ contract LoanListingsTest is DiamondMarketTestBase {
     }
 
     function test_setMarketFee_Success_And_RevertWhen_Invalid() public {
-        IMarketConfigFacet(diamond).setMarketFee(1000);
-        assertEq(IMarketViewFacet(diamond).marketFeeBps(), 1000);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 1000);
+        assertEq(IMarketViewFacet(diamond).marketFeeBps(RouteLib.BuyRoute.InternalLoan), 1000);
         vm.expectRevert();
-        IMarketConfigFacet(diamond).setMarketFee(1001);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 1001);
     }
 
     function test_setFeeRecipient_Success_And_RevertWhen_Zero() public {
@@ -267,7 +268,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
     function test_initMarket_RevertWhen_CalledTwice() public {
         vm.expectRevert();
-        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 250, owner, address(usdc));
+        IMarketConfigFacet(diamond).initMarket(BASE_LOAN_CANONICAL, address(votingEscrow), 250, owner, address(usdc));
     }
 
     function test_setAllowedPaymentToken_RevertWhen_ZeroAddress() public {
@@ -317,7 +318,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
     function test_setMarketFee_RevertWhen_NotOwnerOrAdmin() public {
         vm.prank(buyer);
         vm.expectRevert();
-        IMarketConfigFacet(diamond).setMarketFee(100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
     }
 
     function test_UnauthorizedMarketCannotTransferOwnership() public {
