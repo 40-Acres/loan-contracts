@@ -96,7 +96,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     }
 
     function takeLoanListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
-        _takeLoanUnifiedFor(tokenId, msg.sender, inputToken, 0, new bytes(0), new bytes(0));
+        _takeLoanListingFor(tokenId, msg.sender, inputToken, 0, new bytes(0), new bytes(0));
     }
 
     function takeLoanListing(
@@ -106,7 +106,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         bytes calldata tradeData,
         bytes calldata optionalPermit2
     ) public payable nonReentrant onlyWhenNotPaused {
-        _takeLoanUnifiedFor(tokenId, msg.sender, inputToken, amountInMax, tradeData, optionalPermit2);
+        _takeLoanListingFor(tokenId, msg.sender, inputToken, amountInMax, tradeData, optionalPermit2);
     }
 
     function takeLoanListingFor(
@@ -118,10 +118,10 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         bytes calldata optionalPermit2
     ) external payable nonReentrant onlyWhenNotPaused {
         if (msg.sender != address(this)) revert Errors.NotAuthorized();
-        _takeLoanUnifiedFor(tokenId, buyer, inputToken, amountInMax, tradeData, optionalPermit2);
+        _takeLoanListingFor(tokenId, buyer, inputToken, amountInMax, tradeData, optionalPermit2);
     }
 
-    function _takeLoanUnifiedFor(
+    function _takeLoanListingFor(
         uint256 tokenId,
         address buyer,
         address inputToken,
@@ -268,7 +268,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         _settleLoanListing(tokenId, buyer, inputToken, 0);
     }
 
-    // Settlement: supports no-swap path; swap path handled in new unified entry with Odos
+    // Settlement: supports no-swap path; swap path handled in takeLoanListing with Odos
     function _settleLoanListing(uint256 tokenId, address buyer, address inputToken, uint256 prePulledAmount) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         ( , uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
