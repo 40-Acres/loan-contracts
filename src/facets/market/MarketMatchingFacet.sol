@@ -10,8 +10,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVexyMarketplace} from "../../interfaces/external/IVexyMarketplace.sol";
 import {IVexyAdapterFacet} from "../../interfaces/IVexyAdapterFacet.sol";
+import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWalletFacet.sol";
+import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFacet.sol";
 import {FeeLib} from "../../libraries/FeeLib.sol";
+import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
+import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWalletFacet.sol";
+import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFacet.sol";
 
 interface ILoanMinimalOpsMM {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -41,11 +46,15 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         pause.reentrancyStatus = 1;
     }
 
-    function matchOfferWithLoanListing(uint256 offerId, uint256 tokenId) external nonReentrant onlyWhenNotPaused {
-        _matchOfferWithLoanListingCommon(offerId, tokenId);
-    }
-
-    function matchOfferWithWalletListing(uint256 offerId, uint256 tokenId) external nonReentrant onlyWhenNotPaused {
+    function matchOfferWithWalletListing(
+        uint256 offerId,
+        uint256 tokenId,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         if (offer.creator == address(0)) revert Errors.OfferNotFound();
         if (!MarketLogicLib.isOfferActive(offerId)) revert Errors.OfferExpired();
@@ -57,21 +66,20 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
 
         _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
 
-        // Pull funds from offer creator at fill-time
-        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
+        // Enforce caller-provided cap (wallet listings: buyer pays listing.price in payment token)
+        if (listing.price > maxPaymentTotal) revert Errors.MaxTotalExceeded();
 
-        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, offer.price);
-        uint256 sellerAmount = offer.price - fee;
-        if (fee > 0) {
-            IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
-        }
-        IERC20(offer.paymentToken).safeTransfer(listing.owner, sellerAmount);
+        // Reuse wallet listing settlement with router-style args
+        IMarketListingsWalletFacet(address(this)).takeWalletListingFor(
+            tokenId,
+            offer.creator,
+            inputAsset,
+            maxInputAmount,
+            tradeData,
+            optionalPermit2
+        );
 
-        IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, offer.creator, tokenId);
-
-        delete MarketStorage.orderbookLayout().listings[tokenId];
         delete MarketStorage.orderbookLayout().offers[offerId];
-        emit OfferMatched(offerId, tokenId, offer.creator, offer.price, fee);
     }
 
     // Match an internal offer by buying an external Vexy listing and delivering the NFT to the offer creator
@@ -79,8 +87,13 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         uint256 offerId,
         address vexy,
         uint256 listingId,
-        uint256 maxPrice
-    ) external nonReentrant onlyWhenNotPaused {
+        uint256 maxPrice,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         if (offer.creator == address(0)) revert Errors.OfferNotFound();
         if (!MarketLogicLib.isOfferActive(offerId)) revert Errors.OfferExpired();
@@ -114,26 +127,38 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         // Compute fee on the external price
         uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, extPrice);
 
-        if (offer.paymentToken == currency) {
-            // Pull total cost in exact listing currency
-            uint256 totalCost = extPrice + fee;
-            if (totalCost > offer.price) revert Errors.OfferTooLow();
-            IERC20(currency).safeTransferFrom(offer.creator, address(this), totalCost);
-            if (fee > 0) {
-                IERC20(currency).safeTransfer(FeeLib.feeRecipient(), fee);
-            }
-            // Buy listing using internal escrow path
-            IVexyAdapterFacet(address(this)).takeVexyListing(vexy, listingId, currency, extPrice);
-            // Ensure custody is with the diamond before forwarding to user
-            TransferGuardsLib.requireCustody(MarketStorage.configLayout().votingEscrow, tokenId, address(this));
-        } else {
-            // Swap path: pull offer.price in offer.paymentToken, swap to currency, enforce minOut
-            IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
+        // Enforce combined caps
+        uint256 totalCost = extPrice + fee;
+        if (totalCost > maxPaymentTotal) revert Errors.MaxTotalExceeded();
 
-            // Perform swap using Swapper-like policy (external to this code; assumed available via loan's swapper config if needed)
-            // For now, require direct currency match; swap integration can be added here using router similar to LoanV2
-            revert Errors.NotImplemented();
+        // Collect funds from offer.creator (permissionless caller). Use Permit2 if provided; else requires ERC20 approval to diamond.
+        if (tradeData.length == 0 && inputAsset == currency) {
+            // Direct currency path: pull exact totalCost in currency from offer.creator
+            Permit2Lib.permitAndPull(offer.creator, address(this), currency, totalCost, optionalPermit2);
+            if (optionalPermit2.length == 0) {
+                IERC20(currency).safeTransferFrom(offer.creator, address(this), totalCost);
+            }
+        } else {
+            // Swap path via ODOS from inputAsset to currency
+            if (inputAsset == address(0)) revert Errors.NoETHForTokenPayment();
+            address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+            Permit2Lib.permitAndPull(offer.creator, address(this), inputAsset, maxInputAmount, optionalPermit2);
+            if (optionalPermit2.length == 0) {
+                IERC20(inputAsset).safeTransferFrom(offer.creator, address(this), maxInputAmount);
+            }
+            IERC20(inputAsset).approve(odos, maxInputAmount);
+            (bool success,) = odos.call{value: 0}(tradeData);
+            require(success, "ODOS swap failed");
+            IERC20(inputAsset).approve(odos, 0);
+            if (IERC20(currency).balanceOf(address(this)) < totalCost) revert Errors.Slippage();
         }
+
+        // Settle fee and perform Vexy buy using escrowed currency; call adapter entry with msg.sender == address(this)
+        if (fee > 0) {
+            IERC20(currency).safeTransfer(FeeLib.feeRecipient(), fee);
+        }
+        // Call adapter entry via diamond so msg.sender == address(this) inside the adapter
+        IVexyAdapterFacet(address(this)).takeVexyListing(vexy, listingId, currency, extPrice);
 
         // Transfer acquired NFT to the offer creator
         IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
@@ -143,32 +168,40 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         emit OfferMatched(offerId, tokenId, offer.creator, extPrice, fee);
     }
 
-    function _matchOfferWithLoanListingCommon(uint256 offerId, uint256 tokenId) internal {
+    function matchOfferWithLoanListing(
+        uint256 offerId,
+        uint256 tokenId,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
-        require(offer.creator != address(0), "OfferNotFound");
-        require(MarketLogicLib.isOfferActive(offerId), "OfferExpired");
+        if (offer.creator == address(0)) revert Errors.OfferNotFound();
+        if (!MarketLogicLib.isOfferActive(offerId)) revert Errors.OfferExpired();
 
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
 
         _validateOfferCriteriaLoan(tokenId, offer);
 
-        // Pull funds from offer creator at fill-time
-        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
+        // Enforce caller-provided cap based on a quote from the loan facet
+        (,, uint256 requiredInputAmount,) = IMarketListingsLoanFacet(address(this)).quoteLoanListing(tokenId, address(0));
+        if (requiredInputAmount > maxPaymentTotal) revert Errors.MaxTotalExceeded();
 
-        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalLoan, offer.price);
-        uint256 sellerAmount = offer.price - fee;
-        if (fee > 0) {
-            IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
-        }
-        IERC20(offer.paymentToken).safeTransfer(listing.owner, sellerAmount);
+        // Delegate to loan facet so payoff + borrower handoff follow the same invariants and swap path
+        IMarketListingsLoanFacet(address(this)).takeLoanListingFor(
+            tokenId,
+            offer.creator,
+            inputAsset,
+            maxInputAmount,
+            tradeData,
+            optionalPermit2
+        );
 
-        ILoanMinimalOpsMM(MarketStorage.configLayout().loan).setBorrower(tokenId, offer.creator);
-
-        delete MarketStorage.orderbookLayout().listings[tokenId];
         delete MarketStorage.orderbookLayout().offers[offerId];
-        emit OfferMatched(offerId, tokenId, offer.creator, offer.price, fee);
     }
 
     function _validateOfferCriteriaLoan(uint256 tokenId, MarketStorage.Offer storage offer) internal view {

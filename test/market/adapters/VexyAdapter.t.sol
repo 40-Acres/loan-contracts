@@ -54,10 +54,12 @@ contract VexyAdapterTest is DiamondMarketTestBase {
         upgradeCanonicalLoan();
         IMarketConfigFacet(diamond).initMarket(address(loan), address(VOTING_ESCROW), 250, address(this), USDC);
 
-        // Cut in the Vexy adapter facet
+        // Cut in the Vexy adapter facet with uniform adapter selectors
         address vexyFacet = address(new VexyAdapterFacetHarness());
-        bytes4[] memory selectors = new bytes4[](1);
+        bytes4[] memory selectors = new bytes4[](3);
         selectors[0] = IVexyAdapterFacet.takeVexyListing.selector;
+        selectors[1] = bytes4(keccak256("quoteToken(uint256,bytes)"));
+        selectors[2] = bytes4(keccak256("buyToken(uint256,uint256,address,uint256,bytes,bytes,bytes)"));
         IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](1);
         cut[0] = IDiamondCut.FacetCut({
             facetAddress: vexyFacet,
@@ -65,6 +67,9 @@ contract VexyAdapterTest is DiamondMarketTestBase {
             functionSelectors: selectors
         });
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
+
+        // Register VEXY adapter key for router/matching usage
+        IMarketConfigFacet(diamond).setExternalAdapter(keccak256(abi.encodePacked("VEXY")), vexyFacet);
 
         // Ensure new matching selector is cut in (in case base didn't include it yet)
         address matchingFacet = address(new MarketMatchingFacetHarness());
@@ -131,8 +136,20 @@ contract VexyAdapterTest is DiamondMarketTestBase {
         });
         vm.stopPrank();
 
-        // Match the offer with the external listing
-        IMarketMatchingFacet(diamond).matchOfferWithVexyListing(1, VEXY, listingId, extPrice);
+        // Match the offer with the external listing (direct-currency path, no swap) as buyer
+        vm.startPrank(buyer);
+        IMarketMatchingFacet(diamond).matchOfferWithVexyListing(
+            1,
+            VEXY,
+            listingId,
+            extPrice,
+            currency,
+            extPrice + fee,
+            0,
+            bytes("") /* tradeData */, 
+            bytes("") /* optionalPermit2 */
+        );
+        vm.stopPrank();
 
         // Buyer should own the NFT now
         assertEq(IVotingEscrow(nftCollection).ownerOf(nftId), buyer);

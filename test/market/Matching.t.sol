@@ -70,7 +70,15 @@ contract MatchingTest is DiamondMarketTestBase {
         IMarketOfferFacet(diamond).createOffer(90e21, 100e21, 1000e6, 2000e6, address(usdc), block.timestamp + 7 days);
         vm.stopPrank();
 
-        IMarketMatchingFacet(diamond).matchOfferWithLoanListing(1, tokenId);
+        IMarketMatchingFacet(diamond).matchOfferWithLoanListing(
+            1,
+            tokenId,
+            address(usdcErc),
+            2_000e6,
+            0,
+            bytes("") /* tradeData */, 
+            bytes("") /* optionalPermit2 */
+        );
 
         // Listing removed; verify via offer/listing lookups
         (address listingOwner,,,,) = IMarketViewFacet(diamond).getListing(tokenId);
@@ -100,10 +108,16 @@ contract MatchingTest is DiamondMarketTestBase {
         IMarketOfferFacet(diamond).createOffer(70e21, 80e21, 1000e6, 2000e6, address(usdcErc), block.timestamp + 7 days);
         vm.stopPrank();
 
-        // Match offer with wallet listing
-        // selector: matchOfferWithWalletListing(uint256,uint256) = 0xacc70da7
-        (ok,) = diamond.call(abi.encodeWithSelector(bytes4(0xacc70da7), 1, walletTokenId));
-        require(ok, "matchOfferWithWalletListing failed");
+        // Match offer with wallet listing via interface
+        IMarketMatchingFacet(diamond).matchOfferWithWalletListing(
+            1,
+            walletTokenId,
+            address(usdcErc),
+            2_000e6,
+            0,
+            bytes("") /* tradeData */, 
+            bytes("") /* optionalPermit2 */
+        );
 
         // Listing removed
         (address listingOwner2,,,,) = IMarketViewFacet(diamond).getListing(walletTokenId);
