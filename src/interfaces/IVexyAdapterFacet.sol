@@ -24,6 +24,7 @@ interface IVexyAdapterFacet {
         address expectedCurrency,
         uint256 maxPrice
     ) external;
+
 }
 
 

@@ -172,8 +172,10 @@ contract RouterLoanBuyTest is RouterLoanTest {
             bytes32(0),
             tokenId,
             AERO,
+            price + fee,
             amountIn,
-            abi.encode(amountIn, tradeData),
+            tradeData,
+            bytes("") /* marketData */, 
             bytes("")
         );
         vm.stopPrank();

@@ -76,8 +76,11 @@ We define an enum route type and a registry of external markets per chain.
 Selectors
 - quoteToken(route, adapterKey, tokenId, quoteData) → (price, marketFee, total, currency)
   - Internal routes ignore `adapterKey`; external routes use it to find the adapter. `quoteData` is adapter‑specific (Phase A default: `abi.encode(listingId, expectedCurrency, maxPrice)`).
-- buyToken(route, adapterKey, tokenId, maxTotal, buyData, optionalPermit2)
-  - Executes the purchase through the selected path and enforces `total <= maxTotal`. For external routes, `buyData` must match the adapter’s expected tuple; optional Permit2 payload allows single‑tx funds pull.
+- buyToken(route, adapterKey, tokenId, inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData, optionalPermit2)
+  - Executes the purchase through the selected path.
+  - Enforces `total(paymentToken) <= maxPaymentTotal` (price + protocol/adapter fees) and, for swap paths, `input spent <= maxInputAmount`.
+  - `tradeData` is the ODOS calldata for swaps (empty means direct‑currency path). `marketData` is adapter‑specific (e.g., for Vexy: `abi.encode(marketplace, listingId, expectedCurrency, maxPrice)`).
+  - `optionalPermit2` enables single‑tx funds pull via Permit2 when provided.
 
 Registry and allowlists
 - `adapterKey → adapter` registry controlled by governance; unknown keys revert.
@@ -86,8 +89,8 @@ Registry and allowlists
 This keeps the API stable while allowing new external venues via governance without changing selectors.
 
 ### RFQ off‑chain orders and Permit2
-- EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, adapterKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(buyData)`.
-- On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and `keccak256(buyData)` equality, then calls `buyToken` with the same (route, adapterKey, votingEscrow, tokenId, maxTotal, buyData).
+- EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, adapterKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(abi.encode(inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData))`.
+- On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and data hash equality, then calls `buyToken` with the same (route, adapterKey, votingEscrow, tokenId, inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData, optionalPermit2).
 - Makers can cancel via nonce bump or explicit cancel. Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals.
 
 ### LBO UX and indexing for external venues
@@ -205,9 +208,9 @@ Phase A (market core)
   - Ensure `MarketMatchingFacet` covers wallet↔offer and loan↔offer matching with full settlement tests and CEI.
 - [ ] External adapter path via router
   - Add adapter registry admin function in `MarketConfigFacet`: `setExternalAdapter(bytes32 key, address facet)` (owner or MARKET_ADMIN), plus `ExternalAdapterSet(key, facet)` event; disallow zero address.
-  - Define minimal adapter interface used by router: `quoteToken(uint256 tokenId, bytes quoteData) → (uint256 price, uint256 fee, address currency)` and `buyToken(uint256 tokenId, uint256 maxTotal, bytes buyData, bytes optionalPermit2)`.
+  - Define minimal adapter interface used by router: `quoteToken(uint256 tokenId, bytes quoteData) → (uint256 price, uint256 fee, address currency)` and uniform `buyToken(uint256 tokenId, uint256 maxPaymentTotal, address inputAsset, uint256 maxInputAmount, bytes tradeData, bytes marketData, bytes optionalPermit2)`.
   - Implement `MarketRouterFacet.quoteToken` for `ExternalAdapter` route: look up adapter by key, delegatecall `quoteToken`, bubble up reverts.
-  - Keep `MarketRouterFacet.buyToken` external branch but ensure delegatecall targets `buyToken` with the ABI above; bubble up revert data via `RevertHelper`.
+  - The router’s external branch delegatecalls adapter `buyToken` with separate parameters (no packed bytes). Reverts are bubbled via `RevertHelper`.
   - Update `VexyAdapterFacet` (or add a thin wrapper facet) to implement the generic `quoteToken/buyToken` so it can be invoked via the router; keep `takeVexyListing` as an optional convenience that forwards to the generic entry.
 - [ ] External matching improvements (Vexy)
   - In `matchOfferWithVexyListing`, add swap path when `offer.paymentToken != currency`: use Permit2 (if provided) to pull `offer.price`, execute ODOS trade with allowance bump/reset, and enforce balance-delta slippage to cover `extPrice` and fee.
@@ -218,7 +221,7 @@ Phase A (market core)
   - Extend transfer guards where applicable to ensure no-debt-before-transfer for any future transfer paths; maintain CEI and nonReentrant across new flows.
 - [ ] Tests (expand coverage)
   - Router: external quote success and revert cases (UnknownAdapter, invalid key, adapter revert, bad currency).
-  - Router: external buy success and revert cases (maxTotal exceeded, currency not allowed, price out of bounds, adapter revert propagation).
+  - Router: external buy success and revert cases (maxPaymentTotal exceeded, currency not allowed, price out of bounds, adapter revert propagation).
   - Adapter registry: admin-only, zero-address rejections, event assertions; querying via `MarketViewFacet` if exposed.
   - External matching: direct-currency path and swap path; custody assertion before delivery; pause/reentrancy coverage.
   - Fee paths: assert correct fee amounts and recipients across all routes.

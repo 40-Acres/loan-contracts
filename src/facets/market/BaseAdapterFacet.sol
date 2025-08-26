@@ -21,10 +21,21 @@ abstract contract BaseAdapterFacet {
         address paymentToken
     );
 
+    // Uniform adapter ABI used by router for external purchases (separate args; no packing):
+    // - tokenId: veNFT id (may be unused by some adapters)
+    // - maxPaymentTotal: bound on total spend in payment token (price + fees)
+    // - inputAsset: buyer's provided token (address(0) for ETH if supported)
+    // - maxInputAmount: bound on inputAsset amount for swap path (ignored for direct path)
+    // - tradeData: ODOS calldata for swap; empty for direct-currency path
+    // - marketData: adapter-specific payload (e.g., marketplace, listingId, currency, bounds)
+    // - optionalPermit2: optional payload to use Permit2
     function buyToken(
         uint256 tokenId,
-        uint256 maxTotal,
-        bytes calldata buyData,
+        uint256 maxPaymentTotal,
+        address inputAsset,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata marketData,
         bytes calldata optionalPermit2
     ) external virtual;
 

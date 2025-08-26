@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVexyMarketplace} from "../../interfaces/external/IVexyMarketplace.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {Errors} from "../../libraries/Errors.sol";
+import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 
 contract VexyAdapterFacet is IVexyAdapterFacet, BaseAdapterFacet {
     modifier whenNotPaused() {
@@ -108,34 +109,85 @@ contract VexyAdapterFacet is IVexyAdapterFacet, BaseAdapterFacet {
         return (price, fee, currency);
     }
 
-    // buyData abi-encoded as: (address marketplace, uint256 listingId, address expectedCurrency)
+    // Uniform external adapter ABI
+    // For Vexy, marketData = abi.encode(address marketplace, uint256 listingId, address expectedCurrency, uint256 maxPrice)
     function buyToken(
         uint256 /*tokenId*/,
         uint256 maxTotal,
-        bytes calldata buyData,
-        bytes calldata /*optionalPermit2*/
+        address inputToken,
+        uint256 amountInMax,
+        bytes calldata tradeData,
+        bytes calldata marketData,
+        bytes calldata optionalPermit2
     ) external override whenNotPaused {
-        (address marketplace, uint256 listingId, address expectedCurrency) = abi.decode(buyData, (address, uint256, address));
+        (address marketplace, uint256 listingId, address expectedCurrency, uint256 maxPrice) = abi.decode(
+            marketData, (address, uint256, address, uint256)
+        );
 
-        // Quote to compute fee + validate currency; ensure total within bound
-        (uint256 price, uint256 fee, address currency) = this.quoteToken(0, abi.encode(marketplace, listingId));
+        // Validate marketplace and fetch listing/currency/price
+        require(marketplace != address(0), "Invalid marketplace");
+        IVexyMarketplace vexy = IVexyMarketplace(marketplace);
+        (
+            ,
+            ,
+            ,
+            ,
+            address currency,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint64 soldTime
+        ) = vexy.listings(listingId);
+        require(soldTime == 0, "Listing sold");
+        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert Errors.CurrencyNotAllowed();
         require(currency == expectedCurrency, "CurrencyMismatch");
+
+        uint256 price = vexy.listingPrice(listingId);
+        require(price > 0 && (maxPrice == 0 || price <= maxPrice), "PriceOutOfBounds");
+
+        // Compute external route fee and bound total
+        uint16 bps = _externalRouteFeeBps();
+        uint256 fee = (price * bps) / 10000;
         uint256 total = price + fee;
         require(total <= maxTotal, "MaxTotalExceeded");
 
-        // Pull funds for total; forward fee to recipient, approve marketplace with price, then buy
+        // Handle fund collection and optional swap via ODOS
+        address feeRecipient_ = MarketStorage.configLayout().feeRecipient;
         IERC20 payToken = IERC20(currency);
-        if (msg.sender != address(this)) {
-            require(payToken.transferFrom(msg.sender, address(this), total), "TransferFrom failed");
+        if (tradeData.length == 0 && inputToken == currency) {
+            // Direct currency path: pull exact total in currency
+            // First try Permit2 if provided; fallback to transferFrom
+            Permit2Lib.permitAndPull(msg.sender, address(this), currency, total, optionalPermit2);
+            if (optionalPermit2.length == 0) {
+                if (msg.sender != address(this)) {
+                    require(payToken.transferFrom(msg.sender, address(this), total), "TransferFrom failed");
+                } else {
+                    require(payToken.balanceOf(address(this)) >= total, "EscrowInsufficient");
+                }
+            }
         } else {
-            require(payToken.balanceOf(address(this)) >= total, "EscrowInsufficient");
+            // Swap path via ODOS. Only token inputs supported in this adapter.
+            if (inputToken == address(0)) revert Errors.NoETHForTokenPayment();
+            address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+            // Pull max input via Permit2 if provided upstream; otherwise fallback
+            Permit2Lib.permitAndPull(msg.sender, address(this), inputToken, amountInMax, optionalPermit2);
+            if (optionalPermit2.length == 0 && IERC20(inputToken).balanceOf(address(this)) < amountInMax) {
+                require(IERC20(inputToken).transferFrom(msg.sender, address(this), amountInMax), "TransferFrom failed");
+            }
+            IERC20(inputToken).approve(odos, amountInMax);
+            (bool success,) = odos.call{value: 0}(tradeData);
+            require(success, "ODOS swap failed");
+            IERC20(inputToken).approve(odos, 0);
+            // After swap, require enough currency to cover total
+            require(payToken.balanceOf(address(this)) >= total, "Slippage");
         }
 
-        address feeRecipient_ = MarketStorage.configLayout().feeRecipient;
+        // Settle fee, approve Vexy for price, execute purchase
         if (fee > 0) {
             require(payToken.transfer(feeRecipient_, fee), "Fee transfer failed");
         }
-
         payToken.approve(marketplace, price);
         IVexyMarketplace(marketplace).buyListing(listingId);
 

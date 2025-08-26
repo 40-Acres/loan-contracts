@@ -145,8 +145,10 @@ contract RouterWalletTest is DiamondMarketTestBase {
             bytes32(0),
             tokenId,
             WETH,
+            price,
             amountIn,
-            abi.encode(amountIn, tradeData) /* buyData */, 
+            tradeData,
+            bytes("") /* marketData */, 
             bytes("") /* optionalPermit2 */
         );
         vm.stopPrank();

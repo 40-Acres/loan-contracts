@@ -32,7 +32,7 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
         bytes4[] memory selectors = new bytes4[](3);
         selectors[0] = IVexyAdapterFacet.takeVexyListing.selector;
         selectors[1] = bytes4(keccak256("quoteToken(uint256,bytes)"));
-        selectors[2] = bytes4(keccak256("buyToken(uint256,uint256,bytes,bytes)"));
+        selectors[2] = bytes4(keccak256("buyToken(uint256,uint256,address,uint256,bytes,bytes,bytes)"));
         IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](1);
         cut[0] = IDiamondCut.FacetCut({facetAddress: vexyFacet, action: IDiamondCut.FacetCutAction.Add, functionSelectors: selectors});
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
@@ -75,13 +75,16 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         IERC20(currency).approve(diamond, p + routerFee);
+        bytes memory marketData = abi.encode(VEXY, listingId, currency, p);
         IMarketRouterFacet(diamond).buyToken(
             RouteLib.BuyRoute.ExternalAdapter,
             keccak256(abi.encodePacked("VEXY")),
             0,
             currency,
             p + routerFee,
-            abi.encode(VEXY, listingId, currency),
+            0,
+            bytes(""),
+            marketData,
             bytes("")
         );
         vm.stopPrank();

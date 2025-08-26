@@ -67,9 +67,11 @@ contract MarketRouterFacet is IMarketRouterFacet {
         RouteLib.BuyRoute route,
         bytes32 adapterKey,
         uint256 tokenId,
-        address inputToken,
-        uint256 maxTotal,
-        bytes calldata buyData,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata marketData,
         bytes calldata optionalPermit2
     ) external onlyWhenNotPaused {
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
@@ -79,28 +81,25 @@ contract MarketRouterFacet is IMarketRouterFacet {
         if (route == RouteLib.BuyRoute.InternalWallet) {
             (uint256 price, uint256 fee, address paymentToken) = _quoteInternalWallet(tokenId);
             uint256 total = price; // seller pays fee; total user spend bounded by maxTotal
-            if (inputToken == paymentToken) {
-                if (total > maxTotal) revert Errors.MaxTotalExceeded();
-                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputToken, 0, bytes(""), optionalPermit2);
+            if (inputAsset == paymentToken && tradeData.length == 0) {
+                if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
+            } else if (tradeData.length > 0) {
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
             } else {
-                if (buyData.length == 0) revert Errors.NoTradeData();
-                (uint256 amountIn, bytes memory tradeData) = abi.decode(buyData, (uint256, bytes));
-                if (amountIn > maxTotal) revert Errors.MaxTotalExceeded();
-                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputToken, amountIn, tradeData, optionalPermit2);
+                revert Errors.NoTradeData();
             }
 
         } else if (route == RouteLib.BuyRoute.InternalLoan) {
             // Get total cost of listing
             (uint256 total,,) = _quoteInternalLoan(tokenId);
-            if (total > maxTotal) revert Errors.MaxTotalExceeded();
-            // Route to unified loan entry. If swap needed, buyData must carry (amountIn, tradeData)
-            if (buyData.length == 0) {
+            if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
+            // Route to unified loan entry. If swap needed, use amountIn + tradeData
+            if (tradeData.length == 0) {
                 // No tradeData path
-                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputToken, 0, bytes(""), optionalPermit2);
+                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
             } else {
-                (uint256 amountIn, bytes memory tradeData) = abi.decode(buyData, (uint256, bytes));
-                if (amountIn > maxTotal) revert Errors.MaxTotalExceeded();
-                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputToken, amountIn, tradeData, optionalPermit2);
+                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
             }
 
         } else if (route == RouteLib.BuyRoute.ExternalAdapter) {
@@ -108,9 +107,18 @@ contract MarketRouterFacet is IMarketRouterFacet {
             address adapter = cfg.externalAdapter[adapterKey];
             if (adapter == address(0)) revert Errors.UnknownAdapter();
 
-            // Delegate call to the associated external adapter facet
+            // Delegate call to the associated external adapter facet (uniform ABI)
             (bool success, bytes memory result) =
-                adapter.delegatecall(abi.encodeWithSignature("buyToken(uint256,uint256,bytes,bytes)", tokenId, maxTotal, buyData, optionalPermit2));
+                adapter.delegatecall(abi.encodeWithSignature(
+                    "buyToken(uint256,uint256,address,uint256,bytes,bytes,bytes)",
+                    tokenId,
+                    maxPaymentTotal,
+                    inputAsset,
+                    maxInputAmount,
+                    tradeData,
+                    marketData,
+                    optionalPermit2
+                ));
             if (!success) {
                 RevertHelper.revertWithData(result);
             }
