@@ -39,6 +39,19 @@ interface IMarketMatchingFacet {
         bytes calldata tradeData,
         bytes calldata optionalPermit2
     ) external;
+
+    // External OpenX listing: supports optional swap via ODOS
+    function matchOfferWithOpenXListing(
+        uint256 offerId,
+        address openx,
+        uint256 listingId,
+        uint256 maxPrice,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external;
 }
 
 

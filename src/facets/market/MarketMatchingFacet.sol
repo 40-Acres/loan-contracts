@@ -9,7 +9,9 @@ import {IMarketMatchingFacet} from "../../interfaces/IMarketMatchingFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVexyMarketplace} from "../../interfaces/external/IVexyMarketplace.sol";
+import {IOpenXSwap} from "../../interfaces/external/IOpenXSwap.sol";
 import {IVexyAdapterFacet} from "../../interfaces/IVexyAdapterFacet.sol";
+import {IOpenXAdapterFacet} from "../../interfaces/IOpenXAdapterFacet.sol";
 import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWalletFacet.sol";
 import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFacet.sol";
 import {FeeLib} from "../../libraries/FeeLib.sol";
@@ -166,6 +168,88 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         // Finalize: delete internal offer record
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferMatched(offerId, tokenId, offer.creator, extPrice, fee);
+    }
+
+    // Match an internal offer by buying an external OpenX listing and delivering the NFT to the offer creator
+    function matchOfferWithOpenXListing(
+        uint256 offerId,
+        address openx,
+        uint256 listingId,
+        uint256 maxPrice,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        uint256 maxInputAmount,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external onlyWhenNotPaused {
+        MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
+        if (offer.creator == address(0)) revert Errors.OfferNotFound();
+        if (!MarketLogicLib.isOfferActive(offerId)) revert Errors.OfferExpired();
+
+        // Read OpenX listing details
+        (
+            address veNft,
+            ,
+            ,
+            uint256 tokenId,
+            address currency,
+            uint256 price,
+            uint256 startTime,
+            uint256 endTime,
+            bool sold
+        ) = IOpenXSwap(openx).Listings(listingId);
+
+        if (veNft != MarketStorage.configLayout().votingEscrow) revert Errors.WrongMarketVotingEscrow();
+        if (!(sold == false && endTime >= block.timestamp && startTime <= block.timestamp)) revert Errors.ListingInactive();
+
+        // Validate offer criteria (wallet/no-loan path)
+        _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
+
+        // Price and currency checks
+        if (!(price > 0 && price <= maxPrice)) revert Errors.PriceOutOfBounds();
+        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert Errors.CurrencyNotAllowed();
+
+        // Compute fee on the external price
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, price);
+
+        // Enforce combined caps
+        uint256 totalCost = price + fee;
+        if (totalCost > maxPaymentTotal) revert Errors.MaxTotalExceeded();
+
+        // Collect funds from offer.creator (permissionless caller). Use Permit2 if provided; else requires ERC20 approval to diamond.
+        if (tradeData.length == 0 && inputAsset == currency) {
+            // Direct currency path: pull exact totalCost in currency from offer.creator
+            Permit2Lib.permitAndPull(offer.creator, address(this), currency, totalCost, optionalPermit2);
+            if (optionalPermit2.length == 0) {
+                IERC20(currency).safeTransferFrom(offer.creator, address(this), totalCost);
+            }
+        } else {
+            // Swap path via ODOS from inputAsset to currency
+            if (inputAsset == address(0)) revert Errors.NoETHForTokenPayment();
+            address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+            Permit2Lib.permitAndPull(offer.creator, address(this), inputAsset, maxInputAmount, optionalPermit2);
+            if (optionalPermit2.length == 0) {
+                IERC20(inputAsset).safeTransferFrom(offer.creator, address(this), maxInputAmount);
+            }
+            IERC20(inputAsset).approve(odos, maxInputAmount);
+            (bool success,) = odos.call{value: 0}(tradeData);
+            require(success, "ODOS swap failed");
+            IERC20(inputAsset).approve(odos, 0);
+            if (IERC20(currency).balanceOf(address(this)) < totalCost) revert Errors.Slippage();
+        }
+
+        // Settle fee and perform OpenX buy using escrowed currency; call adapter entry with msg.sender == address(this)
+        if (fee > 0) {
+            IERC20(currency).safeTransfer(FeeLib.feeRecipient(), fee);
+        }
+        IOpenXAdapterFacet(address(this)).takeOpenXListing(openx, listingId, currency, price);
+
+        // Transfer acquired NFT to the offer creator
+        IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
+
+        // Finalize: delete internal offer record
+        delete MarketStorage.orderbookLayout().offers[offerId];
+        emit OfferMatched(offerId, tokenId, offer.creator, price, fee);
     }
 
     function matchOfferWithLoanListing(

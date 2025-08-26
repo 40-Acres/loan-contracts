@@ -126,3 +126,109 @@ contract MatchingTest is DiamondMarketTestBase {
 }
 
 
+contract MatchingOpenXExternalTest is DiamondMarketTestBase {
+    address constant OPENX = 0xbDdCf6AB290E7Ad076CA103183730d1Bf0661112;
+    address constant AERO = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
+    address constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
+    uint256 constant FORK_BLOCK = 34717107;
+
+    function setUp() public {
+        vm.createSelectFork("https://mainnet.base.org", FORK_BLOCK);
+        _deployDiamondAndFacets();
+        // Initialize market with canonical loan custodian and real veNFT
+        upgradeCanonicalLoan();
+        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 250, address(this), AERO);
+
+        // Ensure the new OpenX matching selector is cut into the diamond
+        address mmFacet = address(new MatchingOpenXFacetHarness());
+        bytes4[] memory mmSelectors = new bytes4[](1);
+        mmSelectors[0] = bytes4(keccak256("matchOfferWithOpenXListing(uint256,address,uint256,uint256,address,uint256,uint256,bytes,bytes)"));
+        IDiamondCut.FacetCut[] memory mmCut = new IDiamondCut.FacetCut[](1);
+        mmCut[0] = IDiamondCut.FacetCut({facetAddress: mmFacet, action: IDiamondCut.FacetCutAction.Add, functionSelectors: mmSelectors});
+        IDiamondCut(diamond).diamondCut(mmCut, address(0), "");
+
+        // Cut in OpenX adapter selector used by matching facet
+        address openxFacet = address(new OpenXAdapterFacetHarness());
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = bytes4(keccak256("takeOpenXListing(address,uint256,address,uint256)"));
+        IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](1);
+        cut[0] = IDiamondCut.FacetCut({facetAddress: openxFacet, action: IDiamondCut.FacetCutAction.Add, functionSelectors: selectors});
+        IDiamondCut(diamond).diamondCut(cut, address(0), "");
+
+        // Allow diamond to receive ERC721 transfers
+        address recvFacet = address(new ERC721ReceiverFacet());
+        bytes4[] memory recvSelectors = new bytes4[](1);
+        recvSelectors[0] = bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"));
+        IDiamondCut.FacetCut[] memory recvCut = new IDiamondCut.FacetCut[](1);
+        recvCut[0] = IDiamondCut.FacetCut({facetAddress: recvFacet, action: IDiamondCut.FacetCutAction.Add, functionSelectors: recvSelectors});
+        IDiamondCut(diamond).diamondCut(recvCut, address(0), "");
+
+        // Allow AERO
+        IMarketConfigFacet(diamond).setAllowedPaymentToken(AERO, true);
+    }
+
+    function test_match_offer_with_openx_listing() public {
+        uint256 listingId = 9068; // known live listing
+        (
+            address veNft,
+            ,
+            ,
+            uint256 tokenId,
+            address currency,
+            uint256 price,
+            uint256 startTs,
+            uint256 endTs,
+            bool sold
+        ) = IOpenXSwap(OPENX).Listings(listingId);
+
+        assertEq(veNft, VOTING_ESCROW, "veNft");
+        assertEq(currency, AERO, "currency");
+        assertTrue(block.timestamp >= startTs && endTs >= block.timestamp, "active");
+        assertFalse(sold, "sold");
+
+        // Create a very permissive offer from buyer, denominated in AERO
+        address buyer = vm.addr(0xBEEF);
+        uint256 fee = (price * IMarketViewFacet(diamond).marketFeeBps(RouteLib.BuyRoute.ExternalAdapter)) / 10000;
+        uint256 maxTotal = price + fee;
+
+        // Fund buyer with sufficient AERO to cover price + fee
+        deal(AERO, buyer, maxTotal);
+
+        vm.startPrank(buyer);
+        IERC20(AERO).approve(diamond, maxTotal);
+        IMarketOfferFacet(diamond).createOffer(0, type(uint256).max, 0, maxTotal, AERO, block.timestamp + 7 days);
+        vm.stopPrank();
+
+        // Match using direct currency path (no swap)
+        IMarketMatchingFacet(diamond).matchOfferWithOpenXListing(
+            1,
+            OPENX,
+            listingId,
+            price,
+            AERO,
+            maxTotal,
+            0,
+            bytes("") /* tradeData */,
+            bytes("") /* optionalPermit2 */
+        );
+
+        // Buyer should now own the NFT
+        assertEq(IVotingEscrow(VOTING_ESCROW).ownerOf(tokenId), buyer);
+    }
+}
+
+import {OpenXAdapterFacet} from "src/facets/market/OpenXAdapterFacet.sol";
+import {IDiamondCut} from "src/libraries/LibDiamond.sol";
+import {ERC721ReceiverFacet} from "src/facets/ERC721ReceiverFacet.sol";
+import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
+import {RouteLib} from "src/libraries/RouteLib.sol";
+import {IOpenXSwap} from "src/interfaces/external/IOpenXSwap.sol";
+import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
+import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
+import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IVotingEscrow} from "src/interfaces/IVotingEscrow.sol";
+import {MarketMatchingFacet} from "src/facets/market/MarketMatchingFacet.sol";
+contract OpenXAdapterFacetHarness is OpenXAdapterFacet {}
+contract MatchingOpenXFacetHarness is MarketMatchingFacet {}
+
