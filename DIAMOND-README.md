@@ -63,7 +63,7 @@ Facets must compose these libraries; do not bypass them:
   - Validate; collect funds; swap to `loanAsset` if needed; `DebtSettlementLib.payoff(LoanV2, tokenId)`; set borrower to buyer via `LoanV2.setBorrower` (diamond must be approved/whitelisted). By default we do not transfer the veNFT out; it remains in loan custody so the buyer can borrow later. If the buyer wishes to withdraw, they can call `claimCollateral()` themselves; for intra‑40 Acres moves, use `LoanV2.transferWithin40Acres`.
 
 - External listing (e.g., Vexy) → take
-  - Validate external state/price/currency; pull buyer funds; include external aggregation fee in upfront quote; `VexyAdapterFacet.buyVexyListing`; deliver NFT to buyer (or keep in escrow for LBO).
+  - Validate external state/price/currency; pull buyer funds; include external aggregation fee in upfront quote; `VexyAdapterFacet.takeVexyListing`; deliver NFT to buyer (or keep in escrow for LBO).
 
 ## Quoting and buying API (enum‑driven)
 
@@ -208,7 +208,7 @@ Phase A (market core)
   - Define minimal adapter interface used by router: `quoteToken(uint256 tokenId, bytes quoteData) → (uint256 price, uint256 fee, address currency)` and `buyToken(uint256 tokenId, uint256 maxTotal, bytes buyData, bytes optionalPermit2)`.
   - Implement `MarketRouterFacet.quoteToken` for `ExternalAdapter` route: look up adapter by key, delegatecall `quoteToken`, bubble up reverts.
   - Keep `MarketRouterFacet.buyToken` external branch but ensure delegatecall targets `buyToken` with the ABI above; bubble up revert data via `RevertHelper`.
-  - Update `VexyAdapterFacet` (or add a thin wrapper facet) to implement the generic `quoteToken/buyToken` so it can be invoked via the router; keep `buyVexyListing` as an optional convenience that forwards to the generic entry.
+  - Update `VexyAdapterFacet` (or add a thin wrapper facet) to implement the generic `quoteToken/buyToken` so it can be invoked via the router; keep `takeVexyListing` as an optional convenience that forwards to the generic entry.
 - [ ] External matching improvements (Vexy)
   - In `matchOfferWithVexyListing`, add swap path when `offer.paymentToken != currency`: use Permit2 (if provided) to pull `offer.price`, execute ODOS trade with allowance bump/reset, and enforce balance-delta slippage to cover `extPrice` and fee.
   - After adapter buy, assert custody with `TransferGuardsLib.requireCustody(votingEscrow, tokenId, address(this))` before transferring to the offer creator.

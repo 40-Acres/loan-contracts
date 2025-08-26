@@ -57,7 +57,7 @@ contract VexyAdapterTest is DiamondMarketTestBase {
         // Cut in the Vexy adapter facet
         address vexyFacet = address(new VexyAdapterFacetHarness());
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = IVexyAdapterFacet.buyVexyListing.selector;
+        selectors[0] = IVexyAdapterFacet.takeVexyListing.selector;
         IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](1);
         cut[0] = IDiamondCut.FacetCut({
             facetAddress: vexyFacet,
@@ -77,64 +77,6 @@ contract VexyAdapterTest is DiamondMarketTestBase {
             functionSelectors: sel2
         });
         IDiamondCut(diamond).diamondCut(cut2, address(0), "");
-    }
-
-    function test_buy_vexy_listing() public {
-        IVexyMarketplace vexy = IVexyMarketplace(VEXY);
-        // Find the latest active listing for TARGET_NFT_ID
-        uint256 len = vexy.listingsLength();
-        uint256 listingId = type(uint256).max;
-        address nftCollection;
-        uint256 nftId;
-        address currency;
-        uint64 endTime;
-        uint64 soldTime;
-
-        for (uint256 i = len; i > 0; i--) {
-            (
-                ,
-                ,
-                nftCollection,
-                nftId,
-                currency,
-                ,
-                ,
-                ,
-                ,
-                endTime,
-                soldTime
-            ) = vexy.listings(i - 1);
-            if (nftId == TARGET_NFT_ID && soldTime == 0 && endTime >= block.timestamp) {
-                listingId = i - 1;
-                break;
-            }
-        }
-        require(listingId != type(uint256).max, "Target listing not found or inactive");
-
-        uint256 price = vexy.listingPrice(listingId);
-        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, price);
-        // Allow the currency and fund buyer
-        IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);
-
-        if (currency == USDC) {
-            IUSDC usdc = IUSDC(USDC);
-            vm.prank(usdc.masterMinter());
-            usdc.configureMinter(address(this), type(uint256).max);
-            usdc.mint(buyer, price+fee);
-        } else {
-            require(CURRENCY_WHALE != address(0), "Provide CURRENCY_WHALE");
-            vm.prank(CURRENCY_WHALE);
-            IERC20(currency).transfer(buyer, price+fee);
-        }
-
-        // Buyer approves and buys via adapter
-        vm.startPrank(buyer);
-        IERC20(currency).approve(diamond, price+fee);
-        IVexyAdapterFacet(diamond).buyVexyListing(VEXY, listingId, currency, price);
-        vm.stopPrank();
-
-        // Buyer should now own the NFT
-        assertEq(IVotingEscrow(nftCollection).ownerOf(nftId), buyer);
     }
 
     function test_match_offer_with_vexy_listing() public {

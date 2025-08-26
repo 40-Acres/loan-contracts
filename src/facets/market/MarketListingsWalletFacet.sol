@@ -38,6 +38,11 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         pause.reentrancyStatus = 1;
     }
 
+    modifier onlyDiamond() {
+        if (msg.sender != address(this)) revert Errors.NotAuthorized();
+        _;
+    }
+
     function makeWalletListing(
         uint256 tokenId,
         uint256 price,
@@ -112,9 +117,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         uint256 amountInMax,
         bytes calldata tradeData,
         bytes calldata optionalPermit2
-    ) external payable nonReentrant onlyWhenNotPaused {
-        // Router-only: callable only via the diamond itself
-        if (msg.sender != address(this)) revert Errors.NotAuthorized();
+    ) external payable nonReentrant onlyWhenNotPaused onlyDiamond {
         _takeWalletListingFor(tokenId, buyer, inputToken, amountInMax, tradeData, optionalPermit2);
     }
 

@@ -123,7 +123,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
                 IERC20(currency).safeTransfer(FeeLib.feeRecipient(), fee);
             }
             // Buy listing using internal escrow path
-            IVexyAdapterFacet(address(this)).buyVexyListing(vexy, listingId, currency, extPrice);
+            IVexyAdapterFacet(address(this)).takeVexyListing(vexy, listingId, currency, extPrice);
             // Ensure custody is with the diamond before forwarding to user
             TransferGuardsLib.requireCustody(MarketStorage.configLayout().votingEscrow, tokenId, address(this));
         } else {

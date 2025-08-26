@@ -33,12 +33,10 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
 
         // Cut in the Vexy adapter facet and register as external adapter with key keccak256("VEXY")
         address vexyFacet = address(new VexyAdapterFacetHarness());
-        bytes4[] memory selectors = new bytes4[](3);
-        // convenience function
-        selectors[0] = IVexyAdapterFacet.buyVexyListing.selector;
+        bytes4[] memory selectors = new bytes4[](2);
         // generic adapter ABI for router
-        selectors[1] = bytes4(keccak256("quoteToken(uint256,bytes)"));
-        selectors[2] = bytes4(keccak256("buyToken(uint256,uint256,bytes,bytes)"));
+        selectors[0] = bytes4(keccak256("quoteToken(uint256,bytes)"));
+        selectors[1] = bytes4(keccak256("buyToken(uint256,uint256,bytes,bytes)"));
         IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](1);
         cut[0] = IDiamondCut.FacetCut({facetAddress: vexyFacet, action: IDiamondCut.FacetCutAction.Add, functionSelectors: selectors});
         IDiamondCut(diamond).diamondCut(cut, address(0), "");

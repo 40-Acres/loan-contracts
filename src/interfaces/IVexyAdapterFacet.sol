@@ -17,7 +17,8 @@ interface IVexyAdapterFacet {
     /// @param listingId Listing id in the external marketplace
     /// @param expectedCurrency Payment token expected (must be allowed by market)
     /// @param maxPrice Max price willing to pay (slippage bound vs. Vexy dynamic price)
-    function buyVexyListing(
+    /// @dev This function is only callable by the diamond contract
+    function takeVexyListing(
         address marketplace,
         uint256 listingId,
         address expectedCurrency,

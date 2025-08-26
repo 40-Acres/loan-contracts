@@ -8,6 +8,7 @@ import {IMarketConfigFacet} from "../../interfaces/IMarketConfigFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVexyMarketplace} from "../../interfaces/external/IVexyMarketplace.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {Errors} from "../../libraries/Errors.sol";
 
 contract VexyAdapterFacet is IVexyAdapterFacet, BaseAdapterFacet {
     modifier whenNotPaused() {
@@ -15,13 +16,19 @@ contract VexyAdapterFacet is IVexyAdapterFacet, BaseAdapterFacet {
         _;
     }
 
+    modifier onlyDiamond() {
+        if (msg.sender != address(this)) revert Errors.NotAuthorized();
+        _;
+    }
+
     /// @inheritdoc IVexyAdapterFacet
-    function buyVexyListing(
+    function takeVexyListing(
         address marketplace,
         uint256 listingId,
         address expectedCurrency,
         uint256 maxPrice
-    ) external whenNotPaused {
+    ) external whenNotPaused onlyDiamond {
+        // TODO: CONSIDER better gating for this function
         // Validate marketplace address
         require(marketplace != address(0), "Invalid marketplace");
 
