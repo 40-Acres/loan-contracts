@@ -105,7 +105,7 @@ abstract contract DiamondMarketTestBase is Test {
         ownSelectors[3] = OwnershipFacet.renounceOwnership.selector;
 
         // Market Config selectors
-        bytes4[] memory cfgSelectors = new bytes4[](9);
+        bytes4[] memory cfgSelectors = new bytes4[](10);
         cfgSelectors[0] = IMarketConfigFacet.initMarket.selector;
         cfgSelectors[1] = IMarketConfigFacet.setMarketFee.selector;
         cfgSelectors[2] = IMarketConfigFacet.setFeeRecipient.selector;
@@ -116,6 +116,8 @@ abstract contract DiamondMarketTestBase is Test {
         cfgSelectors[7] = IMarketConfigFacet.setAccessManager.selector;
         // Permit2 config
         cfgSelectors[8] = IMarketConfigFacet.setPermit2.selector;
+        // External adapter registry
+        cfgSelectors[9] = IMarketConfigFacet.setExternalAdapter.selector;
 
         // Market View selectors
         bytes4[] memory viewSelectors = new bytes4[](11);

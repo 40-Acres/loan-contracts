@@ -198,10 +198,32 @@ Notes:
 ## Roadmap & checklist
 
 Phase A (market core)
-- [ ] Implement TransferGuardsLib, DebtSettlementLib, SwapRouterLib
-- [ ] Finish `MarketListingsWalletFacet`, `MarketListingsLoanFacet`, `MarketOfferFacet`, `MarketMatchingFacet`
-- [ ] Vexy adapter buy path (no LBO), tests for invariants and CEI
-- [ ] Add adapters: OpenXswap, Salvor (AVAX; PHAR/Blackhole collections)
+- [ ] Finalize internal listing/offer/matching facets
+  - Ensure `MarketListingsWalletFacet` uses CEI, supports Permit2 optional path, ODOS swap path, and has lifecycle tests (make/update/cancel/take/quote) including pause/reentrancy.
+  - Ensure `MarketListingsLoanFacet` handles payoff in `loanAsset`, borrower handoff via `setBorrower`, ODOS swap path for input tokens, Permit2 optional path; tests for quoting (price/fee/total), settlement, balances, and guards.
+  - Ensure `MarketOfferFacet` enforces weight/debt/expiry criteria; settlement for wallet-held vs loan-custodied flows; tests for create/update/cancel/accept and failure cases.
+  - Ensure `MarketMatchingFacet` covers wallet↔offer and loan↔offer matching with full settlement tests and CEI.
+- [ ] External adapter path via router
+  - Add adapter registry admin function in `MarketConfigFacet`: `setExternalAdapter(bytes32 key, address facet)` (owner or MARKET_ADMIN), plus `ExternalAdapterSet(key, facet)` event; disallow zero address.
+  - Define minimal adapter interface used by router: `quoteToken(uint256 tokenId, bytes quoteData) → (uint256 price, uint256 fee, address currency)` and `buyToken(uint256 tokenId, uint256 maxTotal, bytes buyData, bytes optionalPermit2)`.
+  - Implement `MarketRouterFacet.quoteToken` for `ExternalAdapter` route: look up adapter by key, delegatecall `quoteToken`, bubble up reverts.
+  - Keep `MarketRouterFacet.buyToken` external branch but ensure delegatecall targets `buyToken` with the ABI above; bubble up revert data via `RevertHelper`.
+  - Update `VexyAdapterFacet` (or add a thin wrapper facet) to implement the generic `quoteToken/buyToken` so it can be invoked via the router; keep `buyVexyListing` as an optional convenience that forwards to the generic entry.
+- [ ] External matching improvements (Vexy)
+  - In `matchOfferWithVexyListing`, add swap path when `offer.paymentToken != currency`: use Permit2 (if provided) to pull `offer.price`, execute ODOS trade with allowance bump/reset, and enforce balance-delta slippage to cover `extPrice` and fee.
+  - After adapter buy, assert custody with `TransferGuardsLib.requireCustody(votingEscrow, tokenId, address(this))` before transferring to the offer creator.
+- [ ] Fees and safety polish
+  - Verify fee computation per route (`InternalWallet`, `InternalLoan`, `ExternalAdapter`) via tests; ensure fee recipient receives correct amount and seller receives remainder.
+  - Zero approvals after all external calls (ODOS, marketplaces); add tests that no lingering approvals remain.
+  - Extend transfer guards where applicable to ensure no-debt-before-transfer for any future transfer paths; maintain CEI and nonReentrant across new flows.
+- [ ] Tests (expand coverage)
+  - Router: external quote success and revert cases (UnknownAdapter, invalid key, adapter revert, bad currency).
+  - Router: external buy success and revert cases (maxTotal exceeded, currency not allowed, price out of bounds, adapter revert propagation).
+  - Adapter registry: admin-only, zero-address rejections, event assertions; querying via `MarketViewFacet` if exposed.
+  - External matching: direct-currency path and swap path; custody assertion before delivery; pause/reentrancy coverage.
+  - Fee paths: assert correct fee amounts and recipients across all routes.
+- [ ] Adapters roadmap
+  - Implement stubs for `OpenXswap` and `Salvor` following the same adapter interface; wire via registry and add basic quote/buy tests.
 
 Phase B (LBO on LoanV2 chains)
 - [ ] LoanV2 whitelisting and minimal hooks

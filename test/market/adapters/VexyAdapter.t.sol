@@ -48,11 +48,10 @@ contract VexyAdapterTest is DiamondMarketTestBase {
         }
         buyer = vm.addr(0xBEEF);
 
-        // Deploy Loan/Vault (market init requires them), deploy diamond and core market facets
-        BaseDeploy deployer = new BaseDeploy();
-        (loan, vault) = deployer.deployLoan();
         _deployDiamondAndFacets();
 
+        // ensure canonical loan proxy is upgraded on fork before market init
+        upgradeCanonicalLoan();
         IMarketConfigFacet(diamond).initMarket(address(loan), address(VOTING_ESCROW), 250, address(this), USDC);
 
         // Cut in the Vexy adapter facet
@@ -113,7 +112,7 @@ contract VexyAdapterTest is DiamondMarketTestBase {
         require(listingId != type(uint256).max, "Target listing not found or inactive");
 
         uint256 price = vexy.listingPrice(listingId);
-
+        uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.ExternalAdapter, price);
         // Allow the currency and fund buyer
         IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);
 
@@ -121,16 +120,16 @@ contract VexyAdapterTest is DiamondMarketTestBase {
             IUSDC usdc = IUSDC(USDC);
             vm.prank(usdc.masterMinter());
             usdc.configureMinter(address(this), type(uint256).max);
-            usdc.mint(buyer, price);
+            usdc.mint(buyer, price+fee);
         } else {
             require(CURRENCY_WHALE != address(0), "Provide CURRENCY_WHALE");
             vm.prank(CURRENCY_WHALE);
-            IERC20(currency).transfer(buyer, price);
+            IERC20(currency).transfer(buyer, price+fee);
         }
 
         // Buyer approves and buys via adapter
         vm.startPrank(buyer);
-        IERC20(currency).approve(diamond, price);
+        IERC20(currency).approve(diamond, price+fee);
         IVexyAdapterFacet(diamond).buyVexyListing(VEXY, listingId, currency, price);
         vm.stopPrank();
 
@@ -179,7 +178,7 @@ contract VexyAdapterTest is DiamondMarketTestBase {
 
         // Create a wide-tolerance offer from buyer
         vm.startPrank(buyer);
-        IERC20(currency).approve(diamond, offerPrice);
+        IERC20(currency).approve(diamond, offerPrice+fee);
         IMarketOfferFacet(diamond).createOffer({
             minWeight: 0,
             maxWeight: type(uint256).max,

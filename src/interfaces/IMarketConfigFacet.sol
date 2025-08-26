@@ -10,6 +10,7 @@ interface IMarketConfigFacet {
     event MarketInitialized(address loan, address votingEscrow, uint16 marketFeeBps, address feeRecipient, address defaultPaymentToken);
     event MarketPauseStatusChanged(bool isPaused);
     event LoanAssetSet(address asset);
+    event ExternalAdapterSet(bytes32 key, address facet);
 
     // Initializer
     function initMarket(
@@ -36,6 +37,9 @@ interface IMarketConfigFacet {
     function loanAsset() external view returns (address);
 
     function setPermit2(address permit2) external;
+
+    // External adapters
+    function setExternalAdapter(bytes32 key, address facet) external;
 }
 
 

@@ -47,9 +47,20 @@ contract MarketRouterFacet is IMarketRouterFacet {
             (uint256 p,uint256 f,address pay) = _quoteInternalLoan(tokenId);
             return (p,f,pay);
         }
-        // External adapters quote via adapterKey/quoteData path (Phase A stub)
-        adapterKey; quoteData;
-        return (0, 0, address(0));
+        // External adapters quote via adapterKey/quoteData path
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        address adapter = cfg.externalAdapter[adapterKey];
+        if (adapter == address(0)) revert Errors.UnknownAdapter();
+
+        // Delegatecall into adapter to allow reading diamond storage
+        (bool success, bytes memory result) =
+            adapter.staticcall(abi.encodeWithSignature("quoteToken(uint256,bytes)", tokenId, quoteData));
+        if (!success) {
+            RevertHelper.revertWithData(result);
+        }
+        (uint256 price, , address currency) = abi.decode(result, (uint256, uint256, address));
+        uint256 fee = (price * cfg.feeBps[RouteLib.BuyRoute.ExternalAdapter]) / 10000;
+        return (price, fee, currency);
     }
 
     function buyToken(
@@ -99,7 +110,7 @@ contract MarketRouterFacet is IMarketRouterFacet {
 
             // Delegate call to the associated external adapter facet
             (bool success, bytes memory result) =
-                adapter.delegatecall(abi.encodeWithSignature("buyToken(uint256, uint256, bytes, bytes)", tokenId, maxTotal, buyData, optionalPermit2));
+                adapter.delegatecall(abi.encodeWithSignature("buyToken(uint256,uint256,bytes,bytes)", tokenId, maxTotal, buyData, optionalPermit2));
             if (!success) {
                 RevertHelper.revertWithData(result);
             }

@@ -138,4 +138,12 @@ contract MarketConfigFacet is IMarketConfigFacet {
         MarketStorage.configLayout().permit2 = permit2;
         emit Permit2Set(permit2);
     }
+
+    // ============ EXTERNAL ADAPTER REGISTRY ==========
+    function setExternalAdapter(bytes32 key, address facet) external onlyOwnerOrSystemAdmin {
+        require(key != bytes32(0), "Zero key");
+        require(facet != address(0), "Zero address");
+        MarketStorage.configLayout().externalAdapter[key] = facet;
+        emit ExternalAdapterSet(key, facet);
+    }
 }
