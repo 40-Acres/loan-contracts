@@ -24,6 +24,9 @@ interface IMarketListingsWalletFacet {
 
     function cancelWalletListing(uint256 tokenId) external;
 
+    // Admin-only: cancel a batch of expired wallet listings
+    function cancelExpiredWalletListings(uint256[] calldata listingIds) external;
+
     // Single entry: direct or Odos swap depending on parameters
     // - No swap: inputToken == paymentToken and tradeData.length == 0
     // - Swap via Odos: inputToken != paymentToken and tradeData.length > 0

@@ -29,6 +29,9 @@ interface IMarketOfferFacet {
 
     function cancelOffer(uint256 offerId) external;
 
+    // Admin-only: cancel a batch of expired offers
+    function cancelExpiredOffers(uint256[] calldata offerIds) external;
+
     function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external;
 }
 

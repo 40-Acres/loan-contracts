@@ -8,6 +8,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {FeeLib} from "../../libraries/FeeLib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
+import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
+import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 
 interface ILoanMinimalOpsOF {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -35,6 +37,18 @@ contract MarketOfferFacet is IMarketOfferFacet {
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
+    }
+
+    modifier onlyMarketAdmin() {
+        address accessManager = MarketStorage.configLayout().accessManager;
+        if (accessManager != address(0)) {
+            (bool hasRole,) = IAccessManager(accessManager).hasRole(AccessRoleLib.MARKET_ADMIN, msg.sender);
+            if (hasRole) {
+                _;
+                return;
+            }
+        }
+        revert("NotAuthorized");
     }
 
     function createOffer(
@@ -100,6 +114,17 @@ contract MarketOfferFacet is IMarketOfferFacet {
         // Approval-based offers: nothing to refund; just delete the offer
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferCancelled(offerId);
+    }
+
+    function cancelExpiredOffers(uint256[] calldata offerIds) external nonReentrant onlyMarketAdmin {
+        for (uint256 i = 0; i < offerIds.length; i++) {
+            uint256 offerId = offerIds[i];
+            MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
+            if (offer.creator != address(0) && offer.expiresAt != 0 && block.timestamp >= offer.expiresAt) {
+                delete MarketStorage.orderbookLayout().offers[offerId];
+                emit OfferCancelled(offerId);
+            }
+        }
     }
 
     function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external nonReentrant onlyWhenNotPaused {

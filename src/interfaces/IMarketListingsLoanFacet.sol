@@ -24,6 +24,9 @@ interface IMarketListingsLoanFacet {
 
     function cancelLoanListing(uint256 tokenId) external;
 
+    // Admin-only: cancel a batch of expired loan listings
+    function cancelExpiredLoanListings(uint256[] calldata listingIds) external;
+
     function quoteLoanListing(
         uint256 tokenId,
         address inputToken

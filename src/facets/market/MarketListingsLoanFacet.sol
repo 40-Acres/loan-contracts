@@ -10,6 +10,8 @@ import {SafeERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/utils/
 import {FeeLib} from "../../libraries/FeeLib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
 import {Permit2Lib, IPermit2} from "../../libraries/Permit2Lib.sol";
+import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
+import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 
 interface ILoanMinimalOpsLL {
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
@@ -37,6 +39,18 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
+    }
+
+    modifier onlyMarketAdmin() {
+        address accessManager = MarketStorage.configLayout().accessManager;
+        if (accessManager != address(0)) {
+            (bool hasRole,) = IAccessManager(accessManager).hasRole(AccessRoleLib.MARKET_ADMIN, msg.sender);
+            if (hasRole) {
+                _;
+                return;
+            }
+        }
+        revert Errors.NotAuthorized();
     }
 
     function makeLoanListing(
@@ -93,6 +107,17 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         require(MarketLogicLib.canOperate(listing.owner, msg.sender), "Unauthorized");
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingCancelled(tokenId);
+    }
+
+    function cancelExpiredLoanListings(uint256[] calldata listingIds) external nonReentrant onlyMarketAdmin {
+        for (uint256 i = 0; i < listingIds.length; i++) {
+            uint256 tokenId = listingIds[i];
+            MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
+            if (listing.owner != address(0) && listing.expiresAt != 0 && block.timestamp >= listing.expiresAt) {
+                delete MarketStorage.orderbookLayout().listings[tokenId];
+                emit ListingCancelled(tokenId);
+            }
+        }
     }
 
     function takeLoanListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
