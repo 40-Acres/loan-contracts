@@ -78,7 +78,7 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
         assertEq(p, price);
         assertEq(payToken, currency);
 
-        // buy via router
+        // buy via router (token input)
         vm.startPrank(buyer);
         IERC20(currency).approve(diamond, p + fee);
         bytes memory marketData = abi.encode(VEXY, listingId, currency, p);
@@ -87,6 +87,51 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
             keccak256(abi.encodePacked("VEXY")),
             0,
             currency,
+            p + fee,
+            0,
+            bytes(""),
+            marketData,
+            bytes("")
+        );
+        vm.stopPrank();
+    }
+
+    function test_revert_buy_via_router_vexy_ETH_without_tradeData() public {
+        // find an active listing
+        IVexyMarketplace vexy = IVexyMarketplace(VEXY);
+        uint256 len = vexy.listingsLength();
+        uint256 listingId = type(uint256).max;
+        address currency;
+        for (uint256 i = len; i > 0; i--) {
+            (,,, uint256 nftId, address curr, , , , , uint64 endTime, uint64 soldTime) = vexy.listings(i - 1);
+            if (soldTime == 0 && endTime >= block.timestamp) {
+                listingId = i - 1;
+                currency = curr;
+                break;
+            }
+        }
+        require(listingId != type(uint256).max, "no listing");
+        IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);
+
+        // quote
+        (uint256 p, uint256 fee, ) = IMarketRouterFacet(diamond).quoteToken(
+            RouteLib.BuyRoute.ExternalAdapter,
+            keccak256(abi.encodePacked("VEXY")),
+            0,
+            abi.encode(VEXY, listingId)
+        );
+
+        // attempt to buy with ETH but no tradeData should revert at router
+        address buyer = vm.addr(0xBEEF);
+        vm.deal(buyer, 1 ether);
+        vm.startPrank(buyer);
+        bytes memory marketData = abi.encode(VEXY, listingId, currency, p);
+        vm.expectRevert();
+        IMarketRouterFacet(diamond).buyToken{value: 0.1 ether}(
+            RouteLib.BuyRoute.ExternalAdapter,
+            keccak256(abi.encodePacked("VEXY")),
+            0,
+            address(0),
             p + fee,
             0,
             bytes(""),

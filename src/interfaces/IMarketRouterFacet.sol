@@ -35,7 +35,7 @@ interface IMarketRouterFacet {
         bytes calldata tradeData,
         bytes calldata marketData,
         bytes calldata optionalPermit2
-    ) external;
+    ) external payable;
 }
 
 

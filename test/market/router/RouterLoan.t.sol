@@ -35,6 +35,14 @@ contract MockOdosRouterRL {
         require(success, "mint fail");
         return true;
     }
+
+    // ETH -> token swap path for loan route
+    function executeSwapETH(address tokenOut, uint256 amountOut) external payable returns (bool) {
+        require(msg.value > 0, "no eth");
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC_Mint(tokenOut).masterMinter(), msg.sender, amountOut));
+        require(success, "mint fail");
+        return true;
+    }
 }
 
 contract RouterLoanTest is DiamondMarketTestBase {
@@ -188,5 +196,70 @@ contract RouterLoanBuyTest is RouterLoanTest {
         assertEq(IERC20(USDC).balanceOf(seller), usdcSellerBefore + price - fee);
         assertEq(IERC20(USDC).balanceOf(feeRecipient), usdcFeeBefore + fee);
         assertEq(aeroBefore - IERC20(AERO).balanceOf(buyer), amountIn);
+    }
+
+    function test_success_buyToken_ETHInput_USDCPayment() public {
+        uint256 tokenId = 65424;
+        IVotingEscrow ve = IVotingEscrow(VE);
+        seller = ve.ownerOf(tokenId);
+        vm.assume(seller != address(0));
+
+        // Move token into loan custody
+        vm.startPrank(seller);
+        ve.approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        // Create listing in USDC
+        vm.startPrank(seller);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0);
+        vm.stopPrank();
+
+        // Quote
+        (uint256 price, uint256 fee, address payToken) = IMarketRouterFacet(diamond).quoteToken(
+            RouteLib.BuyRoute.InternalLoan,
+            bytes32(0),
+            tokenId,
+            bytes("")
+        );
+        assertEq(payToken, USDC);
+
+        address buyer = vm.addr(0x4567);
+
+        // Build tradeData for mock Odos: ETH -> USDC
+        uint256 ethIn = 0.2 ether;
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwapETH.selector,
+            USDC,
+            price + fee
+        );
+
+        // balances before
+        uint256 usdcSellerBefore = IERC20(USDC).balanceOf(seller);
+        uint256 usdcFeeBefore = IERC20(USDC).balanceOf(feeRecipient);
+
+        // buy with native ETH input (swap path)
+        vm.deal(buyer, ethIn);
+        vm.startPrank(buyer);
+        IMarketRouterFacet(diamond).buyToken{value: ethIn}(
+            RouteLib.BuyRoute.InternalLoan,
+            bytes32(0),
+            tokenId,
+            address(0),
+            price + fee,
+            0,
+            tradeData,
+            bytes("") /* marketData */, 
+            bytes("")
+        );
+        vm.stopPrank();
+
+        // borrower set
+        (, address borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);
+        assertEq(borrower, buyer);
+
+        // proceeds moved
+        assertEq(IERC20(USDC).balanceOf(seller), usdcSellerBefore + price - fee);
+        assertEq(IERC20(USDC).balanceOf(feeRecipient), usdcFeeBefore + fee);
     }
 }

@@ -33,6 +33,14 @@ contract MockOdosRouterRW {
         require(success, "mint fail");
         return true;
     }
+
+    // ETH -> token swap path: accept ETH and mint tokenOut to msg.sender via test hook
+    function executeSwapETH(address tokenOut, uint256 amountOut) external payable returns (bool) {
+        require(msg.value > 0, "no eth");
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), msg.sender, amountOut));
+        require(success, "mint fail");
+        return true;
+    }
 }
 
 contract RouterWalletTest is DiamondMarketTestBase {
@@ -162,6 +170,53 @@ contract RouterWalletTest is DiamondMarketTestBase {
 
         // buyer spent amountIn WETH
         assertEq(wethBuyerBefore - IERC20(WETH).balanceOf(buyer), amountIn);
+    }
+
+    function test_success_buyToken_ETHInput_USDCPayment() public {
+        uint256 tokenId = 65424;
+        (uint256 price, uint256 fee, address payToken) = router.quoteToken(
+            RouteLib.BuyRoute.InternalWallet,
+            bytes32(0),
+            tokenId,
+            bytes("")
+        );
+        assertEq(price, 1_000e6);
+        assertEq(payToken, USDC);
+
+        // record balances
+        uint256 usdcSellerBefore = IERC20(USDC).balanceOf(seller);
+        uint256 usdcFeeBefore = IERC20(USDC).balanceOf(feeRecipient);
+
+        // Build tradeData for mock Odos: swap ETH -> USDC, amountOut = price
+        uint256 ethIn = 0.1 ether;
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRW.executeSwapETH.selector,
+            USDC,
+            price
+        );
+
+        // buy with native ETH input
+        vm.deal(buyer, ethIn);
+        vm.startPrank(buyer);
+        router.buyToken{value: ethIn}(
+            RouteLib.BuyRoute.InternalWallet,
+            bytes32(0),
+            tokenId,
+            address(0),
+            price,
+            0,
+            tradeData,
+            bytes("") /* marketData */, 
+            bytes("") /* optionalPermit2 */
+        );
+        vm.stopPrank();
+
+        // ownership transferred to buyer
+        assertEq(IVotingEscrow(VE).ownerOf(tokenId), buyer);
+
+        // seller receives net proceeds and protocol fee is collected in USDC
+        assertEq(IERC20(USDC).balanceOf(seller), usdcSellerBefore + price - fee);
+        assertEq(IERC20(USDC).balanceOf(feeRecipient), usdcFeeBefore + fee);
     }
 
     // helper for mock to mint USDC

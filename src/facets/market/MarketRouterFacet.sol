@@ -73,19 +73,23 @@ contract MarketRouterFacet is IMarketRouterFacet {
         bytes calldata tradeData,
         bytes calldata marketData,
         bytes calldata optionalPermit2
-    ) external onlyWhenNotPaused {
+    ) external payable onlyWhenNotPaused {
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
 
         // Single-veNFT per diamond: no escrow parameter; cfg.votingEscrow is authoritative
+        // Guard: if a non-ETH input asset is specified, do not accept ETH value
+        if (inputAsset != address(0) && msg.value > 0) revert Errors.NoETHForTokenPayment();
+        // Guard: if ETH is input and no swap data provided, revert early (no direct-ETH listings supported)
+        if (inputAsset == address(0) && tradeData.length == 0) revert Errors.NoTradeData();
 
         if (route == RouteLib.BuyRoute.InternalWallet) {
             (uint256 price, uint256 fee, address paymentToken) = _quoteInternalWallet(tokenId);
             uint256 total = price; // seller pays fee; total user spend bounded by maxTotal
             if (inputAsset == paymentToken && tradeData.length == 0) {
                 if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
-                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
             } else if (tradeData.length > 0) {
-                IMarketListingsWalletFacet(address(this)).takeWalletListingFor(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
             } else {
                 revert Errors.NoTradeData();
             }
@@ -97,9 +101,12 @@ contract MarketRouterFacet is IMarketRouterFacet {
             // Route to unified loan entry. If swap needed, use amountIn + tradeData
             if (tradeData.length == 0) {
                 // No tradeData path
+                // Direct ETH is not supported for loan listings
+                // TODO: consider better error for this below
+                if (inputAsset == address(0)) revert Errors.NoETHForTokenPayment();
                 IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
             } else {
-                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
+                IMarketListingsLoanFacet(address(this)).takeLoanListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
             }
 
         } else if (route == RouteLib.BuyRoute.ExternalAdapter) {
