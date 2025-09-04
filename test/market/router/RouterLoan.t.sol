@@ -128,6 +128,63 @@ contract RouterLoanTest is DiamondMarketTestBase {
 }
 
 contract RouterLoanBuyTest is RouterLoanTest {
+    function test_success_buyToken_USDCInput_USDCPayment_withLoanPayoff_NoSwap() public {
+        uint256 tokenId = 65424;
+        IVotingEscrow ve = IVotingEscrow(VE);
+        seller = ve.ownerOf(tokenId);
+        vm.assume(seller != address(0));
+
+        // Move token into loan custody with non-zero loan balance
+        vm.startPrank(seller);
+        ve.approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 500e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        // Create listing payable in USDC
+        vm.startPrank(seller);
+        uint256 price = 1_000e6;
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, price, USDC, 0);
+        vm.stopPrank();
+
+        // Determine current loan balance
+        (uint256 loanBal, ) = ILoanReq(address(loan)).getLoanDetails(tokenId);
+
+        // Fund buyer with USDC to cover listing + payoff (no swap path)
+        address buyer = vm.addr(0xABCD);
+        IUSDC_Mint(USDC).mint(buyer, price + loanBal);
+
+        // Record balances for assertions
+        uint256 usdcSellerBefore = IERC20(USDC).balanceOf(seller);
+        uint256 usdcFeeBefore = IERC20(USDC).balanceOf(feeRecipient);
+
+        // Approve and buy without tradeData (direct-token path)
+        vm.startPrank(buyer);
+        IERC20(USDC).approve(diamond, price + loanBal);
+        IMarketRouterFacet(diamond).buyToken(
+            RouteLib.BuyRoute.InternalLoan,
+            bytes32(0),
+            tokenId,
+            USDC,
+            price + loanBal,
+            0,
+            bytes(""),
+            bytes(""),
+            bytes("")
+        );
+        vm.stopPrank();
+
+        // Borrower set to buyer and loan fully repaid
+        (uint256 loanBalAfter, address borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);
+        assertEq(borrower, buyer);
+        assertEq(loanBalAfter, 0);
+
+        // Seller receives price - router fee; fee recipient receives at least router fee (loan payoff may also route fees there)
+        uint256 sellerDelta = IERC20(USDC).balanceOf(seller) - usdcSellerBefore;
+        uint256 feeDelta = IERC20(USDC).balanceOf(feeRecipient) - usdcFeeBefore;
+        uint256 routerFee = (price * 250) / 10_000;
+        assertEq(sellerDelta, price - routerFee);
+        assertTrue(feeDelta >= routerFee);
+    }
     function test_success_buyToken_AEROInput_USDCPayment() public {
         uint256 tokenId = 65424;
         IVotingEscrow ve = IVotingEscrow(VE);
@@ -261,5 +318,89 @@ contract RouterLoanBuyTest is RouterLoanTest {
         // proceeds moved
         assertEq(IERC20(USDC).balanceOf(seller), usdcSellerBefore + price - fee);
         assertEq(IERC20(USDC).balanceOf(feeRecipient), usdcFeeBefore + fee);
+    }
+
+    function test_success_buyToken_ETHInput_AEROPayment_USDCPayoff_MultiOutputSwap() public {
+        uint256 tokenId = 65424;
+        IVotingEscrow ve = IVotingEscrow(VE);
+        seller = ve.ownerOf(tokenId);
+        vm.assume(seller != address(0));
+
+        // Move token into loan custody with non-zero loan balance
+        vm.startPrank(seller);
+        ve.approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 400e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        // Create listing in AERO (different from loan asset USDC)
+        vm.startPrank(seller);
+        uint256 priceAero = 50e18;
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, priceAero, AERO, 0);
+        vm.stopPrank();
+
+        // Current loan balance (USDC)
+        (uint256 loanBal, ) = ILoanReq(address(loan)).getLoanDetails(tokenId);
+
+        // Replace ODOS with a multi-output mock that sends AERO and mints USDC
+        MockOdosRouterRL_Multi multi = new MockOdosRouterRL_Multi();
+        multi.setup(address(this));
+        bytes memory multiCode = address(multi).code;
+        vm.etch(ODOS, multiCode);
+
+        // Fund ODOS with AERO to transfer out
+        deal(AERO, ODOS, priceAero);
+
+        // Prepare buyer and tradeData to receive both AERO and USDC
+        address buyer = vm.addr(0xDEAD);
+        vm.deal(buyer, 1 ether);
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRL_Multi.executeSwapETHMulti.selector,
+            AERO,
+            priceAero,
+            USDC,
+            loanBal
+        );
+
+        // Record balances
+        uint256 aeroSellerBefore = IERC20(AERO).balanceOf(seller);
+        uint256 aeroFeeBefore = IERC20(AERO).balanceOf(feeRecipient);
+
+        // Buy via router with native ETH, multi-output swap
+        vm.startPrank(buyer);
+        IMarketRouterFacet(diamond).buyToken{value: 0.2 ether}(
+            RouteLib.BuyRoute.InternalLoan,
+            bytes32(0),
+            tokenId,
+            address(0),
+            priceAero,
+            0,
+            tradeData,
+            bytes(""),
+            bytes("")
+        );
+        vm.stopPrank();
+
+        // Loan fully repaid and borrower set
+        (uint256 loanAfter, address borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);
+        assertEq(borrower, buyer);
+        assertEq(loanAfter, 0);
+
+        // AERO proceeds distributed (fee + seller)
+        uint256 fee = (priceAero * 250) / 10_000;
+        assertEq(IERC20(AERO).balanceOf(seller), aeroSellerBefore + priceAero - fee);
+        assertEq(IERC20(AERO).balanceOf(feeRecipient), aeroFeeBefore + fee);
+    }
+}
+
+// Multi-output ODOS mock: transfers tokenOut1 (e.g., AERO) from itself and mints tokenOut2 USDC to msg.sender
+contract MockOdosRouterRL_Multi {
+    address public testContract;
+    function setup(address _testContract) external { testContract = _testContract; }
+    function executeSwapETHMulti(address tokenOut1, uint256 amountOut1, address tokenOut2, uint256 amountOut2) external payable returns (bool) {
+        require(msg.value > 0, "no eth");
+        IERC20(tokenOut1).transfer(msg.sender, amountOut1);
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC_Mint(tokenOut2).masterMinter(), msg.sender, amountOut2));
+        require(success, "mint fail");
+        return true;
     }
 }

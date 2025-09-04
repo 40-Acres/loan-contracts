@@ -95,14 +95,11 @@ contract MarketRouterFacet is IMarketRouterFacet {
             }
 
         } else if (route == RouteLib.BuyRoute.InternalLoan) {
-            // Get total cost of listing
-            (uint256 total,,) = _quoteInternalLoan(tokenId);
-            if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
-            // Route to unified loan entry. If swap needed, use amountIn + tradeData
+            // Route to unified loan entry. If swap needed, we can bypass quote to support cross-asset payoff
             if (tradeData.length == 0) {
-                // No tradeData path
-                // Direct ETH is not supported for loan listings
-                // TODO: consider better error for this below
+                // Get total cost of listing via quote helper (single-asset quote path)
+                (uint256 total,,) = _quoteInternalLoan(tokenId);
+                if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
                 if (inputAsset == address(0)) revert Errors.NoETHForTokenPayment();
                 IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
             } else {
