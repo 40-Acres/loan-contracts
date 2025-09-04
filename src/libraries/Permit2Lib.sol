@@ -9,6 +9,7 @@ interface IPermit2 {
     struct PermitSingle { TokenPermissions permitted; uint256 nonce; uint256 deadline; address spender; }
     function permit(address owner, PermitSingle calldata permitSingle, bytes calldata signature) external;
     function transferFrom(address from, address to, uint160 amount, address token) external;
+    function allowance(address owner, address token, address spender) external view returns (uint160 amount, uint48 expiration, uint48 nonce);
 }
 
 library Permit2Lib {
@@ -33,7 +34,12 @@ library Permit2Lib {
         if (has) {
             address permit2 = getPermit2();
             if (permit2 == address(0)) revert Errors.Permit2NotSet();
-            IPermit2(permit2).permit(owner, p2, sig);
+            // If an allowance already exists for this spender and is sufficient and not expired, skip the permit
+            (uint160 allowed, uint48 expiration, ) = IPermit2(permit2).allowance(owner, token, address(this));
+            bool allowanceValid = allowed >= uint160(amount) && (expiration == type(uint48).max || expiration >= block.timestamp);
+            if (!allowanceValid) {
+                IPermit2(permit2).permit(owner, p2, sig);
+            }
             IPermit2(permit2).transferFrom(owner, to, uint160(amount), token);
         }
     }
