@@ -119,7 +119,7 @@ contract VexyAdapterFacet is IVexyAdapterFacet, BaseAdapterFacet {
         bytes calldata tradeData,
         bytes calldata marketData,
         bytes calldata optionalPermit2
-    ) external override whenNotPaused {
+    ) external payable override whenNotPaused {
         (address marketplace, uint256 listingId, address expectedCurrency, uint256 maxPrice) = abi.decode(
             marketData, (address, uint256, address, uint256)
         );
@@ -168,20 +168,29 @@ contract VexyAdapterFacet is IVexyAdapterFacet, BaseAdapterFacet {
                 }
             }
         } else {
-            // Swap path via ODOS. Only token inputs supported in this adapter.
-            if (inputToken == address(0)) revert Errors.NoETHForTokenPayment();
+            // Swap path via ODOS. Support native ETH or ERC20 input.
             address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
-            // Pull max input via Permit2 if provided upstream; otherwise fallback
-            Permit2Lib.permitAndPull(msg.sender, address(this), inputToken, amountInMax, optionalPermit2);
-            if (optionalPermit2.length == 0 && IERC20(inputToken).balanceOf(address(this)) < amountInMax) {
-                require(IERC20(inputToken).transferFrom(msg.sender, address(this), amountInMax), "TransferFrom failed");
+            if (inputToken == address(0)) {
+                // ETH-in path
+                require(msg.value > 0, "InsufficientETH");
+                (bool success,) = odos.call{value: msg.value}(tradeData);
+                require(success, "ODOS swap failed");
+                // Ensure enough currency to cover total
+                require(payToken.balanceOf(address(this)) >= total, "Slippage");
+            } else {
+                // ERC20-in path
+                // Pull max input via Permit2 if provided upstream; otherwise fallback
+                Permit2Lib.permitAndPull(msg.sender, address(this), inputToken, amountInMax, optionalPermit2);
+                if (optionalPermit2.length == 0 && IERC20(inputToken).balanceOf(address(this)) < amountInMax) {
+                    require(IERC20(inputToken).transferFrom(msg.sender, address(this), amountInMax), "TransferFrom failed");
+                }
+                IERC20(inputToken).approve(odos, amountInMax);
+                (bool success2,) = odos.call{value: 0}(tradeData);
+                require(success2, "ODOS swap failed");
+                IERC20(inputToken).approve(odos, 0);
+                // Ensure enough currency to cover total
+                require(payToken.balanceOf(address(this)) >= total, "Slippage");
             }
-            IERC20(inputToken).approve(odos, amountInMax);
-            (bool success,) = odos.call{value: 0}(tradeData);
-            require(success, "ODOS swap failed");
-            IERC20(inputToken).approve(odos, 0);
-            // After swap, require enough currency to cover total
-            require(payToken.balanceOf(address(this)) >= total, "Slippage");
         }
 
         // Settle fee, approve Vexy for price, execute purchase

@@ -37,7 +37,7 @@ abstract contract BaseAdapterFacet {
         bytes calldata tradeData,
         bytes calldata marketData,
         bytes calldata optionalPermit2
-    ) external virtual;
+    ) external payable virtual;
 
     // Helpers
     function _externalRouteFeeBps() internal view returns (uint16) {
