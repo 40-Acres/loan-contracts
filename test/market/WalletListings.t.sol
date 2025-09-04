@@ -8,6 +8,7 @@ import {IMarketListingsWalletFacet} from "src/interfaces/IMarketListingsWalletFa
 import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
+import {RouteLib} from "src/libraries/RouteLib.sol";
 import {IVotingEscrow} from "src/interfaces/IVotingEscrow.sol";
 import {ILoan} from "src/interfaces/ILoan.sol";
 import {Loan} from "src/LoanV2.sol";
@@ -40,6 +41,10 @@ contract WalletListingsTest is DiamondMarketTestBase {
         (loan, vault) = deployer.deployLoan();
         _deployDiamondAndFacets();
         _initMarket(address(loan), address(votingEscrow), 250, address(this), address(usdc));
+        // set fees to match expected fees
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
 
         // Mint USDC to test and fund buyer
         vm.prank(usdc.masterMinter());

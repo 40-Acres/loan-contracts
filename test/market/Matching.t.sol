@@ -8,6 +8,7 @@ import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
 import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
+import {RouteLib} from "src/libraries/RouteLib.sol";
 import {IVotingEscrow} from "src/interfaces/IVotingEscrow.sol";
 import {ILoan} from "src/interfaces/ILoan.sol";
 import {Loan} from "src/LoanV2.sol";
@@ -138,6 +139,10 @@ contract MatchingOpenXExternalTest is DiamondMarketTestBase {
         // Initialize market with canonical loan custodian and real veNFT
         upgradeCanonicalLoan();
         _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 250, address(this), AERO);
+        // set fees to match expected fees
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
 
         // Ensure the new OpenX matching selector is cut into the diamond
         address mmFacet = address(new MatchingOpenXFacetHarness());

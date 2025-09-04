@@ -38,6 +38,8 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
 
         IMarketConfigFacet(diamond).setExternalAdapter(keccak256(abi.encodePacked("VEXY")), vexyFacet);
+        // External=2% (200 bps)
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
     }
 
     function test_quote_and_buy_via_router_vexy() public {
@@ -59,7 +61,7 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
         address buyer = vm.addr(0xBEEF);
         uint256 price = vexy.listingPrice(listingId);
         // Router computes fee using configured ExternalAdapter bps, which defaults to market fee in initMarket (250 bps)
-        uint16 bps = 250;
+        uint16 bps = 200;
         uint256 fee = (price * bps) / 10000;
         deal(currency, buyer, price + fee);
 

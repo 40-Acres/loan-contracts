@@ -72,6 +72,11 @@ contract RouterLoanTest is DiamondMarketTestBase {
         IMarketConfigFacet(diamond).setAllowedPaymentToken(USDC, true);
         IMarketConfigFacet(diamond).setAllowedPaymentToken(AERO, true);
 
+        // Internal=1% (100 bps), External=2% (200 bps)
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
+
         // USDC minting for tests and mock Odos setup at canonical address
         vm.prank(IUSDC_LR(USDC).masterMinter());
         IUSDC_LR(USDC).configureMinter(address(this), type(uint256).max);
@@ -122,7 +127,7 @@ contract RouterLoanTest is DiamondMarketTestBase {
         // loan balance may be zero for this requestLoan path
         // At minimum, we check currency and fee computation
         assertEq(payToken, USDC);
-        assertEq(fee, (1_000e6 * 250) / 10_000);
+        assertEq(fee, (1_000e6 * 100) / 10_000);
         assertTrue(total >= 1_000e6);
     }
 }
@@ -181,7 +186,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
         // Seller receives price - router fee; fee recipient receives at least router fee (loan payoff may also route fees there)
         uint256 sellerDelta = IERC20(USDC).balanceOf(seller) - usdcSellerBefore;
         uint256 feeDelta = IERC20(USDC).balanceOf(feeRecipient) - usdcFeeBefore;
-        uint256 routerFee = (price * 250) / 10_000;
+        uint256 routerFee = (price * 100) / 10_000;
         assertEq(sellerDelta, price - routerFee);
         assertTrue(feeDelta >= routerFee);
     }
@@ -386,7 +391,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
         assertEq(loanAfter, 0);
 
         // AERO proceeds distributed (fee + seller)
-        uint256 fee = (priceAero * 250) / 10_000;
+        uint256 fee = (priceAero * 100) / 10_000;
         assertEq(IERC20(AERO).balanceOf(seller), aeroSellerBefore + priceAero - fee);
         assertEq(IERC20(AERO).balanceOf(feeRecipient), aeroFeeBefore + fee);
     }

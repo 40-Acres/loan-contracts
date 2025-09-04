@@ -94,6 +94,11 @@ contract RouterWalletTest is DiamondMarketTestBase {
 
         router = IMarketRouterFacet(diamond);
 
+        // Internal=1% (100 bps), External=2% (200 bps)
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 100);
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
+
         // Configure this test as USDC minter and etch mock Odos
         vm.prank(IUSDC(USDC).masterMinter());
         IUSDC(USDC).configureMinter(address(this), type(uint256).max);
@@ -115,7 +120,7 @@ contract RouterWalletTest is DiamondMarketTestBase {
         // Basic sanity assertions
         assertEq(price, 1_000e6);
         assertEq(payToken, USDC);
-        assertEq(fee, (price * 250) / 10_000);
+        assertEq(fee, (price * 100) / 10_000);
     }
 
     function test_success_buyToken_WETHInput_USDCPayment() public {
@@ -128,7 +133,7 @@ contract RouterWalletTest is DiamondMarketTestBase {
         );
         assertEq(price, 1_000e6);
         assertEq(payToken, USDC);
-        assertEq(fee, (price * 250) / 10_000);
+        assertEq(fee, (price * 100) / 10_000);
 
         // record balances
         uint256 wethBuyerBefore = IERC20(WETH).balanceOf(buyer);

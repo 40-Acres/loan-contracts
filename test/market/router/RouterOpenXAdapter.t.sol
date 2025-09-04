@@ -56,6 +56,9 @@ contract RouterOpenXAdapterTest is DiamondMarketTestBase {
         MockOdosRouterROA mock = new MockOdosRouterROA();
         bytes memory code = address(mock).code;
         vm.etch(ODOS, code);
+
+        // External=2% (200 bps)
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
     }
 
     function test_quote_and_buy_via_router_openx() public {

@@ -50,6 +50,9 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
         MockOdosRouterRV mock = new MockOdosRouterRV();
         bytes memory code = address(mock).code;
         vm.etch(ODOS, code);
+
+        // External=2% (200 bps)
+        IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.ExternalAdapter, 200);
     }
 
     function test_quote_and_buy_via_router_vexy() public {
