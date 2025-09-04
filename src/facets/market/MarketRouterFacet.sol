@@ -81,6 +81,8 @@ contract MarketRouterFacet is IMarketRouterFacet {
         if (inputAsset != address(0) && msg.value > 0) revert Errors.NoETHForTokenPayment();
         // Guard: if ETH is input and no swap data provided, revert early (no direct-ETH listings supported)
         if (inputAsset == address(0) && tradeData.length == 0) revert Errors.NoTradeData();
+        // Guard: disable internal loan route unless a loan implementation is configured
+        if (route == RouteLib.BuyRoute.InternalLoan && cfg.loan == address(0)) revert Errors.LoanNotConfigured();
 
         if (route == RouteLib.BuyRoute.InternalWallet) {
             (uint256 price, uint256 fee, address paymentToken) = _quoteInternalWallet(tokenId);
