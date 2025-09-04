@@ -28,7 +28,7 @@ interface IUSDC_Mint { function mint(address, uint256) external; function master
 
 contract MockOdosRouterRL {
     address public testContract;
-    function setup(address _testContract) external { testContract = _testContract; }
+    function initMock(address _testContract) external { testContract = _testContract; }
     function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external returns (bool) {
         IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
         (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC_Mint(tokenOut).masterMinter(), msg.sender, amountOut));
@@ -83,7 +83,7 @@ contract RouterLoanTest is DiamondMarketTestBase {
         MockOdosRouterRL mock = new MockOdosRouterRL();
         bytes memory code = address(mock).code;
         vm.etch(ODOS, code);
-        MockOdosRouterRL(ODOS).setup(address(this));
+        MockOdosRouterRL(ODOS).initMock(address(this));
     }
 
     // helper for mock to mint USDC to a recipient
@@ -348,7 +348,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
 
         // Replace ODOS with a multi-output mock that sends AERO and mints USDC
         MockOdosRouterRL_Multi multi = new MockOdosRouterRL_Multi();
-        multi.setup(address(this));
+        multi.initMock(address(this));
         bytes memory multiCode = address(multi).code;
         vm.etch(ODOS, multiCode);
 
@@ -400,7 +400,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
 // Multi-output ODOS mock: transfers tokenOut1 (e.g., AERO) from itself and mints tokenOut2 USDC to msg.sender
 contract MockOdosRouterRL_Multi {
     address public testContract;
-    function setup(address _testContract) external { testContract = _testContract; }
+    function initMock(address _testContract) external { testContract = _testContract; }
     function executeSwapETHMulti(address tokenOut1, uint256 amountOut1, address tokenOut2, uint256 amountOut2) external payable returns (bool) {
         require(msg.value > 0, "no eth");
         IERC20(tokenOut1).transfer(msg.sender, amountOut1);

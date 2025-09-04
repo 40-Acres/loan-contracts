@@ -285,7 +285,7 @@ contract LoanSwitchTest is Test {
         
         // Deploy a new mock router to get its bytecode
         MockOdosRouter mockRouter = new MockOdosRouter();
-        mockRouter.setup(address(usdc), address(aero), address(this));
+        mockRouter.initMock(address(usdc), address(aero), address(this));
         
         // Get the code of our mock router
         bytes memory mockCode = address(mockRouter).code;
@@ -294,7 +294,7 @@ contract LoanSwitchTest is Test {
         vm.etch(hardcodedOdosRouter, mockCode);
         
         // Initialize the router at the replaced address
-        MockOdosRouter(payable(hardcodedOdosRouter)).setup(address(usdc), address(aero), address(this));
+        MockOdosRouter(payable(hardcodedOdosRouter)).initMock(address(usdc), address(aero), address(this));
         
         console.log("Mock router deployed at hardcoded address:", hardcodedOdosRouter);
         
@@ -308,7 +308,7 @@ contract MockOdosRouter {
     IERC20 public aeroToken;
     address public testContract;
     
-    function setup(address _usdcToken, address _aeroToken, address _testContract) external {
+    function initMock(address _usdcToken, address _aeroToken, address _testContract) external {
         usdcToken = IERC20(_usdcToken);
         aeroToken = IERC20(_aeroToken);
         testContract = _testContract;

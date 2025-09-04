@@ -22,7 +22,7 @@ contract MockOdosRouterRW {
     IERC20 public tokenOutRef;
     address public testContract;
 
-    function setup(address _testContract) external {
+    function initMock(address _testContract) external {
         testContract = _testContract;
     }
 
@@ -103,10 +103,10 @@ contract RouterWalletTest is DiamondMarketTestBase {
         vm.prank(IUSDC(USDC).masterMinter());
         IUSDC(USDC).configureMinter(address(this), type(uint256).max);
         MockOdosRouterRW mock = new MockOdosRouterRW();
-        mock.setup(address(this));
+        mock.initMock(address(this));
         bytes memory code = address(mock).code;
         vm.etch(ODOS, code);
-        MockOdosRouterRW(ODOS).setup(address(this));
+        MockOdosRouterRW(ODOS).initMock(address(this));
     }
 
     function test_success_quoteToken_basic() public {
