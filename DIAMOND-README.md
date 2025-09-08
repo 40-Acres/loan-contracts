@@ -25,23 +25,25 @@ Market facets:
 - `MarketMatchingFacet` (single entry; routes to wallet/loan/external flows)
 - Adapter facets (per external market). Example implemented: `src/facets/market/VexyAdapterFacet.sol`.
 
-All facets call shared internal libraries for invariants and settlement to guarantee consistent safety.
-
 ---
 
-## Safety by construction (internal libraries)
+## Internal libraries
 
-Facets must compose these libraries; do not bypass them:
+- MarketLogicLib
+  - Listing/offer liveness checks; custody/owner resolution; operator rights.
 
-- TransferGuardsLib
-  - Enforce no‑debt‑before‑transfer when veNFT is loan‑custodied.
-  - Check permanent lock state; ensure receiver is allowed; zero approvals after transfers/swaps.
+- Permit2Lib
+  - Optional Uniswap Permit2 permit+pull for exact‑input flows.
+  - Optimization: if a sufficient, unexpired Permit2 allowance already exists, permit is skipped and only transferFrom is used.
 
-- SwapRouterLib
-  - Unified swap via ODOS; allowance bump/reset; balance‑delta slippage checks; safe low‑level calls.
+- FeeLib
+  - Protocol and adapter fee computations and recipients.
 
-- AccessControlLib
-  - Owner and optional AccessManager role gates (MARKET_ADMIN) for config/fees/pausing.
+- RevertHelper
+  - Bubble up revert data from delegatecalls to adapters and external markets.
+
+- AccessRoleLib (+ AccessManager)
+  - Owner and optional MARKET_ADMIN role gates for config/fees/pausing.
 
 ---
 
@@ -54,17 +56,6 @@ Facets must compose these libraries; do not bypass them:
 
 ---
 
-## Primary flows
-
-- Wallet listing → take
-  - Validate listing; pull funds; transfer via `votingEscrow.transferFrom(seller → buyer)`; apply marketplace fees; optional royalties.
-
-- LoanV2 listing → take (payoff required)
-  - Validate; collect funds; swap to `loanAsset` if needed; `DebtSettlementLib.payoff(LoanV2, tokenId)`; set borrower to buyer via `LoanV2.setBorrower` (diamond must be approved/whitelisted). By default we do not transfer the veNFT out; it remains in loan custody so the buyer can borrow later. If the buyer wishes to withdraw, they can call `claimCollateral()` themselves; for intra‑40 Acres moves, use `LoanV2.transferWithin40Acres`.
-
-- External listing (e.g., Vexy) → take
-  - Validate external state/price/currency; pull buyer funds; include external aggregation fee in upfront quote; `VexyAdapterFacet.takeVexyListing`; deliver NFT to buyer (or keep in escrow for LBO).
-
 ## Quoting and buying API (enum‑driven)
 
 We define an enum route type and a registry of external markets per chain.
@@ -73,35 +64,21 @@ We define an enum route type and a registry of external markets per chain.
 - External market adapters are identified by `bytes32` keys (e.g., `VEXY`, `OPENX`, `SALVOR`) resolved to adapter addresses in config.
 - Single‑veNFT per diamond: each deployment binds to one `votingEscrow`. All token IDs refer to this veNFT. For a new veNFT market/lending, deploy a new diamond. This simplifies routing and reduces attack surface.
 
-Selectors
-- quoteToken(route, adapterKey, tokenId, quoteData) → (price, marketFee, total, currency)
-  - Internal routes ignore `adapterKey`; external routes use it to find the adapter. `quoteData` is adapter‑specific (Phase A default: `abi.encode(listingId, expectedCurrency, maxPrice)`).
-- buyToken(route, adapterKey, tokenId, inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData, optionalPermit2)
-  - Executes the purchase through the selected path.
-  - Enforces `total(paymentToken) <= maxPaymentTotal` (price + protocol/adapter fees) and, for swap paths, `input spent <= maxInputAmount`.
-  - `tradeData` is the ODOS calldata for swaps (empty means direct‑currency path). `marketData` is adapter‑specific (e.g., for Vexy: `abi.encode(marketplace, listingId, expectedCurrency, maxPrice)`).
-  - `optionalPermit2` enables single‑tx funds pull via Permit2 when provided.
-
-Registry and allowlists
-- `adapterKey → adapter` registry controlled by governance; unknown keys revert.
-- `votingEscrow` allowlist controlled by governance; adapters may also maintain per‑adapter allowlists.
-
-This keeps the API stable while allowing new external venues via governance without changing selectors.
+Router rules (V1):
+- ETH input requires `tradeData` (no direct‑ETH listings); if `inputAsset != address(0)`, `msg.value` must be zero.
+- Exact‑output swaps only; the router/facets never refund leftovers.
+- Post‑swap balances must cover settlement; otherwise revert (`Slippage`).
+- InternalLoan route is gated: if `loan == address(0)`, router reverts `LoanNotConfigured`.
 
 ### RFQ off‑chain orders and Permit2
 - EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, adapterKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(abi.encode(inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData))`.
 - On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and data hash equality, then calls `buyToken` with the same (route, adapterKey, votingEscrow, tokenId, inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData, optionalPermit2).
-- Makers can cancel via nonce bump or explicit cancel. Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals.
+- Makers can cancel via nonce bump or explicit cancel. Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals. If a sufficient, unexpired Permit2 allowance already exists, the system skips the permit call and only transfers.
 
 ### LBO UX and indexing for external venues
 - UI calls `quoteToken` with `ExternalAdapter` and `abi.encode(listingId, expectedCurrency, maxPrice)` and displays: price, fees, total, projected loan principal, financed LBO fee portion, and max LTV.
 - Required indexed fields per listing: `(votingEscrow, tokenId)`, `adapterKey`, `listingId`, `expectedCurrency`, current price, endTime/sold flag. Loan inputs for preview: `loanAsset`, LTV caps, LBO fee config.
 - `buyToken` with LBO flag performs: adapter buy to diamond custody → custody assert → lock into loan → open loan sized to LTV + financed fee → settle seller and fees → assign borrower.
-
-### Why a single routed API (with optional wrappers)
-- Pros: stable ABI, easy integrations (one quote/buy path), consistent fees/safety, governance can add adapters without changing selectors.
-- Cons: a small routing overhead and use of `bytes` for adapter data.
-- Pattern: keep `quoteToken/buyToken` as core; expose optional convenience wrappers (e.g., `buyInternalWallet`, `buyInternalLoan`, `buyVexy`) that forward to the router for readability.
 
 ---
 
@@ -179,7 +156,7 @@ Notes:
 
 ## External adapters and cross‑chain
 
-- Existing: `VexyAdapterFacet`.
+- Existing: `VexyAdapterFacet`, `OpenXAdapterFacet`.
 - Planned adapters (roadmap): OpenXswap, Vexy (expanded features), Salvor on AVAX (support PHAR and Blackhole veNFTs). Each adapter implements the standard adapter surface and is wired through `MarketMatchingFacet`.
 - Cross‑chain can be supported via a `BridgeAdapterFacet` (escrow + intent), but inherits the same safety libraries.
 
@@ -187,7 +164,7 @@ Notes:
 
 ## Configuration
 
-- `loan()` optional; when unset, loan‑custody and LBO features are disabled.
+- `loan()` optional; when unset, loan‑custody and LBO features are disabled. Router enforces this by reverting `LoanNotConfigured` for `InternalLoan` operations.
 - `loanAsset()` defines the payoff asset (e.g., USDC). Swaps to this asset use `SwapRouterLib` with slippage constraints.
 - `allowedPaymentToken(token)` per chain.
 - Fee recipients and bps are upgradeable via `MarketConfigFacet`.
@@ -248,7 +225,5 @@ Phase D (aggregation and polish)
 
 - See `src/LoanV2.sol` for current loan logic (locking, payoff, fees, borrower handover via `setBorrower`).
 - See `src/facets/market/VexyAdapterFacet.sol` for the external adapter pattern.
-
-The diamond enforces safety through internal libraries so new adapters and future cross‑chain integrations can be added without compromising invariants.
 
 
