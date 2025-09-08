@@ -33,7 +33,7 @@ interface IOpenXSwap {
             uint256 price,
             uint256 startTimestamp,
             uint256 endTimestamp,
-            bool sold
+            uint256 sold
         );
 
     /// @notice Purchase an NFT listing by id

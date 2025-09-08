@@ -196,11 +196,11 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             uint256 price,
             uint256 startTime,
             uint256 endTime,
-            bool sold
+            uint256 sold
         ) = IOpenXSwap(openx).Listings(listingId);
 
         if (veNft != MarketStorage.configLayout().votingEscrow) revert Errors.WrongMarketVotingEscrow();
-        if (!(sold == false && endTime >= block.timestamp && startTime <= block.timestamp)) revert Errors.ListingInactive();
+        if (!(sold == 0 && endTime >= block.timestamp && startTime <= block.timestamp)) revert Errors.ListingInactive();
 
         // Validate offer criteria (wallet/no-loan path)
         _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);

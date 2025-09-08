@@ -59,7 +59,7 @@ contract OpenXForkTest is Test, IERC721Receiver {
             uint256 price,
             uint256 startTimestamp,
             uint256 endTimestamp,
-            bool sold
+            uint256 sold
         ) = market.Listings(LISTING_ID);
 
         // Basic sanity on listing metadata
@@ -68,7 +68,7 @@ contract OpenXForkTest is Test, IERC721Receiver {
         assertEq(reservedBuyer, address(0), "reservedBuyer");
         assertTrue(block.timestamp >= startTimestamp, "start");
         assertTrue(endTimestamp >= block.timestamp, "end");
-        assertFalse(sold, "sold");
+        assertEq(sold, 0, "sold");
 
         // Fund this test address with exact AERO amount and approve market
         deal(AERO, address(this), price);

@@ -40,9 +40,9 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             ,
             ,
             ,
-            bool sold
+            uint256 sold
         ) = openx.Listings(listingId);
-        require(!sold, "Listing sold");
+        require(sold == 0, "Listing sold");
 
         // Currency must be allowed and match expectation
         if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert("CurrencyNotAllowed");
@@ -92,9 +92,9 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             uint256 price,
             ,
             ,
-            bool sold
+            uint256 sold
         ) = openx.Listings(listingId);
-        require(!sold, "Listing sold");
+        require(sold == 0, "Listing sold");
         uint16 bps = _externalRouteFeeBps();
         uint256 fee = (price * bps) / 10000;
         return (price, fee, currency);
@@ -125,11 +125,11 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             uint256 price,
             ,
             ,
-            bool sold
+            uint256 sold
         ) = openx.Listings(listingId);
         // require this listing tokenid is the same tokenid as one passed in 
         require(nftId == tokenId, "TokenIdMismatch");
-        require(!sold, "Listing sold");
+        require(sold == 0, "Listing sold");
         if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert("CurrencyNotAllowed");
         require(currency == expectedCurrency, "CurrencyMismatch");
         require(price > 0 && (maxPrice == 0 || price <= maxPrice), "PriceOutOfBounds");

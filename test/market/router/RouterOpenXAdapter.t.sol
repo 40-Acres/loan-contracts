@@ -73,7 +73,7 @@ contract RouterOpenXAdapterTest is DiamondMarketTestBase {
             uint256 price,
             uint256 startTs,
             uint256 endTs,
-            bool sold
+            uint256 sold
         ) = IOpenXSwap(OPENX).Listings(listingId);
 
         assertEq(veNft, VOTING_ESCROW, "veNft");
@@ -81,7 +81,7 @@ contract RouterOpenXAdapterTest is DiamondMarketTestBase {
         assertEq(currency, AERO, "currency");
         assertTrue(block.timestamp >= startTs, "start");
         assertTrue(endTs >= block.timestamp, "end");
-        assertFalse(sold, "sold");
+        assertEq(sold, 0, "sold");
 
         IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);
         (uint256 p, uint256 fee, address payToken) = IMarketRouterFacet(diamond).quoteToken(
@@ -129,10 +129,10 @@ contract RouterOpenXAdapterTest is DiamondMarketTestBase {
             uint256 price,
             ,
             ,
-            bool sold
+            uint256 sold
         ) = openx.Listings(listingId);
         assertEq(veNft, VOTING_ESCROW, "veNft");
-        assertFalse(sold, "sold");
+        assertEq(sold, 0, "sold");
 
         // allow currency
         IMarketConfigFacet(diamond).setAllowedPaymentToken(currency, true);

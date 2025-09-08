@@ -183,13 +183,13 @@ contract MatchingOpenXExternalTest is DiamondMarketTestBase {
             uint256 price,
             uint256 startTs,
             uint256 endTs,
-            bool sold
+            uint256 sold
         ) = IOpenXSwap(OPENX).Listings(listingId);
 
         assertEq(veNft, VOTING_ESCROW, "veNft");
         assertEq(currency, AERO, "currency");
         assertTrue(block.timestamp >= startTs && endTs >= block.timestamp, "active");
-        assertFalse(sold, "sold");
+        assertEq(sold, 0, "sold");
 
         // Create a very permissive offer from buyer, denominated in AERO
         address buyer = vm.addr(0xBEEF);
