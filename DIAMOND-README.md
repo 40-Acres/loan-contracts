@@ -69,11 +69,8 @@ Router rules (V1):
 - Exact‑output swaps only; the router/facets never refund leftovers.
 - Post‑swap balances must cover settlement; otherwise revert (`Slippage`).
 - InternalLoan route is gated: if `loan == address(0)`, router reverts `LoanNotConfigured`.
-
-### RFQ off‑chain orders and Permit2
-- EIP‑712 typed orders (Ask/Bid) signed off‑chain: include route, adapterKey, votingEscrow, tokenId, maker, optional taker, currency, price, expiry, nonce/salt, and `dataHash = keccak256(abi.encode(inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData))`.
-- On‑chain fill (`takeOrder`) verifies signature, nonce (replay‑protection), expiry, and data hash equality, then calls `buyToken` with the same (route, adapterKey, votingEscrow, tokenId, inputAsset, maxPaymentTotal, maxInputAmount, tradeData, marketData, optionalPermit2).
-- Makers can cancel via nonce bump or explicit cancel. Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals. If a sufficient, unexpired Permit2 allowance already exists, the system skips the permit call and only transfers.
+- Permit2 is supported in `buyToken/takeOrder` to pull exact funds without prior ERC20 approvals. 
+  - If a sufficient, unexpired Permit2 allowance already exists, the system skips the permit call and only transfers.
 
 ### LBO UX and indexing for external venues
 - UI calls `quoteToken` with `ExternalAdapter` and `abi.encode(listingId, expectedCurrency, maxPrice)` and displays: price, fees, total, projected loan principal, financed LBO fee portion, and max LTV.
@@ -127,19 +124,12 @@ Router rules (V1):
 
 ---
 
-## Minimal LoanV2 hooks (diamond‑only)
+## Minimal LoanV2 hooks (diamond‑only) required for loan listings
 
 Whitelisted, narrowly scoped methods (when feasible per chain):
 
 - setApprovedContract(diamond, enable): allow privileged flows from the diamond.
 - setBorrower(tokenId, borrower): already available; diamond must be approved and token must be in custody.
-- requestLoanForBorrower(tokenId, amount, params..., borrower): mirror of `requestLoan` but borrower is explicit; enforce permanent lock; callable only by diamond.
-- increaseLoanForLbo(tokenId, amount, receiver): increase without origination for LBO when `msg.sender` is the diamond; send proceeds to `receiver` (diamond) to settle purchase.
-
-Optional (not required for core flows):
-- marketTransferIfNoDebt(tokenId, to): only if the protocol wants the diamond to programmatically withdraw to a wallet address. Preferred flows keep the veNFT in loan custody; users can withdraw via `claimCollateral()` or move within the ecosystem via `transferWithin40Acres`.
-
-If hooks are not acceptable on a chain, LBO can occur post‑purchase (buyer borrows as a separate step) without no‑origination.
 
 Notes:
 - LoanV2 is upgradeable; we will keep on‑chain changes minimal, tightly scoped, and documented here. This diamond will be explicitly whitelisted for the above hooks per chain.
@@ -154,11 +144,10 @@ Notes:
 
 ---
 
-## External adapters and cross‑chain
+## External adapters
 
 - Existing: `VexyAdapterFacet`, `OpenXAdapterFacet`.
-- Planned adapters (roadmap): OpenXswap, Vexy (expanded features), Salvor on AVAX (support PHAR and Blackhole veNFTs). Each adapter implements the standard adapter surface and is wired through `MarketMatchingFacet`.
-- Cross‑chain can be supported via a `BridgeAdapterFacet` (escrow + intent), but inherits the same safety libraries.
+- Planned adapters (roadmap): Salvor on AVAX (support PHAR and Blackhole veNFTs). Each adapter implements the standard adapter surface and is wired through `MarketMatchingFacet`.
 
 ---
 
