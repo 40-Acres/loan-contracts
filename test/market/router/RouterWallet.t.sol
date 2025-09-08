@@ -85,7 +85,7 @@ contract RouterWalletTest is DiamondMarketTestBase {
 
         vm.startPrank(seller);
         ve.approve(diamond, tokenId);
-        IMarketListingsWalletFacet(diamond).makeWalletListing(tokenId, 1_000e6, USDC, 0);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(tokenId, 1_000e6, USDC, 0, address(0));
         vm.stopPrank();
 
         // seed buyer with ample WETH for swap input (we know WETH->USDC works)

@@ -63,7 +63,7 @@ contract WalletListingsTest is DiamondMarketTestBase {
 
     function test_wallet_listing_lifecycle() public {
         vm.startPrank(user);
-        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0, address(0));
         vm.stopPrank();
 
         (address owner_, uint256 price, address pay,,) = IMarketViewFacet(diamond).getListing(walletTokenId);
@@ -98,7 +98,19 @@ contract WalletListingsTest is DiamondMarketTestBase {
 
         vm.startPrank(tokenOwner);
         vm.expectRevert();
-        IMarketListingsWalletFacet(diamond).makeWalletListing(tokenId, 100e6, address(usdc), 0);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(tokenId, 100e6, address(usdc), 0, address(0));
+        vm.stopPrank();
+    }
+
+    function test_revert_wallet_listing_when_not_allowed_buyer() public {
+        address allowedBuyer = address(0x123);
+        vm.startPrank(user);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0, allowedBuyer);
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+        vm.expectRevert();
+        IMarketListingsWalletFacet(diamond).takeWalletListing(walletTokenId, address(usdc), 100e6, bytes(""), bytes(""));
         vm.stopPrank();
     }
 }

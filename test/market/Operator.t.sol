@@ -46,12 +46,12 @@ contract OperatorTest is DiamondMarketTestBase {
         vm.startPrank(user);
         IVotingEscrow(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1000e6, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1000e6, address(usdc), 0, address(0));
         IMarketOperatorFacet(diamond).setOperatorApproval(operator, true);
         vm.stopPrank();
 
         vm.prank(operator);
-        IMarketListingsLoanFacet(diamond).updateLoanListing(tokenId, 1500e6, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).updateLoanListing(tokenId, 1500e6, address(usdc), 0, address(0));
         (, uint256 price,,,) = IMarketViewFacet(diamond).getListing(tokenId);
         assertEq(price, 1500e6);
 

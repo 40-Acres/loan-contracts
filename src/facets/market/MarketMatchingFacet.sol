@@ -64,6 +64,8 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != offer.creator) revert Errors.NotAllowedBuyer();
+
         if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
 
         _validateOfferCriteriaWalletOrNoLoan(tokenId, offer);
@@ -268,7 +270,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
-
+        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != offer.creator) revert Errors.NotAllowedBuyer();
         _validateOfferCriteriaLoan(tokenId, offer);
 
         // Enforce caller-provided cap based on a quote from the loan facet

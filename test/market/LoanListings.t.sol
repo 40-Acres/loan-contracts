@@ -103,7 +103,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
     function test_makeListing_Success() public {
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
         (address owner_, uint256 price, address paymentToken, bool hasOutstandingLoan, uint256 expiresAt) = IMarketViewFacet(diamond).getListing(tokenId);
         assertEq(owner_, user);
@@ -115,7 +115,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
     function test_updateListing_Success() public {
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
 
         uint256 newPrice = 2000e6;
@@ -126,7 +126,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         IMarketConfigFacet(diamond).setAllowedPaymentToken(newPaymentToken, true);
 
         vm.prank(user);
-        IMarketListingsLoanFacet(diamond).updateLoanListing(tokenId, newPrice, newPaymentToken, newExpiresAt);
+        IMarketListingsLoanFacet(diamond).updateLoanListing(tokenId, newPrice, newPaymentToken, newExpiresAt, address(0));
 
         (, uint256 price, address paymentToken, , uint256 expiresAt) = IMarketViewFacet(diamond).getListing(tokenId);
         assertEq(price, newPrice);
@@ -136,7 +136,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
     function test_cancelListing_Success() public {
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
 
         vm.prank(user);
@@ -148,7 +148,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
     function test_takeListing_Success_WithOutstandingLoan() public {
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
 
         (uint256 listingPrice, uint256 protocolFeeInPaymentToken, uint256 requiredInputTokenAmount, address paymentToken) =
@@ -166,7 +166,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         uint256 sellerInitial = usdc.balanceOf(user);
         console.log("sellerInitial", sellerInitial);
 
-        IMarketListingsLoanFacet(diamond).takeLoanListing(tokenId, address(usdc));
+        IMarketListingsLoanFacet(diamond).takeLoanListing(tokenId, address(usdc), 0, bytes(""), bytes(""));
         vm.stopPrank();
 
         (, address newBorrower) = loan.getLoanDetails(tokenId);
@@ -184,7 +184,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
     function test_RevertWhen_MakeListing_Unauthorized() public {
         vm.startPrank(buyer);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
     }
 
@@ -192,24 +192,24 @@ contract LoanListingsTest is DiamondMarketTestBase {
         vm.startPrank(buyer);
         usdc.approve(diamond, LISTING_PRICE);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).takeLoanListing(999999, address(usdc));
+        IMarketListingsLoanFacet(diamond).takeLoanListing(999999, address(usdc), 0, bytes(""), bytes(""));
         vm.stopPrank();
     }
 
     function test_updateListing_RevertWhen_InvalidPaymentToken() public {
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
 
         vm.prank(user);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).updateLoanListing(tokenId, LISTING_PRICE, address(0x123), 0);
+        IMarketListingsLoanFacet(diamond).updateLoanListing(tokenId, LISTING_PRICE, address(0x123), 0, address(0));
     }
 
     function test_isListingActive_RespectsExpiration() public {
         uint256 expirationTime = block.timestamp + 1 hours;
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), expirationTime);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), expirationTime, address(0));
         vm.stopPrank();
 
         assertTrue(IMarketViewFacet(diamond).isListingActive(tokenId));
@@ -221,12 +221,12 @@ contract LoanListingsTest is DiamondMarketTestBase {
         IMarketConfigFacet(diamond).pause();
         vm.startPrank(user);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
 
         IMarketConfigFacet(diamond).unpause();
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
 
         (address owner_,,,,) = IMarketViewFacet(diamond).getListing(tokenId);
@@ -252,7 +252,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         IMarketConfigFacet(diamond).setAllowedPaymentToken(address(usdc), false);
         vm.startPrank(user);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
         IMarketConfigFacet(diamond).setAllowedPaymentToken(address(usdc), true);
     }
@@ -276,7 +276,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
         vm.startPrank(walletOwner);
         vm.expectRevert();
-        IMarketListingsLoanFacet(diamond).makeLoanListing(walletTokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(walletTokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
     }
 
@@ -288,7 +288,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         vm.startPrank(newOwner);
         votingEscrow.approve(address(loan), newTokenId);
         loan.requestLoan(newTokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(newTokenId, LISTING_PRICE, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(newTokenId, LISTING_PRICE, address(usdc), 0, address(0));
         vm.stopPrank();
         (uint256 listingPriceInPaymentToken,, uint256 requiredInputTokenAmount, address paymentToken) =
             IMarketListingsLoanFacet(diamond).quoteLoanListing(newTokenId, address(usdc));
@@ -299,7 +299,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         usdc.approve(diamond, LISTING_PRICE);
-        IMarketListingsLoanFacet(diamond).takeLoanListing(newTokenId, address(usdc));
+        IMarketListingsLoanFacet(diamond).takeLoanListing(newTokenId, address(usdc), 0, bytes(""), bytes(""));
         vm.stopPrank();
 
         (, address newBorrower) = loan.getLoanDetails(newTokenId);

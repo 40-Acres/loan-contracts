@@ -19,6 +19,7 @@ library Errors {
     error ListingExpired();
     error LoanListingNotAllowed();
     error InLoanCustody();
+    error NotAllowedBuyer();
 
     // External adapters
     error WrongMarketVotingEscrow();

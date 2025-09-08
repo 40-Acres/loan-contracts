@@ -61,7 +61,8 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 expiresAt
+        uint256 expiresAt,
+        address allowedBuyer
     ) external nonReentrant onlyWhenNotPaused {
         if (!MarketStorage.configLayout().allowedPaymentToken[paymentToken]) revert Errors.CurrencyNotAllowed();
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
@@ -83,15 +84,17 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         listing.paymentToken = paymentToken;
         listing.hasOutstandingLoan = false;
         listing.expiresAt = expiresAt;
+        listing.allowedBuyer = allowedBuyer;
 
-        emit ListingCreated(tokenId, tokenOwner, price, paymentToken, false, expiresAt);
+        emit ListingCreated(tokenId, tokenOwner, price, paymentToken, false, expiresAt, allowedBuyer);
     }
 
     function updateWalletListing(
         uint256 tokenId,
         uint256 newPrice,
         address newPaymentToken,
-        uint256 newExpiresAt
+        uint256 newExpiresAt,
+        address newAllowedBuyer
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
@@ -102,8 +105,9 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         listing.price = newPrice;
         listing.paymentToken = newPaymentToken;
         listing.expiresAt = newExpiresAt;
+        listing.allowedBuyer = newAllowedBuyer;
 
-        emit ListingUpdated(tokenId, newPrice, newPaymentToken, newExpiresAt);
+        emit ListingUpdated(tokenId, newPrice, newPaymentToken, newExpiresAt, newAllowedBuyer);
     }
 
     function cancelWalletListing(uint256 tokenId) external nonReentrant {
@@ -157,6 +161,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != buyer) revert Errors.NotAllowedBuyer();
         if (listing.hasOutstandingLoan) revert Errors.LoanListingNotAllowed();
 
         (uint256 price, , address paymentToken) = _quoteWalletListing(tokenId);

@@ -57,7 +57,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 expiresAt
+        uint256 expiresAt,
+        address allowedBuyer
     ) external nonReentrant onlyWhenNotPaused {
         if (!MarketStorage.configLayout().allowedPaymentToken[paymentToken]) revert Errors.CurrencyNotAllowed();
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
@@ -78,15 +79,16 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         listing.paymentToken = paymentToken;
         listing.hasOutstandingLoan = hasOutstandingLoan;
         listing.expiresAt = expiresAt;
-
-        emit ListingCreated(tokenId, tokenOwner, price, paymentToken, hasOutstandingLoan, expiresAt);
+        listing.allowedBuyer = allowedBuyer;
+        emit ListingCreated(tokenId, tokenOwner, price, paymentToken, hasOutstandingLoan, expiresAt, allowedBuyer);
     }
 
     function updateLoanListing(
         uint256 tokenId,
         uint256 newPrice,
         address newPaymentToken,
-        uint256 newExpiresAt
+        uint256 newExpiresAt,
+        address newAllowedBuyer
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
@@ -97,8 +99,9 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         listing.price = newPrice;
         listing.paymentToken = newPaymentToken;
         listing.expiresAt = newExpiresAt;
+        listing.allowedBuyer = newAllowedBuyer;
 
-        emit ListingUpdated(tokenId, newPrice, newPaymentToken, newExpiresAt);
+        emit ListingUpdated(tokenId, newPrice, newPaymentToken, newExpiresAt, newAllowedBuyer);
     }
 
     function cancelLoanListing(uint256 tokenId) external nonReentrant {
@@ -118,10 +121,6 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 emit ListingCancelled(tokenId);
             }
         }
-    }
-
-    function takeLoanListing(uint256 tokenId, address inputToken) external payable nonReentrant onlyWhenNotPaused {
-        _takeLoanListingFor(tokenId, msg.sender, inputToken, 0, new bytes(0), new bytes(0));
     }
 
     function takeLoanListing(
@@ -156,6 +155,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     ) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
+        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != buyer) revert Errors.NotAllowedBuyer();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
 

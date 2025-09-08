@@ -6,6 +6,7 @@ import {DiamondMarketTestBase} from "../utils/DiamondMarketTestBase.t.sol";
 import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
 import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
 import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
+import {IMarketListingsWalletFacet} from "src/interfaces/IMarketListingsWalletFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
 import {RouteLib} from "src/libraries/RouteLib.sol";
@@ -63,7 +64,7 @@ contract MatchingTest is DiamondMarketTestBase {
 
     function test_match_offer_with_loan_listing() public {
         vm.startPrank(user);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 2000e6, address(usdc), 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 2000e6, address(usdc), 0, address(0));
         vm.stopPrank();
 
         vm.startPrank(buyer);
@@ -96,9 +97,7 @@ contract MatchingTest is DiamondMarketTestBase {
 
         // Create wallet listing (no outstanding loan)
         vm.startPrank(walletOwner);
-        // selector: makeWalletListing(uint256,uint256,address,uint256) = 0x19004652
-        (bool ok,) = diamond.call(abi.encodeWithSelector(bytes4(0x19004652), walletTokenId, 2000e6, address(usdcErc), 0));
-        require(ok, "makeWalletListing failed");
+        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 2000e6, address(usdcErc), 0, address(0));
         // Grant approval for market diamond to transfer veNFT
         IVotingEscrow(address(votingEscrow)).approve(diamond, walletTokenId);
         vm.stopPrank();

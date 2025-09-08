@@ -112,7 +112,7 @@ contract RouterLoanTest is DiamondMarketTestBase {
 
         // create a loan listing payable in USDC
         vm.startPrank(seller);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0, address(0));
         vm.stopPrank();
 
         // quote via router
@@ -148,7 +148,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
         // Create listing payable in USDC
         vm.startPrank(seller);
         uint256 price = 1_000e6;
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, price, USDC, 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, price, USDC, 0, address(0));
         vm.stopPrank();
 
         // Determine current loan balance
@@ -204,7 +204,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
 
         // Create listing in USDC
         vm.startPrank(seller);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0, address(0));
         vm.stopPrank();
 
         // Quote
@@ -274,7 +274,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
 
         // Create listing in USDC
         vm.startPrank(seller);
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, 1_000e6, USDC, 0, address(0));
         vm.stopPrank();
 
         // Quote
@@ -340,7 +340,7 @@ contract RouterLoanBuyTest is RouterLoanTest {
         // Create listing in AERO (different from loan asset USDC)
         vm.startPrank(seller);
         uint256 priceAero = 50e18;
-        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, priceAero, AERO, 0);
+        IMarketListingsLoanFacet(diamond).makeLoanListing(tokenId, priceAero, AERO, 0, address(0));
         vm.stopPrank();
 
         // Current loan balance (USDC)
