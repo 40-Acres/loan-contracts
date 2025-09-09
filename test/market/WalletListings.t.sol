@@ -15,6 +15,7 @@ import {Loan} from "src/LoanV2.sol";
 import {Vault} from "src/VaultV2.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BaseDeploy} from "script/BaseDeploy.s.sol";
+import {Errors} from "src/libraries/Errors.sol";
 
 interface IUSDC {
     function approve(address, uint256) external returns (bool);
@@ -63,6 +64,7 @@ contract WalletListingsTest is DiamondMarketTestBase {
 
     function test_wallet_listing_lifecycle() public {
         vm.startPrank(user);
+        IVotingEscrow(address(votingEscrow)).approve(diamond, walletTokenId);
         IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0, address(0));
         vm.stopPrank();
 
@@ -105,12 +107,35 @@ contract WalletListingsTest is DiamondMarketTestBase {
     function test_revert_wallet_listing_when_not_allowed_buyer() public {
         address allowedBuyer = address(0x123);
         vm.startPrank(user);
+        // Approval required to list now
+        IVotingEscrow(address(votingEscrow)).approve(diamond, walletTokenId);
         IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0, allowedBuyer);
         vm.stopPrank();
 
         vm.startPrank(buyer);
         vm.expectRevert();
         IMarketListingsWalletFacet(diamond).takeWalletListing(walletTokenId, address(usdc), 100e6, bytes(""), bytes(""));
+        vm.stopPrank();
+    }
+
+    function test_success_wallet_listing_when_allowed_buyer() public {
+        address allowedBuyer = buyer;
+        vm.startPrank(user);
+        // Approval required to list now
+        IVotingEscrow(address(votingEscrow)).approve(diamond, walletTokenId);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0, allowedBuyer);
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+        usdcErc.approve(diamond, 100e6);
+        IMarketListingsWalletFacet(diamond).takeWalletListing(walletTokenId, address(usdc), 100e6, bytes(""), bytes(""));
+        vm.stopPrank();
+    }
+
+    function test_revert_makeWalletListing_when_not_approved() public {
+        vm.startPrank(user);
+        vm.expectRevert(abi.encodeWithSelector(Errors.TokenNotApproved.selector));
+        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 100e6, address(usdc), 0, address(0));
         vm.stopPrank();
     }
 }

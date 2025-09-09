@@ -12,17 +12,8 @@ import {RouteLib} from "../../libraries/RouteLib.sol";
 import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
-
-interface ILoanMinimalOpsWL {
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-}
-
-interface IVotingEscrowMinimalOpsWL {
-    function ownerOf(uint256 tokenId) external view returns (address);
-    function transferFrom(address from, address to, uint256 tokenId) external;
-}
-
-// Permit2 handled via Permit2Lib
+import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {ILoan} from "../../interfaces/ILoan.sol";
 
 contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
     using SafeERC20 for IERC20;
@@ -67,15 +58,19 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         if (!MarketStorage.configLayout().allowedPaymentToken[paymentToken]) revert Errors.CurrencyNotAllowed();
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
-        address tokenOwner = IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
+        address tokenOwner = IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
         if (tokenOwner != msg.sender) revert Errors.NotAuthorized();
 
         // Must not be in Loan custody (borrower must be zero if loan configured)
         address loanAddr = MarketStorage.configLayout().loan;
         if (loanAddr != address(0)) {
-            (, address borrower) = ILoanMinimalOpsWL(loanAddr).getLoanDetails(tokenId);
+            (, address borrower) = ILoan(loanAddr).getLoanDetails(tokenId);
             if (borrower != address(0)) revert Errors.InLoanCustody();
         }
+
+        // Require approval to the diamond for the veNFT before listing
+        address ve = MarketStorage.configLayout().votingEscrow;
+        if (!IVotingEscrow(ve).isApprovedOrOwner(address(this), tokenId)) revert Errors.TokenNotApproved();
 
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         listing.owner = tokenOwner;
@@ -206,7 +201,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
 
         // Settle
         if (marketFee > 0) IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), marketFee);
-        IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, buyer, tokenId);
+        IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, buyer, tokenId);
         IERC20(paymentToken).safeTransfer(listing.owner, price - marketFee);
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, price, marketFee);
@@ -266,7 +261,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         }
 
         // Transfer veNFT from seller wallet to buyer
-        IVotingEscrowMinimalOpsWL(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, msg.sender, tokenId);
+        IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(listing.owner, msg.sender, tokenId);
 
         // Send net proceeds to seller (price - fee)
         IERC20(paymentToken).safeTransfer(listing.owner, price - marketFee);

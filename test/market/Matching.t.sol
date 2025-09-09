@@ -97,9 +97,8 @@ contract MatchingTest is DiamondMarketTestBase {
 
         // Create wallet listing (no outstanding loan)
         vm.startPrank(walletOwner);
-        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 2000e6, address(usdcErc), 0, address(0));
-        // Grant approval for market diamond to transfer veNFT
         IVotingEscrow(address(votingEscrow)).approve(diamond, walletTokenId);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(walletTokenId, 2000e6, address(usdcErc), 0, address(0));
         vm.stopPrank();
 
         // Create matching offer

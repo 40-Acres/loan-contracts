@@ -20,6 +20,7 @@ library Errors {
     error LoanListingNotAllowed();
     error InLoanCustody();
     error NotAllowedBuyer();
+    error TokenNotApproved();
 
     // External adapters
     error WrongMarketVotingEscrow();
