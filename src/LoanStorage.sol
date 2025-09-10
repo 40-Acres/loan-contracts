@@ -19,6 +19,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         uint256 _minimumLocked; // minimum a token must have locked to be used as collateral
         mapping(address => bool) _isApprovedContract; // approved contracts for token transfers
         mapping(address => address) _contractAsset; // maps loan contracts to their asset addresses
+        address _marketDiamond; // configured market diamond authorized for borrower finalization
     }
 
 
@@ -175,6 +176,17 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function setContractAsset(address loanContract, address asset) external onlyOwner {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._contractAsset[loanContract] = asset;
+    }
+    
+    /** Market Diamond getter/setter (upgrade-safe via ERC-7201 storage) */
+    function setMarketDiamond(address marketDiamond) external onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._marketDiamond = marketDiamond;
+    }
+
+    function getMarketDiamond() public view returns (address) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._marketDiamond;
     }
     
 }

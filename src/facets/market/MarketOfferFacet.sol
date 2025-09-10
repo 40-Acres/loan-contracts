@@ -10,18 +10,8 @@ import {FeeLib} from "../../libraries/FeeLib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
-
-interface ILoanMinimalOpsOF {
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-    function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);
-    function setBorrower(uint256 tokenId, address borrower) external;
-}
-
-interface IVotingEscrowMinimalOpsOF {
-    struct LockedBalance { int128 amount; uint256 end; bool isPermanent; }
-    function locked(uint256 _tokenId) external view returns (LockedBalance memory);
-    function transferFrom(address from, address to, uint256 tokenId) external;
-}
+import {ILoan} from "../../interfaces/ILoan.sol";
+import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 
 contract MarketOfferFacet is IMarketOfferFacet {
     using SafeERC20 for IERC20;
@@ -147,9 +137,9 @@ contract MarketOfferFacet is IMarketOfferFacet {
         IERC20(offer.paymentToken).safeTransfer(msg.sender, sellerAmount);
 
         if (isInLoanV2) {
-            ILoanMinimalOpsOF(MarketStorage.configLayout().loan).setBorrower(tokenId, offer.creator);
+            ILoan(MarketStorage.configLayout().loan).finalizeOfferPurchase(tokenId, offer.creator, msg.sender, offerId);
         } else {
-            IVotingEscrowMinimalOpsOF(MarketStorage.configLayout().votingEscrow).transferFrom(msg.sender, offer.creator, tokenId);
+            IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(msg.sender, offer.creator, tokenId);
         }
 
         delete MarketStorage.orderbookLayout().offers[offerId];
@@ -158,13 +148,13 @@ contract MarketOfferFacet is IMarketOfferFacet {
 
     function _validateOfferCriteria(uint256 tokenId, MarketStorage.Offer storage offer, bool isInLoanV2) internal view {
         uint256 weight = isInLoanV2
-            ? ILoanMinimalOpsOF(MarketStorage.configLayout().loan).getLoanWeight(tokenId)
+            ? ILoan(MarketStorage.configLayout().loan).getLoanWeight(tokenId)
             : MarketLogicLib.getVeNFTWeight(tokenId);
         require(weight >= offer.minWeight, "InsufficientWeight");
         require(weight <= offer.maxWeight, "ExcessiveWeight");
-        (uint256 loanBalance,) = ILoanMinimalOpsOF(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        (uint256 loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
-        IVotingEscrowMinimalOpsOF.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsOF(MarketStorage.configLayout().votingEscrow).locked(tokenId);
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }
 }
 

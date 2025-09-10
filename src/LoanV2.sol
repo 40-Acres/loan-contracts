@@ -21,6 +21,7 @@ import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
+import { IMarketViewFacet } from "./interfaces/IMarketViewFacet.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -35,7 +36,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
     address public _vault;
-
     bool internal _paused;
     uint256 public _outstandingCapital;
     uint256 public  _multiplier; // rewards rate multiplier
@@ -45,7 +45,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
-
     
     // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
     enum ZeroBalanceOption {
@@ -154,6 +153,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);    
     
     /**
+     * @dev Emitted when a loan's borrower is updated by an authorized caller.
+     */
+    event BorrowerChanged(uint256 indexed tokenId, address indexed previousBorrower, address indexed newBorrower, address caller);
+    
+    /**
      * @dev Emitted when the protocol fee is paid.
      * @param epoch The epoch during which the fee was paid.
      * @param amount The amount of the protocol fee paid.
@@ -191,6 +195,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param newImplementation The address of the new implementation contract.
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
 
 
     /**
@@ -1185,19 +1190,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
-     * @notice Sets the borrower for a specific loan.
-     * @dev This function can only be called by an approved contract.
-     * @param tokenId The ID of the loan (NFT).
-     * @param borrower The address of the borrower.
-     */
-    function setBorrower(uint256 tokenId, address borrower) public {
-        require(isApprovedContract(msg.sender));
-        LoanInfo storage loan = _loanDetails[tokenId];
-        loan.borrower = borrower;
-    }
-
-
-    /**
      * @notice Sets the top-up option for a specific loan.
      * @dev This function can only be called by the borrower of the loan.
      * @param tokenId The ID of the loan (NFT).
@@ -1401,4 +1393,83 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _entryPoint() internal view virtual returns (address) {
         return 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
     }
+
+
+    /**
+     * @notice Sets the borrower for a specific loan.
+     * @dev This function can only be called by an approved contract.
+     * @param tokenId The ID of the loan (NFT).
+     * @param borrower The address of the borrower.
+     */
+    function setBorrower(uint256 tokenId, address borrower) public {
+        // Peer-loan migration only: caller must be a registered loan and currently the borrower
+        require(getAssetFromContract(msg.sender) != address(0));
+        require(borrower != address(0));
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        address previousBorrower = loan.borrower;
+        loan.borrower = borrower;
+        emit BorrowerChanged(tokenId, previousBorrower, borrower, msg.sender);
+    }
+
+    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external {
+        require(msg.sender == getMarketDiamond());
+        require(buyer != address(0));
+
+        // Verify listing presence and consistency via MarketView facet on the diamond caller
+        (address listingOwner, , , , uint256 expiresAt) = IMarketViewFacet(msg.sender).getListing(tokenId);
+        require(listingOwner != address(0));
+        require(expiresAt == 0 || block.timestamp < expiresAt);
+
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == expectedSeller && listingOwner == expectedSeller);
+        require(loan.balance == 0);
+
+        address previousBorrower = loan.borrower;
+        loan.borrower = buyer;
+        emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
+    }
+
+    function finalizeLBOPurchase(uint256 tokenId, address buyer) external {
+        require(msg.sender == getMarketDiamond());
+        require(buyer != address(0));
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        address previousBorrower = loan.borrower;
+        loan.borrower = buyer;
+        emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
+    }
+
+    /**
+     * @notice Finalize offer acceptance by setting borrower post-payoff in the same tx
+     * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
+     */
+    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external {
+        require(msg.sender == getMarketDiamond());
+        require(buyer != address(0));
+
+        // Validate the offer is present and active, and belongs to the buyer
+        (
+            address creator,
+            ,
+            ,
+            ,
+            ,
+            ,
+            uint256 expiresAt
+        ) = IMarketViewFacet(msg.sender).getOffer(offerId);
+        require(creator != address(0));
+        require(creator == buyer);
+        require(expiresAt == 0 || block.timestamp < expiresAt);
+
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == expectedSeller);
+        // debts should be paid off already
+        require(loan.balance == 0);
+
+        address previousBorrower = loan.borrower;
+        loan.borrower = buyer;
+        emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
+    }
+
 }

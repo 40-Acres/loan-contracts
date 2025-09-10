@@ -218,7 +218,7 @@ abstract contract DiamondMarketTestBase is Test {
         IMarketConfigFacet(diamond).initMarket(loan, votingEscrow, feeBps, feeRecipient, defaultToken);
         // prank as loan owner set our new diamond as approved contract inside loanv2
         vm.prank(Loan(loan).owner());
-        Loan(loan).setApprovedContract(diamond, true);
+        Loan(loan).setMarketDiamond(diamond);
     }
 }
 

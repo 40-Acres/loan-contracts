@@ -201,7 +201,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
             IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), feeListing);
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
-        ILoan(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
+        ILoan(MarketStorage.configLayout().loan).finalizeMarketPurchase(tokenId, buyer, listing.owner);
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, listingPrice, feeListing);
     }
@@ -305,8 +305,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
 
-        // Assign borrower to buyer
-        ILoan(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
+        // Assign borrower to buyer via market-protected finalizer
+        ILoan(MarketStorage.configLayout().loan).finalizeMarketPurchase(tokenId, buyer, listing.owner);
 
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, listingPrice, feeListing);

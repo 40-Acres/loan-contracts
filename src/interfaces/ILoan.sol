@@ -52,6 +52,33 @@ interface ILoan {
     function setBorrower(uint256 tokenId, address borrower) external;
     
     /**
+     * @notice Finalizes a marketplace purchase by assigning the borrower to the buyer
+     * @dev Must only be callable by the configured marketplace/diamond/router
+     * @param tokenId The ID of the loan (NFT)
+     * @param buyer The address of the buyer
+     * @param expectedSeller The expected seller recorded on the listing
+     */
+    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external;
+
+    /**
+     * @notice Finalizes LBO purchase by transferring borrower from market to the buyer
+     * @dev Must only be callable by the configured marketplace/diamond/router
+     * @param tokenId The ID of the loan (NFT)
+     * @param buyer The address of the buyer
+     */
+    function finalizeLBOPurchase(uint256 tokenId, address buyer) external;
+
+    /**
+     * @notice Finalizes an offer-based purchase by assigning the borrower to the buyer
+     * @dev Must only be callable by the configured marketplace/diamond/router
+     * @param tokenId The ID of the loan (NFT)
+     * @param buyer The address of the buyer (offer creator)
+     * @param expectedSeller The expected seller (current borrower)
+     * @param offerId The accepted offer identifier
+     */
+    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external;
+    
+    /**
      * @notice Transfers a token within the 40 Acres ecosystem
      * @param toContract The destination loan contract address
      * @param tokenId The ID of the token being transferred

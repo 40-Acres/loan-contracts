@@ -75,7 +75,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
             user = votingEscrow.ownerOf(tokenId);
         }
 
-        // deploy upgrade for loanv2 using proxy UpgradeToAndCall after pranking as owner to make sure that setApprovedContract is called is in loan contract
+        // deploy upgrade for loanv2 using proxy UpgradeToAndCall after pranking as owner to make sure that setMarketDiamond is called is in loan contract
         upgradeCanonicalLoan();
         _deployDiamondAndFacets();
 
@@ -316,7 +316,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         address unauthorizedMarket = vm.addr(0xABC);
         vm.startPrank(unauthorizedMarket);
         vm.expectRevert();
-        loan.setBorrower(tokenId, buyer);
+        loan.finalizeMarketPurchase(tokenId, buyer, unauthorizedMarket);
         vm.stopPrank();
     }
 }
