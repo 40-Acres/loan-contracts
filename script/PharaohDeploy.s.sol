@@ -163,7 +163,9 @@ contract PharaohUpgradeVault is Script {
 
     function upgrade() public {
         VaultV2 vaultV2 = new VaultV2();
-        VaultV2(address(0x124D00b1ce4453Ffc5a5F65cE83aF13A7709baC7)).upgradeToAndCall(address(vaultV2), new bytes(0));
+        // VaultV2(address(0x124D00b1ce4453Ffc5a5F65cE83aF13A7709baC7)).upgradeToAndCall(address(vaultV2), new bytes(0));
     }
 
 }
+
+// forge script script/PharaohDeploy.s.sol:PharaohUpgradeNative  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir

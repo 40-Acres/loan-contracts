@@ -60,6 +60,25 @@ contract PharaohLoanV2 is Loan {
     }
 
     /**
+     * @notice Allows user to merge their veNFT into another veNFT.
+     * @dev This function can only be called by the owner of the veNFT being merged.
+     * @param from The ID of the token to merge from.
+     * @param to The ID of the token to merge to.
+     */
+    function merge(uint256 from, uint256 to) override public {
+        require(_ve.ownerOf(to) == address(this));
+        require(_ve.ownerOf(from) == msg.sender);
+        LoanInfo storage loan = _loanDetails[to];
+        require(loan.borrower == msg.sender);
+        uint256 beginningBalance = _getLockedAmount(to);
+        _ve.transferFrom(msg.sender, address(this), from);
+        _ve.merge(from, to);
+        uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
+        addTotalWeight(weightIncrease);
+        loan.weight += weightIncrease;
+    }
+
+    /**
      * @dev Internal function to lock the voting escrow for a specific loan.
      * @param tokenId The ID of the loan (NFT) for which the lock is being applied.
      */
@@ -112,5 +131,36 @@ contract PharaohLoanV2 is Loan {
     function odosRouter() public override pure returns (address) {
         return 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC; // ODOS Router address
     }
-}
 
+
+    /**
+     * @notice Returns the rewards for next epoch.
+     * @return The amount of rewards for the next epoch.
+     */
+    function nextEpochReward() public view returns (uint256) {
+        return _rewardsPerEpoch[ProtocolTimeLibrary.epochNext(block.timestamp)];
+    }
+
+    /**
+     * @notice Records the rewards for the current epoch.
+     * @dev This function adds the specified rewards to the total rewards for the current epoch.
+     * @param rewards The amount of rewards to record.
+     */
+    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal override {
+        if (rewards > 0) {
+            _rewardsPerEpoch[ProtocolTimeLibrary.epochNext(block.timestamp)] += rewards;
+            emit RewardsReceived(ProtocolTimeLibrary.epochNext(block.timestamp), rewards, borrower, tokenId);
+        }
+    }
+
+    /**
+     * @notice Transfers a specified amount of USDC from the caller to the vault and records the rewards.
+     * @dev This function requires the caller to have approved the contract to transfer the specified amount of USDC.
+     * @param amount The amount of USDC to transfer to the vault and record as rewards.
+     */
+    function incentivizeVault(uint256 amount) override public {
+        _asset.transferFrom(msg.sender, _vault, amount);
+        _rewardsPerEpoch[currentEpochStart()] += amount;
+        emit RewardsReceived(currentEpochStart(), amount, msg.sender, type(uint256).max);
+    }
+}

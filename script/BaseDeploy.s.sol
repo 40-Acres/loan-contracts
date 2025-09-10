@@ -6,6 +6,7 @@ import {Loan} from "../src/Loan.sol";
 import { IVoter } from "src/interfaces/IVoter.sol";
 import { Swapper } from "../src/Swapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { Swapper } from "../src/Swapper.sol";
 import {Loan as LoanV2} from "src/LoanV2.sol";
 import {Vault} from "../src/VaultV2.sol";
 contract BaseDeploy is Script {

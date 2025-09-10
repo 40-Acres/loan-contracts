@@ -22,7 +22,6 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 
-
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -140,9 +139,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount of rewards claimed.
      * @param borrower The address of the borrower claiming the rewards.
      * @param tokenId The ID of the token representing the loan.
+     * @param token The address of the token in which the rewards are claimed.
      */
     
-    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
+    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when rewards are paid to the owner of the loan.
      * @param epoch The epoch during which the rewards were paid.
@@ -465,7 +465,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function requires the caller to have approved the contract to transfer the specified amount of USDC.
      * @param amount The amount of USDC to transfer to the vault and record as rewards.
      */
-    function incentivizeVault(uint256 amount) public {
+    function incentivizeVault(uint256 amount) virtual public {
         _asset.transferFrom(msg.sender, _vault, amount);
         recordRewards(amount, msg.sender, type(uint256).max);
     }
@@ -551,7 +551,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _processRewards(fees, tokens, tokenId, tradeData);
         uint256 rewardsAmount = _asset.balanceOf(address(this));
         address rewardToken = address(_asset);
-        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+        // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
+        // then it means the loan is fully paid off.
+        // If the zero balance option is set to PayToOwner, we will pay the rewards to the owner in the desired token.
+        if (loan.balance == 0 && 
+            (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0) && 
+            loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
             rewardToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
@@ -569,7 +574,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         require(rewardsAmount > 0 || aeroAmount > 0);
         // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId);
+        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId, address(rewardToken));
 
 
         // Handle zero balance case
@@ -735,7 +740,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param allocation The amount  to be allocated for increasing the veNFT balance.
      * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
-    function _increaseNft(LoanInfo memory loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
+    function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
         if(loan.increasePercentage > 0 && allocation == 0) {
             revert(); // Should be an allocation if increasePercentage is set
         }
@@ -834,9 +839,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev This function adds the specified rewards to the total rewards for the current epoch.
      * @param rewards The amount of rewards to record.
      */
-    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal {
-        _rewardsPerEpoch[currentEpochStart()] += rewards;
-        emit RewardsReceived(currentEpochStart(), rewards, borrower, tokenId);
+    function recordRewards(uint256 rewards, address borrower, uint256 tokenId) internal virtual {
+        if (rewards > 0) {
+            _rewardsPerEpoch[currentEpochStart()] += rewards;
+            emit RewardsReceived(currentEpochStart(), rewards, borrower, tokenId);
+        }
     }
 
     /* Rate Methods */
@@ -963,7 +970,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param from The ID of the token to merge from.
      * @param to The ID of the token to merge to.
      */
-    function merge(uint256 from, uint256 to) public {
+    function merge(uint256 from, uint256 to) virtual public {
         require(_ve.ownerOf(to) == address(this));
         require(_ve.ownerOf(from) == msg.sender);
         LoanInfo storage loan = _loanDetails[to];
@@ -973,21 +980,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
         addTotalWeight(weightIncrease);
         loan.weight += weightIncrease;
-    }
-    
-
-    /**
-     * @notice Sets the managed NFT for the contract
-     * @dev Transfers the NFT from the sender to the contract, updates the managed NFT state
-     *    The managed NFT is used to represent the community owned veNFT, the owner of the managed NFT will be the managedNFT contract itself.
-     *    The only special case a managedNFT has within this contract is the ability to merge unowned venfts into it
-     * @param tokenId The ID of the NFT to be managed by the contract.
-     */
-    function setManagedNft(uint256 tokenId) public onlyOwner override {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower != address(0));
-        require(getManagedNft() == 0);
-        super.setManagedNft(tokenId);
     }
 
     /**
@@ -1100,7 +1092,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _aero.transfer(owner(), aeroBalance);
         }
     }
-    
+
     /**
      * @notice Transfers a token within the 40 Acres ecosystem from one loan contract to another
      * @param toContract The destination loan contract address
