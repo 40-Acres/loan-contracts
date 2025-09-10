@@ -12,16 +12,8 @@ import {RouteLib} from "../../libraries/RouteLib.sol";
 import {Permit2Lib, IPermit2} from "../../libraries/Permit2Lib.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
-
-interface ILoanMinimalOpsLL {
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-    function pay(uint256 tokenId, uint256 amount) external;
-    function setBorrower(uint256 tokenId, address borrower) external;
-}
-
-interface IVotingEscrowMinimalOpsLL {
-    function ownerOf(uint256 tokenId) external view returns (address);
-}
+import {ILoan} from "../../interfaces/ILoan.sol";
+import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 
 // Permit2 handled via Permit2Lib
 
@@ -67,9 +59,9 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         if (!MarketLogicLib.canOperate(tokenOwner, msg.sender)) revert Errors.NotAuthorized();
 
         // Ensure token is in Loan custody (not wallet): ownerOf(tokenId) != msg.sender
-        if (IVotingEscrowMinimalOpsLL(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) == msg.sender) revert Errors.BadCustody();
+        if (IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) == msg.sender) revert Errors.BadCustody();
 
-        (uint256 balance,) = ILoanMinimalOpsLL(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        (uint256 balance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         bool hasOutstandingLoan = balance > 0;
 
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
@@ -172,7 +164,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 address loanAsset = MarketStorage.configLayout().loanAsset;
                 if (loanAsset != paymentToken) revert Errors.NoValidRoute();
                 IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
-                ILoanMinimalOpsLL(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
+                ILoan(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
             }
         } else if (tradeData.length > 0) {
             address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
@@ -197,7 +189,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
             if (loanBalance > 0 && IERC20(loanAsset).balanceOf(address(this)) < loanBalance) revert Errors.Slippage();
             if (loanBalance > 0) {
                 IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
-                ILoanMinimalOpsLL(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
+                ILoan(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
             }
         } else {
             revert Errors.InvalidRoute();
@@ -209,7 +201,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
             IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), feeListing);
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
-        ILoanMinimalOpsLL(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
+        ILoan(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, listingPrice, feeListing);
     }
@@ -279,7 +271,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         listingPrice = listing.price;
         paymentToken = listing.paymentToken;
         if (listing.hasOutstandingLoan) {
-            (loanBalance,) = ILoanMinimalOpsLL(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+            (loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         }
         total = listingPrice + loanBalance;
     }
@@ -314,7 +306,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
 
         // Assign borrower to buyer
-        ILoanMinimalOpsLL(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
+        ILoan(MarketStorage.configLayout().loan).setBorrower(tokenId, buyer);
 
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, listingPrice, feeListing);
