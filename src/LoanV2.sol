@@ -217,7 +217,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-
+    /**
+     * @dev Modifier to ensure the caller is the market diamond.
+     * @notice market diamond must be configured for loan listings and LBO to work properly
+     */
+    modifier onlyMarketDiamond() {
+        require(msg.sender == getMarketDiamond());
+        _;
+    }
 
     /**
      * @notice Allows the owner of a token to request a loan by locking the token as collateral.
@@ -1433,8 +1440,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit BorrowerChanged(tokenId, previousBorrower, borrower, msg.sender);
     }
 
-    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external {
-        require(msg.sender == getMarketDiamond());
+    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
         require(buyer != address(0));
 
         // Verify listing presence and consistency via MarketView facet on the diamond caller
@@ -1451,8 +1457,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
     }
 
-    function finalizeLBOPurchase(uint256 tokenId, address buyer) external {
-        require(msg.sender == getMarketDiamond());
+    function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
         require(buyer != address(0));
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
@@ -1465,8 +1470,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Finalize offer acceptance by setting borrower post-payoff in the same tx
      * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
      */
-    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external {
-        require(msg.sender == getMarketDiamond());
+    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external onlyMarketDiamond {
         require(buyer != address(0));
 
         // Validate the offer is present and active, and belongs to the buyer
