@@ -1401,9 +1401,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the loan (NFT).
      * @param borrower The address of the borrower.
      */
-    function setBorrower(uint256 tokenId, address borrower) public {
+    function setBorrower(uint256 tokenId, address borrower) public {\
+    // TODO: check this section again for security
+        require(isApprovedContract(msg.sender));
         // Peer-loan migration only: caller must be a registered loan and currently the borrower
-        require(getAssetFromContract(msg.sender) != address(0));
         require(borrower != address(0));
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
