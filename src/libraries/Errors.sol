@@ -36,6 +36,7 @@ library Errors {
     error ExcessiveWeight();
     error InsufficientDebtTolerance();
     error InvalidExpiration();
+    error InvalidTokenId();
 
     // Settlement / swaps / custody
     error Slippage();

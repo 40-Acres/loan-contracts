@@ -20,6 +20,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(address => bool) _isApprovedContract; // approved contracts for token transfers
         mapping(address => address) _contractAsset; // maps loan contracts to their asset addresses
         address _marketDiamond; // configured market diamond authorized for borrower finalization
+        uint256 _flashLoanFee; // flash loan fee
     }
 
 
@@ -188,5 +189,14 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._marketDiamond;
     }
-    
+
+    function setFlashLoanFee(uint256 fee) external onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._flashLoanFee = fee;
+    }
+
+    function getFlashLoanFee() public view returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._flashLoanFee;
+    }
 }

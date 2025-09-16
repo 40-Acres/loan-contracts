@@ -42,15 +42,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     uint256 public _outstandingCapital;
     uint256 public  _multiplier; // rewards rate multiplier
     
-    // Flash loan constants
-    uint256 public FLASH_LOAN_FEE = 9; // 0.09% fee (9 basis points)
-    bytes32 public constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
-
     mapping(uint256 => LoanInfo) public _loanDetails;
     mapping(address => bool) public _approvedPools;
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
+    //// end of deprecated storage variables
+
+    bytes32 public constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
     
     // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
     enum ZeroBalanceOption {
@@ -1126,81 +1125,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-    /**
-     * @notice Transfers a token within the 40 Acres ecosystem from one loan contract to another
-     * @param toContract The destination loan contract address
-     * @param tokenId The ID of the token being transferred
-     * @param borrowAmount The amount of tokens to borrow from the new contract
-     * @param tradeData The trade data for swapping tokens (if needed)
-     * @return success A boolean indicating whether the transfer was successful
-     */
-    function transferWithin40Acres(
-        address toContract,
-        uint256 tokenId,
-        uint256 borrowAmount,
-        bytes calldata tradeData
-    ) external returns (bool success) {
-        // Verify the contract is approved
-        require(isApprovedContract(toContract));
-
-        // Get loan details from source contract
-        LoanInfo storage loan = _loanDetails[tokenId];
-
-        uint256 amount = loan.balance;
-        
-        // Verify the caller is the borrower
-        require(loan.borrower == msg.sender);
-        // Verify the token is locked in this contract
-        require(_ve.ownerOf(tokenId) == address(this));
-
-        // Get settings from current loan
-        ZeroBalanceOption zeroBalanceOption = loan.zeroBalanceOption;
-        uint256 increasePercentage = loan.increasePercentage;
-        address preferredToken = loan.preferredToken;
-        bool topUp = loan.topUp;
-        bool optInCommunityRewards = loan.optInCommunityRewards;
-
-        // Get the asset of the target contract
-        IERC20 targetAsset = IERC20(getAssetFromContract(toContract));
-
-        _ve.approve(toContract, tokenId);
-
-        // Request loan for user on the new contract
-        Loan(toContract).requestLoan(
-            tokenId,
-            borrowAmount,
-            zeroBalanceOption,
-            increasePercentage,
-            preferredToken,
-            topUp,
-            optInCommunityRewards
-        );
-
-        // Swap the borrowed token to our token (if different) to pay off the loan
-        if (address(targetAsset) != address(_asset) && amount > 0) {
-            // Approve the router to spend the borrowed asset
-            targetAsset.approve(odosRouter(), borrowAmount);
-            
-            // Execute the swap using ODOS router
-            (bool swapSuccess,) = odosRouter().call(tradeData);
-            require(swapSuccess);
-        }
-
-        // Pay off the loan
-        _pay(tokenId, amount, true);
-        
-        // Clean up the loan details
-        subTotalWeight(loan.weight);
-        delete _loanDetails[tokenId];
-
-        // targetAsset.transfer(msg.sender, targetAsset.balanceOf(address(this)));
-
-        Loan(toContract).setBorrower(tokenId, msg.sender);
-
-        emit CollateralWithdrawn(tokenId, msg.sender);
-        return true;
-}
-
     /* USER METHODS */
     /**
      * @notice Sets the zero balance option for a specific loan.
@@ -1427,17 +1351,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Sets the borrower for a specific loan.
      * @dev This function can only be called by an approved contract.
      * @param tokenId The ID of the loan (NFT).
-     * @param borrower The address of the borrower.
+     * @param newBorrower The address of the new borrower.
      */
-    function setBorrower(uint256 tokenId, address borrower) public {
-    // TODO: check this section again for security
-        require(isApprovedContract(msg.sender));
-        require(borrower != address(0));
+    function _setBorrower(uint256 tokenId, address newBorrower) internal {
+        require(newBorrower != address(0));
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
+        require(loan.borrower == msg.sender || msg.sender == getMarketDiamond());
         address previousBorrower = loan.borrower;
-        loan.borrower = borrower;
-        emit BorrowerChanged(tokenId, previousBorrower, borrower, msg.sender);
+        loan.borrower = newBorrower;
+        emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
     }
 
     function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
@@ -1452,18 +1374,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(loan.borrower == expectedSeller && listingOwner == expectedSeller);
         require(loan.balance == 0);
 
-        address previousBorrower = loan.borrower;
-        loan.borrower = buyer;
-        emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
-    }
-
-    function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
-        require(buyer != address(0));
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        address previousBorrower = loan.borrower;
-        loan.borrower = buyer;
-        emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
+        _setBorrower(tokenId, buyer);
     }
 
     /**
@@ -1492,11 +1403,45 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // debts should be paid off already
         require(loan.balance == 0);
 
-        address previousBorrower = loan.borrower;
-        loan.borrower = buyer;
-        emit BorrowerChanged(tokenId, previousBorrower, buyer, msg.sender);
+        _setBorrower(tokenId, buyer);
     }
 
+    function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
+        require(buyer != address(0));
+        
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender); // Market diamond should be current borrower
+        
+        // Compute financed fee based on the outstanding capital (amount borrowed in flash loan path)
+        // At this point, outstandingCapital reflects the principal borrowed via requestLoan
+        uint256 financedFee = (loan.outstandingCapital * 100) / 10000; // 100 bps on outstanding capital
+
+        // Replace origination fee with LBO financed fees
+        // At this point, the only unpaid fee is the origination fee
+        uint256 originationFee = loan.unpaidFees;
+
+        // Split financed fee: 50 bps to protocol (unpaidFees), 50 bps to lenders (outstandingCapital)
+        // Handle rounding properly - give any remainder to protocol
+        uint256 lenderFinancedFee = financedFee / 2; // 50 bps to lenders (paid over time via principal)
+        uint256 protocolFinancedFee = financedFee - lenderFinancedFee; // 50 bps to protocol + any remainder
+        
+        // Update loan accounting
+        loan.unpaidFees = protocolFinancedFee;
+        loan.outstandingCapital += lenderFinancedFee; // Lenders get this via normal loan payments to vault
+        loan.balance = loan.balance - originationFee + financedFee; // Total balance includes both portions
+        
+        // Update global outstanding capital
+        _outstandingCapital += lenderFinancedFee;
+        require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
+        
+        // Record the financed fee for accounting (emit computed values)
+        emit LBOFeesProcessed(tokenId, buyer, financedFee, lenderFinancedFee, protocolFinancedFee);
+        
+        // Transfer veNFT ownership to buyer
+        _setBorrower(tokenId, buyer);
+    }
+    
+    event LBOFeesProcessed(uint256 indexed tokenId, address indexed buyer, uint256 listingPrice, uint256 lenderFee, uint256 protocolFee);
 
     /* FLASH LOAN FUNCTIONS */
 
@@ -1527,16 +1472,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             revert UnsupportedToken(token);
         }
         
-        return (amount * FLASH_LOAN_FEE) / 10000; // Fee is in basis points (9 basis points = 0.09%)
-    }
-
-    /**
-     * @notice Sets the flash loan fee
-     * @dev This function allows the owner to set the flash loan fee
-     * @param fee The new flash loan fee
-     */
-    function setFlashLoanFee(uint256 fee) external onlyOwner {
-        FLASH_LOAN_FEE = fee;
+        // 0% fee for market diamond, regular fee for others
+        if (msg.sender == getMarketDiamond()) {
+            return 0;
+        }
+        
+        return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
     }
 
     /**
@@ -1545,7 +1486,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param receiver The contract receiving the flash loan
      * @param token The token to be flash loaned
      * @param amount The amount of tokens to be loaned
-     * @param data Additional data to be passed to the receiver
+     * @param data Additional data to be passed to the receiver. Must contain the LBO purchaseOrder struct to call buyToken on MarketRouterFacet
      * @return success Boolean indicating whether the flash loan was successful
      */
     function flashLoan(
@@ -1553,9 +1494,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address token,
         uint256 amount,
         bytes calldata data
-    ) external override nonReentrant returns (bool) {
+    ) external override nonReentrant onlyMarketDiamond returns (bool) {
         // Check if the system is paused
         require(!_paused, "Flash loans are paused");
+
+        // require flash loan receiver to be market diamond
+        require(address(receiver) == getMarketDiamond());
         
         // Check if the token is supported
         if (token != address(_asset)) {
@@ -1568,8 +1512,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             revert ExceededMaxLoan(maxLoan);
         }
         
-        // Calculate the fee
-        uint256 fee = (amount * FLASH_LOAN_FEE) / 10000;
+        // Calculate the fee (0% for LBO operations from market diamond)
+        uint256 fee = 0;
         
         // Transfer the loan amount from the vault to the receiver
         // For flash loans to work, the vault needs to approve this contract to transfer funds
@@ -1588,8 +1532,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Transfer the loan amount plus fee back to the vault
         _asset.transferFrom(address(receiver), _vault, amount + fee);
         
-        // Record the fee as protocol revenue
-        recordRewards(fee, msg.sender, type(uint256).max);
+        // TODO: review this section again
+        // No flash loan fees for LBO operations
+        // LBO fees are handled in the market diamond callback
         
         // Emit the flash loan event
         emit FlashLoan(address(receiver), msg.sender, token, amount, fee);

@@ -36,6 +36,22 @@ interface IMarketRouterFacet {
         bytes calldata marketData,
         bytes calldata optionalPermit2
     ) external payable;
+
+    /// @dev Leveraged buyout function that combines user payment with flash loan to purchase NFT and create loan
+    /// @param tokenId veNFT id to purchase
+    /// @param userPaymentAsset Asset provided by user (address(0) for ETH)
+    /// @param userPaymentAmount Amount of asset provided by user
+    /// @param purchaseOrderData Encoded purchaseOrder struct containing buy details
+    /// @param tradeData ODOS calldata for swapping user asset + flash loan asset to purchase asset
+    /// @param optionalPermit2 Optional Permit2 payload to pull user funds
+    function buyTokenWithLBO(
+        uint256 tokenId,
+        address userPaymentAsset,
+        uint256 userPaymentAmount,
+        bytes calldata purchaseOrderData,
+        bytes calldata tradeData,
+        bytes calldata optionalPermit2
+    ) external payable;
 }
 
 

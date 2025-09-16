@@ -44,12 +44,6 @@ interface ILoan {
      */
     function pay(uint256 tokenId, uint256 amount) external;
     
-    /**
-     * @notice Sets the borrower for a specific loan
-     * @param tokenId The ID of the loan (NFT)
-     * @param borrower The address of the new borrower
-     */
-    function setBorrower(uint256 tokenId, address borrower) external;
     
     /**
      * @notice Finalizes a marketplace purchase by assigning the borrower to the buyer
@@ -79,17 +73,11 @@ interface ILoan {
     function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external;
     
     /**
-     * @notice Transfers a token within the 40 Acres ecosystem
-     * @param toContract The destination loan contract address
-     * @param tokenId The ID of the token being transferred
-     * @param borrowAmount The amount of tokens to borrow from the new contract
-     * @param tradeData The trade data for swapping tokens (if needed)
-     * @return success A boolean indicating whether the transfer was successful
+     * @notice Calculates the maximum loan amount for a token
+     * @param tokenId The ID of the token
+     * @return maxLoan The maximum loan amount
+     * @return maxLoanIgnoreSupply The maximum loan amount ignoring supply constraints
      */
-    function transferWithin40Acres(
-        address toContract,
-        uint256 tokenId,
-        uint256 borrowAmount,
-        bytes calldata tradeData
-    ) external returns (bool success);
+    function getMaxLoan(uint256 tokenId) external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply);
+    
 }
