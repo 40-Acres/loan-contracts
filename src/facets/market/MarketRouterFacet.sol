@@ -153,9 +153,12 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
 
 
     function buyTokenWithLBO(uint256 tokenId, address userPaymentAsset, uint256 userPaymentAmount, bytes calldata purchaseOrderData, bytes calldata tradeData, bytes calldata optionalPermit2) external payable onlyWhenNotPaused {
-        // decode purchaseOrder
-        purchaseOrder memory purchase = abi.decode(purchaseOrderData, (purchaseOrder));
+
         
+        // decode purchaseOrder (robust decode using primitives to avoid enum quirks)
+        
+        purchaseOrder memory purchase = _decodePurchaseOrder(purchaseOrderData);
+
         // Validate purchase order matches tokenId
         if (purchase.tokenId != tokenId) revert Errors.InvalidTokenId();
 
@@ -180,12 +183,20 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
 
 
         // Calculate LBO fees (200 bps total on listing price)
+        // purchase.maxPaymentTotal for external route equals listingPrice + externalRouteFee.
+        // Upfront and financed LBO fees should be based on the listing price only.
+        // For external adapter route, fee bps is stored under ExternalAdapter in config; reuse it to back out listingPrice.
         uint256 listingPrice = purchase.maxPaymentTotal;
-        uint256 upfrontProtocolFee = (listingPrice * 100) / 10000; // 100 bps paid upfront to protocol
-        uint256 financedFee = (listingPrice * 100) / 10000; // 100 bps added to loan (50 bps protocol + 50 bps lenders)
-        
-        // Total amount needed for purchase: listing price + upfront fee
-        uint256 totalNeeded = listingPrice + upfrontProtocolFee;
+        {
+            // Derive listing price by removing external route fee if any (for ExternalAdapter route)
+            // total = price + (price * bps / 10000) => price = total * 10000 / (10000 + bps)
+            if (purchase.route == RouteLib.BuyRoute.ExternalAdapter) {
+                uint16 bps = MarketStorage.configLayout().feeBps[RouteLib.BuyRoute.ExternalAdapter];
+                if (bps > 0) {
+                    listingPrice = (purchase.maxPaymentTotal * 10000) / (10000 + bps);
+                }
+            }
+        }
         
         // Flash loan the max loan amount (always in vault asset/USDC)
         // User payment + flash loan will be swapped together to cover totalNeeded
@@ -199,10 +210,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             optionalPermit2,
             msg.sender, // buyer
             userPaymentAsset,
-            userPaymentAmount,
-            listingPrice,
-            upfrontProtocolFee, // 100 bps paid upfront to protocol
-            financedFee         // 100 bps to be added to loan balance
+            userPaymentAmount
         );
         
         // Get loan contract and vault asset (USDC)
@@ -216,6 +224,30 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             flashLoanAmount,
             flashLoanData
         );
+    }
+
+    // Decodes purchaseOrder from bytes in a way that is resilient to enum decoding and avoids stack-too-deep by returning a struct
+    function _decodePurchaseOrder(bytes memory data) internal pure returns (purchaseOrder memory po) {
+        (
+            uint8 routeRaw,
+            bytes32 adapterKey,
+            uint256 tokenId,
+            address inputAsset,
+            uint256 maxPaymentTotal,
+            uint256 maxInputAmount,
+            bytes memory tradeData,
+            bytes memory marketData,
+            bytes memory optionalPermit2
+        ) = abi.decode(data, (uint8, bytes32, uint256, address, uint256, uint256, bytes, bytes, bytes));
+        po.route = RouteLib.BuyRoute(routeRaw);
+        po.adapterKey = adapterKey;
+        po.tokenId = tokenId;
+        po.inputAsset = inputAsset;
+        po.maxPaymentTotal = maxPaymentTotal;
+        po.maxInputAmount = maxInputAmount;
+        po.tradeData = tradeData;
+        po.marketData = marketData;
+        po.optionalPermit2 = optionalPermit2;
     }
 
     function onFlashLoan(
@@ -235,11 +267,8 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             bytes memory optionalPermit2,
             address buyer,
             address userPaymentAsset,
-            uint256 userPaymentAmount,
-            uint256 listingPrice,
-            uint256 upfrontProtocolFee,
-            uint256 financedFee
-        ) = abi.decode(data, (purchaseOrder, bytes, bytes, address, address, uint256, uint256, uint256, uint256));
+            uint256 userPaymentAmount
+        ) = abi.decode(data, (purchaseOrder, bytes, bytes, address, address, uint256));
         
         // Handle asset swapping if needed
         if (tradeData.length > 0) {
@@ -281,8 +310,8 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             require(totalBalance >= purchase.maxPaymentTotal, "Insufficient balance for purchase");
         }
 
-        // store the listing payment token for this tokenid
-        address listingPaymentToken = MarketStorage.orderbookLayout().listings[purchase.tokenId].paymentToken;
+        // The listing payment token is the adapter's currency, which matches purchase.inputAsset post-swap
+        address listingPaymentToken = purchase.inputAsset;
         
         // Now we should have the correct asset for the purchase
         // TODO: should we just make the takeListingFrom skip transfer if self-call?
@@ -304,11 +333,20 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         
         // At this point, the market diamond owns the NFT
         
-        // Pay upfront protocol fee (100 bps) in listing payment token to treasury
-        // The remaining 100 bps (50 bps protocol + 50 bps lenders) will be added to loan balance in finalizeLBOPurchase
+        // Calculate and pay upfront LBO fee (100 bps) based on listing price only
+        // For ExternalAdapter, back out the external route fee from maxPaymentTotal to get the listing price
+        uint256 listingPriceForLBO = purchase.maxPaymentTotal;
+        if (purchase.route == RouteLib.BuyRoute.ExternalAdapter) {
+            uint16 bps = MarketStorage.configLayout().feeBps[RouteLib.BuyRoute.ExternalAdapter];
+            if (bps > 0) {
+                // total = price + (price * bps / 10000) => price = total * 10000 / (10000 + bps)
+                listingPriceForLBO = (purchase.maxPaymentTotal * 10000) / (10000 + bps);
+            }
+        }
+        uint256 upfrontLBOFee = (listingPriceForLBO * 100) / 10000;
         
-        if (upfrontProtocolFee > 0) {
-            IERC20(listingPaymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, upfrontProtocolFee);
+        if (upfrontLBOFee > 0) {
+            IERC20(listingPaymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, upfrontLBOFee);
         }
 
         // Request max loan to get funds to repay flash loan + financed fee (100 bps)
