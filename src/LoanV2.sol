@@ -204,6 +204,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     error UnsupportedToken(address token);
     error ExceededMaxLoan(uint256 maxLoan);
     error InvalidFlashLoanReceiver(address receiver);
+    
+    // General validation errors (reusable)
+    error InvalidOffer();
+    error InvalidListing();
+    error Unauthorized();
+    error LoanNotPaidOff();
+    error SellerMismatch();
+    error CreatorMismatch();
+    error SystemPaused();
+    error InsufficientAllowance(uint256 required, uint256 available);
+    error MarketNotConfigured();
+    error ZeroAddress();
 
     constructor() {
         _disableInitializers();
@@ -221,7 +233,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice market diamond must be configured for loan listings and LBO to work properly
      */
     modifier onlyMarketDiamond() {
-        require(msg.sender == getMarketDiamond());
+        address marketDiamond = getMarketDiamond();
+        if (marketDiamond == address(0)) revert MarketNotConfigured();
+        if (msg.sender != marketDiamond) revert Unauthorized();
         _;
     }
 
@@ -1354,25 +1368,25 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param newBorrower The address of the new borrower.
      */
     function _setBorrower(uint256 tokenId, address newBorrower) internal {
-        require(newBorrower != address(0));
+        if (newBorrower == address(0)) revert ZeroAddress();
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender || msg.sender == getMarketDiamond());
+        if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
         address previousBorrower = loan.borrower;
         loan.borrower = newBorrower;
         emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
     }
 
     function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
-        require(buyer != address(0));
+        if (buyer == address(0)) revert ZeroAddress();
 
         // Verify listing presence and consistency via MarketView facet on the diamond caller
         (address listingOwner, , , , uint256 expiresAt) = IMarketViewFacet(msg.sender).getListing(tokenId);
-        require(listingOwner != address(0));
-        require(expiresAt == 0 || block.timestamp < expiresAt);
+        if (listingOwner == address(0)) revert InvalidListing();
+        if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidListing();
 
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == expectedSeller && listingOwner == expectedSeller);
-        require(loan.balance == 0);
+        if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert SellerMismatch();
+        if (loan.balance != 0) revert LoanNotPaidOff();
 
         _setBorrower(tokenId, buyer);
     }
@@ -1382,7 +1396,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
      */
     function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external onlyMarketDiamond {
-        require(buyer != address(0));
+        if (buyer == address(0)) revert ZeroAddress();
 
         // Validate the offer is present and active, and belongs to the buyer
         (
@@ -1394,23 +1408,23 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             ,
             uint256 expiresAt
         ) = IMarketViewFacet(msg.sender).getOffer(offerId);
-        require(creator != address(0));
-        require(creator == buyer);
-        require(expiresAt == 0 || block.timestamp < expiresAt);
+        if (creator == address(0)) revert InvalidOffer();
+        if (creator != buyer) revert CreatorMismatch();
+        if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidOffer();
 
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == expectedSeller);
+        if (loan.borrower != expectedSeller) revert SellerMismatch();
         // debts should be paid off already
-        require(loan.balance == 0);
+        if (loan.balance != 0) revert LoanNotPaidOff();
 
         _setBorrower(tokenId, buyer);
     }
 
     function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
-        require(buyer != address(0));
+        if (buyer == address(0)) revert ZeroAddress();
         
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender); // Market diamond should be current borrower
+        if (loan.borrower != msg.sender) revert Unauthorized(); // Market diamond should be current borrower
         
         // Compute financed fee based on the outstanding capital (amount borrowed in flash loan path)
         // At this point, outstandingCapital reflects the principal borrowed via requestLoan
@@ -1496,10 +1510,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         bytes calldata data
     ) external override nonReentrant onlyMarketDiamond returns (bool) {
         // Check if the system is paused
-        require(!_paused, "Flash loans are paused");
+        if (_paused) revert SystemPaused();
 
         // require flash loan receiver to be market diamond
-        require(address(receiver) == getMarketDiamond());
+        if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
         
         // Check if the token is supported
         if (token != address(_asset)) {
@@ -1527,7 +1541,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         // Ensure the contract has enough allowance to transfer the funds back to the vault
         uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
-        require(receiverAllowance >= amount + fee, "Insufficient allowance for repayment");
+        uint256 required = amount + fee;
+        if (receiverAllowance < required) revert InsufficientAllowance(required, receiverAllowance);
         
         // Transfer the loan amount plus fee back to the vault
         _asset.transferFrom(address(receiver), _vault, amount + fee);
