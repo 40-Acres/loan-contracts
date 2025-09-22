@@ -69,7 +69,7 @@ contract MatchingTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         usdcErc.approve(diamond, 2000e6);
-        IMarketOfferFacet(diamond).createOffer(90e21, 100e21, 1000e6, 2000e6, address(usdc), block.timestamp + 7 days);
+        IMarketOfferFacet(diamond).createOffer(90e21, 1000e6, 2000e6, address(usdc), block.timestamp + 7 days);
         vm.stopPrank();
 
         IMarketMatchingFacet(diamond).matchOfferWithLoanListing(
@@ -104,7 +104,7 @@ contract MatchingTest is DiamondMarketTestBase {
         // Create matching offer
         vm.startPrank(buyer);
         usdcErc.approve(diamond, 2000e6);
-        IMarketOfferFacet(diamond).createOffer(70e21, 80e21, 1000e6, 2000e6, address(usdcErc), block.timestamp + 7 days);
+        IMarketOfferFacet(diamond).createOffer(70e21, 1000e6, 2000e6, address(usdcErc), block.timestamp + 7 days);
         vm.stopPrank();
 
         // Match offer with wallet listing via interface
@@ -199,7 +199,7 @@ contract MatchingOpenXExternalTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         IERC20(AERO).approve(diamond, maxTotal);
-        IMarketOfferFacet(diamond).createOffer(0, type(uint256).max, 0, maxTotal, AERO, block.timestamp + 7 days);
+        IMarketOfferFacet(diamond).createOffer(1, 0, maxTotal, AERO, block.timestamp + 7 days);
         vm.stopPrank();
 
         // Match using direct currency path (no swap)

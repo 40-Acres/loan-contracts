@@ -292,21 +292,19 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
 
     function _validateOfferCriteriaLoan(uint256 tokenId, MarketStorage.Offer storage offer) internal view {
         uint256 weight = ILoanMinimalOpsMM(MarketStorage.configLayout().loan).getLoanWeight(tokenId);
-        require(weight >= offer.minWeight, "InsufficientWeight");
-        require(weight <= offer.maxWeight, "ExcessiveWeight");
+        require(weight >= offer.minWeight, Errors.InsufficientWeight());
         (uint256 loanBalance,) = ILoanMinimalOpsMM(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
-        require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
+        require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
         IVotingEscrowMinimalOpsMM.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }
 
     function _validateOfferCriteriaWalletOrNoLoan(uint256 tokenId, MarketStorage.Offer storage offer) internal view {
         uint256 weight = MarketLogicLib.getVeNFTWeight(tokenId);
-        require(weight >= offer.minWeight, "InsufficientWeight");
-        require(weight <= offer.maxWeight, "ExcessiveWeight");
+        require(weight >= offer.minWeight, Errors.InsufficientWeight());
         address loanAddr = MarketStorage.configLayout().loan;
         if (loanAddr != address(0)) {
             (uint256 loanBalance,) = ILoanMinimalOpsMM(loanAddr).getLoanDetails(tokenId);
-            require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
+            require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
         }
         IVotingEscrowMinimalOpsMM.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }

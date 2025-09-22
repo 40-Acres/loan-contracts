@@ -24,7 +24,6 @@ library MarketStorage {
     struct Offer {
         address creator;                  // offer creator
         uint256 minWeight;                // minimum acceptable veNFT weight
-        uint256 maxWeight;                // maximum acceptable veNFT weight
         uint256 debtTolerance;            // max acceptable loan balance
         uint256 price;                    // offer price in paymentToken
         address paymentToken;             // whitelisted token

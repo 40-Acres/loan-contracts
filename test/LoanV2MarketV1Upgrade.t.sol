@@ -336,12 +336,12 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
         // capture logs to retrieve offerId from OfferCreated event
         vm.recordLogs();
         vm.startPrank(creator);
-        IMarketOfferFacet(diamond).createOffer(0, type(uint256).max, 0, price, payment, expiresAt);
+        IMarketOfferFacet(diamond).createOffer(1, 0, price, payment, expiresAt);
         vm.stopPrank();
 
         // decode OfferCreated(uint256 offerId, address creator, ...)
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,uint256,address,uint256)");
+        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,address,uint256)");
         uint256 offerId = 0;
         for (uint256 i = entries.length; i > 0; i--) {
             if (entries[i-1].topics.length > 0 && entries[i-1].topics[0] == sig) {
@@ -367,10 +367,10 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
         IUSDC_Mint_LM1U(USDC).mint(buyer, price);
         vm.recordLogs();
         vm.startPrank(buyer);
-        IMarketOfferFacet(diamond).createOffer(0, type(uint256).max, 0, price, payment, expiresAt);
+        IMarketOfferFacet(diamond).createOffer(1, 0, price, payment, expiresAt);
         vm.stopPrank();
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,uint256,address,uint256)");
+        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,address,uint256)");
         uint256 offerId = 0;
         for (uint256 i = entries.length; i > 0; i--) {
             if (entries[i-1].topics.length > 0 && entries[i-1].topics[0] == sig) {
@@ -407,10 +407,10 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
         IUSDC_Mint_LM1U(USDC).mint(buyer, price);
         vm.recordLogs();
         vm.startPrank(buyer);
-        IMarketOfferFacet(diamond).createOffer(0, type(uint256).max, 0, price, payment, expiresAt);
+        IMarketOfferFacet(diamond).createOffer(1, 0, price, payment, expiresAt);
         vm.stopPrank();
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,uint256,address,uint256)");
+        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,address,uint256)");
         uint256 offerId = 0;
         for (uint256 i = entries.length; i > 0; i--) {
             if (entries[i-1].topics.length > 0 && entries[i-1].topics[0] == sig) {
@@ -437,11 +437,11 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
 
         vm.recordLogs();
         vm.startPrank(creator);
-        IMarketOfferFacet(diamond).createOffer(0, type(uint256).max, 0, price, payment, expiresAt);
+        IMarketOfferFacet(diamond).createOffer(1, 0, price, payment, expiresAt);
         vm.stopPrank();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,uint256,address,uint256)");
+        bytes32 sig = keccak256("OfferCreated(uint256,address,uint256,uint256,uint256,address,uint256)");
         uint256 offerId = 0;
         for (uint256 i = entries.length; i > 0; i--) {
             if (entries[i-1].topics.length > 0 && entries[i-1].topics[0] == sig) {

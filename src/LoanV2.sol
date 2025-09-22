@@ -1405,7 +1405,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             ,
             ,
             ,
-            ,
             uint256 expiresAt
         ) = IMarketViewFacet(msg.sender).getOffer(offerId);
         if (creator == address(0)) revert InvalidOffer();

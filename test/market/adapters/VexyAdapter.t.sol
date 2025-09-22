@@ -127,8 +127,7 @@ contract VexyAdapterTest is DiamondMarketTestBase {
         vm.startPrank(buyer);
         IERC20(currency).approve(diamond, offerPrice+fee);
         IMarketOfferFacet(diamond).createOffer({
-            minWeight: 0,
-            maxWeight: type(uint256).max,
+            minWeight: 1,
             debtTolerance: type(uint256).max,
             price: offerPrice,
             paymentToken: currency,

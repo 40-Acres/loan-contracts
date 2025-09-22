@@ -24,7 +24,6 @@ interface IMarketViewFacet {
     function getOffer(uint256 offerId) external view returns (
         address creator,
         uint256 minWeight,
-        uint256 maxWeight,
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,

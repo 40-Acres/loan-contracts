@@ -49,9 +49,9 @@ contract MarketConfigFacet is IMarketConfigFacet {
         address defaultPaymentToken
     ) external onlyOwner {
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
-        require(cfg.loan == address(0) && cfg.votingEscrow == address(0), "Already initialized");
+        require(cfg.loan == address(0) && cfg.votingEscrow == address(0), Errors.AlreadyInitialized());
         require(votingEscrow != address(0), Errors.ZeroAddress());
-        require(marketFeeBps <= MAX_FEE_BPS, "Invalid fee");
+        require(marketFeeBps <= MAX_FEE_BPS, Errors.InvalidFee());
 
         cfg.loan = loan;
         cfg.votingEscrow = votingEscrow;
@@ -83,20 +83,20 @@ contract MarketConfigFacet is IMarketConfigFacet {
 
     // ============ ADMIN ==========
     function setMarketFee(RouteLib.BuyRoute routeType, uint16 bps) external onlyOwnerOrSystemAdmin {
-        require(bps <= MAX_FEE_BPS, "Invalid fee");
+        require(bps <= MAX_FEE_BPS, Errors.InvalidFee());
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
         cfg.feeBps[routeType] = bps;
         emit MarketFeeChanged(bps);
     }
 
     function setFeeRecipient(address recipient) external onlyOwnerOrSystemAdmin {
-        require(recipient != address(0), "Zero address");
+        require(recipient != address(0), Errors.ZeroAddress());
         MarketStorage.configLayout().feeRecipient = recipient;
         emit FeeRecipientChanged(recipient);
     }
 
     function setAllowedPaymentToken(address token, bool allowed) external onlyOwnerOrSystemAdmin {
-        require(token != address(0), "Zero address");
+        require(token != address(0), Errors.ZeroAddress());
         MarketStorage.configLayout().allowedPaymentToken[token] = allowed;
         emit PaymentTokenAllowed(token, allowed);
     }
@@ -144,21 +144,21 @@ contract MarketConfigFacet is IMarketConfigFacet {
 
     // ============ LBO FEE CONFIG ==========
     function setLBOLenderFeeBps(uint256 bps) external onlyOwnerOrSystemAdmin {
-        require(bps <= MAX_FEE_BPS, "Invalid fee");
+        require(bps <= MAX_FEE_BPS, Errors.InvalidFee());
         MarketStorage.configLayout().lboLenderFeeBps = bps;
         emit LBOLenderFeeChanged(bps);
     }
 
     function setLBOProtocolFeeBps(uint256 bps) external onlyOwnerOrSystemAdmin {
-        require(bps <= MAX_FEE_BPS, "Invalid fee");
+        require(bps <= MAX_FEE_BPS, Errors.InvalidFee());
         MarketStorage.configLayout().lboProtocolFeeBps = bps;
         emit LBOProtocolFeeChanged(bps);
     }
 
     // ============ EXTERNAL ADAPTER REGISTRY ==========
     function setExternalAdapter(bytes32 key, address facet) external onlyOwnerOrSystemAdmin {
-        require(key != bytes32(0), "Zero key");
-        require(facet != address(0), "Zero address");
+        require(key != bytes32(0), Errors.InvalidAdapterKey());
+        require(facet != address(0), Errors.ZeroAddress());
         MarketStorage.configLayout().externalAdapter[key] = facet;
         emit ExternalAdapterSet(key, facet);
     }

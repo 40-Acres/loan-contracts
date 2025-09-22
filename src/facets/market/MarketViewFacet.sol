@@ -57,7 +57,6 @@ contract MarketViewFacet is IMarketViewFacet {
     function getOffer(uint256 offerId) external view returns (
         address creator,
         uint256 minWeight,
-        uint256 maxWeight,
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,
@@ -67,7 +66,6 @@ contract MarketViewFacet is IMarketViewFacet {
         return (
             offer.creator,
             offer.minWeight,
-            offer.maxWeight,
             offer.debtTolerance,
             offer.price,
             offer.paymentToken,

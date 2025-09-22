@@ -5,6 +5,8 @@ library Errors {
     error NotAuthorized();
     error ZeroAddress();
     error AlreadyInitialized();
+    error InvalidFee();
+
     // Common guards
     error Paused();
     error Reentrancy();
@@ -30,6 +32,7 @@ library Errors {
     error OfferTooLow();
     error UnknownAdapter();
     error MaxTotalExceeded();
+    error InvalidAdapterKey();
 
     // Validation
     error InsufficientWeight();
@@ -37,6 +40,7 @@ library Errors {
     error InsufficientDebtTolerance();
     error InvalidExpiration();
     error InvalidTokenId();
+    error InvalidPaymentToken();
 
     // Settlement / swaps / custody
     error Slippage();

@@ -18,7 +18,6 @@ interface IMarket {
     struct Offer {
         address creator;                   // offer creator
         uint256 minWeight;                // minimum acceptable veNFT weight
-        uint256 maxWeight;                // maximum acceptable veNFT weight
         uint256 debtTolerance;            // max acceptable loan balance
         uint256 price;                     // offer price in paymentToken
         address paymentToken;              // whitelisted token
@@ -32,8 +31,8 @@ interface IMarket {
     event ListingUpdated(uint256 indexed tokenId, uint256 price, address paymentToken, uint256 expiresAt);
     event ListingCancelled(uint256 indexed tokenId);
     event ListingTaken(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 fee);
-    event OfferCreated(uint256 indexed offerId, address indexed creator, uint256 minWeight, uint256 maxWeight, uint256 debtTolerance, uint256 price, address paymentToken, uint256 expiresAt);
-    event OfferUpdated(uint256 indexed offerId, uint256 newMinWeight, uint256 newMaxWeight, uint256 newDebtTolerance, uint256 newPrice, address newPaymentToken, uint256 newExpiresAt);
+    event OfferCreated(uint256 indexed offerId, address indexed creator, uint256 minWeight, uint256 debtTolerance, uint256 price, address paymentToken, uint256 expiresAt);
+    event OfferUpdated(uint256 indexed offerId, uint256 newMinWeight, uint256 newDebtTolerance, uint256 newPrice, address newPaymentToken, uint256 newExpiresAt);
     event OfferCancelled(uint256 indexed offerId);
     event OfferAccepted(uint256 indexed offerId, uint256 indexed tokenId, address indexed seller, uint256 price, uint256 fee);
     event OfferMatched(uint256 indexed offerId, uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 fee);
@@ -67,7 +66,6 @@ interface IMarket {
     // Offer management
     function createOffer(
         uint256 minWeight,
-        uint256 maxWeight,
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,
@@ -77,7 +75,6 @@ interface IMarket {
     function updateOffer(
         uint256 offerId,
         uint256 newMinWeight,
-        uint256 newMaxWeight,
         uint256 newDebtTolerance,
         uint256 newPrice,
         address newPaymentToken,
@@ -106,7 +103,6 @@ interface IMarket {
     function getOffer(uint256 offerId) external view returns (
         address creator,
         uint256 minWeight,
-        uint256 maxWeight,
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,

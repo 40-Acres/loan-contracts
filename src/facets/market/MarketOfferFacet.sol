@@ -12,18 +12,19 @@ import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {Errors} from "../../libraries/Errors.sol";
 
 contract MarketOfferFacet is IMarketOfferFacet {
     using SafeERC20 for IERC20;
 
     modifier onlyWhenNotPaused() {
-        require(!MarketStorage.managerPauseLayout().marketPaused, "Paused");
+        require(!MarketStorage.managerPauseLayout().marketPaused, Errors.Paused());
         _;
     }
 
     modifier nonReentrant() {
         MarketStorage.MarketPauseLayout storage pause = MarketStorage.managerPauseLayout();
-        require(pause.reentrancyStatus != 2, "Reentrancy");
+        require(pause.reentrancyStatus != 2, Errors.Reentrancy());
         pause.reentrancyStatus = 2;
         _;
         pause.reentrancyStatus = 1;
@@ -38,20 +39,19 @@ contract MarketOfferFacet is IMarketOfferFacet {
                 return;
             }
         }
-        revert("NotAuthorized");
+        revert Errors.NotAuthorized();
     }
 
     function createOffer(
         uint256 minWeight,
-        uint256 maxWeight,
         uint256 debtTolerance,
         uint256 price,
         address paymentToken,
         uint256 expiresAt
     ) external payable nonReentrant onlyWhenNotPaused {
-        require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], "InvalidPaymentToken");
-        require(minWeight <= maxWeight, "InvalidWeightRange");
-        if (expiresAt != 0) require(expiresAt > block.timestamp, "InvalidExpiration");
+        require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], Errors.InvalidPaymentToken());
+        require(minWeight > 0, Errors.InsufficientWeight());
+        if (expiresAt != 0) require(expiresAt > block.timestamp, Errors.InvalidExpiration());
 
         // Approval-based offers: no escrow pull at creation
 
@@ -59,48 +59,45 @@ contract MarketOfferFacet is IMarketOfferFacet {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         offer.creator = msg.sender;
         offer.minWeight = minWeight;
-        offer.maxWeight = maxWeight;
         offer.debtTolerance = debtTolerance;
         offer.price = price;
         offer.paymentToken = paymentToken;
         offer.expiresAt = expiresAt;
         offer.offerId = offerId;
 
-        emit OfferCreated(offerId, msg.sender, minWeight, maxWeight, debtTolerance, price, paymentToken, expiresAt);
+        emit OfferCreated(offerId, msg.sender, minWeight, debtTolerance, price, paymentToken, expiresAt);
     }
 
     function updateOffer(
         uint256 offerId,
         uint256 newMinWeight,
-        uint256 newMaxWeight,
         uint256 newDebtTolerance,
         uint256 newPrice,
         address newPaymentToken,
         uint256 newExpiresAt
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
-        require(offer.creator != address(0), "OfferNotFound");
-        require(offer.creator == msg.sender, "Unauthorized");
-        require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], "InvalidPaymentToken");
-        require(newMinWeight <= newMaxWeight, "InvalidWeightRange");
-        if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, "InvalidExpiration");
+        require(offer.creator != address(0), Errors.OfferNotFound());
+        require(offer.creator == msg.sender, Errors.NotAuthorized());
+        require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], Errors.InvalidPaymentToken());
+        require(newMinWeight > 0, Errors.InsufficientWeight());
+        if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
 
         // Approval-based offers: price changes do not move funds at update time
 
         offer.minWeight = newMinWeight;
-        offer.maxWeight = newMaxWeight;
         offer.debtTolerance = newDebtTolerance;
         offer.price = newPrice;
         offer.paymentToken = newPaymentToken;
         offer.expiresAt = newExpiresAt;
 
-        emit OfferUpdated(offerId, newMinWeight, newMaxWeight, newDebtTolerance, newPrice, newPaymentToken, newExpiresAt);
+        emit OfferUpdated(offerId, newMinWeight, newDebtTolerance, newPrice, newPaymentToken, newExpiresAt);
     }
 
     function cancelOffer(uint256 offerId) external nonReentrant {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
-        require(offer.creator != address(0), "OfferNotFound");
-        require(offer.creator == msg.sender, "Unauthorized");
+        require(offer.creator != address(0), Errors.OfferNotFound());
+        require(offer.creator == msg.sender, Errors.NotAuthorized());
         // Approval-based offers: nothing to refund; just delete the offer
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferCancelled(offerId);
@@ -119,11 +116,11 @@ contract MarketOfferFacet is IMarketOfferFacet {
 
     function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
-        require(offer.creator != address(0), "OfferNotFound");
-        require(MarketLogicLib.isOfferActive(offerId), "OfferExpired");
+        require(offer.creator != address(0), Errors.OfferNotFound());
+        require(MarketLogicLib.isOfferActive(offerId), Errors.OfferExpired());
 
         address tokenOwner = MarketLogicLib.getTokenOwnerOrBorrower(tokenId);
-        require(MarketLogicLib.canOperate(tokenOwner, msg.sender), "Unauthorized");
+        require(MarketLogicLib.canOperate(tokenOwner, msg.sender), Errors.NotAuthorized());
 
         _validateOfferCriteria(tokenId, offer, isInLoanV2);
 
@@ -150,10 +147,9 @@ contract MarketOfferFacet is IMarketOfferFacet {
         uint256 weight = isInLoanV2
             ? ILoan(MarketStorage.configLayout().loan).getLoanWeight(tokenId)
             : MarketLogicLib.getVeNFTWeight(tokenId);
-        require(weight >= offer.minWeight, "InsufficientWeight");
-        require(weight <= offer.maxWeight, "ExcessiveWeight");
+        require(weight >= offer.minWeight, Errors.InsufficientWeight());
         (uint256 loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
-        require(loanBalance <= offer.debtTolerance, "InsufficientDebtTolerance");
+        require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
         IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }
 }
