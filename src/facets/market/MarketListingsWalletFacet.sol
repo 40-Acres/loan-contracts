@@ -181,7 +181,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
             if (inputToken == address(0)) {
                 if (msg.value == 0) revert Errors.InsufficientETH();
                 (bool success,) = odos.call{value: msg.value}(tradeData);
-                require(success);
+                require(success, Errors.OdosFailed());
             } else {
                 // Pull max input via Permit2 if provided; otherwise fallback
                 Permit2Lib.permitAndPull(buyer, address(this), inputToken, amountInMax, optionalPermit2);
@@ -190,7 +190,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
                 }
                 IERC20(inputToken).approve(odos, amountInMax);
                 (bool success2,) = odos.call{value: 0}(tradeData);
-                require(success2);
+                require(success2, Errors.OdosFailed());
                 IERC20(inputToken).approve(odos, 0);
             }
             // Must have at least price of payment token

@@ -159,21 +159,21 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
             if (inputToken == address(0)) {
                 // ETH-in path
-                require(msg.value > 0, "InsufficientETH");
+                require(msg.value > 0, Errors.InsufficientETH());
                 (bool success,) = odos.call{value: msg.value}(tradeData);
-                require(success, "ODOS swap failed");
-                require(payToken.balanceOf(address(this)) >= total, "Slippage");
+                require(success, Errors.OdosFailed());
+                require(payToken.balanceOf(address(this)) >= total, Errors.Slippage());
             } else {
                 // ERC20-in path: pull max input via Permit2 if provided upstream; otherwise fallback
                 Permit2Lib.permitAndPull(msg.sender, address(this), inputToken, amountInMax, optionalPermit2);
                 if (optionalPermit2.length == 0 && IERC20(inputToken).balanceOf(address(this)) < amountInMax) {
-                    require(IERC20(inputToken).transferFrom(msg.sender, address(this), amountInMax), "TransferFrom failed");
+                    require(IERC20(inputToken).transferFrom(msg.sender, address(this), amountInMax));
                 }
                 IERC20(inputToken).approve(odos, amountInMax);
                 (bool success2,) = odos.call{value: 0}(tradeData);
-                require(success2, "ODOS swap failed");
+                require(success2, Errors.OdosFailed());
                 IERC20(inputToken).approve(odos, 0);
-                require(payToken.balanceOf(address(this)) >= total, "Slippage");
+                require(payToken.balanceOf(address(this)) >= total, Errors.Slippage());
             }
         }
 

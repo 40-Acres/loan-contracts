@@ -152,7 +152,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             }
             IERC20(inputAsset).approve(odos, maxInputAmount);
             (bool success,) = odos.call{value: 0}(tradeData);
-            require(success, "ODOS swap failed");
+            require(success, Errors.OdosFailed());
             IERC20(inputAsset).approve(odos, 0);
             if (IERC20(currency).balanceOf(address(this)) < totalCost) revert Errors.Slippage();
         }
@@ -235,7 +235,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
             }
             IERC20(inputAsset).approve(odos, maxInputAmount);
             (bool success,) = odos.call{value: 0}(tradeData);
-            require(success, "ODOS swap failed");
+            require(success, Errors.OdosFailed());
             IERC20(inputAsset).approve(odos, 0);
             if (IERC20(currency).balanceOf(address(this)) < totalCost) revert Errors.Slippage();
         }

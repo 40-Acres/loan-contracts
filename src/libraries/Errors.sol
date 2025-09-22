@@ -54,9 +54,13 @@ library Errors {
     error NoValidRoute();
     error WrongPaymentAsset();
     error LoanNotConfigured();
+    error OdosFailed();
 
     // flash loan / LBO
     error InvalidFlashLoanCaller();
+    error FlashLoanAssetMustMatchPurchaseAsset();
+    error UserAssetMustMatchPurchaseAsset();
+    error InsufficientBalanceForPurchase();
 }
 
 

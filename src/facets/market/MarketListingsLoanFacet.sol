@@ -85,8 +85,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.canOperate(listing.owner, msg.sender)) revert Errors.NotAuthorized();
-        require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], "InvalidPaymentToken");
-        if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, "InvalidExpiration");
+        require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], Errors.InvalidPaymentToken());
+        if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
 
         listing.price = newPrice;
         listing.paymentToken = newPaymentToken;
@@ -98,8 +98,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
 
     function cancelLoanListing(uint256 tokenId) external nonReentrant {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.canOperate(listing.owner, msg.sender), "Unauthorized");
+        require(listing.owner != address(0), Errors.ListingNotFound());
+        require(MarketLogicLib.canOperate(listing.owner, msg.sender), Errors.NotAuthorized());
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingCancelled(tokenId);
     }
@@ -213,7 +213,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         
         // full payoff path only
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
-        require(paymentToken == MarketStorage.configLayout().loanAsset || loanBalance == 0, "WrongPaymentAsset");
+        require(paymentToken == MarketStorage.configLayout().loanAsset || loanBalance == 0, Errors.WrongPaymentAsset());
 
         if (inputToken == address(0)) {
             // ETH path; ignore permit
@@ -221,8 +221,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
             return;
         }
 
-        require(MarketStorage.configLayout().allowedPaymentToken[inputToken], "InputTokenNotAllowed");
-        require(msg.value == 0, "NoETHForTokenPayment");
+        require(MarketStorage.configLayout().allowedPaymentToken[inputToken], Errors.InputTokenNotAllowed());
+        require(msg.value == 0, Errors.NoETHForTokenPayment());
 
         // Encode permit payload and use Permit2Lib to perform permit+pull.
         IPermit2.PermitSingle memory p2 = IPermit2.PermitSingle({
@@ -267,7 +267,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         address paymentToken
     ) {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
+        require(listing.owner != address(0), Errors.ListingNotFound());
         listingPrice = listing.price;
         paymentToken = listing.paymentToken;
         if (listing.hasOutstandingLoan) {
@@ -280,8 +280,8 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
 
     function _takeLoanListing(uint256 tokenId, address buyer, address inputToken) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        require(listing.owner != address(0), "ListingNotFound");
-        require(MarketLogicLib.isListingActive(tokenId), "ListingExpired");
+        require(listing.owner != address(0), Errors.ListingNotFound());
+        require(MarketLogicLib.isListingActive(tokenId), Errors.ListingExpired());
         _settleLoanListing(tokenId, buyer, inputToken, 0);
     }
 

@@ -21,10 +21,6 @@ import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 
 contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
     using SafeERC20 for IERC20;
-
-    // Events
-    event LBOLenderFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 lenderFeeAmount, address vault);
-
     struct purchaseOrder {
         RouteLib.BuyRoute route;
         bytes32 adapterKey;
@@ -279,7 +275,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             }
             
             (bool success,) = odos.call{value: ethValue}(tradeData);
-            require(success, "ODOS swap failed");
+            require(success, Errors.OdosFailed());
             
             // Reset approvals
             if (userPaymentAsset != address(0)) {
@@ -293,12 +289,12 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         } else {
             // TODO: review this path
             // No swap needed - verify assets match and we have sufficient balance
-            require(token == purchase.inputAsset, "Flash loan asset must match purchase asset");
+            require(token == purchase.inputAsset, Errors.FlashLoanAssetMustMatchPurchaseAsset());
             if (userPaymentAsset != address(0)) {
-                require(userPaymentAsset == purchase.inputAsset, "User asset must match purchase asset");
+                require(userPaymentAsset == purchase.inputAsset, Errors.UserAssetMustMatchPurchaseAsset());
             }
             uint256 totalBalance = userPaymentAmount + amount;
-            require(totalBalance >= purchase.maxPaymentTotal, "Insufficient balance for purchase");
+            require(totalBalance >= purchase.maxPaymentTotal, Errors.InsufficientBalanceForPurchase());
         }
 
         // The listing payment token is the adapter's currency, which matches purchase.inputAsset post-swap
@@ -338,6 +334,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         
         if (upfrontLBOFee > 0) {
             IERC20(listingPaymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, upfrontLBOFee);
+            emit LBOProtocolFeePaid(purchase.tokenId, buyer, upfrontLBOFee, MarketStorage.configLayout().feeRecipient);
         }
 
         // Request max loan to get funds to repay flash loan + lboLenderFeeBps

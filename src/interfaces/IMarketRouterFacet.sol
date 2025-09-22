@@ -4,6 +4,11 @@ pragma solidity ^0.8.28;
 import {RouteLib} from "../libraries/RouteLib.sol";
 
 interface IMarketRouterFacet {
+
+    // Events
+    event LBOLenderFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 lenderFeeAmount, address vault);
+    event LBOProtocolFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 protocolFeeAmount, address vault);
+    
     function quoteToken(
         RouteLib.BuyRoute route,
         bytes32 adapterKey,
