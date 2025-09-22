@@ -212,7 +212,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     error LoanNotPaidOff();
     error SellerMismatch();
     error CreatorMismatch();
-    error SystemPaused();
+    error FlashLoansPaused();
     error InsufficientAllowance(uint256 required, uint256 available);
     error MarketNotConfigured();
     error ZeroAddress();
@@ -1447,6 +1447,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Update global outstanding capital
         _outstandingCapital += lenderFinancedFee;
         require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
+
+        // disable topUp to ensure repayment over time
+        loan.topUp = false;
         
         // Record the financed fee for accounting (emit computed values)
         emit LBOFeesProcessed(tokenId, buyer, financedFee, lenderFinancedFee, protocolFinancedFee);
@@ -1509,8 +1512,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount,
         bytes calldata data
     ) external override nonReentrant onlyMarketDiamond returns (bool) {
-        // Check if the system is paused
-        if (_paused) revert SystemPaused();
+        // Check if flash loan is paused
+        if (getFlashLoanPaused()) revert FlashLoansPaused();
 
         // require flash loan receiver to be market diamond
         if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));

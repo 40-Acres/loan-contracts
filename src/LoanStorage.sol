@@ -17,10 +17,9 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(uint256 => uint256) _totalWeightPerEpoch;
         mapping(address => bool) _increaseManagedToken; // if user wants to increase community token
         uint256 _minimumLocked; // minimum a token must have locked to be used as collateral
-        mapping(address => bool) _isApprovedContract; // approved contracts for token transfers
-        mapping(address => address) _contractAsset; // maps loan contracts to their asset addresses
         address _marketDiamond; // configured market diamond authorized for borrower finalization
         uint256 _flashLoanFee; // flash loan fee
+        bool _FlashLoanPaused; // flash loan paused
     }
 
 
@@ -137,47 +136,6 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._minimumLocked;
     }
-
-    /**
-     * @notice Checks if a contract is approved for token transfers
-     * @param contractAddress The contract address to check
-     * @return approved Whether the contract is approved
-     */
-    function isApprovedContract(address contractAddress) public view returns (bool approved) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._isApprovedContract[contractAddress];
-    }
-    
-    /**
-     * @notice Sets a contract's approval status
-     * @param contractAddress The contract address to approve
-     * @param approved Whether the contract is approved
-     */
-    function setApprovedContract(address contractAddress, bool approved) external onlyOwner {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._isApprovedContract[contractAddress] = approved;
-    }
-
-/**
-     * @notice Gets the asset address from a loan contract
-     * @param loanContract The loan contract address
-     * @return asset The asset address
-     */
-    function getAssetFromContract(address loanContract) public view returns (address) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        address asset = $._contractAsset[loanContract];
-        return asset;
-    }
-    
-    /**
-     * @notice Sets the asset address for a loan contract
-     * @param loanContract The loan contract address
-     * @param asset The asset address
-     */
-    function setContractAsset(address loanContract, address asset) external onlyOwner {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._contractAsset[loanContract] = asset;
-    }
     
     /** Market Diamond getter/setter (upgrade-safe via ERC-7201 storage) */
     function setMarketDiamond(address marketDiamond) external onlyOwner {
@@ -198,5 +156,15 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function getFlashLoanFee() public view returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._flashLoanFee;
+    }
+
+    function setFlashLoanPaused(bool paused) external onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._FlashLoanPaused = paused;
+    }
+
+    function getFlashLoanPaused() public view returns (bool) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._FlashLoanPaused;
     }
 }
