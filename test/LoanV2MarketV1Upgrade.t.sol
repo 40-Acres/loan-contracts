@@ -64,7 +64,7 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
     }
 
     // Reuse a core happy-path LBO test to ensure parity with RouterLBO
-    function test_success_buyTokenWithLBO_AEROInput_USDCListing_parity() public {
+    function test_success_buyTokenWithLBO_AEROInput_USDCListing() public {
         uint256 tokenId = 65424;
         IVotingEscrow ve = IVotingEscrow(VE);
         seller = ve.ownerOf(tokenId);
@@ -148,6 +148,80 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
         assertEq(IERC20(USDC).balanceOf(seller), usdcSellerBefore + listingPrice - walletListingFee);
         assertEq(feeDelta, walletListingFee + upfrontProtocolFee);
     }
+
+    function test_success_buyTokenWithLBO_USDCInput_USDCListing_noSwap() public {
+        uint256 tokenId = 65424;
+        IVotingEscrow ve = IVotingEscrow(VE);
+        seller = ve.ownerOf(tokenId);
+        vm.assume(seller != address(0));
+
+        // Create a wallet listing (NFT not in loan custody yet) in USDC
+        vm.startPrank(seller);
+        uint256 listingPrice = 35_000e6;
+        ve.approve(diamond, tokenId);
+        IMarketListingsWalletFacet(diamond).makeWalletListing(tokenId, listingPrice, USDC, 0, address(0));
+        vm.stopPrank();
+
+        // get max loan amount
+        (uint256 maxLoanPossible,) = ILoan(address(loan)).getMaxLoan(tokenId);
+
+        // Calculate expected amounts
+        uint256 upfrontProtocolFee = (listingPrice * IMarketViewFacet(diamond).getLBOProtocolFeeBps()) / 10000;
+        uint256 totalNeeded = listingPrice + upfrontProtocolFee;
+        uint256 flashLoanAmount = maxLoanPossible - (maxLoanPossible * IMarketViewFacet(diamond).getLBOLenderFeeBps()) / 10000;
+
+        // LBO buyer
+        address buyer = vm.addr(0x1234);
+        uint256 userUsdcAmount = totalNeeded - flashLoanAmount;
+        deal(USDC, buyer, userUsdcAmount);
+
+        // Build purchase order (internal to router)
+        bytes memory purchaseOrderData = abi.encode(
+            RouteLib.BuyRoute.InternalWallet,
+            bytes32(0),
+            tokenId,
+            USDC,
+            listingPrice,
+            uint256(0),
+            bytes(""), // No trade data needed for this path
+            bytes(""),
+            bytes("")
+        );
+
+        // Record balances
+        uint256 usdcSellerBefore = IERC20(USDC).balanceOf(seller);
+        uint256 usdcFeeBefore = IERC20(USDC).balanceOf(feeRecipient);
+        uint256 usdcBuyerBefore = IERC20(USDC).balanceOf(buyer);
+
+        // Execute LBO via router with empty tradeData (no swap needed)
+        vm.startPrank(buyer);
+        IERC20(USDC).approve(diamond, userUsdcAmount);
+        IMarketRouterFacet(diamond).buyTokenWithLBO(
+            tokenId,
+            USDC, // userPaymentAsset is USDC (same as listing)
+            userUsdcAmount,
+            purchaseOrderData,
+            bytes(""), // Empty tradeData triggers no-swap path
+            bytes("")
+        );
+        vm.stopPrank();
+
+        // Assertions
+        (uint256 loanBalance, address borrower) = ILoan(address(loan)).getLoanDetails(tokenId);
+        assertEq(borrower, buyer);
+        assertTrue(loanBalance > 0);
+
+        // Verify custody and spend
+        assertTrue(ve.ownerOf(tokenId) == address(loan));
+        assertEq(IERC20(USDC).balanceOf(buyer), usdcBuyerBefore - userUsdcAmount);
+
+        // Protocol fees and seller proceeds
+        uint256 walletListingFee = (listingPrice * 100) / 10000;
+        uint256 feeDelta = IERC20(USDC).balanceOf(feeRecipient) - usdcFeeBefore;
+        assertEq(IERC20(USDC).balanceOf(seller), usdcSellerBefore + listingPrice - walletListingFee);
+        assertEq(feeDelta, walletListingFee + upfrontProtocolFee);
+    }
+
 
     // LoanV2-specific: flash fee behavior
     function test_flashFee_zero_for_market_diamond_and_regular_for_others() public {
