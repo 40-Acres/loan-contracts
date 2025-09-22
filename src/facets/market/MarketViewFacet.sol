@@ -5,17 +5,8 @@ import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketViewFacet} from "../../interfaces/IMarketViewFacet.sol";
 import {MarketLogicLib} from "../../libraries/MarketLogicLib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
-
-interface ILoanMinimal {
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-}
-
-interface IVotingEscrowMinimal {
-    function ownerOf(uint256 tokenId) external view returns (address);
-    struct LockedBalance { int128 amount; uint256 end; bool isPermanent; }
-    function locked(uint256 _tokenId) external view returns (LockedBalance memory);
-}
-
+import {ILoan} from "../../interfaces/ILoan.sol";
+import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 contract MarketViewFacet is IMarketViewFacet {
     // ============ PUBLIC STATE GETTERS ==========
     function loan() external view returns (address) {
@@ -96,11 +87,11 @@ contract MarketViewFacet is IMarketViewFacet {
 
     // ============ INTERNAL VIEW HELPERS ==========
     function _getTokenOwnerOrBorrower(uint256 tokenId) internal view returns (address) {
-        (, address borrower) = ILoanMinimal(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        (, address borrower) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         if (borrower != address(0)) {
             return borrower;
         }
-        return IVotingEscrowMinimal(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
+        return IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
     }
 
     function _isListingActive(uint256 tokenId) internal view returns (bool) {

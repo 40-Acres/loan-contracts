@@ -2,25 +2,16 @@
 pragma solidity ^0.8.28;
 
 import {MarketStorage} from "./storage/MarketStorage.sol";
-
-interface ILoanMinimalOpsLib {
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-    function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);
-}
-
-interface IVotingEscrowMinimalOpsLib {
-    function ownerOf(uint256 tokenId) external view returns (address);
-    struct LockedBalance { int128 amount; uint256 end; bool isPermanent; }
-    function locked(uint256 _tokenId) external view returns (LockedBalance memory);
-}
+import {ILoan} from "../interfaces/ILoan.sol";
+import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
 
 library MarketLogicLib {
     function getTokenOwnerOrBorrower(uint256 tokenId) internal view returns (address) {
-        (, address borrower) = ILoanMinimalOpsLib(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        (, address borrower) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         if (borrower != address(0)) {
             return borrower;
         }
-        return IVotingEscrowMinimalOpsLib(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
+        return IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
     }
 
     function isListingActive(uint256 tokenId) internal view returns (bool) {
@@ -38,7 +29,7 @@ library MarketLogicLib {
     }
 
     function getVeNFTWeight(uint256 tokenId) internal view returns (uint256) {
-        IVotingEscrowMinimalOpsLib.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsLib(MarketStorage.configLayout().votingEscrow).locked(tokenId);
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
         if (!lockedBalance.isPermanent && lockedBalance.end < block.timestamp) {
             return 0;
         }

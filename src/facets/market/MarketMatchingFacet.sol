@@ -19,18 +19,8 @@ import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
 import {IMarketListingsWalletFacet} from "../../interfaces/IMarketListingsWalletFacet.sol";
 import {IMarketListingsLoanFacet} from "../../interfaces/IMarketListingsLoanFacet.sol";
-
-interface ILoanMinimalOpsMM {
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-    function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);
-    function setBorrower(uint256 tokenId, address borrower) external;
-}
-
-interface IVotingEscrowMinimalOpsMM {
-    struct LockedBalance { int128 amount; uint256 end; bool isPermanent; }
-    function locked(uint256 _tokenId) external view returns (LockedBalance memory);
-    function transferFrom(address from, address to, uint256 tokenId) external;
-}
+import {ILoan} from "../../interfaces/ILoan.sol";
+import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 
 contract MarketMatchingFacet is IMarketMatchingFacet {
     using SafeERC20 for IERC20;
@@ -165,7 +155,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         IVexyAdapterFacet(address(this)).takeVexyListing(vexy, listingId, currency, extPrice);
 
         // Transfer acquired NFT to the offer creator
-        IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
+        IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
 
         // Finalize: delete internal offer record
         delete MarketStorage.orderbookLayout().offers[offerId];
@@ -247,7 +237,7 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         IOpenXAdapterFacet(address(this)).takeOpenXListing(openx, listingId, currency, price);
 
         // Transfer acquired NFT to the offer creator
-        IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
+        IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(address(this), offer.creator, tokenId);
 
         // Finalize: delete internal offer record
         delete MarketStorage.orderbookLayout().offers[offerId];
@@ -291,11 +281,11 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
     }
 
     function _validateOfferCriteriaLoan(uint256 tokenId, MarketStorage.Offer storage offer) internal view {
-        uint256 weight = ILoanMinimalOpsMM(MarketStorage.configLayout().loan).getLoanWeight(tokenId);
+        uint256 weight = ILoan(MarketStorage.configLayout().loan).getLoanWeight(tokenId);
         require(weight >= offer.minWeight, Errors.InsufficientWeight());
-        (uint256 loanBalance,) = ILoanMinimalOpsMM(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        (uint256 loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
-        IVotingEscrowMinimalOpsMM.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).locked(tokenId);
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }
 
     function _validateOfferCriteriaWalletOrNoLoan(uint256 tokenId, MarketStorage.Offer storage offer) internal view {
@@ -303,10 +293,10 @@ contract MarketMatchingFacet is IMarketMatchingFacet {
         require(weight >= offer.minWeight, Errors.InsufficientWeight());
         address loanAddr = MarketStorage.configLayout().loan;
         if (loanAddr != address(0)) {
-            (uint256 loanBalance,) = ILoanMinimalOpsMM(loanAddr).getLoanDetails(tokenId);
+            (uint256 loanBalance,) = ILoan(loanAddr).getLoanDetails(tokenId);
             require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
         }
-        IVotingEscrowMinimalOpsMM.LockedBalance memory lockedBalance = IVotingEscrowMinimalOpsMM(MarketStorage.configLayout().votingEscrow).locked(tokenId);
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }
 }
 
