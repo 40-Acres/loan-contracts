@@ -116,11 +116,13 @@ contract MarketConfigFacet is IMarketConfigFacet {
         if (_accessManager == address(0)) revert Errors.ZeroAddress();
         if (MarketStorage.configLayout().accessManager != address(0)) revert Errors.AlreadyInitialized();
         MarketStorage.configLayout().accessManager = _accessManager;
+        emit AccessManagerSet(_accessManager);
     }
 
     function setAccessManager(address accessManager) external onlyOwnerOrSystemAdmin {
         if (accessManager == address(0)) revert Errors.ZeroAddress();
         MarketStorage.configLayout().accessManager = accessManager;
+        emit AccessManagerSet(accessManager);
     }
 
     // ============ LOAN ASSET CONFIG ==========
@@ -135,8 +137,6 @@ contract MarketConfigFacet is IMarketConfigFacet {
     }
 
     // ============ PERMIT2 CONFIG ==========
-    event Permit2Set(address permit2);
-
     function setPermit2(address permit2) external onlyOwnerOrSystemAdmin {
         MarketStorage.configLayout().permit2 = permit2;
         emit Permit2Set(permit2);

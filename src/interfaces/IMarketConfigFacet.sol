@@ -13,6 +13,8 @@ interface IMarketConfigFacet {
     event ExternalAdapterSet(bytes32 key, address facet);
     event LBOLenderFeeChanged(uint256 newBps);
     event LBOProtocolFeeChanged(uint256 newBps);
+    event Permit2Set(address permit2);
+    event AccessManagerSet(address accessManager);
 
     // Initializer
     function initMarket(
