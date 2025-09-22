@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
+import {Errors} from "./Errors.sol";
 
 library RevertHelper {
     function revertWithData(bytes memory returnData) internal pure {
@@ -9,7 +10,7 @@ library RevertHelper {
                 revert(add(32, returnData), returnDataSize)
             }
         } else {
-            revert("Call failed with no data");
+            revert Errors.CallFailedWithNoData();
         }
     }
 }

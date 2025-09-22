@@ -33,6 +33,7 @@ library Errors {
     error UnknownAdapter();
     error MaxTotalExceeded();
     error InvalidAdapterKey();
+    error CallFailedWithNoData();
 
     // Validation
     error InsufficientWeight();
