@@ -18,6 +18,7 @@ library MarketStorage {
         bool hasOutstandingLoan;          // if true, buyer must also pay current loan balance
         uint256 expiresAt;                // 0 = never
         address allowedBuyer;             // (optional) allowed buyer address
+        uint256[10] _gap;
     }
 
     struct Offer {
@@ -29,6 +30,7 @@ library MarketStorage {
         address paymentToken;             // whitelisted token
         uint256 expiresAt;                // 0 = never
         uint256 offerId;                  // unique offer identifier
+        uint256[10] _gap;
     }
     // Storage positions - each component gets a unique storage slot
 
