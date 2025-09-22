@@ -7,7 +7,7 @@ interface IMarketConfigFacet {
     event PaymentTokenAllowed(address indexed token, bool allowed);
     event MarketFeeChanged(uint16 newBps);
     event FeeRecipientChanged(address newRecipient);
-    event MarketInitialized(address loan, address votingEscrow, uint16 marketFeeBps, address feeRecipient, address defaultPaymentToken);
+    event MarketInitialized(address loan, address votingEscrow, uint16 baseMarketFeeBps, uint16 externalMarketFeeBps, uint16 lboLenderFeeBps, uint16 lboProtocolFeeBps, address feeRecipient, address defaultPaymentToken);
     event MarketPauseStatusChanged(bool isPaused);
     event LoanAssetSet(address asset);
     event ExternalAdapterSet(bytes32 key, address facet);
@@ -20,7 +20,10 @@ interface IMarketConfigFacet {
     function initMarket(
         address loan,
         address votingEscrow,
-        uint16 marketFeeBps,
+        uint16 baseMarketFeeBps,
+        uint16 externalMarketFeeBps,
+        uint16 lboLenderFeeBps,
+        uint16 lboProtocolFeeBps,
         address feeRecipient,
         address defaultPaymentToken
     ) external;

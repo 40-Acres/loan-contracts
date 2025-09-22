@@ -42,7 +42,7 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
 
         feeRecipient = IOwnableMinimal_LM1U(LOAN_CANONICAL).owner();
         upgradeCanonicalLoan();
-        _initMarket(LOAN_CANONICAL, VE, 100, feeRecipient, USDC);
+        _initMarket(LOAN_CANONICAL, VE, 100, 200, 100, 100, feeRecipient, USDC);
         loan = Loan(LOAN_CANONICAL);
 
         IMarketConfigFacet(diamond).setAllowedPaymentToken(USDC, true);

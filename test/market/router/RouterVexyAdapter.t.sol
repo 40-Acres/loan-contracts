@@ -30,7 +30,7 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
         _deployDiamondAndFacets();
         // ensure canonical loan proxy is upgraded on fork before market init
         upgradeCanonicalLoan();
-        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 250, address(this), USDC);
+        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 100, 200, 100, 100, address(this), USDC);
 
         // Cut in the Vexy adapter facet and register as external adapter with key keccak256("VEXY")
         address vexyFacet = address(new VexyAdapterFacetHarness());

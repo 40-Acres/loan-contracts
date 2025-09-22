@@ -96,7 +96,7 @@ contract RouterLoanTest is DiamondMarketTestBase {
 
         feeRecipient = IOwnableMinimal_LR(LOAN_CANONICAL).owner();
         upgradeCanonicalLoan();
-        _initMarket(LOAN_CANONICAL, VE, 250, feeRecipient, USDC);
+        _initMarket(LOAN_CANONICAL, VE, 100, 200, 100, 100, feeRecipient, USDC);
         loan = Loan(LOAN_CANONICAL);
         
         IMarketConfigFacet(diamond).setAllowedPaymentToken(USDC, true);

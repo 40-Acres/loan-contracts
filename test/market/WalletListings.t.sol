@@ -41,7 +41,7 @@ contract WalletListingsTest is DiamondMarketTestBase {
         BaseDeploy deployer = new BaseDeploy();
         (loan, vault) = deployer.deployLoan();
         _deployDiamondAndFacets();
-        _initMarket(address(loan), address(votingEscrow), 250, address(this), address(usdc));
+        _initMarket(address(loan), address(votingEscrow), 100, 200, 100, 100, address(this), address(usdc));
         // set fees to match expected fees
         IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
         IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 100);

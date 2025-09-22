@@ -52,7 +52,7 @@ contract VexyAdapterTest is DiamondMarketTestBase {
 
         // ensure canonical loan proxy is upgraded on fork before market init
         upgradeCanonicalLoan();
-        IMarketConfigFacet(diamond).initMarket(address(loan), address(VOTING_ESCROW), 250, address(this), USDC);
+        IMarketConfigFacet(diamond).initMarket(address(loan), address(VOTING_ESCROW), 100, 200, 100, 100, address(this), USDC);
 
         // Cut in the Vexy adapter facet with uniform adapter selectors
         address vexyFacet = address(new VexyAdapterFacetHarness());

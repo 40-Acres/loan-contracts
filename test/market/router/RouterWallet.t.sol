@@ -66,7 +66,7 @@ contract RouterWalletTest is DiamondMarketTestBase {
         feeRecipient = IOwnableMinimal(LOAN).owner();
         // ensure canonical loan proxy is upgraded on fork before market init
         upgradeCanonicalLoan();
-        _initMarket(BASE_LOAN_CANONICAL, VE, 250, feeRecipient, USDC);
+        _initMarket(BASE_LOAN_CANONICAL, VE, 100, 200, 100, 100, feeRecipient, USDC);
 
         // allow payment tokens (AERO, USDC, WETH)
         IMarketConfigFacet(diamond).setAllowedPaymentToken(USDC, true);

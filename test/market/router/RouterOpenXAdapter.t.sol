@@ -29,7 +29,7 @@ contract RouterOpenXAdapterTest is DiamondMarketTestBase {
 
         _deployDiamondAndFacets();
         upgradeCanonicalLoan();
-        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 250, address(this), AERO);
+        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 100, 200, 100, 100, address(this), AERO);
 
         // Cut in the OpenX adapter facet and register as external adapter with key keccak256("OPENX")
         address openxFacet = address(new OpenXAdapterFacetHarness());

@@ -222,8 +222,8 @@ abstract contract DiamondMarketTestBase is Test {
         vm.stopPrank();
     }
 
-    function _initMarket(address loan, address votingEscrow, uint16 feeBps, address feeRecipient, address defaultToken) internal {
-        IMarketConfigFacet(diamond).initMarket(loan, votingEscrow, feeBps, feeRecipient, defaultToken);
+    function _initMarket(address loan, address votingEscrow, uint16 baseMarketFeeBps, uint16 externalMarketFeeBps, uint16 lboLenderFeeBps, uint16 lboProtocolFeeBps, address feeRecipient, address defaultToken) internal {
+        IMarketConfigFacet(diamond).initMarket(loan, votingEscrow, baseMarketFeeBps, externalMarketFeeBps, lboLenderFeeBps, lboProtocolFeeBps, feeRecipient, defaultToken);
         // prank as loan owner set our new diamond as approved contract inside loanv2
         vm.prank(Loan(loan).owner());
         Loan(loan).setMarketDiamond(diamond);

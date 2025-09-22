@@ -41,7 +41,7 @@ contract MatchingTest is DiamondMarketTestBase {
         BaseDeploy deployer = new BaseDeploy();
         (loan, vault) = deployer.deployLoan();
         _deployDiamondAndFacets();
-        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 250, address(this), address(usdc));
+        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 100, 200, 100, 100, address(this), address(usdc));
         IMarketConfigFacet(diamond).setAllowedPaymentToken(address(usdc), true);
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
@@ -136,7 +136,7 @@ contract MatchingOpenXExternalTest is DiamondMarketTestBase {
         _deployDiamondAndFacets();
         // Initialize market with canonical loan custodian and real veNFT
         upgradeCanonicalLoan();
-        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 250, address(this), AERO);
+        _initMarket(BASE_LOAN_CANONICAL, VOTING_ESCROW, 100, 200, 100, 100, address(this), AERO);
         // set fees to match expected fees
         IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalWallet, 100);
         IMarketConfigFacet(diamond).setMarketFee(RouteLib.BuyRoute.InternalLoan, 100);

@@ -79,7 +79,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         upgradeCanonicalLoan();
         _deployDiamondAndFacets();
 
-        _initMarket(address(loan), address(votingEscrow), 100, owner, address(usdc));
+        _initMarket(address(loan), address(votingEscrow), 100, 200, 100, 100, owner, address(usdc));
 
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
@@ -259,7 +259,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
     function test_initMarket_RevertWhen_CalledTwice() public {
         vm.expectRevert();
-        IMarketConfigFacet(diamond).initMarket(BASE_LOAN_CANONICAL, address(votingEscrow), 250, owner, address(usdc));
+        IMarketConfigFacet(diamond).initMarket(BASE_LOAN_CANONICAL, address(votingEscrow), 100, 200, 100, 100, owner, address(usdc));
     }
 
     function test_setAllowedPaymentToken_RevertWhen_ZeroAddress() public {

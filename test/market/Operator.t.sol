@@ -33,7 +33,7 @@ contract OperatorTest is DiamondMarketTestBase {
         BaseDeploy deployer = new BaseDeploy();
         (loan, vault) = deployer.deployLoan();
         _deployDiamondAndFacets();
-        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 250, address(this), address(usdc));
+        IMarketConfigFacet(diamond).initMarket(address(loan), address(votingEscrow), 100, 200, 100, 100, address(this), address(usdc));
         IMarketConfigFacet(diamond).setAllowedPaymentToken(address(usdc), true);
 
         tokenId = 349;

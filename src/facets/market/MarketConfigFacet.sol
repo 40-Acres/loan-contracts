@@ -44,24 +44,30 @@ contract MarketConfigFacet is IMarketConfigFacet {
     function initMarket(
         address loan,
         address votingEscrow,
-        uint16 marketFeeBps,
+        uint16 baseMarketFeeBps,
+        uint16 externalMarketFeeBps,
+        uint16 lboLenderFeeBps,
+        uint16 lboProtocolFeeBps,
         address feeRecipient,
         address defaultPaymentToken
     ) external onlyOwner {
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
         require(cfg.loan == address(0) && cfg.votingEscrow == address(0), Errors.AlreadyInitialized());
         require(votingEscrow != address(0), Errors.ZeroAddress());
-        require(marketFeeBps <= MAX_FEE_BPS, Errors.InvalidFee());
+        require(baseMarketFeeBps <= MAX_FEE_BPS, Errors.InvalidFee());
+        require(externalMarketFeeBps <= MAX_FEE_BPS, Errors.InvalidFee());
+        require(lboLenderFeeBps <= MAX_FEE_BPS, Errors.InvalidFee());
+        require(lboProtocolFeeBps <= MAX_FEE_BPS, Errors.InvalidFee());
 
         cfg.loan = loan;
         cfg.votingEscrow = votingEscrow;
-        cfg.feeBps[RouteLib.BuyRoute.InternalWallet] = marketFeeBps;
-        cfg.feeBps[RouteLib.BuyRoute.InternalLoan] = marketFeeBps;
-        cfg.feeBps[RouteLib.BuyRoute.ExternalAdapter] = marketFeeBps;
+        setMarketFee(RouteLib.BuyRoute.InternalWallet, baseMarketFeeBps);
+        setMarketFee(RouteLib.BuyRoute.InternalLoan, baseMarketFeeBps);
+        setMarketFee(RouteLib.BuyRoute.ExternalAdapter, externalMarketFeeBps);
         cfg.feeRecipient = feeRecipient == address(0) ? LibDiamond.contractOwner() : feeRecipient;
 
-        cfg.lboLenderFeeBps = 100;
-        cfg.lboProtocolFeeBps = 100;
+        cfg.lboLenderFeeBps = lboLenderFeeBps;
+        cfg.lboProtocolFeeBps = lboProtocolFeeBps;
 
         if (defaultPaymentToken != address(0)) {
             MarketStorage.configLayout().allowedPaymentToken[defaultPaymentToken] = true;
@@ -78,11 +84,11 @@ contract MarketConfigFacet is IMarketConfigFacet {
         if (pauseLayout.reentrancyStatus == 0) pauseLayout.reentrancyStatus = 1; // NOT_ENTERED
         pauseLayout.marketPaused = false;
 
-        emit MarketInitialized(loan, votingEscrow, marketFeeBps, cfg.feeRecipient, defaultPaymentToken);
+        emit MarketInitialized(loan, votingEscrow, baseMarketFeeBps, externalMarketFeeBps, lboLenderFeeBps, lboProtocolFeeBps, cfg.feeRecipient, defaultPaymentToken);
     }
 
     // ============ ADMIN ==========
-    function setMarketFee(RouteLib.BuyRoute routeType, uint16 bps) external onlyOwnerOrSystemAdmin {
+    function setMarketFee(RouteLib.BuyRoute routeType, uint16 bps) public onlyOwnerOrSystemAdmin {
         require(bps <= MAX_FEE_BPS, Errors.InvalidFee());
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
         cfg.feeBps[routeType] = bps;
