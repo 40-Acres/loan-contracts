@@ -5,6 +5,7 @@ import {DiamondMarketTestBase} from "./utils/DiamondMarketTestBase.t.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IMarketRouterFacet} from "src/interfaces/IMarketRouterFacet.sol";
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
+import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
 import {IMarketListingsWalletFacet} from "src/interfaces/IMarketListingsWalletFacet.sol";
 import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
@@ -82,9 +83,10 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
         deal(AERO, buyer, userAeroAmount);
 
         (uint256 maxLoanPossible,) = ILoan(address(loan)).getMaxLoan(tokenId);
-        uint256 upfrontProtocolFee = (listingPrice * 100) / 10000;
+        // Calculate expected amounts
+        uint256 upfrontProtocolFee = (listingPrice * IMarketViewFacet(diamond).getLBOProtocolFeeBps()) / 10000;
         uint256 totalNeeded = listingPrice + upfrontProtocolFee;
-        uint256 flashLoanAmount = maxLoanPossible;
+        uint256 flashLoanAmount = maxLoanPossible - (maxLoanPossible * IMarketViewFacet(diamond).getLBOLenderFeeBps()) / 10000;
 
         // Build purchase order (internal to router)
         bytes memory purchaseOrderData = abi.encode(
@@ -407,11 +409,6 @@ contract LoanV2MarketV1UpgradeTest is DiamondMarketTestBase {
         vm.prank(diamond);
         vm.expectRevert(abi.encodeWithSignature("ZeroAddress()"));
         loan.finalizeOfferPurchase(tokenId, address(0), address(0xA11CE), 0);
-    }
-
-    function test_flashFee_unsupportedToken_reverts() public {
-        vm.expectRevert(abi.encodeWithSignature("UnsupportedToken(address)", AERO));
-        loan.flashFee(AERO, 123);
     }
 
     function test_finalizeLBOPurchase_unauthorized_reverts() public {

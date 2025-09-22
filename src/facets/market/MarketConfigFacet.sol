@@ -60,6 +60,9 @@ contract MarketConfigFacet is IMarketConfigFacet {
         cfg.feeBps[RouteLib.BuyRoute.ExternalAdapter] = marketFeeBps;
         cfg.feeRecipient = feeRecipient == address(0) ? LibDiamond.contractOwner() : feeRecipient;
 
+        cfg.lboLenderFeeBps = 100;
+        cfg.lboProtocolFeeBps = 100;
+
         if (defaultPaymentToken != address(0)) {
             MarketStorage.configLayout().allowedPaymentToken[defaultPaymentToken] = true;
             emit PaymentTokenAllowed(defaultPaymentToken, true);
@@ -137,6 +140,19 @@ contract MarketConfigFacet is IMarketConfigFacet {
     function setPermit2(address permit2) external onlyOwnerOrSystemAdmin {
         MarketStorage.configLayout().permit2 = permit2;
         emit Permit2Set(permit2);
+    }
+
+    // ============ LBO FEE CONFIG ==========
+    function setLBOLenderFeeBps(uint256 bps) external onlyOwnerOrSystemAdmin {
+        require(bps <= MAX_FEE_BPS, "Invalid fee");
+        MarketStorage.configLayout().lboLenderFeeBps = bps;
+        emit LBOLenderFeeChanged(bps);
+    }
+
+    function setLBOProtocolFeeBps(uint256 bps) external onlyOwnerOrSystemAdmin {
+        require(bps <= MAX_FEE_BPS, "Invalid fee");
+        MarketStorage.configLayout().lboProtocolFeeBps = bps;
+        emit LBOProtocolFeeChanged(bps);
     }
 
     // ============ EXTERNAL ADAPTER REGISTRY ==========

@@ -79,5 +79,11 @@ interface ILoan {
      * @return maxLoanIgnoreSupply The maximum loan amount ignoring supply constraints
      */
     function getMaxLoan(uint256 tokenId) external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply);
+
+    /**
+     * @notice Gets the vault address
+     * @return vault The vault address
+     */
+    function _vault() external view returns (address);
     
 }

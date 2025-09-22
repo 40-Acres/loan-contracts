@@ -106,7 +106,7 @@ abstract contract DiamondMarketTestBase is Test {
         ownSelectors[3] = OwnershipFacet.renounceOwnership.selector;
 
         // Market Config selectors
-        bytes4[] memory cfgSelectors = new bytes4[](10);
+        bytes4[] memory cfgSelectors = new bytes4[](12);
         cfgSelectors[0] = IMarketConfigFacet.initMarket.selector;
         cfgSelectors[1] = IMarketConfigFacet.setMarketFee.selector;
         cfgSelectors[2] = IMarketConfigFacet.setFeeRecipient.selector;
@@ -119,9 +119,12 @@ abstract contract DiamondMarketTestBase is Test {
         cfgSelectors[8] = IMarketConfigFacet.setPermit2.selector;
         // External adapter registry
         cfgSelectors[9] = IMarketConfigFacet.setExternalAdapter.selector;
+        // LBO fee config
+        cfgSelectors[10] = IMarketConfigFacet.setLBOLenderFeeBps.selector;
+        cfgSelectors[11] = IMarketConfigFacet.setLBOProtocolFeeBps.selector;
 
         // Market View selectors
-        bytes4[] memory viewSelectors = new bytes4[](11);
+        bytes4[] memory viewSelectors = new bytes4[](13);
         viewSelectors[0] = IMarketViewFacet.loan.selector;
         viewSelectors[1] = IMarketViewFacet.marketFeeBps.selector;
         viewSelectors[2] = IMarketViewFacet.feeRecipient.selector;
@@ -133,6 +136,8 @@ abstract contract DiamondMarketTestBase is Test {
         viewSelectors[8] = IMarketViewFacet.isOfferActive.selector;
         viewSelectors[9] = IMarketViewFacet.canOperate.selector;
         viewSelectors[10] = IMarketViewFacet.loanAsset.selector;
+        viewSelectors[11] = IMarketViewFacet.getLBOLenderFeeBps.selector;
+        viewSelectors[12] = IMarketViewFacet.getLBOProtocolFeeBps.selector;
 
         // Loan listings selectors
         bytes4[] memory loanSelectors = new bytes4[](8);

@@ -50,6 +50,9 @@ library Errors {
     error NoValidRoute();
     error WrongPaymentAsset();
     error LoanNotConfigured();
+
+    // flash loan / LBO
+    error InvalidFlashLoanCaller();
 }
 
 

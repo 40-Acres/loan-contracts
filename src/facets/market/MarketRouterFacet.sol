@@ -22,6 +22,9 @@ import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
     using SafeERC20 for IERC20;
 
+    // Events
+    event LBOLenderFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 lenderFeeAmount, address vault);
+
     struct purchaseOrder {
         RouteLib.BuyRoute route;
         bytes32 adapterKey;
@@ -153,10 +156,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
 
 
     function buyTokenWithLBO(uint256 tokenId, address userPaymentAsset, uint256 userPaymentAmount, bytes calldata purchaseOrderData, bytes calldata tradeData, bytes calldata optionalPermit2) external payable onlyWhenNotPaused {
-
-        
         // decode purchaseOrder (robust decode using primitives to avoid enum quirks)
-        
         purchaseOrder memory purchase = _decodePurchaseOrder(purchaseOrderData);
 
         // Validate purchase order matches tokenId
@@ -180,28 +180,15 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
                 IERC20(userPaymentAsset).safeTransferFrom(msg.sender, address(this), userPaymentAmount);
             }
         }
-
-
-        // Calculate LBO fees (200 bps total on listing price)
-        // purchase.maxPaymentTotal for external route equals listingPrice + externalRouteFee.
-        // Upfront and financed LBO fees should be based on the listing price only.
-        // For external adapter route, fee bps is stored under ExternalAdapter in config; reuse it to back out listingPrice.
-        uint256 listingPrice = purchase.maxPaymentTotal;
-        {
-            // Derive listing price by removing external route fee if any (for ExternalAdapter route)
-            // total = price + (price * bps / 10000) => price = total * 10000 / (10000 + bps)
-            if (purchase.route == RouteLib.BuyRoute.ExternalAdapter) {
-                uint16 bps = MarketStorage.configLayout().feeBps[RouteLib.BuyRoute.ExternalAdapter];
-                if (bps > 0) {
-                    listingPrice = (purchase.maxPaymentTotal * 10000) / (10000 + bps);
-                }
-            }
-        }
         
         // Flash loan the max loan amount (always in vault asset/USDC)
         // User payment + flash loan will be swapped together to cover totalNeeded
         (uint256 maxLoan, ) = ILoan(MarketStorage.configLayout().loan).getMaxLoan(tokenId);
-        uint256 flashLoanAmount = maxLoan;
+        // Calculate lender fee upfront using the same maxLoan value
+        uint256 lboLenderFeeBps = MarketStorage.configLayout().lboLenderFeeBps;
+        uint256 lenderFeeAmount = (maxLoan * lboLenderFeeBps) / 10000;
+        // only flash loan 100% - lboLenderFeeBps of the max loan amount to leave lboLenderFeeBps that can be paid to lenders during requestLoan
+        uint256 flashLoanAmount = maxLoan - lenderFeeAmount;
         
         // Prepare data for flash loan callback
         bytes memory flashLoanData = abi.encode(
@@ -210,7 +197,9 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             optionalPermit2,
             msg.sender, // buyer
             userPaymentAsset,
-            userPaymentAmount
+            userPaymentAmount,
+            lenderFeeAmount, // Pass the pre-calculated lender fee
+            maxLoan // Pass the original max loan amount
         );
         
         // Get loan contract and vault asset (USDC)
@@ -258,7 +247,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         bytes calldata data
     ) external override returns (bytes32) {
         // Verify caller is the loan contract
-        require(msg.sender == MarketStorage.configLayout().loan, "Invalid flash loan caller");
+        if (msg.sender != MarketStorage.configLayout().loan) revert Errors.InvalidFlashLoanCaller();
         
         // Decode the flash loan data
         (
@@ -267,8 +256,10 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             bytes memory optionalPermit2,
             address buyer,
             address userPaymentAsset,
-            uint256 userPaymentAmount
-        ) = abi.decode(data, (purchaseOrder, bytes, bytes, address, address, uint256));
+            uint256 userPaymentAmount,
+            uint256 lenderFeeAmount,
+            uint256 originalMaxLoan
+        ) = abi.decode(data, (purchaseOrder, bytes, bytes, address, address, uint256, uint256, uint256));
         
         // Handle asset swapping if needed
         if (tradeData.length > 0) {
@@ -349,7 +340,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             IERC20(listingPaymentToken).safeTransfer(MarketStorage.configLayout().feeRecipient, upfrontLBOFee);
         }
 
-        // Request max loan to get funds to repay flash loan + financed fee (100 bps)
+        // Request max loan to get funds to repay flash loan + lboLenderFeeBps
         address loanContract = MarketStorage.configLayout().loan;
         address votingEscrow = MarketStorage.configLayout().votingEscrow;
         
@@ -358,17 +349,29 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         
         ILoan(loanContract).requestLoan(
             purchase.tokenId,
-            0, // Let it calculate max loan
+            originalMaxLoan, // Use the pre-calculated max loan amount
             ILoan.ZeroBalanceOption.DoNothing, // Default option
             0, // No increase percentage
             address(0), // No preferred token
-            true, // topUp = true (get max loan)
+            false, // topUp = false (use explicit amount)
             false // No community rewards
         );
 
         // the loan contract now holds the nft and this market diamond is the borrower / owner of that nft in custody of loan contract
+
+        // this contract now holds the loan asset from requestLoan
+        // distribute the pre-calculated lender fee using the same maxLoan value from before requestLoan
+        if (lenderFeeAmount > 0) {
+            // Transfer lender fee directly to vault
+            address vault = ILoan(loanContract)._vault();
+            IERC20(token).safeTransfer(vault, lenderFeeAmount);
+            
+            // Emit event for lender fee accounting
+            emit LBOLenderFeePaid(purchase.tokenId, buyer, lenderFeeAmount, vault);
+        }
         
         // Approve flash loan repayment (amount + fee = amount + 0)
+        // The math should work: flashLoanAmount + lenderFeeAmount = originalMaxLoan
         IERC20(token).forceApprove(msg.sender, amount + fee);
         
         // Transfer borrower ownership to the buyer and add financed fee to loan balance

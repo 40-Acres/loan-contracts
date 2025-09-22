@@ -34,6 +34,8 @@ interface IMarketViewFacet {
     function isListingActive(uint256 tokenId) external view returns (bool);
     function isOfferActive(uint256 offerId) external view returns (bool);
     function canOperate(address owner, address operator) external view returns (bool);
+    function getLBOLenderFeeBps() external view returns (uint256);
+    function getLBOProtocolFeeBps() external view returns (uint256);
 }
 
 

@@ -11,6 +11,8 @@ interface IMarketConfigFacet {
     event MarketPauseStatusChanged(bool isPaused);
     event LoanAssetSet(address asset);
     event ExternalAdapterSet(bytes32 key, address facet);
+    event LBOLenderFeeChanged(uint256 newBps);
+    event LBOProtocolFeeChanged(uint256 newBps);
 
     // Initializer
     function initMarket(
@@ -37,6 +39,10 @@ interface IMarketConfigFacet {
     function loanAsset() external view returns (address);
 
     function setPermit2(address permit2) external;
+
+    // LBO fee configuration
+    function setLBOLenderFeeBps(uint256 bps) external;
+    function setLBOProtocolFeeBps(uint256 bps) external;
 
     // External adapters
     function setExternalAdapter(bytes32 key, address facet) external;

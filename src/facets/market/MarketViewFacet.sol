@@ -87,6 +87,15 @@ contract MarketViewFacet is IMarketViewFacet {
         return _canOperate(owner, operator);
     }
 
+    // ============ LBO FEE CONFIG ==========
+    function getLBOLenderFeeBps() external view returns (uint256) {
+        return MarketStorage.configLayout().lboLenderFeeBps;
+    }
+
+    function getLBOProtocolFeeBps() external view returns (uint256) {
+        return MarketStorage.configLayout().lboProtocolFeeBps;
+    }
+
     // ============ INTERNAL VIEW HELPERS ==========
     function _getTokenOwnerOrBorrower(uint256 tokenId) internal view returns (address) {
         (, address borrower) = ILoanMinimal(MarketStorage.configLayout().loan).getLoanDetails(tokenId);

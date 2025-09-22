@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {DiamondMarketTestBase} from "../../utils/DiamondMarketTestBase.t.sol";
 import {IMarketRouterFacet} from "src/interfaces/IMarketRouterFacet.sol";
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
+import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {IMarketListingsLoanFacet} from "src/interfaces/IMarketListingsLoanFacet.sol";
 import {IMarketListingsWalletFacet} from "src/interfaces/IMarketListingsWalletFacet.sol";
 import {Permit2Lib} from "src/libraries/Permit2Lib.sol";
@@ -464,9 +465,10 @@ contract RouterLoanLBOTest is RouterLoanTest {
         console.log("Real veNFT max loan possible:", maxLoanPossible);
         
         // Calculate expected amounts
-        uint256 upfrontProtocolFee = (listingPrice * 100) / 10000; // 100 bps 
+        uint256 upfrontProtocolFee = (listingPrice * IMarketViewFacet(diamond).getLBOProtocolFeeBps()) / 10000;
         uint256 totalNeeded = listingPrice + upfrontProtocolFee;
-        uint256 flashLoanAmount = maxLoanPossible; // Flash loan the max possible (in USDC)
+        // flash loan the max possible (in USDC) - lender fee
+        uint256 flashLoanAmount = maxLoanPossible - (maxLoanPossible * IMarketViewFacet(diamond).getLBOLenderFeeBps()) / 10000;
 
         // Build purchase order struct manually (since it's internal to MarketRouterFacet)
         bytes memory purchaseOrderData = abi.encode(
@@ -525,44 +527,35 @@ contract RouterLoanLBOTest is RouterLoanTest {
         uint256 maxLoan = maxLoanPossible;
 
         // === LBO FEE MATH VERIFICATION ===
-        // Calculate expected LBO fees (now based on outstanding capital / maxLoan)
-        uint256 financedFee = (maxLoan * 100) / 10000; // 100 bps on outstanding capital
-        uint256 expectedLenderFinancedFee = financedFee / 2; // 50 bps to lenders
-        uint256 expectedProtocolFinancedFee = financedFee - expectedLenderFinancedFee; // 50 bps to protocol + remainder
+        // Calculate expected LBO lender fee (transferred directly to vault, separate from loan balance)
+        // Get the actual configured LBO lender fee from market storage
+        uint256 lboLenderFeeBps = IMarketViewFacet(diamond).getLBOLenderFeeBps();
+        uint256 lenderFeeAmount = (maxLoan * lboLenderFeeBps) / 10000;
         
         // Expected loan balance calculation:
-        // In finalizeLBOPurchase, we replace origination fee with LBO financed fees
-        // loan.balance = loan.balance - originationFee + financedFee
-        // Since loan.balance initially = maxLoan + originationFee, final balance = maxLoan + financedFee
+        // With new implementation: requestLoan creates loan with originalMaxLoan amount
+        // finalizeLBOPurchase removes origination fee, leaving just originalMaxLoan
+        // Lender fee is handled separately (transferred directly to vault)
         uint256 originationFee = (maxLoan * 80) / 10000; // 0.8% of max loan
-        uint256 expectedLoanBalance = maxLoan + financedFee;
+        uint256 expectedLoanBalance = maxLoan; // Just the original max loan amount
         
         console.log("=== LBO Fee Math Verification ===");
         console.log("Listing price:", listingPrice);
-        console.log("Total LBO fees (upfront 1% on listing + 1% on outstanding capital):", upfrontProtocolFee + financedFee);
+        console.log("Total LBO fees (upfront 1% on listing + lender fee):", upfrontProtocolFee + lenderFeeAmount);
         console.log("Upfront protocol fee (100 bps):", upfrontProtocolFee);
-        console.log("Financed fee (100 bps):", financedFee);
-        console.log("  - Lender share (50 bps):", expectedLenderFinancedFee);
-        console.log("  - Protocol share (50 bps):", expectedProtocolFinancedFee);
+        console.log("Lender fee (%d bps, transferred to vault):", lboLenderFeeBps, lenderFeeAmount);
         console.log("Max loan amount:", maxLoan);
         console.log("Original origination fee (80 bps):", originationFee);
         console.log("Expected final loan balance:", expectedLoanBalance);
         console.log("Actual loan balance:", loanBalance);
         
         // Verify the loan balance matches our expected calculation
-        assertEq(loanBalance, expectedLoanBalance, "Loan balance should equal maxLoan + financedFee");
+        assertEq(loanBalance, expectedLoanBalance, "Loan balance should equal maxLoan (lender fee handled separately)");
         
-        // Verify fee split is correct and handles rounding properly
-        assertEq(expectedLenderFinancedFee + expectedProtocolFinancedFee, financedFee, "Fee split should equal total financed fee");
-        
-        // Verify rounding logic: protocol gets any remainder from odd amounts
-        if (financedFee % 2 == 0) {
-            assertEq(expectedLenderFinancedFee, expectedProtocolFinancedFee, "Even financed fee should split equally");
-        } else {
-            assertEq(expectedProtocolFinancedFee, expectedLenderFinancedFee + 1, "Odd financed fee remainder should go to protocol");
-        }
-        
-        // Note: Total LBO fees are now: 1% of listing (upfront) + 1% of outstanding capital (financed)
+        // Verify total LBO fee structure
+        uint256 totalLBOFees = upfrontProtocolFee + lenderFeeAmount;
+        uint256 expectedTotalLBOFees = (listingPrice * 100) / 10000 + (maxLoan * lboLenderFeeBps) / 10000; // 100 bps on listing + configured bps on loan
+        assertEq(totalLBOFees, expectedTotalLBOFees, "Total LBO fees should be 100 bps on listing + configured lender fee on loan");
 
         // Verify NFT is in loan custody
         assertTrue(ve.ownerOf(tokenId) == address(loan));
@@ -610,9 +603,10 @@ contract RouterLoanLBOTest is RouterLoanTest {
         vm.deal(buyer, userEthAmount);
 
         // Calculate expected amounts
-        uint256 upfrontProtocolFee = (listingPriceInAero * 100) / 10000; // 100 bps in AERO terms
+        uint256 upfrontProtocolFee = (listingPriceInAero * IMarketViewFacet(diamond).getLBOProtocolFeeBps()) / 10000;
         uint256 totalNeededInAero = listingPriceInAero + upfrontProtocolFee;
-        uint256 flashLoanAmount = maxLoanPossible; // Flash loan max possible (in USDC)
+        // flash loan the max possible (in USDC) - lender fee
+        uint256 flashLoanAmount = maxLoanPossible - (maxLoanPossible * IMarketViewFacet(diamond).getLBOLenderFeeBps()) / 10000;
 
         // Build purchase order struct - target asset is AERO
         bytes memory purchaseOrderData = abi.encode(

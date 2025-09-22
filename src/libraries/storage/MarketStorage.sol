@@ -56,7 +56,9 @@ library MarketStorage {
         address loanAsset;                                            // payment asset expected by Loan for pay() (e.g., USDC)
         mapping(address => bool) allowedVotingEscrow;                 // allowed veNFT contracts
         mapping(bytes32 => address) externalAdapter;                  // adapterKey => adapter facet address
-        address permit2;                                              // Uniswap Permit2 address (optional)
+        address permit2;
+        uint lboProtocolFeeBps;                                     // protocol fee in bps of total price
+        uint lboLenderFeeBps;                                       // lender fee in bps of max loan
         uint256[49] _gap;
     }
 

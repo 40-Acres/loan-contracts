@@ -1425,40 +1425,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         LoanInfo storage loan = _loanDetails[tokenId];
         if (loan.borrower != msg.sender) revert Unauthorized(); // Market diamond should be current borrower
-        
-        // Compute financed fee based on the outstanding capital (amount borrowed in flash loan path)
-        // At this point, outstandingCapital reflects the principal borrowed via requestLoan
-        uint256 financedFee = (loan.outstandingCapital * 100) / 10000; // 100 bps on outstanding capital
 
-        // Replace origination fee with LBO financed fees
-        // At this point, the only unpaid fee is the origination fee
-        uint256 originationFee = loan.unpaidFees;
-
-        // Split financed fee: 50 bps to protocol (unpaidFees), 50 bps to lenders (outstandingCapital)
-        // Handle rounding properly - give any remainder to protocol
-        uint256 lenderFinancedFee = financedFee / 2; // 50 bps to lenders (paid over time via principal)
-        uint256 protocolFinancedFee = financedFee - lenderFinancedFee; // 50 bps to protocol + any remainder
+        loan.balance -= loan.unpaidFees;
+        loan.unpaidFees = 0;
         
-        // Update loan accounting
-        loan.unpaidFees = protocolFinancedFee;
-        loan.outstandingCapital += lenderFinancedFee; // Lenders get this via normal loan payments to vault
-        loan.balance = loan.balance - originationFee + financedFee; // Total balance includes both portions
-        
-        // Update global outstanding capital
-        _outstandingCapital += lenderFinancedFee;
         require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
 
-        // disable topUp to ensure repayment over time
-        loan.topUp = false;
-        
-        // Record the financed fee for accounting (emit computed values)
-        emit LBOFeesProcessed(tokenId, buyer, financedFee, lenderFinancedFee, protocolFinancedFee);
-        
         // Transfer veNFT ownership to buyer
         _setBorrower(tokenId, buyer);
     }
-    
-    event LBOFeesProcessed(uint256 indexed tokenId, address indexed buyer, uint256 listingPrice, uint256 lenderFee, uint256 protocolFee);
 
     /* FLASH LOAN FUNCTIONS */
 
@@ -1468,7 +1443,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param token The address of the token to be flash loaned
      * @return The maximum amount of tokens available for flash loan
      */
-    function maxFlashLoan(address token) external view override returns (uint256) {
+    function maxFlashLoan(address token) public view override returns (uint256) {
         if (token != address(_asset)) {
             return 0;
         }
@@ -1484,7 +1459,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount of tokens to be loaned
      * @return The flash loan fee
      */
-    function flashFee(address token, uint256 amount) external view override returns (uint256) {
+    function flashFee(address token, uint256 amount) public view override returns (uint256) {
         if (token != address(_asset)) {
             revert UnsupportedToken(token);
         }
@@ -1517,20 +1492,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         // require flash loan receiver to be market diamond
         if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
-        
-        // Check if the token is supported
+
+        // will revert if token is not supported
         if (token != address(_asset)) {
             revert UnsupportedToken(token);
         }
         
         // Check if the amount exceeds the maximum available
-        uint256 maxLoan = _asset.balanceOf(_vault);
+        uint256 maxLoan = maxFlashLoan(token);
         if (amount > maxLoan) {
             revert ExceededMaxLoan(maxLoan);
         }
         
         // Calculate the fee (0% for LBO operations from market diamond)
-        uint256 fee = 0;
+        uint256 fee = flashFee(token, amount);
         
         // Transfer the loan amount from the vault to the receiver
         // For flash loans to work, the vault needs to approve this contract to transfer funds
@@ -1550,9 +1525,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Transfer the loan amount plus fee back to the vault
         _asset.transferFrom(address(receiver), _vault, amount + fee);
         
-        // TODO: review this section again
-        // No flash loan fees for LBO operations
-        // LBO fees are handled in the market diamond callback
+        // flash loans are restricted to market diamond which is charged 0 flash loan fee
         
         // Emit the flash loan event
         emit FlashLoan(address(receiver), msg.sender, token, amount, fee);
