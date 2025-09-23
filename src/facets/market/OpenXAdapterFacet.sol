@@ -13,12 +13,12 @@ import {Errors} from "../../libraries/Errors.sol";
 
 contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
     modifier whenNotPaused() {
-        if (MarketStorage.managerPauseLayout().marketPaused) revert("Paused");
+        if (MarketStorage.managerPauseLayout().marketPaused) revert Errors.Paused();
         _;
     }
 
     modifier onlyDiamond() {
-        if (msg.sender != address(this)) revert("NotAuthorized");
+        if (msg.sender != address(this)) revert Errors.NotAuthorized();
         _;
     }
 
@@ -28,7 +28,7 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
         address expectedCurrency,
         uint256 maxPrice
     ) external whenNotPaused onlyDiamond {
-        require(marketplace != address(0), "Invalid marketplace");
+        require(marketplace != address(0), Errors.InvalidExternalMarketplace());
 
         IOpenXSwap openx = IOpenXSwap(marketplace);
         (
@@ -42,22 +42,22 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             ,
             uint256 sold
         ) = openx.Listings(listingId);
-        require(sold == 0, "Listing sold");
+        require(sold == 0, Errors.ListingSold());
 
         // Currency must be allowed and match expectation
-        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert("CurrencyNotAllowed");
-        require(currency == expectedCurrency, "CurrencyMismatch");
+        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert Errors.CurrencyNotAllowed();
+        require(currency == expectedCurrency, Errors.CurrencyMismatch());
 
         // OpenX listings are fixed-price per Listings() (price returned), use that
         (, , , , , uint256 price, , ,) = openx.Listings(listingId);
-        require(price > 0 && (maxPrice == 0 || price <= maxPrice), "PriceOutOfBounds");
+        require(price > 0 && (maxPrice == 0 || price <= maxPrice), Errors.PriceOutOfBounds());
 
         // Pull funds into diamond and approve marketplace
         IERC20 payToken = IERC20(currency);
         if (msg.sender != address(this)) {
-            require(payToken.transferFrom(msg.sender, address(this), price), "TransferFrom failed");
+            require(payToken.transferFrom(msg.sender, address(this), price));
         } else {
-            require(payToken.balanceOf(address(this)) >= price, "EscrowInsufficient");
+            require(payToken.balanceOf(address(this)) >= price, Errors.EscrowInsufficient());
         }
         payToken.approve(marketplace, price);
 
@@ -81,7 +81,7 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
         address paymentToken
     ) {
         (address marketplace, uint256 listingId) = abi.decode(quoteData, (address, uint256));
-        require(marketplace != address(0), "Invalid marketplace");
+        require(marketplace != address(0), Errors.InvalidExternalMarketplace());
         IOpenXSwap openx = IOpenXSwap(marketplace);
         (
             ,
@@ -94,7 +94,7 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             ,
             uint256 sold
         ) = openx.Listings(listingId);
-        require(sold == 0, "Listing sold");
+        require(sold == 0, Errors.ListingSold());
         uint16 bps = _externalRouteFeeBps();
         uint256 fee = (price * bps) / 10000;
         return (price, fee, currency);
@@ -113,7 +113,7 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             marketData, (address, uint256, address, uint256)
         );
 
-        require(marketplace != address(0), "Invalid marketplace");
+        require(marketplace != address(0), Errors.InvalidExternalMarketplace());
         IOpenXSwap openx = IOpenXSwap(marketplace);
 
         (
@@ -128,16 +128,16 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             uint256 sold
         ) = openx.Listings(listingId);
         // require this listing tokenid is the same tokenid as one passed in 
-        require(nftId == tokenId, "TokenIdMismatch");
-        require(sold == 0, "Listing sold");
-        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert("CurrencyNotAllowed");
-        require(currency == expectedCurrency, "CurrencyMismatch");
-        require(price > 0 && (maxPrice == 0 || price <= maxPrice), "PriceOutOfBounds");
+        require(nftId == tokenId, Errors.InvalidTokenId());
+        require(sold == 0, Errors.ListingSold());
+        if (!MarketStorage.configLayout().allowedPaymentToken[currency]) revert Errors.CurrencyNotAllowed();
+        require(currency == expectedCurrency, Errors.CurrencyMismatch());
+        require(price > 0 && (maxPrice == 0 || price <= maxPrice), Errors.PriceOutOfBounds());
 
         uint16 bps = _externalRouteFeeBps();
         uint256 fee = (price * bps) / 10000;
         uint256 total = price + fee;
-        require(total <= maxTotal, "MaxTotalExceeded");
+        require(total <= maxTotal, Errors.MaxTotalExceeded());
 
         IERC20 payToken = IERC20(currency);
         address feeRecipient_ = MarketStorage.configLayout().feeRecipient;
@@ -149,9 +149,9 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
             Permit2Lib.permitAndPull(msg.sender, address(this), currency, total, optionalPermit2);
             if (optionalPermit2.length == 0) {
                 if (msg.sender != address(this)) {
-                    require(payToken.transferFrom(msg.sender, address(this), total), "TransferFrom failed");
+                    require(payToken.transferFrom(msg.sender, address(this), total));
                 } else {
-                    require(payToken.balanceOf(address(this)) >= total, "EscrowInsufficient");
+                    require(payToken.balanceOf(address(this)) >= total, Errors.EscrowInsufficient());
                 }
             }
         } else {
@@ -179,7 +179,7 @@ contract OpenXAdapterFacet is IOpenXAdapterFacet, BaseAdapterFacet {
 
         // Settle fee, approve and buy
         if (fee > 0) {
-            require(payToken.transfer(feeRecipient_, fee), "Fee transfer failed");
+            require(payToken.transfer(feeRecipient_, fee));
         }
         payToken.approve(marketplace, price);
         openx.buyNFT(listingId);

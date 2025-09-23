@@ -35,8 +35,6 @@ library Errors {
     error InvalidAdapterKey();
     error CallFailedWithNoData();
     error InvalidExternalMarketplace();
-
-    // Vexy
     error ListingSold();
     error EscrowInsufficient();
     error CurrencyMismatch();
