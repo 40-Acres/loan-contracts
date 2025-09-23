@@ -67,6 +67,18 @@ The LoanV2 contract has been updated to support market settlement functionality 
   - Uses `nonReentrant` modifier to prevent reentrancy attacks
   - Only callable by market diamond
 
+### New Storage Parameters in LoanStorage
+
+The following storage parameters were added to LoanStorage.sol to support the new market settlement and flash loan functionality:
+
+- **_marketDiamond**: Address of the market diamond contract authorized for borrower finalization. This parameter is critical for the `onlyMarketDiamond` modifier and market settlement functions like `finalizeMarketPurchase`, `finalizeOfferPurchase`, and `finalizeLBOPurchase`.
+
+- **_flashLoanFee**: Basis points value (e.g., 50 = 0.5%) representing the flash loan fee percentage. Used in the `flashFee` function to calculate fees for non-market diamond callers.
+
+- **_FlashLoanPaused**: Boolean flag that can be set by the owner to pause all flash loan functionality during emergencies. Checked in the `flashLoan` function via `getFlashLoanPaused()`.
+
+These storage parameters enable the new functionality while maintaining upgrade safety through the ERC-7201 storage pattern.
+
 ### Additional Security Enhancements
 
 - **New Error Codes**: Added specific error codes for better failure diagnosis:
