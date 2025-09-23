@@ -34,7 +34,14 @@ library Errors {
     error MaxTotalExceeded();
     error InvalidAdapterKey();
     error CallFailedWithNoData();
+    error InvalidExternalMarketplace();
 
+    // Vexy
+    error ListingSold();
+    error EscrowInsufficient();
+    error CurrencyMismatch();
+
+    
     // Validation
     error InsufficientWeight();
     error ExcessiveWeight();
