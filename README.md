@@ -36,6 +36,7 @@ Storage uses ERC‑7201 layouts in `src/libraries/storage/MarketStorage.sol`.
 **Core facets:** `DiamondCutFacet`, `DiamondLoupeFacet`, `OwnershipFacet`.
 
 **Market facets:**
+- `MarketRouterFacet` (single entry; routes to wallet/loan/external flows)
 - `MarketConfigFacet` (init/admin/pause/allowlists; expected `loanAsset`)
 - `MarketViewFacet` (readonly)
 - `MarketListingsWalletFacet` (wallet‑held listings/takes)
@@ -45,20 +46,15 @@ Storage uses ERC‑7201 layouts in `src/libraries/storage/MarketStorage.sol`.
 - Adapter facets (per external market). Example implemented: `src/facets/market/VexyAdapterFacet.sol`.
 
 **Internal libraries**
-
 - MarketLogicLib
   - Listing/offer liveness checks; custody/owner resolution; operator rights.
-
 - Permit2Lib
   - Optional Uniswap Permit2 permit+pull for exact‑input flows.
   - Optimization: if a sufficient, unexpired Permit2 allowance already exists, permit is skipped and only transferFrom is used.
-
 - FeeLib
   - Protocol and adapter fee computations and recipients.
-
 - RevertHelper
   - Bubble up revert data from delegatecalls to adapters and external markets.
-
 - AccessRoleLib (+ AccessManager)
   - Owner and optional MARKET_ADMIN role gates for config/fees/pausing.
 
