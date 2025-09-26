@@ -221,7 +221,7 @@ contract MatchingOpenXExternalTest is DiamondMarketTestBase {
 }
 
 import {OpenXAdapterFacet} from "src/facets/market/OpenXAdapterFacet.sol";
-import {IDiamondCut} from "src/libraries/LibDiamond.sol";
+import {IDiamondCut} from "src/interfaces/IDiamondCut.sol";
 import {ERC721ReceiverFacet} from "src/facets/ERC721ReceiverFacet.sol";
 import {IMarketViewFacet} from "src/interfaces/IMarketViewFacet.sol";
 import {RouteLib} from "src/libraries/RouteLib.sol";

@@ -211,7 +211,7 @@ contract RouterVexyAdapterTest is DiamondMarketTestBase {
 
 import {VexyAdapterFacet} from "src/facets/market/VexyAdapterFacet.sol";
 import {IVexyMarketplace} from "src/interfaces/external/IVexyMarketplace.sol";
-import {IDiamondCut} from "src/libraries/LibDiamond.sol";
+import {IDiamondCut} from "src/interfaces/IDiamondCut.sol";
 contract VexyAdapterFacetHarness is VexyAdapterFacet {}
 
 

@@ -182,7 +182,7 @@ contract RouterOpenXAdapterTest is DiamondMarketTestBase {
 }
 
 import {OpenXAdapterFacet} from "src/facets/market/OpenXAdapterFacet.sol";
-import {IDiamondCut} from "src/libraries/LibDiamond.sol";
+import {IDiamondCut} from "src/interfaces/IDiamondCut.sol";
 import {ERC721ReceiverFacet} from "src/facets/ERC721ReceiverFacet.sol";
 contract OpenXAdapterFacetHarness is OpenXAdapterFacet {}
 

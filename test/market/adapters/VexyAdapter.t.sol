@@ -9,7 +9,7 @@ import {IVotingEscrow} from "src/interfaces/IVotingEscrow.sol";
 import {Loan} from "src/LoanV2.sol";
 import {Vault} from "src/VaultV2.sol";
 import {BaseDeploy} from "script/BaseDeploy.s.sol";
-import {IDiamondCut} from "src/libraries/LibDiamond.sol";
+import {IDiamondCut} from "src/interfaces/IDiamondCut.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVexyMarketplace} from "src/interfaces/external/IVexyMarketplace.sol";
 import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";

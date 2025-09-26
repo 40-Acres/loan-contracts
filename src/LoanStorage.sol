@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 
-
 abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:LoanStorage
     struct LoanStorageStruct {
@@ -20,6 +19,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         address _marketDiamond; // configured market diamond authorized for borrower finalization
         uint256 _flashLoanFee; // flash loan fee
         bool _FlashLoanPaused; // flash loan paused
+        address _accountStorage; // account storage for user accounts
     }
 
 
@@ -117,16 +117,6 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         return $._totalWeightPerEpoch[epoch];
     }
 
-    function setIncreaseManagedToken(bool enabled) public {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._increaseManagedToken[msg.sender] = enabled;
-    }
-
-    function userIncreasesManagedToken(address user) public view returns (bool) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._increaseManagedToken[user];
-    }
-
     function setMinimumLocked(uint256 minimumLocked) public onlyOwner {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._minimumLocked = minimumLocked;
@@ -166,5 +156,16 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function getFlashLoanPaused() public view returns (bool) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._FlashLoanPaused;
+    }
+    
+    function setAccountStorage(address _newAccountStorage) external onlyOwner {
+        require(_newAccountStorage != address(0));
+        LoanStorageStruct storage $ = _getLoanStorage();
+       $._accountStorage = _newAccountStorage;
+    }
+
+    function getAccountStorage() public view returns (address) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return address($._accountStorage);
     }
 }

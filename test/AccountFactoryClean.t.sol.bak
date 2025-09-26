@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
+
+import "forge-std/Test.sol";
+import "../src/accounts/PortfolioFactory.sol";
+import "../src/accounts/FacetRegistry.sol";
+import "../src/storage/AssetStorage.sol";
+import {IDiamondCut} from "../src/interfaces/IDiamondCut.sol";
+
+contract PortfolioFactoryCleanTest is Test {
+    PortfolioFactory public factory;
+    AssetStorage public AssetStorage;
+    
+    address public owner = address(0x1);
+    address public user = address(0x2);
+
+    function setUp() public {
+        // Deploy storage contracts
+        AssetStorage = new AssetStorage();
+        FacetRegistry facetRegistry = new FacetRegistry();
+        factory = new PortfolioFactory(address(AssetStorage), address(facetRegistry));
+        
+        // Authorize factory in storage
+        AssetStorage.authorizeCaller(address(factory));
+    }
+
+    function testFactoryDeployment() public {
+        assertEq(factory.owner(), owner);
+        assertEq(address(factory.AssetStorage()), address(AssetStorage));
+    }
+
+    function testCreateAccountWithEmptyFacets() public {
+        // Create account
+        address account = factory.createAccount(user);
+        
+        // Check account was created
+        assertTrue(factory.isAccount(account));
+        assertEq(factory.getAccount(user), account);
+        assertEq(factory.getAccountCount(), 1);
+    }
+
+    function testAccountAlreadyExists() public {
+        // Create empty facet cuts array
+        IDiamondCut.FacetCut[] memory facetCuts = new IDiamondCut.FacetCut[](0);
+        
+        // Create first account
+        factory.createAccount(user);
+        
+        // Try to create duplicate
+        vm.expectRevert(PortfolioFactory.AccountAlreadyExists.selector);
+        factory.createAccount(user);
+    }
+
+    function testGetAllAccounts() public {
+        // Create empty facet cuts array
+        IDiamondCut.FacetCut[] memory facetCuts = new IDiamondCut.FacetCut[](0);
+        
+        // Create multiple accounts
+        address user1 = address(0x3);
+        address user2 = address(0x4);
+        
+        address account1 = factory.createAccount(user1);
+        address account2 = factory.createAccount(user2);
+        
+        // Check account count
+        assertEq(factory.getAccountCount(), 2);
+    }
+}

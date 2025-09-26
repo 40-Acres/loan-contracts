@@ -1312,4 +1312,3 @@ contract PharaohLoanTest is Test {
         return _loan.claim(_tokenId, fees, tokens, tradeData, allocations);
     }
 }
-// 1061274 + 208621 = 1279895

@@ -7,6 +7,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {AggregatorV3Interface} from "./interfaces/AggregatorV3Interface.sol";
 import {IVoter} from "./interfaces/IVoter.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
@@ -19,21 +20,21 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import {ISwapper} from "./interfaces/ISwapper.sol";
-import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import {LoanUtils} from "./LoanUtils.sol";
 import { IMarketViewFacet } from "./interfaces/IMarketViewFacet.sol";
 import {IFlashLoanProvider} from "./interfaces/IFlashLoanProvider.sol";
 import {IFlashLoanReceiver} from "./interfaces/IFlashLoanReceiver.sol";
+import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 
-contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage, IFlashLoanProvider {
+contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
     IVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
     address private _pool; // deprecated
-    IERC20 internal _asset;
+    IERC20 public _asset;
     IERC20 internal _aero;
-    IVotingEscrow internal _ve;
+    IVotingEscrow public _ve;
     IAerodromeRouter internal _aeroRouter;
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
@@ -259,7 +260,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         bool optInCommunityRewards
     ) public virtual {
         // require the msg.sender to be the owner of the token
-        require(_ve.ownerOf(tokenId) == msg.sender);
+        address owner = _ve.ownerOf(tokenId);
+        require(owner == msg.sender);
 
         _lock(tokenId);
 
@@ -282,9 +284,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         });
 
 
-        // transfer the token to the contract
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this));
+        // transfer the token to the contract if not a user account
+        bool isAccount = isUserAccount(msg.sender);
+        if(!isAccount) {
+            _ve.transferFrom(msg.sender, address(this), tokenId);
+        }
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
 
 
@@ -307,6 +311,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         vote(tokenId);
+        require(_ve.ownerOf(tokenId) == address(this) || isAccount);
     }
 
     /**
@@ -321,7 +326,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount
     ) public  {
         require(amount > .01e6);
-        require(_ve.ownerOf(tokenId) == address(this));
+        // Check if caller is a user account - if so, don't require NFT to be locked in loan contract
+        bool isAccount = false;
+        PortfolioFactory portfolioFactory = PortfolioFactory(getAccountStorage());
+        if (address(portfolioFactory) != address(0)) {
+            try portfolioFactory.isUserAccount(msg.sender) returns (bool exists) {
+                isAccount = exists;
+            } catch {
+                // If the call fails, assume it's not a user account
+                isAccount = false;
+            }
+        }
+            
+        require(_ve.ownerOf(tokenId) == address(this) || isAccount);
+        
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
 
@@ -333,7 +351,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
            _setUserPayoffToken(loan.borrower, tokenId);
        }
     }
-
 
     /**
      * @dev Increases the loan amount for a given tokenId by a specified amount.
@@ -499,7 +516,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (claimable > 0) {
             try _rewardsDistributor.claim(loan.tokenId) {
                 addTotalWeight(claimable);
-                _recordDepositOnManagedNft(loan.tokenId, claimable, loan.borrower);
                 loan.weight += claimable;
             } catch {
             }
@@ -546,9 +562,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
-        if(tokenId == getManagedNft() && remaining > 0) {
-            ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), remaining);
-        }
     }
 
 
@@ -578,11 +591,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        require(msg.sender == _entryPoint());
+        // require(msg.sender == _entryPoint());
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
-        if (loan.borrower == address(0) || _ve.ownerOf(tokenId) != address(this)) {
+        if (loan.borrower == address(0)) {
             return 0;
         }
 
@@ -642,7 +655,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[][] calldata tokens,
         uint256 tokenId,
         bytes calldata tradeData
-    ) internal {
+    ) virtual internal {
         _voter.claimFees(fees, tokens, tokenId);
         ISwapper swapper = ISwapper(getSwapper());
         address[] memory flattenedTokens = swapper.flattenToken(tokens);
@@ -794,13 +807,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
         _aero.approve(address(_ve), allocation);
-        uint256 managedNft = getManagedNft();
-        uint256 tokenToIncrease = (userIncreasesManagedToken(loan.borrower) || loan.optInCommunityRewards) && managedNft != 0 ? managedNft : loan.tokenId;
-        _ve.increaseAmount(tokenToIncrease, allocation);
-        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
+        _ve.increaseAmount(loan.tokenId, allocation);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, allocation, loan.tokenId);
         addTotalWeight(allocation);
         loan.weight += allocation;
-        _recordDepositOnManagedNft(tokenToIncrease, allocation, loan.borrower);
         return allocation;
     }
 
@@ -821,22 +831,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(amount);
         LoanInfo storage loan = _loanDetails[tokenId];
         loan.weight += amount;
-        _recordDepositOnManagedNft(tokenId, amount, msg.sender);
-    }
-
-
-    /**
-     * @dev Records a deposit on the managed NFT for community rewards.
-     * @param tokenId The ID of the token being deposited.
-     * @param amount The amount being deposited.
-     * @param owner The address of the owner of the token.
-     */
-    function _recordDepositOnManagedNft(uint256 tokenId, uint256 amount, address owner) internal {
-        uint256 managedNft = getManagedNft();
-        (, address managedNftAddress) = getLoanDetails(managedNft);
-        if(managedNftAddress != address(0)) {
-            ICommunityRewards(managedNftAddress).deposit(tokenId, amount, owner);
-        }
     }
 
     /**
@@ -845,7 +839,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      *      If the loan balance is greater than zero, the collateral cannot be claimed.
      * @param tokenId The ID of the loan (NFT) whose collateral is being claimed.
      */
-    function claimCollateral(uint256 tokenId) public {
+    function claimCollateral(uint256 tokenId) public virtual {
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // Ensure that the caller is the borrower of the loan
@@ -854,7 +848,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // Ensure that the loan is fully repaid before allowing collateral to be claimed
         require(loan.balance == 0);
 
-        _ve.transferFrom(address(this), loan.borrower, tokenId);
+        // transfer the token to the contract if not a user account
+        bool isAccount = isUserAccount(msg.sender);
+        if(!isAccount) {
+            _ve.transferFrom(address(this), loan.borrower, tokenId);
+        }
         emit CollateralWithdrawn(tokenId, msg.sender);
         subTotalWeight(loan.weight);
         delete _loanDetails[tokenId];
@@ -984,30 +982,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /* OWNER METHODS */
-
-    /**
-     * @notice Allows the owner to merge the managed NFT with a specified token ID.
-     * @dev This function can only be called by the owner of the contract.
-     *      Note: This should only be possible for Flight School rewards sent to the contract.
-     * @param tokenId The ID of the token to merge with the managed NFT.
-     *
-     * ManagedNFT is essentially a community owned veNFT where users can increase the NFT to obtain shares
-     * In the future this can be used as collateral for loans
-     */
-   function mergeIntoManagedNft(uint256 tokenId) public onlyOwner {
-        uint256 managedNft = getManagedNft();
-        require(_ve.ownerOf(tokenId) == address(this));
-        require(_ve.ownerOf(managedNft) == address(this));
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == address(0));
-        uint256 beginningBalance = _getLockedAmount(tokenId);
-        _ve.merge(tokenId, managedNft);
-        uint256 weightAdded = _getLockedAmount(tokenId) - beginningBalance;
-        addTotalWeight(weightAdded);
-        loan.weight += weightAdded;
-        (, address managedNftAddress) = getLoanDetails(managedNft);
-        ICommunityRewards(managedNftAddress).notifyFlightBonus(weightAdded);
-    }
     
 
     /**
@@ -1080,7 +1054,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param pools An array of addresses representing the pools to be approved or disapproved.
      * @param enable A boolean indicating whether to approve or disapprove the pools.
      */
-    function setApprovedPools(address[] calldata pools, bool enable) public onlyOwner {
+    function setApprovedPools(address[] calldata pools, bool enable) public virtual onlyOwner {
         for (uint256 i = 0; i < pools.length; i++) {
             // confirm pool is a valid gauge
             address gauge = _voter.gauges(pools[i]);
@@ -1248,16 +1222,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
         LoanInfo storage loan = _loanDetails[tokenId];
+        bool isAccount = isUserAccount(msg.sender);
+        IVoter voter = _voter;
+        // Always use the actual voter contract, not the FortyAcresPortfolioAccount
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
-            _voter.vote(tokenId, pools, weights); 
+            voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
             return true; // if the user has manually voted, we don't want to override their vote
         }
         
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
         if(!isActive && _withinVotingWindow()) {
-            try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
+            try voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 return true;
             } catch { }
         } 
@@ -1271,7 +1248,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
         if (!lockedBalance.isPermanent) {
             require(lockedBalance.end > block.timestamp);
-            _ve.lockPermanent(tokenId);
+            _ve.lockPermanent(tokenId); 
         }
     }
     
@@ -1361,174 +1338,184 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
 
-    /**
-     * @notice Sets the borrower for a specific loan.
-     * @dev This function can only be called by an approved contract.
-     * @param tokenId The ID of the loan (NFT).
-     * @param newBorrower The address of the new borrower.
-     */
-    function _setBorrower(uint256 tokenId, address newBorrower) internal {
-        if (newBorrower == address(0)) revert ZeroAddress();
-        LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
-        address previousBorrower = loan.borrower;
-        loan.borrower = newBorrower;
-        emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
-    }
+    // /**
+    //  * @notice Sets the borrower for a specific loan.
+    //  * @dev This function can only be called by an approved contract.
+    //  * @param tokenId The ID of the loan (NFT).
+    //  * @param newBorrower The address of the new borrower.
+    //  */
+    // function _setBorrower(uint256 tokenId, address newBorrower) internal {
+    //     if (newBorrower == address(0)) revert ZeroAddress();
+    //     LoanInfo storage loan = _loanDetails[tokenId];
+    //     if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
+    //     address previousBorrower = loan.borrower;
+    //     loan.borrower = newBorrower;
+    //     emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
+    // }
 
-    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
-        if (buyer == address(0)) revert ZeroAddress();
+    // function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
+    //     if (buyer == address(0)) revert ZeroAddress();
 
-        // Verify listing presence and consistency via MarketView facet on the diamond caller
-        (address listingOwner, , , , uint256 expiresAt) = IMarketViewFacet(msg.sender).getListing(tokenId);
-        if (listingOwner == address(0)) revert InvalidListing();
-        if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidListing();
+    //     // Verify listing presence and consistency via MarketView facet on the diamond caller
+    //     (address listingOwner, , , , uint256 expiresAt) = IMarketViewFacet(msg.sender).getListing(tokenId);
+    //     if (listingOwner == address(0)) revert InvalidListing();
+    //     if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidListing();
 
-        LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert SellerMismatch();
-        if (loan.balance != 0) revert LoanNotPaidOff();
+    //     LoanInfo storage loan = _loanDetails[tokenId];
+    //     if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert SellerMismatch();
+    //     if (loan.balance != 0) revert LoanNotPaidOff();
 
-        _setBorrower(tokenId, buyer);
-    }
+    //     _setBorrower(tokenId, buyer);
+    // }
 
-    /**
-     * @notice Finalize offer acceptance by setting borrower post-payoff in the same tx
-     * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
-     */
-    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external onlyMarketDiamond {
-        if (buyer == address(0)) revert ZeroAddress();
+    // /**
+    //  * @notice Finalize offer acceptance by setting borrower post-payoff in the same tx
+    //  * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
+    //  */
+    // function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external onlyMarketDiamond {
+    //     if (buyer == address(0)) revert ZeroAddress();
 
-        // Validate the offer is present and active, and belongs to the buyer
-        (
-            address creator,
-            ,
-            ,
-            ,
-            ,
-            uint256 expiresAt
-        ) = IMarketViewFacet(msg.sender).getOffer(offerId);
-        if (creator == address(0)) revert InvalidOffer();
-        if (creator != buyer) revert CreatorMismatch();
-        if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidOffer();
+    //     // Validate the offer is present and active, and belongs to the buyer
+    //     (
+    //         address creator,
+    //         ,
+    //         ,
+    //         ,
+    //         ,
+    //         uint256 expiresAt
+    //     ) = IMarketViewFacet(msg.sender).getOffer(offerId);
+    //     if (creator == address(0)) revert InvalidOffer();
+    //     if (creator != buyer) revert CreatorMismatch();
+    //     if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidOffer();
 
-        LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != expectedSeller) revert SellerMismatch();
-        // debts should be paid off already
-        if (loan.balance != 0) revert LoanNotPaidOff();
+    //     LoanInfo storage loan = _loanDetails[tokenId];
+    //     if (loan.borrower != expectedSeller) revert SellerMismatch();
+    //     // debts should be paid off already
+    //     if (loan.balance != 0) revert LoanNotPaidOff();
 
-        _setBorrower(tokenId, buyer);
-    }
+    //     _setBorrower(tokenId, buyer);
+    // }
 
-    function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
-        if (buyer == address(0)) revert ZeroAddress();
+    // function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
+    //     if (buyer == address(0)) revert ZeroAddress();
         
-        LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != msg.sender) revert Unauthorized(); // Market diamond should be current borrower
+    //     LoanInfo storage loan = _loanDetails[tokenId];
+    //     if (loan.borrower != msg.sender) revert Unauthorized(); // Market diamond should be current borrower
 
-        loan.balance -= loan.unpaidFees;
-        loan.unpaidFees = 0;
+    //     loan.balance -= loan.unpaidFees;
+    //     loan.unpaidFees = 0;
         
-        require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
+    //     require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
 
-        // Transfer veNFT ownership to buyer
-        _setBorrower(tokenId, buyer);
-    }
+    //     // Transfer veNFT ownership to buyer
+    //     _setBorrower(tokenId, buyer);
+    // }
 
-    /* FLASH LOAN FUNCTIONS */
+    // /* FLASH LOAN FUNCTIONS */
 
-    /**
-     * @notice Returns the maximum amount of tokens available for a flash loan
-     * @dev Implements the IFlashLoanProvider interface
-     * @param token The address of the token to be flash loaned
-     * @return The maximum amount of tokens available for flash loan
-     */
-    function maxFlashLoan(address token) public view override returns (uint256) {
-        if (token != address(_asset)) {
-            return 0;
+    // /**
+    //  * @notice Returns the maximum amount of tokens available for a flash loan
+    //  * @dev Implements the IFlashLoanProvider interface
+    //  * @param token The address of the token to be flash loaned
+    //  * @return The maximum amount of tokens available for flash loan
+    //  */
+    // function maxFlashLoan(address token) public view override returns (uint256) {
+    //     if (token != address(_asset)) {
+    //         return 0;
+    //     }
+        
+    //     // The maximum flash loan amount is the total balance in the vault
+    //     return _asset.balanceOf(_vault);
+    // }
+
+    // /**
+    //  * @notice Calculates the fee for a flash loan
+    //  * @dev Implements the IFlashLoanProvider interface
+    //  * @param token The address of the token to be flash loaned
+    //  * @param amount The amount of tokens to be loaned
+    //  * @return The flash loan fee
+    //  */
+    // function flashFee(address token, uint256 amount) public view override returns (uint256) {
+    //     if (token != address(_asset)) {
+    //         revert UnsupportedToken(token);
+    //     }
+        
+    //     // 0% fee for market diamond, regular fee for others
+    //     if (msg.sender == getMarketDiamond()) {
+    //         return 0;
+    //     }
+        
+    //     return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
+    // }
+
+    // /**
+    //  * @notice Executes a flash loan
+    //  * @dev Implements the IFlashLoanProvider interface
+    //  * @param receiver The contract receiving the flash loan
+    //  * @param token The token to be flash loaned
+    //  * @param amount The amount of tokens to be loaned
+    //  * @param data Additional data to be passed to the receiver. Must contain the LBO purchaseOrder struct to call buyToken on MarketRouterFacet
+    //  * @return success Boolean indicating whether the flash loan was successful
+    //  */
+    // function flashLoan(
+    //     IFlashLoanReceiver receiver,
+    //     address token,
+    //     uint256 amount,
+    //     bytes calldata data
+    // ) external override nonReentrant onlyMarketDiamond returns (bool) {
+    //     // Check if flash loan is paused
+    //     if (getFlashLoanPaused()) revert FlashLoansPaused();
+
+    //     // require flash loan receiver to be market diamond
+    //     if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
+
+    //     // will revert if token is not supported
+    //     if (token != address(_asset)) {
+    //         revert UnsupportedToken(token);
+    //     }
+        
+    //     // Check if the amount exceeds the maximum available
+    //     uint256 maxLoan = maxFlashLoan(token);
+    //     if (amount > maxLoan) {
+    //         revert ExceededMaxLoan(maxLoan);
+    //     }
+        
+    //     // Calculate the fee (0% for LBO operations from market diamond)
+    //     uint256 fee = flashFee(token, amount);
+        
+    //     // Transfer the loan amount from the vault to the receiver
+    //     // For flash loans to work, the vault needs to approve this contract to transfer funds
+    //     // This is similar to how _increaseLoan function works
+    //     _asset.transferFrom(_vault, address(receiver), amount);
+        
+    //     // Execute the callback on the receiver
+    //     if (receiver.onFlashLoan(msg.sender, token, amount, fee, data) != CALLBACK_SUCCESS) {
+    //         revert InvalidFlashLoanReceiver(address(receiver));
+    //     }
+        
+    //     // Ensure the contract has enough allowance to transfer the funds back to the vault
+    //     uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
+    //     uint256 required = amount + fee;
+    //     if (receiverAllowance < required) revert InsufficientAllowance(required, receiverAllowance);
+        
+    //     // Transfer the loan amount plus fee back to the vault
+    //     _asset.transferFrom(address(receiver), _vault, amount + fee);
+        
+    //     // flash loans are restricted to market diamond which is charged 0 flash loan fee
+        
+    //     // Emit the flash loan event
+    //     emit FlashLoan(address(receiver), msg.sender, token, amount, fee);
+        
+    //     return true;
+    // }
+    
+    function isUserAccount(address owner) public view returns (bool) {
+        address portfolioFactory = getAccountStorage();
+        if(portfolioFactory != address(0)) {
+            try PortfolioFactory(portfolioFactory).isUserAccount(owner) returns (bool exists) {
+                return exists;
+            } catch {}
         }
-        
-        // The maximum flash loan amount is the total balance in the vault
-        return _asset.balanceOf(_vault);
-    }
-
-    /**
-     * @notice Calculates the fee for a flash loan
-     * @dev Implements the IFlashLoanProvider interface
-     * @param token The address of the token to be flash loaned
-     * @param amount The amount of tokens to be loaned
-     * @return The flash loan fee
-     */
-    function flashFee(address token, uint256 amount) public view override returns (uint256) {
-        if (token != address(_asset)) {
-            revert UnsupportedToken(token);
-        }
-        
-        // 0% fee for market diamond, regular fee for others
-        if (msg.sender == getMarketDiamond()) {
-            return 0;
-        }
-        
-        return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
-    }
-
-    /**
-     * @notice Executes a flash loan
-     * @dev Implements the IFlashLoanProvider interface
-     * @param receiver The contract receiving the flash loan
-     * @param token The token to be flash loaned
-     * @param amount The amount of tokens to be loaned
-     * @param data Additional data to be passed to the receiver. Must contain the LBO purchaseOrder struct to call buyToken on MarketRouterFacet
-     * @return success Boolean indicating whether the flash loan was successful
-     */
-    function flashLoan(
-        IFlashLoanReceiver receiver,
-        address token,
-        uint256 amount,
-        bytes calldata data
-    ) external override nonReentrant onlyMarketDiamond returns (bool) {
-        // Check if flash loan is paused
-        if (getFlashLoanPaused()) revert FlashLoansPaused();
-
-        // require flash loan receiver to be market diamond
-        if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
-
-        // will revert if token is not supported
-        if (token != address(_asset)) {
-            revert UnsupportedToken(token);
-        }
-        
-        // Check if the amount exceeds the maximum available
-        uint256 maxLoan = maxFlashLoan(token);
-        if (amount > maxLoan) {
-            revert ExceededMaxLoan(maxLoan);
-        }
-        
-        // Calculate the fee (0% for LBO operations from market diamond)
-        uint256 fee = flashFee(token, amount);
-        
-        // Transfer the loan amount from the vault to the receiver
-        // For flash loans to work, the vault needs to approve this contract to transfer funds
-        // This is similar to how _increaseLoan function works
-        _asset.transferFrom(_vault, address(receiver), amount);
-        
-        // Execute the callback on the receiver
-        if (receiver.onFlashLoan(msg.sender, token, amount, fee, data) != CALLBACK_SUCCESS) {
-            revert InvalidFlashLoanReceiver(address(receiver));
-        }
-        
-        // Ensure the contract has enough allowance to transfer the funds back to the vault
-        uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
-        uint256 required = amount + fee;
-        if (receiverAllowance < required) revert InsufficientAllowance(required, receiverAllowance);
-        
-        // Transfer the loan amount plus fee back to the vault
-        _asset.transferFrom(address(receiver), _vault, amount + fee);
-        
-        // flash loans are restricted to market diamond which is charged 0 flash loan fee
-        
-        // Emit the flash loan event
-        emit FlashLoan(address(receiver), msg.sender, token, amount, fee);
-        
-        return true;
+        return false;
     }
 }
