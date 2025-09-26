@@ -3,7 +3,6 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import "../src/accounts/PortfolioFactory.sol";
-import "../src/storage/AssetStorage.sol";
 import "../src/accounts/FacetRegistry.sol";
 
 contract AccountStorageSimplifiedTest is Test {
@@ -15,22 +14,22 @@ contract AccountStorageSimplifiedTest is Test {
 
     function setUp() public {
         vm.prank(owner);
-        AssetStorage assetStorage = new AssetStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        portfolioFactory = new PortfolioFactory(address(assetStorage), address(facetRegistry));
+        portfolioFactory = new PortfolioFactory(address(facetRegistry));
         
-        // Factory doesn't need authorization
+        // Authorize the factory address
+        portfolioFactory.authorizeCaller(factory);
     }
 
     function testCreateAccount() public {
         // Test account creation
         vm.prank(factory);
-        portfolioFactory.createAccount(user);
+        address createdAccount = portfolioFactory.createAccount(user);
         
         // Check account exists
-        assertTrue(portfolioFactory.isUserAccount(account));
-        assertEq(portfolioFactory.getAccountOwner(account), user);
-        assertEq(portfolioFactory.getUserAccount(user), account);
+        assertTrue(portfolioFactory.isUserAccount(createdAccount));
+        assertEq(portfolioFactory.getAccountOwner(createdAccount), user);
+        assertEq(portfolioFactory.getUserAccount(user), createdAccount);
     }
 
     function testAccountAlreadyExists() public {
@@ -63,9 +62,9 @@ contract AccountStorageSimplifiedTest is Test {
         
         // Create account
         vm.prank(factory);
-        portfolioFactory.createAccount(user);
+        address createdAccount = portfolioFactory.createAccount(user);
         
         // Account now exists
-        assertTrue(portfolioFactory.isUserAccount(account));
+        assertTrue(portfolioFactory.isUserAccount(createdAccount));
     }
 }

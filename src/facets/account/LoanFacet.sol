@@ -7,7 +7,6 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {IVoter} from "../../interfaces/IVoter.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
-import {AssetStorage} from "../../storage/AssetStorage.sol";
 
 /**
  * @title LoanFacet
@@ -15,7 +14,6 @@ import {AssetStorage} from "../../storage/AssetStorage.sol";
  */
 contract LoanFacet {
     PortfolioFactory public immutable portfolioFactory;
-    AssetStorage public immutable assetStorage;
     
 
     constructor(address _PortfolioFactory) {

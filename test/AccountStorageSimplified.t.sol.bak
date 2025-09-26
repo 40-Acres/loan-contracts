@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import "forge-std/Test.sol";
 import "../src/accounts/PortfolioFactory.sol";
-import "../src/storage/AssetStorage.sol";
+import "../src/storage/CollateralStorage.sol";
 import "../src/accounts/FacetRegistry.sol";
 
 contract AccountStorageSimplifiedTest is Test {
@@ -15,9 +15,9 @@ contract AccountStorageSimplifiedTest is Test {
 
     function setUp() public {
         vm.prank(owner);
-        AssetStorage assetStorage = new AssetStorage();
+        CollateralStorage collateralStorage = new CollateralStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        PortfolioFactory = new PortfolioFactory(address(AssetStorage), address(facetRegistry));
+        PortfolioFactory = new PortfolioFactory(address(CollateralStorage), address(facetRegistry));
         
         // Factory doesn't need authorization
     }

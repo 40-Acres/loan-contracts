@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "./FortyAcresPortfolioAccount.sol";
 import "./FacetRegistry.sol";
+import {CollateralStorage} from "../storage/CollateralStorage.sol";
 /**
  * @title PortfolioFactory
  * @dev Dynamic factory contract that deploys diamond-based FortyAcresPortfolioAccount contracts
@@ -24,11 +25,9 @@ contract PortfolioFactory {
     
     /**
      * @dev Constructor - uses centralized facet registry
-     * @param _assetStorage The token storage contract address
      * @param _facetRegistry The centralized facet registry address
      */
     constructor(
-        address _assetStorage,
         address _facetRegistry
     ) {
         require(_facetRegistry != address(0));

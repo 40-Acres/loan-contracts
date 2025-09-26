@@ -4,29 +4,29 @@ pragma solidity ^0.8.30;
 import "forge-std/Test.sol";
 import "../src/accounts/PortfolioFactory.sol";
 import "../src/accounts/FacetRegistry.sol";
-import "../src/storage/AssetStorage.sol";
+import "../src/storage/CollateralStorage.sol";
 import {IDiamondCut} from "../src/interfaces/IDiamondCut.sol";
 
 contract PortfolioFactoryCleanTest is Test {
     PortfolioFactory public factory;
-    AssetStorage public AssetStorage;
+    CollateralStorage public CollateralStorage;
     
     address public owner = address(0x1);
     address public user = address(0x2);
 
     function setUp() public {
         // Deploy storage contracts
-        AssetStorage = new AssetStorage();
+        CollateralStorage = new CollateralStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        factory = new PortfolioFactory(address(AssetStorage), address(facetRegistry));
+        factory = new PortfolioFactory(address(CollateralStorage), address(facetRegistry));
         
         // Authorize factory in storage
-        AssetStorage.authorizeCaller(address(factory));
+        CollateralStorage.authorizeCaller(address(factory));
     }
 
     function testFactoryDeployment() public {
         assertEq(factory.owner(), owner);
-        assertEq(address(factory.AssetStorage()), address(AssetStorage));
+        assertEq(address(factory.CollateralStorage()), address(CollateralStorage));
     }
 
     function testCreateAccountWithEmptyFacets() public {

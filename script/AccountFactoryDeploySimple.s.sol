@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
-import {AssetStorage} from "../src/storage/AssetStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {Loan} from "../src/LoanV2.sol";
 
@@ -22,9 +21,8 @@ contract PortfolioFactoryDeploySimple is Script {
         vm.startBroadcast(deployerPrivateKey);
         
         // Deploy PortfolioFactory
-        AssetStorage assetStorage = new AssetStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        PortfolioFactory factory = new PortfolioFactory(address(assetStorage), address(facetRegistry));
+        PortfolioFactory factory = new PortfolioFactory(address(facetRegistry));
         console.log("PortfolioFactory:", address(factory));
         
         // Deploy a simple loan contract for testing

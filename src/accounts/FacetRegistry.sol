@@ -17,7 +17,6 @@ contract FacetRegistry {
     event RegistryUpdated(uint256 version);
 
     // Registry state
-    address public owner;
     uint256 public version;
     
     // Central facet storage
@@ -31,7 +30,7 @@ contract FacetRegistry {
     
     // Modifiers
     modifier onlyOwner() {
-        require(msg.sender == owner, "FacetRegistry: Only owner");
+        LibDiamond.enforceIsContractOwner();
         _;
     }
     
@@ -41,8 +40,16 @@ contract FacetRegistry {
     }
 
     constructor() {
-        owner = msg.sender;
+        LibDiamond.setContractOwner(msg.sender);
         version = 1;
+    }
+
+    /**
+     * @dev Get the current owner
+     * @return The current owner address
+     */
+    function owner() external view returns (address) {
+        return LibDiamond.contractOwner();
     }
 
     /**

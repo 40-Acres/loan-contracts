@@ -5,7 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FortyAcresPortfolioAccount} from "../src/accounts/FortyAcresPortfolioAccount.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {AssetStorage} from "../src/storage/AssetStorage.sol";
+import {CollateralStorage} from "../src/storage/CollateralStorage.sol";
 import {Loan} from "../src/LoanV2.sol";
 import {Vault} from "../src/VaultV2.sol";
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
@@ -49,7 +49,7 @@ contract BaseAccountTest is Test {
     
     // Deployed contracts
     PortfolioFactory public PortfolioFactory;
-    AssetStorage public nftStorage;
+    CollateralStorage public nftStorage;
     Loan public loan;
     Vault public vault;
     Swapper public swapper;
@@ -89,9 +89,9 @@ contract BaseAccountTest is Test {
         console.log("\n=== Deploying Unified Storage ===");
         
         // Deploy PortfolioFactory
-        AssetStorage assetStorage = new AssetStorage();
+        CollateralStorage collateralStorage = new CollateralStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        PortfolioFactory = new PortfolioFactory(address(AssetStorage), address(facetRegistry));
+        PortfolioFactory = new PortfolioFactory(address(CollateralStorage), address(facetRegistry));
         console.log("PortfolioFactory:", address(PortfolioFactory));
         
         console.log("Unified Storage deployed successfully");
@@ -100,8 +100,8 @@ contract BaseAccountTest is Test {
     function _deployPortfolioFactory() internal {
         console.log("\n=== Deploying Account Factory System ===");
         
-        // Deploy AssetStorage
-        nftStorage = new AssetStorage();
+        // Deploy CollateralStorage
+        nftStorage = new CollateralStorage();
         
         // Deploy FacetRegistry
         FacetRegistry facetRegistry = new FacetRegistry();
@@ -217,16 +217,16 @@ contract BaseAccountTest is Test {
             userAccount = PortfolioFactory.createAccount(user);
             vm.stopPrank();
             
-            // Authorize the user account to call AssetStorage
-            AssetStorage.authorizeCaller(userAccount);
+            // Authorize the user account to call CollateralStorage
+            CollateralStorage.authorizeCaller(userAccount);
         }
         
         // Transfer NFT to user account
         vm.startPrank(user);
         votingEscrow.transferFrom(user, userAccount, tokenId);
         
-        // Deposit the NFT using AssetStorage directly
-        AssetStorage.depositAsset(
+        // Deposit the NFT using CollateralStorage directly
+        CollateralStorage.depositAsset(
             userAccount,
             address(votingEscrow),
             tokenId,

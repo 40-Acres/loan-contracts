@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
-import {AssetStorage} from "../src/storage/AssetStorage.sol";
+import {CollateralStorage} from "../src/storage/CollateralStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {Loan} from "../src/LoanV2.sol";
 
@@ -51,9 +51,9 @@ contract PortfolioFactoryDeploy is Script {
     function deployUnifiedStorage() internal {
         console.log("\n=== Deploying Unified Storage ===");
         
-        AssetStorage assetStorage = new AssetStorage();
+        CollateralStorage collateralStorage = new CollateralStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        PortfolioFactory portfolioFactory = new PortfolioFactory(address(assetStorage), address(facetRegistry));
+        PortfolioFactory portfolioFactory = new PortfolioFactory(address(facetRegistry));
         unifiedStorage = address(portfolioFactory);
         
         console.log("Unified Storage deployed at:", unifiedStorage);
@@ -79,14 +79,14 @@ contract PortfolioFactoryDeploy is Script {
     function deployPortfolioFactory() internal {
         console.log("\n=== Deploying Account Factory ===");
         
-        // Deploy AssetStorage first
-        AssetStorage assetStorage = new AssetStorage();
+        // Deploy CollateralStorage first
+        CollateralStorage collateralStorage = new CollateralStorage();
         
         // Deploy FacetRegistry
         FacetRegistry facetRegistry = new FacetRegistry();
         
         PortfolioFactory = address(new PortfolioFactory(
-            address(assetStorage),
+            address(collateralStorage),
             address(facetRegistry)
         ));
         

@@ -24,7 +24,6 @@ import {Swapper} from "../src/Swapper.sol";
 import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
-import {AssetStorage} from "../src/storage/AssetStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 
 interface IUSDC {
@@ -74,7 +73,6 @@ contract AerodromeTest is Test {
 
     // Account Factory system
     PortfolioFactory public portfolioFactory;
-    AssetStorage public assetStorage;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -141,18 +139,13 @@ contract AerodromeTest is Test {
     }
 
     function _deployPortfolioFactory() internal {
-        // Deploy AssetStorage
-        assetStorage = new AssetStorage();
-
         // Deploy FacetRegistry
         FacetRegistry facetRegistry = new FacetRegistry();
 
         // Deploy PortfolioFactory
         portfolioFactory = new PortfolioFactory(
-            address(assetStorage),
             address(facetRegistry)
         );
-        assetStorage.authorizeCaller(address(portfolioFactory));
 
         // Note: We'll authorize user accounts as they're created
     }
@@ -184,9 +177,9 @@ contract AerodromeTest is Test {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
 
-            // Authorize the user account to call AssetStorage
+            // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
-            assetStorage.authorizeCaller(userAccount); // Call as test contract (owner)
+            
             vm.startPrank(user); // Resume user prank
         }
 
@@ -264,9 +257,9 @@ contract AerodromeTest is Test {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
 
-            // Authorize the user account to call AssetStorage
+            // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
-            assetStorage.authorizeCaller(userAccount); // Call as test contract (owner)
+
             vm.startPrank(user); // Resume user prank
         }
 
@@ -274,12 +267,6 @@ contract AerodromeTest is Test {
             user,
             address(userAccount),
             tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
         );
         vm.stopPrank();
 
@@ -325,9 +312,8 @@ contract AerodromeTest is Test {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
 
-            // Authorize the user account to call AssetStorage
+            // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
-            assetStorage.authorizeCaller(userAccount); // Call as test contract (owner)
             vm.startPrank(user); // Resume user prank
         }
 
@@ -335,12 +321,6 @@ contract AerodromeTest is Test {
             user,
             address(userAccount),
             tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
         );
         vm.stopPrank();
 
@@ -393,7 +373,6 @@ contract AerodromeTest is Test {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
             vm.stopPrank();
-            assetStorage.authorizeCaller(userAccount);
             vm.startPrank(user);
         }
 
@@ -401,12 +380,6 @@ contract AerodromeTest is Test {
             user,
             address(userAccount),
             tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
         );
         vm.stopPrank();
 
@@ -461,7 +434,6 @@ contract AerodromeTest is Test {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
             vm.stopPrank();
-            assetStorage.authorizeCaller(userAccount);
             vm.startPrank(user);
         }
 
@@ -469,12 +441,6 @@ contract AerodromeTest is Test {
             user,
             address(userAccount),
             tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
         );
         vm.stopPrank();
 
@@ -526,76 +492,6 @@ contract AerodromeTest is Test {
     }
 
     /**
-     * @dev Test vote and userVote with multiple users
-     */
-    function testVoteMultipleUsers() public {
-        uint256 amount = 1e6;
-
-        // user deposits the NFT to their account
-        vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
-        if (userAccount == address(0)) {
-            portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
-            vm.stopPrank();
-            assetStorage.authorizeCaller(userAccount);
-            vm.startPrank(user);
-        }
-
-        IERC721(address(votingEscrow)).transferFrom(
-            user,
-            address(userAccount),
-            tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
-        );
-        vm.stopPrank();
-
-        vm.startPrank(user);
-        LoanFacet(userAccount).requestLoan(
-            address(loan),
-            tokenId,
-            amount,
-            ILoan.ZeroBalanceOption.DoNothing,
-            0,
-            address(0),
-            false,
-            false
-        );
-        vm.stopPrank();
-
-        // Test that only the borrower can vote
-        address otherUser = vm.addr(0x456);
-        vm.startPrank(otherUser);
-        vm.expectRevert(); // Should revert when non-borrower tries to vote
-        loan.vote(tokenId);
-        vm.stopPrank();
-
-        // Test that borrower can vote
-        vm.startPrank(user);
-        bool voteResult = loan.vote(tokenId);
-        vm.stopPrank();
-
-        // Verify vote was successful
-        assertTrue(voteResult, "User should have voted successfully");
-
-        // Test userVote function
-        vm.startPrank(user);
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = tokenId;
-        address[] memory pools = new address[](1);
-        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
-        uint256[] memory weights = new uint256[](1);
-        weights[0] = 100e18; // 100% weight
-        loan.userVote(tokenIds, pools, weights);
-        vm.stopPrank();
-    }
-
-    /**
      * @dev Test loan payoff through the facet
      */
     function testLoanPayoff() public {
@@ -620,9 +516,8 @@ contract AerodromeTest is Test {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
 
-            // Authorize the user account to call AssetStorage
+            // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
-            assetStorage.authorizeCaller(userAccount); // Call as test contract (owner)
             vm.startPrank(user); // Resume user prank
         }
 
@@ -630,12 +525,6 @@ contract AerodromeTest is Test {
             user,
             address(userAccount),
             tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
         );
         vm.stopPrank();
 

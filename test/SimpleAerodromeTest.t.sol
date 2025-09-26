@@ -24,7 +24,6 @@ import {Swapper} from "../src/Swapper.sol";
 import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
-import {AssetStorage} from "../src/storage/AssetStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 
 interface IUSDC {
@@ -74,7 +73,6 @@ contract SimpleAerodromeTest is Test {
 
     // Account Factory system
     PortfolioFactory public portfolioFactory;
-    AssetStorage public assetStorage;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -141,18 +139,13 @@ contract SimpleAerodromeTest is Test {
     }
 
     function _deployPortfolioFactory() internal {
-        // Deploy AssetStorage
-        assetStorage = new AssetStorage();
-
         // Deploy FacetRegistry
         FacetRegistry facetRegistry = new FacetRegistry();
 
         // Deploy PortfolioFactory
         portfolioFactory = new PortfolioFactory(
-            address(assetStorage),
             address(facetRegistry)
         );
-        assetStorage.authorizeCaller(address(portfolioFactory));
 
         // Note: We'll authorize user accounts as they're created
     }
@@ -177,16 +170,14 @@ contract SimpleAerodromeTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        // approve AssetStorage to transfer the NFT
+        // approve CollateralStorage to transfer the NFT
         address userAccount = portfolioFactory.getUserAccount(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
             userAccount = portfolioFactory.getAccount(user);
 
-            // Authorize the user account to call AssetStorage
             vm.stopPrank(); // Stop current prank
-            assetStorage.authorizeCaller(userAccount); // Call as test contract (owner)
             vm.startPrank(user); // Resume user prank
         }
 
@@ -194,12 +185,6 @@ contract SimpleAerodromeTest is Test {
             user,
             address(userAccount),
             tokenId
-        );
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
         );
         vm.stopPrank();
 

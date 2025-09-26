@@ -5,7 +5,6 @@ import {Test, console} from "forge-std/Test.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FortyAcresPortfolioAccount} from "../src/accounts/FortyAcresPortfolioAccount.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {AssetStorage} from "../src/storage/AssetStorage.sol";
 import {Loan} from "../src/LoanV2.sol";
 import {Vault} from "../src/VaultV2.sol";
 import {BaseDeploy} from "../script/BaseDeploy.s.sol";
@@ -49,7 +48,6 @@ contract BaseAccountTest is Test {
     
     // Deployed contracts
     PortfolioFactory public portfolioFactory;
-    AssetStorage public assetStorage;
     Loan public loan;
     Vault public vault;
     Swapper public swapper;
@@ -89,9 +87,8 @@ contract BaseAccountTest is Test {
         console.log("\n=== Deploying Unified Storage ===");
         
         // Deploy PortfolioFactory
-        AssetStorage assetStorage = new AssetStorage();
         FacetRegistry facetRegistry = new FacetRegistry();
-        portfolioFactory = new PortfolioFactory(address(assetStorage), address(facetRegistry));
+        portfolioFactory = new PortfolioFactory(address(facetRegistry));
         console.log("PortfolioFactory:", address(portfolioFactory));
         
         console.log("Unified Storage deployed successfully");
@@ -100,21 +97,14 @@ contract BaseAccountTest is Test {
     function _deployPortfolioFactory() internal {
         console.log("\n=== Deploying Account Factory System ===");
         
-        // Deploy AssetStorage
-        assetStorage = new AssetStorage();
-        
         // Deploy FacetRegistry
         FacetRegistry facetRegistry = new FacetRegistry();
         
         // Deploy PortfolioFactory with diamond pattern
         portfolioFactory = new PortfolioFactory(
-            address(assetStorage),
             address(facetRegistry)
         );
         console.log("PortfolioFactory:", address(portfolioFactory));
-        
-        // Authorize the factory in storage contracts
-        assetStorage.authorizeCaller(address(portfolioFactory));
         
         console.log("Account Factory System deployed successfully");
     }
@@ -217,21 +207,12 @@ contract BaseAccountTest is Test {
             userAccount = portfolioFactory.createAccount(user);
             vm.stopPrank();
             
-            // Authorize the user account to call AssetStorage
-            assetStorage.authorizeCaller(userAccount);
         }
         
         // Transfer NFT to user account
         vm.startPrank(user);
         votingEscrow.transferFrom(user, userAccount, tokenId);
         
-        // Deposit the NFT using AssetStorage directly
-        assetStorage.depositAsset(
-            userAccount,
-            address(votingEscrow),
-            tokenId,
-            address(loan)
-        );
         vm.stopPrank();
         
         console.log("NFT deposited to user account:", userAccount);
