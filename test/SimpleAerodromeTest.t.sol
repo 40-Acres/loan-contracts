@@ -25,6 +25,7 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
+import {CollateralStorage} from "../src/storage/CollateralStorage.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -73,6 +74,7 @@ contract SimpleAerodromeTest is Test {
 
     // Account Factory system
     PortfolioFactory public portfolioFactory;
+    CollateralStorage public collateralStorage;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -108,16 +110,17 @@ contract SimpleAerodromeTest is Test {
         vm.stopPrank();
 
         // Deploy the LoanFacet
-        loanFacet = new LoanFacet(address(portfolioFactory));
+        loanFacet = new LoanFacet(address(portfolioFactory), address(collateralStorage));
 
         // Register LoanFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](6);
+        bytes4[] memory loanSelectors = new bytes4[](7);
         loanSelectors[0] = 0xf4e5753e; // requestLoan(uint256,uint256,uint8,uint256,address,bool,bool)
         loanSelectors[1] = 0x7a792a29; // increaseLoan(uint256,uint256)
         loanSelectors[2] = 0xc49785b4; // claimCollateral(uint256)
         loanSelectors[3] = 0x74630600; // vote(uint256)
         loanSelectors[4] = 0x3bbad66f; // userVote(uint256[],address[],uint256[])
         loanSelectors[5] = 0xba1e30c1; // claim(uint256,address[],address[][],bytes,uint256[2])
+        loanSelectors[6] = 0xe5b8778f; // claim(address,uint256,address[],address[][],bytes,uint256[2])
 
         // Get the FacetRegistry from the PortfolioFactory
         FacetRegistry facetRegistry = FacetRegistry(
@@ -146,6 +149,9 @@ contract SimpleAerodromeTest is Test {
         portfolioFactory = new PortfolioFactory(
             address(facetRegistry)
         );
+
+        // Deploy CollateralStorage
+        collateralStorage = new CollateralStorage(address(portfolioFactory));
 
         // Note: We'll authorize user accounts as they're created
     }

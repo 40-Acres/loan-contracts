@@ -10,11 +10,6 @@ import {PortfolioFactory} from "../accounts/PortfolioFactory.sol";
  * Focuses on ERC721 NFTs with loan contract registration
  */
 contract CollateralStorage is Ownable {
-    // Events
-    event Assetadded(address indexed account, address indexed tokenAddress, uint256 assetId, address indexed assetHandler);
-    event AssetWithdrawn(address indexed account, address indexed tokenAddress, uint256 assetId);
-    event AssetHandlerRegistered(address indexed account, address indexed tokenAddress, uint256 assetId, address indexed assetHandler);
-    event StorageUpgraded(address indexed newImplementation, uint256 newVersion);
 
     // Storage for NFT data
     struct NonfungibleAsset {
@@ -38,9 +33,9 @@ contract CollateralStorage is Ownable {
     // Token storage data using named storage slot
     struct CollateralStorageData {
         PortfolioFactory portfolioFactory;
-        mapping(address => mapping(uint256 => bool)) isNonfungibleCollateral;
-        mapping(address => uint256) fungibleCollateral;
-        mapping(address => bool) isTotalCollateral;
+        mapping(address => mapping(address => mapping(uint256 => bool))) isNonfungibleCollateral;
+        mapping(address => mapping(address => uint256)) fungibleCollateral;
+        mapping(address => mapping(address => bool)) isTotalCollateral;
     }
 
     // Named storage slot for account data
@@ -50,7 +45,7 @@ contract CollateralStorage is Ownable {
     // Modifiers
     modifier onlyPortfolioAccount() {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        require(collateralStorage.portfolioFactory.isAccount(msg.sender));
+        require(collateralStorage.portfolioFactory.isUserAccount(msg.sender));
         _;
     }
 
@@ -74,7 +69,8 @@ contract CollateralStorage is Ownable {
         uint256 assetId
     ) external onlyPortfolioAccount {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.isNonfungibleCollateral[msg.sender][assetId] = true;
+        require(!collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId]);
+        collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId] = true;
     }
 
     function addFungibleCollateral(
@@ -82,14 +78,15 @@ contract CollateralStorage is Ownable {
         uint256 amount
     ) external onlyPortfolioAccount {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.fungibleCollateral[msg.sender] += amount;
+        collateralStorage.fungibleCollateral[msg.sender][tokenAddress] += amount;
     }
 
     function addTotalCollateral(
         address tokenAddress
     ) external onlyPortfolioAccount {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.isTotalCollateral[msg.sender] = true;
+        require(!collateralStorage.isTotalCollateral[msg.sender][tokenAddress]);
+        collateralStorage.isTotalCollateral[msg.sender][tokenAddress] = true;
     }
 
     function removeNonfungibleCollateral(
@@ -97,7 +94,8 @@ contract CollateralStorage is Ownable {
         uint256 assetId
     ) external onlyPortfolioAccount {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.isNonfungibleCollateral[msg.sender][assetId] = false;
+        require(collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId]);
+        collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId] = false;
     }
 
     function removeFungibleCollateral(
@@ -105,14 +103,16 @@ contract CollateralStorage is Ownable {
         uint256 amount
     ) external onlyPortfolioAccount {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.fungibleCollateral[msg.sender] -= amount;
+        require(collateralStorage.fungibleCollateral[msg.sender][tokenAddress] >= amount);
+        collateralStorage.fungibleCollateral[msg.sender][tokenAddress] -= amount;
     }
 
     function removeTotalCollateral(
         address tokenAddress
     ) external onlyPortfolioAccount {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.isTotalCollateral[msg.sender] = false;
+        require(collateralStorage.isTotalCollateral[msg.sender][tokenAddress]);
+        collateralStorage.isTotalCollateral[msg.sender][tokenAddress] = false;
     }
 
     function getNonfungibleCollateral(
@@ -120,14 +120,14 @@ contract CollateralStorage is Ownable {
         uint256 assetId
     ) external view returns (bool) {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        return collateralStorage.isNonfungibleCollateral[msg.sender][assetId];
+        return collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId];
     }
     
     function getFungibleCollateral(
         address tokenAddress
     ) external view returns (uint256) {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        return collateralStorage.fungibleCollateral[msg.sender];
+        return collateralStorage.fungibleCollateral[msg.sender][tokenAddress];
     }
     
     
@@ -135,7 +135,7 @@ contract CollateralStorage is Ownable {
         address tokenAddress
     ) external view returns (bool) {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        return collateralStorage.isTotalCollateral[msg.sender];
+        return collateralStorage.isTotalCollateral[msg.sender][tokenAddress];
     }
     
     

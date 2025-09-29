@@ -7,6 +7,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {IVoter} from "../../interfaces/IVoter.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
+import {CollateralStorage} from "../../storage/CollateralStorage.sol";
 
 /**
  * @title LoanFacet
@@ -14,11 +15,12 @@ import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
  */
 contract LoanFacet {
     PortfolioFactory public immutable portfolioFactory;
-    
+    CollateralStorage public immutable collateralStorage;
 
-    constructor(address _PortfolioFactory) {
-        require(_PortfolioFactory != address(0));
-        portfolioFactory = PortfolioFactory(_PortfolioFactory);
+    constructor(address _portfolioFactory, address _collateralStorage) {
+        require(_portfolioFactory != address(0));
+        portfolioFactory = PortfolioFactory(_portfolioFactory);
+        collateralStorage = CollateralStorage(_collateralStorage);
     }
 
     function claimCollateral(address loanContract, uint256 tokenId) external {
@@ -28,6 +30,7 @@ contract LoanFacet {
         // ensure the token doesnt have a loan within the loan contract
         require(borrower == address(0) && balance == 0);
         IVotingEscrow(asset).transferFrom(address(this), msg.sender, tokenId);
+        CollateralStorage(collateralStorage).removeNonfungibleCollateral(asset, tokenId);
     }
 
     function increaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
@@ -40,6 +43,8 @@ contract LoanFacet {
         ILoan(loanContract).requestLoan(tokenId, amount, zeroBalanceOption, increasePercentage, preferredToken, topUp, optInCommunityRewards);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
+        CollateralStorage(collateralStorage).addNonfungibleCollateral(asset, tokenId);
+
     }
 
     function vote(address loanContract, uint256 tokenId) external returns (bool success) {
@@ -54,10 +59,18 @@ contract LoanFacet {
         IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), false);
     }
 
-    function claim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external {
+    function claim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
         IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), true);
-        ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
+        uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
         IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), false);
+        return result;
+    }
+
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external {
+        // This function assumes the loan contract is already set in the account
+        // For now, we'll need to determine the loan contract address
+        // This is a simplified version - in practice, you'd need to store the loan contract address
+        revert("LoanFacet: Direct claim not supported - use claim(address,uint256,...)");
     }
 
 }
