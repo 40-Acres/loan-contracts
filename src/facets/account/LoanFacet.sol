@@ -43,7 +43,9 @@ contract LoanFacet {
         ILoan(loanContract).requestLoan(tokenId, amount, zeroBalanceOption, increasePercentage, preferredToken, topUp, optInCommunityRewards);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
-        CollateralStorage(collateralStorage).addNonfungibleCollateral(asset, tokenId);
+
+        address ve = address(ILoan(loanContract)._ve());
+        CollateralStorage(collateralStorage).addNonfungibleCollateral(ve, tokenId);
 
     }
 
@@ -65,12 +67,4 @@ contract LoanFacet {
         IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), false);
         return result;
     }
-
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external {
-        // This function assumes the loan contract is already set in the account
-        // For now, we'll need to determine the loan contract address
-        // This is a simplified version - in practice, you'd need to store the loan contract address
-        revert("LoanFacet: Direct claim not supported - use claim(address,uint256,...)");
-    }
-
 }
