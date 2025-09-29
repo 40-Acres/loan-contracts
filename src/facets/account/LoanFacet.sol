@@ -50,21 +50,24 @@ contract LoanFacet {
     }
 
     function vote(address loanContract, uint256 tokenId) external returns (bool success) {
-        IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), true);
+        address ve = address(ILoan(loanContract)._ve());
+        IERC721(ve).setApprovalForAll(address(loanContract), true);
         success = ILoan(loanContract).vote(tokenId);
-        IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), false);
+        IERC721(ve).setApprovalForAll(address(loanContract), false);
     }
 
     function userVote(address loanContract, uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external {
-        IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), true);
+        address ve = address(ILoan(loanContract)._ve());
+        IERC721(ve).setApprovalForAll(address(loanContract), true);
         ILoan(loanContract).userVote(tokenIds, pools, weights);
-        IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), false);
+        IERC721(ve).setApprovalForAll(address(loanContract), false);
     }
 
     function claim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
-        IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), true);
+        address ve = address(ILoan(loanContract)._ve());
+        IERC721(ve).setApprovalForAll(address(loanContract), true);
         uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
-        IERC721(address(ILoan(loanContract)._ve())).setApprovalForAll(address(loanContract), false);
+        IERC721(ve).setApprovalForAll(address(loanContract), false);
         return result;
     }
 }
