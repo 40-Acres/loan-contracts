@@ -123,7 +123,7 @@ contract EtherexDepositNft is Script {
 
     function depositNft() public {
         IVoter(address(0xE30D0C8532721551a51a9FeC7FB233759964d9e3)).reset(16201);
-        LoanV2(address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558)).requestLoan(16201, 0, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        LoanV2(address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558)).requestLoan(0, LoanV2.ZeroBalanceOption.PayToOwner, 0, address(0), false);
     }
 }
 // forge script script/EtherexDeploy.s.sol:EtherexDeploy  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir

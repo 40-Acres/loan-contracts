@@ -266,11 +266,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _lock(tokenId);
 
         _loanDetails[tokenId] = LoanInfo({
+            tokenId: tokenId,
             balance: 0,
             borrower: msg.sender,
             timestamp: block.timestamp,
             outstandingCapital: 0,
-            tokenId: tokenId,
             zeroBalanceOption: zeroBalanceOption,
             pools: new address[](0),
             voteTimestamp: 0,
