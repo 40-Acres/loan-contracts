@@ -84,9 +84,10 @@ contract EntryPointTest is Test {
 
         vm.prank(authorizedUser);
         vm.expectRevert();
-        address(entryPoint).call{value: 1}(
+        (bool success,) = address(entryPoint).call{value: 1}(
             abi.encodeWithSignature("increment()")
         );
+        // This call is expected to fail, so we don't check success
         assertEq(mockTarget.counter(), 1);
 
 

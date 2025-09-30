@@ -10,15 +10,14 @@ interface IXLoan {
 
     function activeAssets() external view returns (uint256);
     function lastEpochReward() external view returns (uint256);
-    function requestLoan(uint256 tokenId,uint256 amount,ZeroBalanceOption zeroBalanceOption,uint256 increasePercentage,address preferredToken,bool topUp) external;
-    function setIncreasePercentage(uint256 tokenId,uint256 increasePercentage) external;
-    function claimCollateral(uint256 tokenId) external;
+    function requestLoan(uint256 amount,ZeroBalanceOption zeroBalanceOption,uint256 increasePercentage,address preferredToken,bool topUp) external;
+    function setIncreasePercentage(uint256 increasePercentage) external;
+    function claimCollateral() external;
     function getRewardsRate() external view returns (uint256);
     function owner() external view returns (address);
     function _asset() external view returns (address);
     function _ve() external view returns (address);
-    function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
-    function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);
+    function getLoanDetails(address) external view returns (uint256 balance, address borrower);
     function pay(uint256 amount) external;
     function setBorrower(address borrower) external;
     function increaseLoan(uint256 amount) external;
@@ -27,7 +26,6 @@ interface IXLoan {
     /**
      * @notice Finalizes a marketplace purchase by assigning the borrower to the buyer
      * @dev Must only be callable by the configured marketplace/diamond/router
-     * @param tokenId The ID of the loan (NFT)
      * @param buyer The address of the buyer
      * @param expectedSeller The expected seller recorded on the listing
      */
@@ -37,11 +35,10 @@ interface IXLoan {
     
     /**
      * @notice Calculates the maximum loan amount for a token
-     * @param tokenId The ID of the token
      * @return maxLoan The maximum loan amount
      * @return maxLoanIgnoreSupply The maximum loan amount ignoring supply constraints
      */
-    function getMaxLoan(uint256 tokenId) external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply);
+    function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply);
 
     /**
      * @notice Gets the vault address
@@ -49,13 +46,7 @@ interface IXLoan {
      */
     function _vault() external view returns (address);
     
-    function transferWithin40Acres(
-        address toContract,
-        uint256 tokenId,
-        uint256 borrowAmount,
-        bytes calldata tradeData
-    ) external returns (bool success);
-    function vote(uint256 tokenId) external returns (bool);
-    function userVote(uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external;
+    function vote() external returns (bool);
+    function userVote(address[] calldata pools, uint256[] calldata weights) external;
     function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
 }

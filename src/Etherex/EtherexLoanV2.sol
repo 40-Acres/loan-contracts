@@ -262,7 +262,7 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
             increaseLoan(amount);
         }
 
-        vote();
+        vote(msg.sender);
     }
 
     /**

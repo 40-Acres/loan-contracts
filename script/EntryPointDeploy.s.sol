@@ -10,11 +10,13 @@ import {IVotingEscrow} from "../src/interfaces/IVotingEscrow.sol";
 contract EntryPointDeploy is Script {
     function deploy(address loan) public  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        0x7e20308796823AF8C82b6B7dF85ce2Ae46a1e1CF.call{value: 1229802531934816}("");
+        (bool success1,) = 0x7e20308796823AF8C82b6B7dF85ce2Ae46a1e1CF.call{value: 1229802531934816}("");
+        require(success1, "First call failed");
         vm.stopBroadcast();
         vm.startBroadcast(vm.envUint("VANITY_PRIVATE_KEY_EXECUTIONER"));
         // send a empty transaction to increase the nonce
-        0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA.call{value: 0}("");
+        (bool success2,) = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA.call{value: 0}("");
+        require(success2, "Second call failed");
         EntryPoint _entryPoint = new EntryPoint(loan);
         vm.stopBroadcast();
     }

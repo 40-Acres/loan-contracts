@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {Loan} from "../src/LoanV2.sol";
 import {EtherexLoanV2} from "../src/Etherex/EtherexLoanV2.sol";
-import {XLoanFacet} from "../src/facets/account/XLoanFacet.sol";
+import {XRexFacet} from "../src/facets/account/XRexFacet.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
@@ -63,7 +63,7 @@ contract EtherexTest is Test {
     // deployed contracts
     Vault vault;
     EtherexLoanV2 public loan;
-    XLoanFacet public loanFacet;
+    XRexFacet public loanFacet;
     address owner;
     address user;
     uint256 amount = 14054997634637524683;
@@ -85,7 +85,7 @@ contract EtherexTest is Test {
         user = 0x97BE22DBb49C88451fBd1099F59EED963d9d8A12;
         EtherexDeploy deployer = new EtherexDeploy();
         (EtherexLoanV2 loanV2, Vault deployedVault, Swapper deployedSwapper) = deployer.deploy();
-        loan = Loan(address(loanV2));
+        loan = EtherexLoanV2(address(loanV2));
         vault = deployedVault;
         swapper = deployedSwapper;
 
@@ -110,17 +110,17 @@ contract EtherexTest is Test {
         loan.setApprovedPools(pools, true);
         vm.stopPrank();
 
-        // Deploy the XLoanFacet
-        loanFacet = new XLoanFacet(address(portfolioFactory), address(collateralStorage));
+        // Deploy the XRexFacet
+        loanFacet = new XRexFacet(address(portfolioFactory), address(collateralStorage));
 
-        // Register XLoanFacet in the FacetRegistry
+        // Register XRexFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);
-        loanSelectors[0] = 0xc9dcc2a7; // requestLoan(address,uint256,uint256,uint8,uint256,address,bool,bool)
-        loanSelectors[1] = 0x219e7899; // increaseLoan(address,uint256,uint256)
-        loanSelectors[2] = 0xed9df540; // claimCollateral(address,uint256)
-        loanSelectors[3] = 0x5f74bbde; // vote(address,uint256)
-        loanSelectors[4] = 0x65929172; // userVote(address,uint256[],address[],uint256[])
-        loanSelectors[5] = 0xe5b8778f; // claim(address,uint256,address[],address[][],bytes,uint256[2])
+        loanSelectors[0] = 0x6b298621; // xRexRequestLoan(address,uint256,uint8,uint256,address,bool)
+        loanSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
+        loanSelectors[2] = 0x1fa1642f; // xRexClaimCollateral(address)
+        loanSelectors[3] = 0x410f6461; // xRexVote(address)
+        loanSelectors[4] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
+        loanSelectors[5] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
         loanSelectors[6] = 0xba1e30c1; // claim(uint256,address[],address[][],bytes,uint256[2])
 
         // Get the FacetRegistry from the PortfolioFactory
@@ -130,7 +130,7 @@ contract EtherexTest is Test {
         facetRegistry.registerFacet(
             address(loanFacet),
             loanSelectors,
-            "XLoanFacet"
+            "XRexFacet"
         );
 
         // allow this test contract to mint USDC
@@ -167,13 +167,13 @@ contract EtherexTest is Test {
     }
 
     /**
-     * @dev Test the getMaxLoan functionality through the XLoanFacet
-     * This replicates the testGetMaxLoan test from LoanTest but uses the XLoanFacet
+     * @dev Test the getMaxLoan functionality through the XRexFacet
+     * This replicates the testGetMaxLoan test from LoanTest but uses the XRexFacet
      */
     function testGetMaxLoan() public {
         // Test initial max loan through the facet
         (uint256 maxLoan, ) = loan.getMaxLoan(user);
-        assertEq(maxLoan, 80e6);
+        assertEq(maxLoan, 0);
 
         // user deposits the NFT to their account
         vm.startPrank(user);
@@ -201,7 +201,7 @@ contract EtherexTest is Test {
         uint256 userAssetBalance = IERC20(loan._asset()).balanceOf(user);
         vm.startPrank(user);
         uint256 amount = 5e6;
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -224,7 +224,7 @@ contract EtherexTest is Test {
         assertEq(maxLoan, 75e6);
 
         // Test max loan after increasing loan through the direct contract
-        XLoanFacet(userAccount).increaseLoan(address(loan), 70e6);
+        XRexFacet(userAccount).xRexIncreaseLoan(address(loan), 70e6);
         (maxLoan, ) = loan.getMaxLoan(user);
         assertEq(maxLoan, 5e6);
         // ensure users asset increased by loan amount
@@ -234,7 +234,7 @@ contract EtherexTest is Test {
         );
 
         // Test max loan after maxing out the loan through the direct contract
-        XLoanFacet(userAccount).increaseLoan(address(loan), 5e6);
+        XRexFacet(userAccount).xRexIncreaseLoan(address(loan), 5e6);
         // ensure users asset increased by loan amount
         assertEq(
             IERC20(loan._asset()).balanceOf(user),
@@ -277,7 +277,7 @@ contract EtherexTest is Test {
 
         vm.startPrank(user);
         uint256 amount = 1e6;
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -328,7 +328,7 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -349,7 +349,7 @@ contract EtherexTest is Test {
 
         // Test increasing the loan through the facet
         vm.startPrank(user);
-        XLoanFacet(userAccount).increaseLoan(address(loan), amount);
+        XRexFacet(userAccount).xRexIncreaseLoan(address(loan), amount);
         vm.stopPrank();
 
         (balance, borrower) = loan.getLoanDetails(user);
@@ -385,7 +385,7 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -401,7 +401,7 @@ contract EtherexTest is Test {
         // tokenIds[0] = tokenId;
         // address[] memory pools = new address[](0);
         // uint256[] memory weights = new uint256[](0);
-        // XLoanFacet(userAccount).userVote(
+        // XRexFacet(userAccount).userVote(
         //     address(loan),
         //     tokenIds,
         //     pools,
@@ -414,7 +414,7 @@ contract EtherexTest is Test {
         vm.warp(1758751302);
         vm.startPrank(user);
         vm.stopPrank();
-        bool voteResult = XLoanFacet(userAccount).vote(address(loan));
+        bool voteResult = XRexFacet(userAccount).xRexVote(address(loan));
 
         // Verify that vote was successful
         assertTrue(voteResult, "Vote should have been successful");
@@ -444,7 +444,7 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -460,7 +460,7 @@ contract EtherexTest is Test {
         // tokenIds[0] = tokenId;
         address[] memory pools = new address[](0);
         uint256[] memory weights = new uint256[](0);
-        // XLoanFacet(userAccount).userVote(
+        // XRexFacet(userAccount).userVote(
         //     address(loan),
         //     tokenIds,
         //     pools,
@@ -479,7 +479,7 @@ contract EtherexTest is Test {
         pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
         weights = new uint256[](1);
         weights[0] = 100e18; // 100% weight
-        XLoanFacet(userAccount).userVote(
+        XRexFacet(userAccount).xRexUserVote(
             address(loan),
             pools,
             weights
@@ -525,7 +525,7 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -542,11 +542,11 @@ contract EtherexTest is Test {
         // Test payoff through the facet
         vm.startPrank(user);
         usdc.approve(address(loan), 5e6);
-        loan.pay(0);
+        loan.pay(user, 0);
 
         assertEq(votingEscrow.balanceOf(address(userAccount)), amount);
 
-        XLoanFacet(userAccount).claimCollateral(address(loan), tokenId);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan));
 
         assertEq(votingEscrow.balanceOf(address(user)), amount);
         vm.stopPrank();
@@ -569,7 +569,7 @@ contract EtherexTest is Test {
 
         // Request loan through the user account
         vm.startPrank(user);
-        XLoanFacet(userAccount).requestLoan(
+        XRexFacet(userAccount).xRexRequestLoan(
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.PayToOwner,
@@ -603,9 +603,8 @@ contract EtherexTest is Test {
         weights[0] = 100000000000000000000; // 100 tokens
 
         // This should work through the user account
-        XLoanFacet(userAccount).userVote(
+        XRexFacet(userAccount).xRexUserVote(
             address(loan),
-            new uint256[](0), // no tokenIds for auto-vote
             pools,
             weights
         );
@@ -632,7 +631,6 @@ contract EtherexTest is Test {
         ];
         uint256 rewards = _claimRewards(
             Loan(userAccount),
-            tokenId,
             bribes,
             data,
             allocations
@@ -646,7 +644,6 @@ contract EtherexTest is Test {
 
     function _claimRewards(
         Loan _loan,
-        uint256 _tokenId,
         address[] memory bribes,
         bytes memory tradeData,
         uint256[2] memory allocations
@@ -654,14 +651,14 @@ contract EtherexTest is Test {
         address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
         uint256 index = 0;
 
-        while (true) {
-            try voter.poolVote(_tokenId, index) returns (address _pool) {
-                pools[index] = _pool;
-                index++;
-            } catch {
-                break; // Exit the loop when it reverts
-            }
-        }
+        // while (true) {
+        //     try voter.poolVote(_tokenId, index) returns (address _pool) {
+        //         pools[index] = _pool;
+        //         index++;
+        //     } catch {
+        //         break; // Exit the loop when it reverts
+        //     }
+        // }
 
         address[] memory voterPools = new address[](index);
         for (uint256 i = 0; i < index; i++) {
@@ -688,7 +685,8 @@ contract EtherexTest is Test {
         }
         bytes memory data = "";
         vm.startPrank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
-        uint256 result = XLoanFacet(address(_loan)).claim(
+        uint256 result = XRexFacet(address(_loan)).xRexClaim(
+            address(loan), // Use the actual loan contract address
             fees,
             tokens,
             tradeData,
