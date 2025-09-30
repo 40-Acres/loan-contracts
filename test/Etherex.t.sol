@@ -190,11 +190,8 @@ contract EtherexTest is Test {
             vm.startPrank(user); // Resume user prank
         }
 
-        // IERC721(address(votingEscrow)).transferFrom(
-        //     user,
-        //     address(userAccount),
-        //     tokenId
-        // );
+      
+        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(address(userAccount), type(uint256).max);
         vm.stopPrank();
 
         // log users _asset balance

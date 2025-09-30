@@ -1088,9 +1088,8 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     function _getLockedAmount(
         address borrower
     ) internal view virtual returns (uint256) {
-        // Since tokenId was removed, we can't get locked amount
-        // Return 0 as default
-        return 0;
+        // Get the locked amount from the locked asset contract
+        return _lockedAsset.balanceOf(borrower);
     }
     /**
      * @notice Sets the increase percentage for a specific loan.
