@@ -297,6 +297,7 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
+        _asset.transferFrom(_vault, loan.borrower, amount);
         emit FundsBorrowed(loan.borrower, amount);
     }
 
@@ -705,20 +706,13 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     function claimCollateral() public virtual {
         LoanInfo storage loan = _loanDetails[msg.sender];
 
-        // Ensure that the caller is the borrower of the loan
+        // // Ensure that the caller is the borrower of the loan
         require(loan.borrower == msg.sender);
 
-        // Ensure that the loan is fully repaid before allowing collateral to be claimed
+        // // Ensure that the loan is fully repaid before allowing collateral to be claimed
         require(loan.balance == 0);
 
-        // transfer the token to the contract if not a user account
-        bool isAccount = isUserAccount(msg.sender);
-        if(!isAccount) {
-            // Since tokenId was removed, we can't transfer the NFT
-            // This functionality is now disabled
-        }
         emit CollateralWithdrawn(msg.sender);
-        // loan.weight was removed, so we can't subtract it
         delete _loanDetails[msg.sender];
     }
 
@@ -1088,8 +1082,7 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     function _getLockedAmount(
         address borrower
     ) internal view virtual returns (uint256) {
-        // Get the locked amount from the locked asset contract
-        return _lockedAsset.balanceOf(borrower);
+        return IERC20(_lockedAsset).balanceOf(borrower);
     }
     /**
      * @notice Sets the increase percentage for a specific loan.

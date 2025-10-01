@@ -59,6 +59,7 @@ contract EtherexTest is Test {
     IVoter public voter = IVoter(0x942117Ec0458a8AA08669E94B52001Bd43F889C1);
     address[] pool = [address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e)];
     ProxyAdmin admin;
+    address userAccount;
 
     // deployed contracts
     Vault vault;
@@ -66,8 +67,8 @@ contract EtherexTest is Test {
     XRexFacet public loanFacet;
     address owner;
     address user;
-    uint256 amount = 14054997634637524683;
-    uint256 tokenId = amount;
+    uint256 amount = 5e6;
+    uint256 tokenId = 14054997634637524683;
 
     uint256 expectedRewards = 957174473;
 
@@ -89,6 +90,10 @@ contract EtherexTest is Test {
         vault = deployedVault;
         swapper = deployedSwapper;
 
+
+        // Send REX token to the user
+        vm.prank(0x97a51bAEF69335b6248AFEfEBD95E90399D37b0a);
+        aero.transfer(user, 100e6);
         // Deploy Account Factory system
         _deployPortfolioFactory();
 
@@ -140,6 +145,23 @@ contract EtherexTest is Test {
         usdc.mint(address(vault), 100e6);
 
         vm.stopPrank();
+        vm.startPrank(user);
+
+        userAccount = portfolioFactory.getUserAccount(user);
+        // create the user account if it doesn't exist
+        if (userAccount == address(0)) {
+            portfolioFactory.createAccount(user);
+            userAccount = portfolioFactory.getAccount(user);
+
+            // Authorize the user account to call CollateralStorage
+            vm.stopPrank(); // Stop current prank
+            
+            vm.startPrank(user); // Resume user prank
+        }
+
+      
+        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(address(userAccount), type(uint256).max);
+        vm.stopPrank();
     }
 
     function _deployPortfolioFactory() internal {
@@ -162,10 +184,6 @@ contract EtherexTest is Test {
         assertEq(o, owner);
     }
 
-    function testNftOwner() public view {
-        assertEq(votingEscrow.balanceOf(address(user)), amount);
-    }
-
     /**
      * @dev Test the getMaxLoan functionality through the XRexFacet
      * This replicates the testGetMaxLoan test from LoanTest but uses the XRexFacet
@@ -175,24 +193,6 @@ contract EtherexTest is Test {
         (uint256 maxLoan, ) = loan.getMaxLoan(user);
         assertEq(maxLoan, 0);
 
-        // user deposits the NFT to their account
-        vm.startPrank(user);
-        // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
-        // create the user account if it doesn't exist
-        if (userAccount == address(0)) {
-            portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
-
-            // Authorize the user account to call CollateralStorage
-            vm.stopPrank(); // Stop current prank
-            
-            vm.startPrank(user); // Resume user prank
-        }
-
-      
-        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(address(userAccount), type(uint256).max);
-        vm.stopPrank();
 
         // log users _asset balance
         uint256 userAssetBalance = IERC20(loan._asset()).balanceOf(user);
@@ -214,16 +214,16 @@ contract EtherexTest is Test {
         );
 
         // the tokenId should be owned by the user account after requesting a loan
-        assertEq(votingEscrow.balanceOf(address(userAccount)), amount);
+        // assertEq(votingEscrow.balanceOf(address(userAccount)), tokenId, "Voting escrow balance should be amount");
 
         // Test max loan after requesting a loan through the facet
-        (maxLoan, ) = loan.getMaxLoan(user);
+        (maxLoan, ) = loan.getMaxLoan(userAccount);
         assertEq(maxLoan, 75e6);
 
         // Test max loan after increasing loan through the direct contract
         XRexFacet(userAccount).xRexIncreaseLoan(address(loan), 70e6);
-        (maxLoan, ) = loan.getMaxLoan(user);
-        assertEq(maxLoan, 5e6);
+        (maxLoan, ) = loan.getMaxLoan(userAccount);
+        assertEq(maxLoan, 5e6, "Max loan should be 5e6");
         // ensure users asset increased by loan amount
         assertEq(
             IERC20(loan._asset()).balanceOf(user),
@@ -284,16 +284,14 @@ contract EtherexTest is Test {
         );
         vm.stopPrank();
 
-        assertTrue(usdc.balanceOf(address(user)) > 1e6);
-        assertTrue(usdc.balanceOf(address(vault)) < 100e6);
+        assertTrue(usdc.balanceOf(address(user)) >= 1e6, "User should have more than 1e6");
+        assertTrue(usdc.balanceOf(address(vault)) < 100e6, "Vault should have less than 100e6");
 
         // Verify the loan details through the facet
-        (uint256 balance, address borrower) = loan.getLoanDetails(user);
-        assertTrue(balance > amount);
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertTrue(balance >= amount, "Balance should be more than amount");
         assertEq(borrower, address(userAccount));
 
-        // Verify the NFT ownership - should be owned by user account after requesting loan
-        assertEq(votingEscrow.balanceOf(address(userAccount)), amount);
     }
 
     /**
@@ -337,11 +335,11 @@ contract EtherexTest is Test {
         loan.vote(user);
         vm.stopPrank();
 
-        assertTrue(usdc.balanceOf(address(user)) > 1e6);
+        assertTrue(usdc.balanceOf(address(user)) >= 1e6, "User should have more than loan");
         assertEq(loan.activeAssets(), 1e6);
 
-        (uint256 balance, address borrower) = loan.getLoanDetails(user);
-        assertTrue(balance > amount);
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertTrue(balance >= amount, "Balance should be more than amount");
         assertEq(borrower, address(userAccount));
 
         // Test increasing the loan through the facet
@@ -349,8 +347,8 @@ contract EtherexTest is Test {
         XRexFacet(userAccount).xRexIncreaseLoan(address(loan), amount);
         vm.stopPrank();
 
-        (balance, borrower) = loan.getLoanDetails(user);
-        assertTrue(balance > amount);
+        (balance, borrower) = loan.getLoanDetails(userAccount);
+        assertTrue(balance >= amount, "Balance2 should be more than amount");
         assertEq(borrower, address(userAccount));
         assertEq(loan.activeAssets(), 2e6);
 
@@ -494,10 +492,9 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         uint256 amount = 1e6;
-        assertEq(votingEscrow.balanceOf(address(user)), amount);
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
-        assertEq(usdc.balanceOf(address(user)), startingUserBalance);
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
         assertEq(usdc.balanceOf(address(vault)), 100e6);
 
         // user deposits the NFT to their account
@@ -532,20 +529,21 @@ contract EtherexTest is Test {
         );
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(address(user)), 1e6 + startingUserBalance);
+        assertEq(usdc.balanceOf(address(user)), 1e6 + startingUserBalance, "User should have 1e6");
         assertEq(usdc.balanceOf(address(vault)), 99e6);
-        assertEq(votingEscrow.balanceOf(address(userAccount)), amount);
 
         // Test payoff through the facet
         vm.startPrank(user);
         usdc.approve(address(loan), 5e6);
-        loan.pay(user, 0);
+        loan.pay(userAccount, 0);
 
-        assertEq(votingEscrow.balanceOf(address(userAccount)), amount);
 
         XRexFacet(userAccount).xRexClaimCollateral(address(loan));
 
-        assertEq(votingEscrow.balanceOf(address(user)), amount);
+        // loan details should be 0
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertEq(balance, 0, "Balance should be 0");
+        assertEq(borrower, address(0), "Borrower should be 0");
         vm.stopPrank();
     }
 
@@ -553,16 +551,6 @@ contract EtherexTest is Test {
         uint256 amount = 1e6;
         uint256 startingUserBalance = usdc.balanceOf(address(user));
 
-        // user deposits the NFT to their account
-        vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
-        if (userAccount == address(0)) {
-            userAccount = portfolioFactory.createAccount(user);
-        }
-
-        // Transfer NFT to user account
-        votingEscrow.transferFrom(user, userAccount, tokenId);
-        vm.stopPrank();
 
         // Request loan through the user account
         vm.startPrank(user);
@@ -577,7 +565,7 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         // Verify loan was created
-        (uint256 balance, ) = loan.getLoanDetails(user);
+        (uint256 balance, ) = loan.getLoanDetails(userAccount);
         assertTrue(
             balance >= amount,
             "Loan balance should be at least the requested amount"

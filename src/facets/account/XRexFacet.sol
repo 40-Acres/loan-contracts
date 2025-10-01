@@ -46,11 +46,12 @@ contract XRexFacet {
     }
     
     function xRexRequestLoan(address loanContract, uint256 amount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external {
-        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).transferFrom(msg.sender, address(this), amount);
-        address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
+        uint256 tokenBalance = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).balanceOf(msg.sender);
+        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).transferFrom(msg.sender, address(this), tokenBalance);
 
-        IERC20(lockedAsset).approve(0xc93B315971A4f260875103F5DA84cB1E30f366Cc, amount);
-        IXRex(lockedAsset).convertEmissionsToken(amount);
+        // Approve the xREX contract to spend the REX tokens we just received
+        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(0xc93B315971A4f260875103F5DA84cB1E30f366Cc, tokenBalance);
+        IXRex(0xc93B315971A4f260875103F5DA84cB1E30f366Cc).convertEmissionsToken(tokenBalance);
         IXLoan(loanContract).requestLoan(amount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
 
         address ve = address(IXLoan(loanContract)._lockedAsset());

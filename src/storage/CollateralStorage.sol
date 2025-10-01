@@ -4,6 +4,10 @@ pragma solidity ^0.8.28;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {PortfolioFactory} from "../accounts/PortfolioFactory.sol";
 
+
+// Use library
+
+
 /**
  * @title CollateralStorage
  * @dev Upgradable storage contract for NFT data that can be shared across all users
@@ -14,7 +18,7 @@ contract CollateralStorage is Ownable {
     // Storage for NFT data
     struct NonfungibleAsset {
         address tokenAddress;
-        uint256 assetId; // Generic identifier for ERC721 (tokenId), ERC1155 (tokenId), ERC20 (0 or unique ID)
+        uint256 assetId; // Generic identifier for ERC721 
         address assetHandler; // Contract that handles this asset's operations (voting, claiming, loans)
     }
 
