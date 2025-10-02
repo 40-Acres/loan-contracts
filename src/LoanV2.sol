@@ -1427,8 +1427,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         loan.balance -= loan.unpaidFees;
         loan.unpaidFees = 0;
-        
-        require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
+        require(loan.balance == loan.outstandingCapital);
 
         // Transfer veNFT ownership to buyer
         _setBorrower(tokenId, buyer);
