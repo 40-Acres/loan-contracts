@@ -1221,7 +1221,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        bool isAccount = isUserAccount(msg.sender);
         IVoter voter = _voter;
         // Always use the actual voter contract, not the FortyAcresPortfolioAccount
         if(loan.borrower == msg.sender && pools.length > 0) {

@@ -23,6 +23,7 @@ import {IFlashLoanProvider} from "../interfaces/IFlashLoanProvider.sol";
 import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
 import { PortfolioFactory } from "../accounts/PortfolioFactory.sol";
 import {IVoteModule} from "../interfaces/IVoteModule.sol";
+import {IXRex} from "../interfaces/IXRex.sol";
 
 
 import { console } from "forge-std/console.sol";
@@ -69,6 +70,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     uint256[] public _defaultWeights;
     // Time when the default pools were last changed
     uint256 public _defaultPoolChangeTime;
+    IVoteModule public _voteModule;
     uint256[50] private _gap;
 
     
@@ -198,6 +200,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         _liquidAsset = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
         _lockedAsset = IERC20(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
         _multiplier = 12;
+        _voteModule = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1);
     }
 
     
@@ -673,17 +676,19 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      * @dev This function ensures that only the borrower can claim the collateral and that the loan is fully repaid.
      *      If the loan balance is greater than zero, the collateral cannot be claimed.
      */
-    function claimCollateral(uint256 tokenId) public virtual {
+    function confirmClaimCollateral() public virtual {
         LoanInfo storage loan = _loanDetails[msg.sender];
-
-        // // Ensure that the caller is the borrower of the loan
         require(loan.borrower == msg.sender);
 
-        // // Ensure that the loan is fully repaid before allowing collateral to be claimed
-        require(loan.balance == 0);
+        (,uint256 maxLoanIgnoreSupply) = getMaxLoan(msg.sender);
+        uint256 collateralAfterWithdraw = IXRex(address(_lockedAsset)).balanceOf(address(this));
+        require(maxLoanIgnoreSupply >= collateralAfterWithdraw);
 
-        emit CollateralWithdrawn(msg.sender);
-        delete _loanDetails[msg.sender];
+        if(IXRex(address(_lockedAsset)).balanceOf(address(this)) == 0) {
+            require(loan.balance == 0);
+            emit CollateralWithdrawn(msg.sender);
+            delete _loanDetails[msg.sender];
+        }
     }
 
 
@@ -1037,7 +1042,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     function _getLockedAmount(
         address borrower
     ) internal view virtual returns (uint256) {
-        uint256 balance = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(borrower);
+        uint256 balance = _voteModule.balanceOf(borrower);
         console.log("balance", balance);
         return balance;
     }

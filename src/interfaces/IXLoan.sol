@@ -12,7 +12,6 @@ interface IXLoan {
     function lastEpochReward() external view returns (uint256);
     function requestLoan(uint256 amount,ZeroBalanceOption zeroBalanceOption,uint256 increasePercentage,address preferredToken,bool topUp) external;
     function setIncreasePercentage(uint256 increasePercentage) external;
-    function claimCollateral() external;
     function getRewardsRate() external view returns (uint256);
     function owner() external view returns (address);
     function _vaultAsset() external view returns (address);
@@ -49,4 +48,5 @@ interface IXLoan {
     function vote(address user) external returns (bool);
     function userVote(address[] calldata pools, uint256[] calldata weights) external;
     function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
+    function confirmClaimCollateral() external;
 }

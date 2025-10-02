@@ -105,6 +105,11 @@ contract AerodromeTest is Test {
         address[] memory pools = new address[](1);
         pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
         loan.setApprovedPools(pools, true);
+        
+        // Set default pools and weights for automatic voting
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100e18;
+        loan.setDefaultPools(pools, weights);
         vm.stopPrank();
 
         // Deploy the AerodromeFacet
@@ -574,6 +579,101 @@ contract AerodromeTest is Test {
 
         // Request loan through the user account
         vm.startPrank(user);
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
+            address(loan),
+            tokenId,
+            amount,
+            ILoan.ZeroBalanceOption.PayToOwner,
+            0,
+            address(0),
+            false,
+            false
+        );
+        vm.stopPrank();
+
+        // Verify loan was created
+        (uint256 balance, ) = loan.getLoanDetails(tokenId);
+        assertTrue(
+            balance >= amount,
+            "Loan balance should be at least the requested amount"
+        );
+
+        // Verify the user received the loan
+        uint256 endingUserBalance = usdc.balanceOf(address(user));
+        assertTrue(
+            endingUserBalance > startingUserBalance,
+            "User should have received loan funds"
+        );
+
+        // Test that the user account can interact with the loan
+        vm.startPrank(user);
+
+        // Test that the user account can vote (this tests the user account integration)
+        address[] memory pools = new address[](1);
+        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100000000000000000000; // 100 tokens
+
+        // This should work through the user account
+        AerodromeFacet(userAccount).aerodromeUserVote(
+            address(loan),
+            new uint256[](0), // no tokenIds for auto-vote
+            pools,
+            weights
+        );
+        vm.stopPrank();
+
+        // Verify the vote was recorded
+        address votedPool = voter.poolVote(tokenId, 0);
+        assertEq(votedPool, pools[0], "Pool should be voted for");
+
+        console.log("User account integration test passed");
+        console.log("Loan balance:", balance);
+        console.log(
+            "User USDC balance change:",
+            endingUserBalance - startingUserBalance
+        );
+
+        uint256 beginningUserUsdcBalance = usdc.balanceOf(address(user));
+        address[] memory bribes = new address[](0);
+        bytes
+            memory data = hex"84a7f3dd020100016877B1b0c6267E0AD9aa4C0df18A547AA2f6B08d073a9f858ec468c400020704077c61afebec0001df033790907c60c9B81aE355F76F74f52F92114A00016e2c81b6c2c0e02360f00a0da694e489acb0b05e090764453ee13b356a3700000004043b927079000187f18b377e625b62c708D5f6EA96EC193558EFD0000000000401030500340201000102018000001702080201030401ff000000000000000000df033790907c60c9b81ae355f76f74f52f92114a420000000000000000000000000000000000000651c230951b82dbf7b8696b6fcd2be199cc10779f6e2c81b6c2c0e02360f00a0da694e489acb0b05e00000000000000000000000000000000";
+        uint256[2] memory allocations = [
+            uint256(41349),
+            uint256(21919478169541)
+        ];
+        uint256 rewards = _claimRewards(
+            Loan(userAccount),
+            tokenId,
+            bribes,
+            data,
+            allocations
+        );
+        uint256 endingUserUsdcBalance = usdc.balanceOf(address(user));
+        assertTrue(
+            endingUserUsdcBalance > beginningUserUsdcBalance,
+            "User should have received rewards"
+        );
+    }
+
+    // test claims without transferring the NFT to the user account
+    function testClaim2() public {
+        uint256 amount = 1e6;
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+
+        // user deposits the NFT to their account
+        vm.startPrank(user);
+        address userAccount = portfolioFactory.getUserAccount(user);
+        if (userAccount == address(0)) {
+            userAccount = portfolioFactory.createAccount(user);
+        }
+
+        // Transfer NFT to user account
+        vm.stopPrank();
+
+        // Request loan through the user account
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(userAccount), tokenId);
         AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,

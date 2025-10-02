@@ -10,6 +10,7 @@ import { Vault as VaultV2 } from "src/VaultV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import { Swapper } from "../src/Swapper.sol";
+import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 
 
 contract EtherexDeploy is Script {
@@ -18,7 +19,6 @@ contract EtherexDeploy is Script {
     uint256 fork;
     address _rex = 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348;
     address _asset = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
-    address _avax = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
 
     function run() external  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
@@ -26,14 +26,15 @@ contract EtherexDeploy is Script {
     }
 
 
-    function deploy() public returns (Loan, Vault, Swapper) {
+    function deploy() public returns (Loan, Vault, Swapper, AccountConfigStorage) {
         Loan loanImplementation = new Loan();
         ERC1967Proxy _loan = new ERC1967Proxy(address(loanImplementation), "");
         VaultV2 vaultImplementation = new VaultV2();
         ERC1967Proxy _vault = new ERC1967Proxy(address(vaultImplementation), "");
+        AccountConfigStorage accountConfigStorage = new AccountConfigStorage();
 
         Vault vault = Vault(payable(_vault));        
-        VaultV2(address(vault)).initialize(address(_asset), address(_loan), "40BH-USDC-VAULT", "40BH-USDC-VAULT");
+        VaultV2(address(vault)).initialize(address(_asset), address(_loan), "40ETHEREX-USDC-VAULT", "40ETHEREX-USDC-VAULT");
 
         Loan loan = Loan(payable(_loan));
         Loan(address(loan)).initialize(address(_vault), _asset);
@@ -52,11 +53,12 @@ contract EtherexDeploy is Script {
         // Set the default pools and weights
         loan.setDefaultPools(defaultPools, defaultWeights);
 
-        address[] memory _supportedTokens = new address[](3);
+        address[] memory _supportedTokens = new address[](2);
         _supportedTokens[0] = _rex; 
         _supportedTokens[1] = _asset; 
-        _supportedTokens[2] = _avax; 
         supportedTokens = _supportedTokens;
+        
+
         
         // Deploy swapper with Avalanche factory and router addresses
         swapper = new Swapper(
@@ -67,7 +69,7 @@ contract EtherexDeploy is Script {
         loan.setSwapper(address(swapper));
         
         loan.transferOwnership(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
-        return (loan, vault, swapper);
+        return (loan, vault, swapper, accountConfigStorage);
     }
 
 }

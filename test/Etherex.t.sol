@@ -25,12 +25,15 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
+import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 
 
 contract MockOdosRouterRL {
     address public testContract;
 
     address ODOS = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
+    address USDC = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
+    address REX = 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348;
     
     function initMock(address _testContract) external { testContract = _testContract; }
     function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external returns (bool) {
@@ -40,36 +43,14 @@ contract MockOdosRouterRL {
         return true;
     }
 
-    // ETH -> token swap path for loan route
-    function executeSwapETH(address tokenOut, uint256 amountOut) external payable returns (bool) {
-        require(msg.value > 0, "no eth");
-        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), msg.sender, amountOut));
-        require(success, "mint fail");
-        return true;
-    }
-    
-    // Multi-input swap for LBO: takes AERO from caller, receives USDC from contract, outputs USDC to caller
-    function executeMultiInputSwap(address tokenIn, uint256 amountIn, uint256 usdcFromContract, uint256 totalUsdcOut) external returns (bool) {
-        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-        // Take AERO from caller
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        // Take USDC from caller (flash loan amount)
-        IERC20(usdc).transferFrom(msg.sender, address(this), usdcFromContract);
-        // Mint total USDC output to caller
-        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(usdc).masterMinter(), msg.sender, totalUsdcOut));
-        require(success, "mint fail");
-        return true;
-    }
 
-    // Multi-input swap for LBO: takes ETH + USDC from caller, outputs AERO to caller
-    function executeMultiInputSwapToAero(uint256 ethAmount, uint256 usdcAmount, uint256 aeroAmountOut) external payable returns (bool) {
-        require(msg.value == ethAmount, "ETH amount mismatch");
-        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-        address aero = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
-        // Take USDC from caller (flash loan amount)
-        IERC20(usdc).transferFrom(msg.sender, address(this), usdcAmount);
-        // Transfer AERO to caller (simulate swap output)
-        IERC20(aero).transfer(msg.sender, aeroAmountOut);
+    function executeSwapMultiOutput(uint256 amount1, uint256 amount2) external returns (bool) {
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(0x176211869cA2b568f2A7D4EE941E073a821EE1ff).masterMinter(), msg.sender, amount1));
+        require(success, "mint fail");
+
+        (bool success2,) = testContract.call(abi.encodeWithSignature("mintRex(address,uint256)", msg.sender, amount2));
+        require(success2, "mint rex fail");
+
         return true;
     }
 }
@@ -110,6 +91,7 @@ contract EtherexTest is Test {
     address userAccount;
 
     address ODOS = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
+    address REX = 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348;
     // deployed contracts
     Vault vault;
     EtherexLoan public loan;
@@ -134,10 +116,13 @@ contract EtherexTest is Test {
         owner = vm.addr(0x123);
         user = 0x97BE22DBb49C88451fBd1099F59EED963d9d8A12;
         EtherexDeploy deployer = new EtherexDeploy();
-        (EtherexLoan loanV2, Vault deployedVault, Swapper deployedSwapper) = deployer.deploy();
+        (EtherexLoan loanV2, Vault deployedVault, Swapper deployedSwapper, AccountConfigStorage _accountConfigStorage) = deployer.deploy();
         loan = EtherexLoan(address(loanV2));
         vault = deployedVault;
         swapper = deployedSwapper;
+        
+        // Deploy a simple AccountConfigStorage for testing
+        AccountConfigStorage accountConfigStorage = new AccountConfigStorage();
 
 
         // Send REX token to the user
@@ -165,13 +150,15 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         // Deploy the XRexFacet
-        loanFacet = new XRexFacet(address(portfolioFactory));
+        // The test contract is the owner of the simple AccountConfigStorage
+        accountConfigStorage.setApprovedContract(address(loan), true);
+        loanFacet = new XRexFacet(address(portfolioFactory), address(accountConfigStorage));
 
         // Register XRexFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);
         loanSelectors[0] = 0x6b298621; // xRexRequestLoan(address,uint256,uint8,uint256,address,bool)
         loanSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        loanSelectors[2] = 0x1fa1642f; // xRexClaimCollateral(address)
+        loanSelectors[2] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
         loanSelectors[3] = 0x410f6461; // xRexVote(address)
         loanSelectors[4] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
         loanSelectors[5] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
@@ -215,11 +202,14 @@ contract EtherexTest is Test {
 
 
         // USDC minting for tests and mock Odos setup at canonical address
+        
         vm.prank(IUSDC(usdc).masterMinter());
         MockOdosRouterRL mock = new MockOdosRouterRL();
         bytes memory code = address(mock).code;
         vm.etch(ODOS, code);
         MockOdosRouterRL(ODOS).initMock(address(this));
+        vm.prank(0x3f6177CA0b041B1a469F11261f8a8b007633ed48);
+        IERC20(REX).transfer(address(this), 10000e18);
     }
 
     function _deployPortfolioFactory() internal {
@@ -232,6 +222,16 @@ contract EtherexTest is Test {
         );
 
         // Note: We'll authorize user accounts as they're created
+    }
+
+    // helper for mock to mint USDC to a recipient
+    function mintUsdc(address /*minter*/, address to, uint256 amount) external {
+        usdc.mint(to, amount);
+    }
+
+    // helper for mock to mint REX to a recipient
+    function mintRex(address to, uint256 amount) external {
+        aero.transfer(to, amount);
     }
 
     function testOwner() public view {
@@ -593,13 +593,27 @@ contract EtherexTest is Test {
         loan.pay(userAccount, 0);
 
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan));
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 2);
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
         assertEq(balance, 0, "Balance should be 0");
         assertEq(borrower, address(0), "Borrower should be 0");
         vm.stopPrank();
+    }
+
+    function testPortfolioFactory() public {
+        // create a new account
+        address _user = address(0x123);
+        portfolioFactory.createAccount(_user);
+        address newAccount = portfolioFactory.getAccount(_user);
+        assertTrue(portfolioFactory.isUserAccount(newAccount), "New account should be a user account");
+        assertEq(portfolioFactory.getAccountOwner(newAccount), _user, "New account owner should be the user");
+        assertEq(portfolioFactory.getUserAccount(_user), newAccount, "New account should be the user account");
+        assertEq(portfolioFactory.getAllPortfolios().length, 2, "There should be 2 account");
+        assertEq(portfolioFactory.getPortfoliosLength(), 2, "There should be 2 account");
+        assertEq(portfolioFactory.getPortfolio(0), userAccount, "New account should be the first account");
+        assertEq(portfolioFactory.getPortfolio(1), newAccount, "New account should be the second account");
     }
 
     function testClaim() public {
@@ -655,20 +669,11 @@ contract EtherexTest is Test {
         );
         vm.stopPrank();
 
-        console.log("User account integration test passed");
-        console.log("Loan balance:", balance);
-        console.log(
-            "User USDC balance change:",
-            endingUserBalance - startingUserBalance
-        );
-
-        uint256 beginningUserUsdcBalance = usdc.balanceOf(address(user));
+        uint256 beginningUserUsdcBalance = usdc.balanceOf(address(userAccount));
         bytes memory tradeData = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwap.selector,
-            usdc,
-            usdc,
-            0,
-            10e6
+            MockOdosRouterRL.executeSwapMultiOutput.selector,
+            10e6,
+            21919478169540 // send less to account for slippage
         );
 
         uint256[2] memory allocations = [
@@ -683,11 +688,9 @@ contract EtherexTest is Test {
             tradeData,
             allocations
         );
-        uint256 endingUserUsdcBalance = usdc.balanceOf(address(user));
-        assertTrue(
-            endingUserUsdcBalance > beginningUserUsdcBalance,
-            "User should have received rewards"
-        );
+        // loan balance should be 0
+        (balance, ) = loan.getLoanDetails(userAccount);
+        assertEq(balance, 0, "Balance should be 0");
     }
 
     function _claimRewards(

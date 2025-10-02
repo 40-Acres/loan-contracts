@@ -38,11 +38,14 @@ contract AerodromeFacet {
     }
     
     function aerodromeRequestLoan(address loanContract, uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp, bool optInCommunityRewards) external {
+        address ve = address(ILoan(loanContract)._ve());
+        if(IERC721(ve).ownerOf(tokenId) != address(this)) {
+            IERC721(ve).transferFrom(msg.sender, address(this), tokenId);
+        }
         ILoan(loanContract).requestLoan(tokenId, amount, zeroBalanceOption, increasePercentage, preferredToken, topUp, optInCommunityRewards);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
 
-        address ve = address(ILoan(loanContract)._ve());
         CollateralStorage.addNonfungibleCollateral(ve, tokenId);
 
     }

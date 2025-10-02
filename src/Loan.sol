@@ -34,7 +34,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     address internal _aeroFactory;
     address internal _rateCalculator; // deprecated
     address public _vault;
-    PortfolioFactory public _PortfolioFactory;
 
     bool public _paused;
     uint256 public _outstandingCapital;
