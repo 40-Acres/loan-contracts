@@ -1370,7 +1370,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _setBorrower(uint256 tokenId, address newBorrower) internal {
         if (newBorrower == address(0)) revert ZeroAddress();
         LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
         address previousBorrower = loan.borrower;
         loan.borrower = newBorrower;
         emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
