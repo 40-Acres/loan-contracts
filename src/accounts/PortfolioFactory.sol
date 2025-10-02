@@ -4,24 +4,26 @@ pragma solidity ^0.8.28;
 import "./FortyAcresPortfolioAccount.sol";
 import "./FacetRegistry.sol";
 import {CollateralStorage} from "../storage/CollateralStorage.sol";
+import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 /**
  * @title PortfolioFactory
  * @dev Dynamic factory contract that deploys diamond-based FortyAcresPortfolioAccount contracts
  */
 contract PortfolioFactory {
     FacetRegistry public immutable facetRegistry;
-    
+
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     mapping(address => address) public portfolios; // user => portfolio
     mapping(address => address) public portfolioOwners; // portfolio => owner
     mapping(address => bool) public portfolioExists;
-    uint256 public portfolioCount;
+    EnumerableSet.AddressSet private portfolioAddresses;
 
     event AccountCreated(address indexed portfolio, address indexed owner, address indexed portfolioContract);
 
+    
     error AccountAlreadyExists(address portfolio);
     error AccountCreationFailed(address portfolio);
-    error Unauthorized();
     
     /**
      * @dev Constructor - uses centralized facet registry
@@ -65,7 +67,8 @@ contract PortfolioFactory {
         portfolios[portfolio] = portfolioContract;
         portfolioOwners[portfolioContract] = portfolio;
         portfolioExists[portfolio] = true;
-        portfolioCount++;
+        portfolioAddresses.add(portfolioContract);
+        
         
         emit AccountCreated(portfolio, portfolio, portfolioContract);
         
@@ -122,10 +125,15 @@ contract PortfolioFactory {
         return portfolioOwners[_portfolio] != address(0);
     }
     
-    /**
-     * @dev Get the total number of portfolios created
-     */
-    function getAccountCount() external view returns (uint256) {
-        return portfolioCount;
+    function getAllPortfolios() external view returns (address[] memory) {
+        return portfolioAddresses.values();
+    }
+
+    function getPortfoliosLength() external view returns (uint256) {
+        return portfolioAddresses.length();
+    }
+
+    function getPortfolio(uint256 index) external view returns (address) {
+        return portfolioAddresses.at(index);
     }
 }

@@ -1007,10 +1007,9 @@ contract EtherexLoanV2 is Initializable, UUPSUpgradeable, Ownable2StepUpgradeabl
      * @return bool indicating whether the vote was successfully cast.
      */
     function vote(address user) public returns (bool) {
-        // address[] memory pools = new address[](0);
-        // uint256[] memory weights = new uint256[](0);
-        // return _vote(user, pools, weights);
-        return true;
+        address[] memory pools = new address[](0);
+        uint256[] memory weights = new uint256[](0);
+        return _vote(user, pools, weights);
     }
 
     /**

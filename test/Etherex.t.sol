@@ -403,8 +403,8 @@ contract EtherexTest is Test {
         vm.roll(block.number + 1);
         vm.warp(1758751302);
         vm.startPrank(user);
-        vm.stopPrank();
         bool voteResult = XRexFacet(userAccount).xRexVote(address(loan));
+        vm.stopPrank();
 
         // Verify that vote was successful
         assertTrue(voteResult, "Vote should have been successful");

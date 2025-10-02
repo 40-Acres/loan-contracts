@@ -46,7 +46,7 @@ interface IXLoan {
      */
     function _vault() external view returns (address);
     
-    function vote() external returns (bool);
+    function vote(address user) external returns (bool);
     function userVote(address[] calldata pools, uint256[] calldata weights) external;
     function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
 }

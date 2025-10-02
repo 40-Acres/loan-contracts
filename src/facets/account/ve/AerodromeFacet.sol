@@ -10,10 +10,10 @@ import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 import {CollateralStorage} from "../../storage/CollateralStorage.sol";
 
 /**
- * @title LoanFacet
+ * @title AerodromeFacet
  * @dev Middleware facet that interfaces with the loan contract
  */
-contract LoanFacet {
+contract AerodromeFacet {
     PortfolioFactory public immutable portfolioFactory;
 
     constructor(address _portfolioFactory) {
@@ -21,7 +21,7 @@ contract LoanFacet {
         portfolioFactory = PortfolioFactory(_portfolioFactory);
     }
 
-    function claimCollateral(address loanContract, uint256 tokenId) external {
+    function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external {
         ILoan(loanContract).claimCollateral(tokenId);
         address asset = address(ILoan(loanContract)._ve());
         (uint256 balance, address borrower) = ILoan(loanContract).getLoanDetails(tokenId);
@@ -31,13 +31,13 @@ contract LoanFacet {
         CollateralStorage.removeNonfungibleCollateral(asset, tokenId);
     }
 
-    function increaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
+    function aerodromeIncreaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
         ILoan(loanContract).increaseLoan(tokenId, amount);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
     }
     
-    function requestLoan(address loanContract, uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp, bool optInCommunityRewards) external {
+    function aerodromeRequestLoan(address loanContract, uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp, bool optInCommunityRewards) external {
         ILoan(loanContract).requestLoan(tokenId, amount, zeroBalanceOption, increasePercentage, preferredToken, topUp, optInCommunityRewards);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
@@ -47,21 +47,21 @@ contract LoanFacet {
 
     }
 
-    function vote(address loanContract, uint256 tokenId) external returns (bool success) {
+    function aerodromeVote(address loanContract, uint256 tokenId) external returns (bool success) {
         address ve = address(ILoan(loanContract)._ve());
         IERC721(ve).setApprovalForAll(address(loanContract), true);
         success = ILoan(loanContract).vote(tokenId);
         IERC721(ve).setApprovalForAll(address(loanContract), false);
     }
 
-    function userVote(address loanContract, uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external {
+    function aerodromeUserVote(address loanContract, uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external {
         address ve = address(ILoan(loanContract)._ve());
         IERC721(ve).setApprovalForAll(address(loanContract), true);
         ILoan(loanContract).userVote(tokenIds, pools, weights);
         IERC721(ve).setApprovalForAll(address(loanContract), false);
     }
 
-    function claim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
+    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
         address ve = address(ILoan(loanContract)._ve());
         IERC721(ve).setApprovalForAll(address(loanContract), true);
         uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);

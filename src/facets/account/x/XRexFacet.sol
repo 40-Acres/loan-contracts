@@ -84,7 +84,7 @@ contract XRexFacet {
     function xRexVote(address loanContract) external returns (bool) {
         // allow the entry point or the account owner to vote
         IVoteModule(_voteModule).delegate(address(loanContract));
-        bool success = IXLoan(loanContract).vote();
+        bool success = IXLoan(loanContract).vote(address(this));
         IVoteModule(_voteModule).delegate(address(0));
         return success;
     }

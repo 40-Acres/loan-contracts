@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
 import {Loan} from "../src/LoanV2.sol";
-import {LoanFacet} from "../src/facets/account/LoanFacet.sol";
+import {AerodromeFacet} from "../src/facets/account/AerodromeFacet.sol";
 import {ILoan} from "../src/interfaces/ILoan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
@@ -62,7 +62,7 @@ contract AerodromeTest is Test {
     // deployed contracts
     Vault vault;
     Loan public loan;
-    LoanFacet public loanFacet;
+    AerodromeFacet public loanFacet;
     address owner;
     address user;
     uint256 tokenId = 64196;
@@ -107,10 +107,10 @@ contract AerodromeTest is Test {
         loan.setApprovedPools(pools, true);
         vm.stopPrank();
 
-        // Deploy the LoanFacet
-        loanFacet = new LoanFacet(address(portfolioFactory));
+        // Deploy the AerodromeFacet
+        loanFacet = new AerodromeFacet(address(portfolioFactory));
 
-        // Register LoanFacet in the FacetRegistry
+        // Register AerodromeFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);
         loanSelectors[0] = 0xc9dcc2a7; // requestLoan(address,uint256,uint256,uint8,uint256,address,bool,bool)
         loanSelectors[1] = 0x219e7899; // increaseLoan(address,uint256,uint256)
@@ -127,7 +127,7 @@ contract AerodromeTest is Test {
         facetRegistry.registerFacet(
             address(loanFacet),
             loanSelectors,
-            "LoanFacet"
+            "AerodromeFacet"
         );
 
         // allow this test contract to mint USDC
@@ -160,8 +160,8 @@ contract AerodromeTest is Test {
     }
 
     /**
-     * @dev Test the getMaxLoan functionality through the LoanFacet
-     * This replicates the testGetMaxLoan test from LoanTest but uses the LoanFacet
+     * @dev Test the getMaxLoan functionality through the AerodromeFacet
+     * This replicates the testGetMaxLoan test from LoanTest but uses the AerodromeFacet
      */
     function testGetMaxLoan() public {
         // Test initial max loan through the facet
@@ -194,7 +194,7 @@ contract AerodromeTest is Test {
         uint256 userAssetBalance = IERC20(loan._asset()).balanceOf(user);
         vm.startPrank(user);
         uint256 amount = 5e6;
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -219,7 +219,7 @@ contract AerodromeTest is Test {
         assertEq(maxLoan, 75e6);
 
         // Test max loan after increasing loan through the direct contract
-        LoanFacet(userAccount).increaseLoan(address(loan), tokenId, 70e6);
+        AerodromeFacet(userAccount).aerodromeIncreaseLoan(address(loan), tokenId, 70e6);
         (maxLoan, ) = loan.getMaxLoan(tokenId);
         assertEq(maxLoan, 5e6);
         // ensure users asset increased by loan amount
@@ -229,7 +229,7 @@ contract AerodromeTest is Test {
         );
 
         // Test max loan after maxing out the loan through the direct contract
-        LoanFacet(userAccount).increaseLoan(address(loan), tokenId, 5e6);
+        AerodromeFacet(userAccount).aerodromeIncreaseLoan(address(loan), tokenId, 5e6);
         // ensure users asset increased by loan amount
         assertEq(
             IERC20(loan._asset()).balanceOf(user),
@@ -272,7 +272,7 @@ contract AerodromeTest is Test {
 
         vm.startPrank(user);
         uint256 amount = 1e6;
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -325,7 +325,7 @@ contract AerodromeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -348,7 +348,7 @@ contract AerodromeTest is Test {
 
         // Test increasing the loan through the facet
         vm.startPrank(user);
-        LoanFacet(userAccount).increaseLoan(address(loan), tokenId, amount);
+        AerodromeFacet(userAccount).aerodromeIncreaseLoan(address(loan), tokenId, amount);
         vm.stopPrank();
 
         (balance, borrower) = loan.getLoanDetails(tokenId);
@@ -384,7 +384,7 @@ contract AerodromeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -402,7 +402,7 @@ contract AerodromeTest is Test {
         tokenIds[0] = tokenId;
         address[] memory pools = new address[](0);
         uint256[] memory weights = new uint256[](0);
-        LoanFacet(userAccount).userVote(
+        AerodromeFacet(userAccount).aerodromeUserVote(
             address(loan),
             tokenIds,
             pools,
@@ -415,7 +415,7 @@ contract AerodromeTest is Test {
         vm.warp(1758751302);
         vm.startPrank(user);
         vm.stopPrank();
-        bool voteResult = LoanFacet(userAccount).vote(address(loan), tokenId);
+        bool voteResult = AerodromeFacet(userAccount).aerodromeVote(address(loan), tokenId);
 
         // Verify that vote was successful
         assertTrue(voteResult, "Vote should have been successful");
@@ -445,7 +445,7 @@ contract AerodromeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -463,7 +463,7 @@ contract AerodromeTest is Test {
         tokenIds[0] = tokenId;
         address[] memory pools = new address[](0);
         uint256[] memory weights = new uint256[](0);
-        LoanFacet(userAccount).userVote(
+        AerodromeFacet(userAccount).aerodromeUserVote(
             address(loan),
             tokenIds,
             pools,
@@ -482,7 +482,7 @@ contract AerodromeTest is Test {
         pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
         weights = new uint256[](1);
         weights[0] = 100e18; // 100% weight
-        LoanFacet(userAccount).userVote(
+        AerodromeFacet(userAccount).aerodromeUserVote(
             address(loan),
             tokenIds,
             pools,
@@ -529,7 +529,7 @@ contract AerodromeTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -552,7 +552,7 @@ contract AerodromeTest is Test {
 
         assertEq(votingEscrow.ownerOf(tokenId), address(userAccount));
 
-        LoanFacet(userAccount).claimCollateral(address(loan), tokenId);
+        AerodromeFacet(userAccount).aerodromeClaimCollateral(address(loan), tokenId);
 
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
         vm.stopPrank();
@@ -575,7 +575,7 @@ contract AerodromeTest is Test {
 
         // Request loan through the user account
         vm.startPrank(user);
-        LoanFacet(userAccount).requestLoan(
+        AerodromeFacet(userAccount).aerodromeRequestLoan(
             address(loan),
             tokenId,
             amount,
@@ -611,7 +611,7 @@ contract AerodromeTest is Test {
         weights[0] = 100000000000000000000; // 100 tokens
 
         // This should work through the user account
-        LoanFacet(userAccount).userVote(
+        AerodromeFacet(userAccount).aerodromeUserVote(
             address(loan),
             new uint256[](0), // no tokenIds for auto-vote
             pools,
@@ -696,7 +696,7 @@ contract AerodromeTest is Test {
         }
         bytes memory data = "";
         vm.startPrank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
-        uint256 result = LoanFacet(address(_loan)).claim(
+        uint256 result = AerodromeFacet(address(_loan)).aerodromeClaim(
             address(loan), // Use the actual loan contract address
             _tokenId,
             fees,
