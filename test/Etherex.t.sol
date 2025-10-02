@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
 import {Loan} from "../src/LoanV2.sol";
-import {EtherexLoanV2} from "../src/Etherex/EtherexLoanV2.sol";
+import {EtherexLoan} from "../src/Etherex/EtherexLoan.sol";
 import {XRexFacet} from "../src/facets/account/XRexFacet.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -25,6 +25,55 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
+
+
+contract MockOdosRouterRL {
+    address public testContract;
+
+    address ODOS = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
+    
+    function initMock(address _testContract) external { testContract = _testContract; }
+    function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external returns (bool) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), msg.sender, amountOut));
+        require(success, "mint fail");
+        return true;
+    }
+
+    // ETH -> token swap path for loan route
+    function executeSwapETH(address tokenOut, uint256 amountOut) external payable returns (bool) {
+        require(msg.value > 0, "no eth");
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), msg.sender, amountOut));
+        require(success, "mint fail");
+        return true;
+    }
+    
+    // Multi-input swap for LBO: takes AERO from caller, receives USDC from contract, outputs USDC to caller
+    function executeMultiInputSwap(address tokenIn, uint256 amountIn, uint256 usdcFromContract, uint256 totalUsdcOut) external returns (bool) {
+        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+        // Take AERO from caller
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        // Take USDC from caller (flash loan amount)
+        IERC20(usdc).transferFrom(msg.sender, address(this), usdcFromContract);
+        // Mint total USDC output to caller
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(usdc).masterMinter(), msg.sender, totalUsdcOut));
+        require(success, "mint fail");
+        return true;
+    }
+
+    // Multi-input swap for LBO: takes ETH + USDC from caller, outputs AERO to caller
+    function executeMultiInputSwapToAero(uint256 ethAmount, uint256 usdcAmount, uint256 aeroAmountOut) external payable returns (bool) {
+        require(msg.value == ethAmount, "ETH amount mismatch");
+        address usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+        address aero = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
+        // Take USDC from caller (flash loan amount)
+        IERC20(usdc).transferFrom(msg.sender, address(this), usdcAmount);
+        // Transfer AERO to caller (simulate swap output)
+        IERC20(aero).transfer(msg.sender, aeroAmountOut);
+        return true;
+    }
+}
+
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -60,9 +109,10 @@ contract EtherexTest is Test {
     ProxyAdmin admin;
     address userAccount;
 
+    address ODOS = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
     // deployed contracts
     Vault vault;
-    EtherexLoanV2 public loan;
+    EtherexLoan public loan;
     XRexFacet public loanFacet;
     address owner;
     address user;
@@ -76,6 +126,7 @@ contract EtherexTest is Test {
     // Account Factory system
     PortfolioFactory public portfolioFactory;
 
+
     function setUp() public {
         fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
         vm.selectFork(fork);
@@ -83,8 +134,8 @@ contract EtherexTest is Test {
         owner = vm.addr(0x123);
         user = 0x97BE22DBb49C88451fBd1099F59EED963d9d8A12;
         EtherexDeploy deployer = new EtherexDeploy();
-        (EtherexLoanV2 loanV2, Vault deployedVault, Swapper deployedSwapper) = deployer.deploy();
-        loan = EtherexLoanV2(address(loanV2));
+        (EtherexLoan loanV2, Vault deployedVault, Swapper deployedSwapper) = deployer.deploy();
+        loan = EtherexLoan(address(loanV2));
         vault = deployedVault;
         swapper = deployedSwapper;
 
@@ -160,6 +211,15 @@ contract EtherexTest is Test {
       
         IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(address(userAccount), type(uint256).max);
         vm.stopPrank();
+
+
+
+        // USDC minting for tests and mock Odos setup at canonical address
+        vm.prank(IUSDC(usdc).masterMinter());
+        MockOdosRouterRL mock = new MockOdosRouterRL();
+        bytes memory code = address(mock).code;
+        vm.etch(ODOS, code);
+        MockOdosRouterRL(ODOS).initMock(address(this));
     }
 
     function _deployPortfolioFactory() internal {
@@ -190,7 +250,7 @@ contract EtherexTest is Test {
 
 
         // log users _asset balance
-        uint256 userAssetBalance = IERC20(loan._asset()).balanceOf(user);
+        uint256 userAssetBalance = IERC20(loan._vaultAsset()).balanceOf(user);
         vm.startPrank(user);
         uint256 amount = 5e6;
         XRexFacet(userAccount).xRexRequestLoan(
@@ -204,7 +264,7 @@ contract EtherexTest is Test {
 
         // ensure users asset increased by loan amount
         assertEq(
-            IERC20(loan._asset()).balanceOf(user),
+            IERC20(loan._vaultAsset()).balanceOf(user),
             userAssetBalance + amount
         );
 
@@ -221,7 +281,7 @@ contract EtherexTest is Test {
         assertEq(maxLoan, 5e6, "Max loan should be 5e6");
         // ensure users asset increased by loan amount
         assertEq(
-            IERC20(loan._asset()).balanceOf(user),
+            IERC20(loan._vaultAsset()).balanceOf(user),
             userAssetBalance + 5e6 + 70e6
         );
 
@@ -229,7 +289,7 @@ contract EtherexTest is Test {
         XRexFacet(userAccount).xRexIncreaseLoan(address(loan), 5e6);
         // ensure users asset increased by loan amount
         assertEq(
-            IERC20(loan._asset()).balanceOf(user),
+            IERC20(loan._vaultAsset()).balanceOf(user),
             userAssetBalance + 5e6 + 70e6 + 5e6
         );
         (maxLoan, ) = loan.getMaxLoan(user);
@@ -582,6 +642,8 @@ contract EtherexTest is Test {
         uint256[] memory weights = new uint256[](1);
         weights[0] = 100000000000000000000; // 100 tokens
 
+
+
         // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
         vm.expectEmit(true, true, true, true);
         emit IXVoter.Voted(userAccount, 7027498817418762342, pools[0]);
@@ -601,8 +663,14 @@ contract EtherexTest is Test {
         );
 
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(user));
-        bytes
-            memory data = hex"84a7f3dd020100016877B1b0c6267E0AD9aa4C0df18A547AA2f6B08d073a9f858ec468c400020704077c61afebec0001df033790907c60c9B81aE355F76F74f52F92114A00016e2c81b6c2c0e02360f00a0da694e489acb0b05e090764453ee13b356a3700000004043b927079000187f18b377e625b62c708D5f6EA96EC193558EFD0000000000401030500340201000102018000001702080201030401ff000000000000000000df033790907c60c9b81ae355f76f74f52f92114a420000000000000000000000000000000000000651c230951b82dbf7b8696b6fcd2be199cc10779f6e2c81b6c2c0e02360f00a0da694e489acb0b05e00000000000000000000000000000000";
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwap.selector,
+            usdc,
+            usdc,
+            0,
+            10e6
+        );
+
         uint256[2] memory allocations = [
             uint256(41349),
             uint256(21919478169541)
@@ -612,7 +680,7 @@ contract EtherexTest is Test {
         uint256 rewards = _claimRewards(
             Loan(userAccount),
             bribes,
-            data,
+            tradeData,
             allocations
         );
         uint256 endingUserUsdcBalance = usdc.balanceOf(address(user));

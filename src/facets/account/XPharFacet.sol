@@ -38,7 +38,7 @@ contract XPharFacet {
     function xPharIncreaseLoan(address loanContract, uint256 amount) external {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IXLoan(loanContract).increaseLoan(amount);
-        address asset = address(IXLoan(loanContract)._asset());
+        address asset = address(IXLoan(loanContract)._vaultAsset());
         IERC20(asset).transfer(msg.sender, amount);
     }
     
@@ -60,7 +60,7 @@ contract XPharFacet {
 
         CollateralStorage.addTotalCollateral(ve);
 
-        address asset = address(IXLoan(loanContract)._asset());
+        address asset = address(IXLoan(loanContract)._vaultAsset());
         IERC20(asset).transfer(msg.sender, loanAmount);
 
     }

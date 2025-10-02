@@ -39,7 +39,7 @@ contract XRexFacet {
     function xRexIncreaseLoan(address loanContract, uint256 amount) external {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IXLoan(loanContract).increaseLoan(amount);
-        address asset = address(IXLoan(loanContract)._asset());
+        address asset = address(IXLoan(loanContract)._vaultAsset());
         IERC20(asset).transfer(msg.sender, amount);
     }
     
@@ -50,18 +50,18 @@ contract XRexFacet {
 
         // Approve the xREX contract to spend the REX tokens we just received
         IERC20(_rex).approve(_xrex, tokenBalance);
-        address ve = address(IXLoan(loanContract)._lockedAsset());
+        address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
         IXRex(_xrex).convertEmissionsToken(tokenBalance);
 
-        IERC20(ve).approve(_voteModule, tokenBalance);
+        IERC20(lockedAsset).approve(_voteModule, tokenBalance);
         IVoteModule(_voteModule).depositAll();
         IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).requestLoan(loanAmount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
         IVoteModule(_voteModule).delegate(address(0));
 
-        CollateralStorage.addTotalCollateral(ve);
+        CollateralStorage.addTotalCollateral(lockedAsset);
 
-        address asset = address(IXLoan(loanContract)._asset());
+        address asset = address(IXLoan(loanContract)._vaultAsset());
         IERC20(asset).transfer(msg.sender, loanAmount);
 
     }
@@ -74,10 +74,13 @@ contract XRexFacet {
     }
 
     function xRexClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
-        IVoteModule(_voteModule).delegate(address(loanContract));
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IVoteModule(_voteModule).setAdmin(address(loanContract));
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || msg.sender == _entryPoint);
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
-        IVoteModule(_voteModule).delegate(address(0));
+        IVoteModule(_voteModule).setAdmin(address(0));
+        if(allocations[1] > 0) {
+            _increaseCollateral(allocations[1], address(IXLoan(loanContract)._lockedAsset()));
+        }
         return result;
     }
 
@@ -87,5 +90,13 @@ contract XRexFacet {
         bool success = IXLoan(loanContract).vote(address(this));
         IVoteModule(_voteModule).delegate(address(0));
         return success;
+    }
+
+    // increase the collateral
+    function _increaseCollateral(uint256 amount, address lockedAsset) internal {
+        IERC20(_rex).approve(_xrex, amount);
+        IXRex(_xrex).convertEmissionsToken(amount);
+        IERC20(lockedAsset).approve(_voteModule, amount);
+        IVoteModule(_voteModule).depositAll();
     }
 }

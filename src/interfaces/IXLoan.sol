@@ -15,7 +15,7 @@ interface IXLoan {
     function claimCollateral() external;
     function getRewardsRate() external view returns (uint256);
     function owner() external view returns (address);
-    function _asset() external view returns (address);
+    function _vaultAsset() external view returns (address);
     function _lockedAsset() external view returns (address);
     function getLoanDetails(address) external view returns (uint256 balance, address borrower);
     function pay(uint256 amount) external;

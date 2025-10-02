@@ -8,8 +8,6 @@ import { Vault } from "src/Vault.sol";
 import { Vault as VaultV2 } from "src/VaultV2.sol";
 // import { EtherexSwapper as Swapper } from "../src/Etherex/EtherexSwapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {EtherexLoanV2 as LoanV2} from "../src/Etherex/EtherexLoanV2.sol";
-import { Loan as Loanv2 } from "../src/LoanV2.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import { Swapper } from "../src/Swapper.sol";
 
@@ -28,7 +26,7 @@ contract EtherexDeploy is Script {
     }
 
 
-    function deploy() public returns (LoanV2, Vault, Swapper) {
+    function deploy() public returns (Loan, Vault, Swapper) {
         Loan loanImplementation = new Loan();
         ERC1967Proxy _loan = new ERC1967Proxy(address(loanImplementation), "");
         VaultV2 vaultImplementation = new VaultV2();
@@ -37,10 +35,8 @@ contract EtherexDeploy is Script {
         Vault vault = Vault(payable(_vault));        
         VaultV2(address(vault)).initialize(address(_asset), address(_loan), "40BH-USDC-VAULT", "40BH-USDC-VAULT");
 
-        LoanV2 loan = LoanV2(payable(_loan));
+        Loan loan = Loan(payable(_loan));
         Loan(address(loan)).initialize(address(_vault), _asset);
-        LoanV2 loanV2 = new LoanV2();
-        loan.upgradeToAndCall(address(loanV2), new bytes(0));
         loan.setProtocolFee(500);
         loan.setLenderPremium(2000);
         loan.setZeroBalanceFee(100);
@@ -86,13 +82,13 @@ contract EtherexUpgrade is Script {
 
     function run() external  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        upgrade();
+        // upgrade();
     }
 
-    function upgrade() public {
-        LoanV2 loanV2 = new LoanV2();
-        // Loan(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).upgradeToAndCall(address(loanV2), new bytes(0));
-    }
+    // function upgrade() public {
+    //     Loan loanV2 = new Loan();
+    //     // Loan(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).upgradeToAndCall(address(loanV2), new bytes(0));
+    // }
 
 }
 
@@ -123,7 +119,7 @@ contract EtherexDepositNft is Script {
 
     function depositNft() public {
         IVoter(address(0xE30D0C8532721551a51a9FeC7FB233759964d9e3)).reset(16201);
-        LoanV2(address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558)).requestLoan(0, LoanV2.ZeroBalanceOption.PayToOwner, 0, address(0), false);
+        Loan(address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558)).requestLoan(0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
     }
 }
 // forge script script/EtherexDeploy.s.sol:EtherexDeploy  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
