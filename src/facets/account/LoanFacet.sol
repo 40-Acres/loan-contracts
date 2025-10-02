@@ -15,12 +15,10 @@ import {CollateralStorage} from "../../storage/CollateralStorage.sol";
  */
 contract LoanFacet {
     PortfolioFactory public immutable portfolioFactory;
-    CollateralStorage public immutable collateralStorage;
 
-    constructor(address _portfolioFactory, address _collateralStorage) {
+    constructor(address _portfolioFactory) {
         require(_portfolioFactory != address(0));
         portfolioFactory = PortfolioFactory(_portfolioFactory);
-        collateralStorage = CollateralStorage(_collateralStorage);
     }
 
     function claimCollateral(address loanContract, uint256 tokenId) external {
@@ -30,7 +28,7 @@ contract LoanFacet {
         // ensure the token doesnt have a loan within the loan contract
         require(borrower == address(0) && balance == 0);
         IVotingEscrow(asset).transferFrom(address(this), msg.sender, tokenId);
-        CollateralStorage(collateralStorage).removeNonfungibleCollateral(asset, tokenId);
+        CollateralStorage.removeNonfungibleCollateral(asset, tokenId);
     }
 
     function increaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
@@ -45,7 +43,7 @@ contract LoanFacet {
         IERC20(asset).transfer(msg.sender, amount);
 
         address ve = address(ILoan(loanContract)._ve());
-        CollateralStorage(collateralStorage).addNonfungibleCollateral(ve, tokenId);
+        CollateralStorage.addNonfungibleCollateral(ve, tokenId);
 
     }
 

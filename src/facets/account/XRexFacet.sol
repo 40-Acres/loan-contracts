@@ -9,78 +9,83 @@ import {IVoter} from "../../interfaces/IVoter.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 import {CollateralStorage} from "../../storage/CollateralStorage.sol";
 import {IXRex} from "../../interfaces/IXRex.sol";
-
-
-// rex 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348
-// xrex 0xc93B315971A4f260875103F5DA84cB1E30f366Cc
+import {IVoteModule} from "../../interfaces/IVoteModule.sol";
 
 
 /**
  * @title XRexFacet
- * @dev Middleware facet that interfaces with the loan contract
  */
 contract XRexFacet {
-    PortfolioFactory public immutable portfolioFactory;
-    CollateralStorage public immutable collateralStorage;
-    IERC20 public immutable rex = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
+    PortfolioFactory public immutable _portfolioFactory;
+    IERC20 public immutable _rex = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
+    address public immutable _xrex = 0xc93B315971A4f260875103F5DA84cB1E30f366Cc;
+    address public immutable _voteModule = 0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1;
+    address public immutable _entryPoint = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
 
-    constructor(address _portfolioFactory, address _collateralStorage) {
-        require(_portfolioFactory != address(0));
-        portfolioFactory = PortfolioFactory(_portfolioFactory);
-        collateralStorage = CollateralStorage(_collateralStorage);
+    constructor(address portfolioFactory) {
+        require(portfolioFactory != address(0));
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
     }
 
     function xRexClaimCollateral(address loanContract) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IXLoan(loanContract).claimCollateral();
         address asset = address(IXLoan(loanContract)._lockedAsset());
         (uint256 balance, address borrower) = IXLoan(loanContract).getLoanDetails(address(this));
-        // ensure the token doesnt have a loan within the loan contract
         require(borrower == address(0) && balance == 0);
-        CollateralStorage(collateralStorage).removeTotalCollateral(asset);
+        CollateralStorage.removeTotalCollateral(asset);
     }
 
     function xRexIncreaseLoan(address loanContract, uint256 amount) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IXLoan(loanContract).increaseLoan(amount);
         address asset = address(IXLoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
     }
     
-    function xRexRequestLoan(address loanContract, uint256 amount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external {
-        uint256 tokenBalance = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).balanceOf(msg.sender);
-        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).transferFrom(msg.sender, address(this), tokenBalance);
+    function xRexRequestLoan(address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        uint256 tokenBalance = IERC20(_rex).balanceOf(msg.sender);
+        IERC20(_rex).transferFrom(msg.sender, address(this), tokenBalance);
 
         // Approve the xREX contract to spend the REX tokens we just received
-        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(0xc93B315971A4f260875103F5DA84cB1E30f366Cc, tokenBalance);
-        IXRex(0xc93B315971A4f260875103F5DA84cB1E30f366Cc).convertEmissionsToken(tokenBalance);
-        IXLoan(loanContract).requestLoan(amount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
-
+        IERC20(_rex).approve(_xrex, tokenBalance);
         address ve = address(IXLoan(loanContract)._lockedAsset());
-        CollateralStorage(collateralStorage).addTotalCollateral(ve);
+        IXRex(_xrex).convertEmissionsToken(tokenBalance);
+
+        IERC20(ve).approve(_voteModule, tokenBalance);
+        IVoteModule(_voteModule).depositAll();
+        IVoteModule(_voteModule).delegate(address(loanContract));
+        IXLoan(loanContract).requestLoan(loanAmount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
+        IVoteModule(_voteModule).delegate(address(0));
+
+        CollateralStorage.addTotalCollateral(ve);
 
         address asset = address(IXLoan(loanContract)._asset());
-        IERC20(asset).transfer(msg.sender, amount);
+        IERC20(asset).transfer(msg.sender, loanAmount);
 
-    }
-
-    function xRexVote(address loanContract) external returns (bool success) {
-        address ve = address(IXLoan(loanContract)._lockedAsset());
-        IERC721(ve).setApprovalForAll(address(loanContract), true);
-        success = IXLoan(loanContract).vote();
-        IERC721(ve).setApprovalForAll(address(loanContract), false);
     }
 
     function xRexUserVote(address loanContract, address[] calldata pools, uint256[] calldata weights) external {
-        address ve = address(IXLoan(loanContract)._lockedAsset());
-        IERC721(ve).setApprovalForAll(address(loanContract), true);
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).userVote(pools, weights);
-        IERC721(ve).setApprovalForAll(address(loanContract), false);
+        IVoteModule(_voteModule).delegate(address(0));
     }
 
     function xRexClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
-        address ve = address(IXLoan(loanContract)._lockedAsset());
-        IERC721(ve).setApprovalForAll(address(loanContract), true);
+        IVoteModule(_voteModule).delegate(address(loanContract));
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
-        IERC721(ve).setApprovalForAll(address(loanContract), false);
+        IVoteModule(_voteModule).delegate(address(0));
         return result;
+    }
+
+    function xRexVote(address loanContract) external returns (bool) {
+        // allow the entry point or the account owner to vote
+        IVoteModule(_voteModule).delegate(address(loanContract));
+        bool success = IXLoan(loanContract).vote();
+        IVoteModule(_voteModule).delegate(address(0));
+        return success;
     }
 }

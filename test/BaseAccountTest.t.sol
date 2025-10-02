@@ -130,7 +130,7 @@ contract BaseAccountTest is Test {
         DeploySwapper swapperDeploy = new DeploySwapper();
         swapper = Swapper(swapperDeploy.deploy());
         loan.setSwapper(address(swapper));
-        loan.setAccountStorage(address(portfolioFactory));
+        loan.setPortfolioFactory(address(portfolioFactory));
         
         // Transfer ownership
         IOwnable(address(loan)).transferOwnership(owner);

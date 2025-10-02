@@ -328,7 +328,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(amount > .01e6);
         // Check if caller is a user account - if so, don't require NFT to be locked in loan contract
         bool isAccount = false;
-        PortfolioFactory portfolioFactory = PortfolioFactory(getAccountStorage());
+        PortfolioFactory portfolioFactory = PortfolioFactory(getPortfolioFactory());
         if (address(portfolioFactory) != address(0)) {
             try portfolioFactory.isUserAccount(msg.sender) returns (bool exists) {
                 isAccount = exists;
@@ -475,7 +475,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
            _setUserPayoffToken(loan.borrower, tokenId);
        }
     }
-
 
     function _handlePayoffToken(address borrower, uint256 tokenId, uint256 amount) internal returns (uint256) {
        uint256 payoffToken = getUserPayoffToken(borrower);
@@ -1510,7 +1509,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     // }
     
     function isUserAccount(address owner) public view returns (bool) {
-        address portfolioFactory = getAccountStorage();
+        address portfolioFactory = getPortfolioFactory();
         if(portfolioFactory != address(0)) {
             try PortfolioFactory(portfolioFactory).isUserAccount(owner) returns (bool exists) {
                 return exists;

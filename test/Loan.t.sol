@@ -594,7 +594,7 @@ contract LoanTest is Test {
         _loan.upgradeToAndCall(address(loanV2), new bytes(0));
         // Set AccountStorage to mock to avoid contract call issues
         MockPortfolioFactory mockAccountStorage = new MockPortfolioFactory();
-        _loan.setAccountStorage(address(mockAccountStorage));
+        _loan.setPortfolioFactory(address(mockAccountStorage));
         vm.stopPrank();
 
 
@@ -636,7 +636,7 @@ contract LoanTest is Test {
         _loan.upgradeToAndCall(address(loanV2), new bytes(0));
         // Set AccountStorage to mock to avoid contract call issues
         MockPortfolioFactory mockAccountStorage = new MockPortfolioFactory();
-        _loan.setAccountStorage(address(mockAccountStorage));
+        _loan.setPortfolioFactory(address(mockAccountStorage));
         vm.stopPrank();
 
 

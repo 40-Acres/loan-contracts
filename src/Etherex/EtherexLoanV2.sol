@@ -4,12 +4,10 @@ pragma solidity ^0.8.27;
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
-import {IVoter} from "../interfaces/IVoter.sol";
-import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
+import {IXVoter} from "../interfaces/IXVoter.sol";
 import {IRewardsDistributor} from "../interfaces/IRewardsDistributor.sol";
 import {ICLGauge} from "../interfaces/ICLGauge.sol";
 import {ProtocolTimeLibrary} from "../libraries/ProtocolTimeLibrary.sol";
@@ -24,19 +22,19 @@ import { IMarketViewFacet } from "../interfaces/IMarketViewFacet.sol";
 import {IFlashLoanProvider} from "../interfaces/IFlashLoanProvider.sol";
 import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
 import { PortfolioFactory } from "../accounts/PortfolioFactory.sol";
+import {IVoteModule} from "../interfaces/IVoteModule.sol";
 
-contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
-    // initial contract parameters are listed here
-    // parameters introduced after initial deployment are in NamedStorage contracts
-    IVoter internal _voter;
+
+import { console } from "forge-std/console.sol";
+
+contract EtherexLoanV2 is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
+    IXVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
-    address private _pool; // deprecated
     IERC20 public _asset;
     IERC20 internal _aero;
     IERC20 public _lockedAsset;
     IAerodromeRouter internal _aeroRouter;
     address internal _aeroFactory;
-    address internal _rateCalculator; // deprecated
     address public _vault;
     bool internal _paused;
     uint256 public _outstandingCapital;
@@ -46,11 +44,6 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     mapping(address => bool) public _approvedPools;
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
-    uint256 private _lastEpochPaid; // deprecated
-    //// end of deprecated storage variables
-
-    bytes32 public constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
-    
     // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
     enum ZeroBalanceOption {
         DoNothing, // do nothing when the balance is zero
@@ -204,16 +197,6 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    /**
-     * @dev Modifier to ensure the caller is the market diamond.
-     * @notice market diamond must be configured for loan listings and LBO to work properly
-     */
-    modifier onlyMarketDiamond() {
-        address marketDiamond = getMarketDiamond();
-        if (marketDiamond == address(0)) revert MarketNotConfigured();
-        if (msg.sender != marketDiamond) revert Unauthorized();
-        _;
-    }
 
     /**
      * @notice Allows the owner of a token to request a loan by locking the token as collateral.
@@ -524,13 +507,13 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     }
 
     function _processRewards(
-        address[] calldata fees,
+        address[] calldata gauges,
         address[][] calldata tokens,
         address borrower,
         bytes calldata tradeData
     ) virtual internal {
-        // Since tokenId was removed, we can't claim fees
-        // This functionality is now disabled
+        _voter.claimIncentives(borrower, gauges, tokens);
+        
         ISwapper swapper = ISwapper(getSwapper());
         address[] memory flattenedTokens = swapper.flattenToken(tokens);
 
@@ -716,6 +699,7 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
         delete _loanDetails[msg.sender];
     }
 
+
     /**
      * @notice Calculates the maximum loan amount that can be borrowed for a given token ID.
      * @dev This function forwards the call to the LoanCalculator contract.
@@ -840,18 +824,6 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     }
 
     /* OWNER METHODS */
-    
-
-    /**
-     * @notice Allows user to merge their veNFT into another veNFT.
-     * @dev This function can only be called by the owner of the veNFT being merged.
-     * @param from The ID of the token to merge from.
-     * @param to The ID of the token to merge to.
-     */
-    function merge(uint256 from, uint256 to) virtual public {
-        // Since tokenId was removed, merge functionality is disabled
-        revert("Merge functionality disabled - tokenId removed");
-    }
 
     /**
      * @notice Allows the owner to set the default pools and their respective weights.
@@ -908,8 +880,8 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     function setApprovedPools(address[] calldata pools, bool enable) public virtual onlyOwner {
         for (uint256 i = 0; i < pools.length; i++) {
             // confirm pool is a valid gauge
-            // address gauge = _voter.otegauges(pools[i]);
-            // if (enable) require(_vr.isAlive(gauge));
+            address gauge = _voter.gaugeForPool(pools[i]);
+            if (enable) require(_voter.isAlive(gauge));
             _approvedPools[pools[i]] = enable;
         }
     }
@@ -1004,14 +976,6 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
     }
-    
-    function setOptInCommunityRewards(
-        bool optIn
-    ) public {
-        LoanInfo storage loan = _loanDetails[msg.sender];
-        require(loan.borrower == msg.sender);
-        // optInCommunityRewards field was removed, so we can't update it
-    }
 
 
     /**
@@ -1043,9 +1007,10 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
      * @return bool indicating whether the vote was successfully cast.
      */
     function vote(address user) public returns (bool) {
-        address[] memory pools = new address[](0);
-        uint256[] memory weights = new uint256[](0);
-        return _vote(user, pools, weights);
+        // address[] memory pools = new address[](0);
+        // uint256[] memory weights = new uint256[](0);
+        // return _vote(user, pools, weights);
+        return true;
     }
 
     /**
@@ -1057,32 +1022,38 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
      */
     function _vote(address borrower, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
         LoanInfo storage loan = _loanDetails[borrower];
-        bool isAccount = isUserAccount(msg.sender);
-        IVoter voter = _voter;
-        // Always use the actual voter contract, not the FortyAcresPortfolioAccount
-        if(loan.borrower == msg.sender && pools.length > 0) {
-            // not within try catch because we want to revert if the transaction fails so the user can try again
-            // Since tokenId was removed, we can't vote
-            // This functionality is now disabled 
+        IXVoter voter = _voter;
+        if(loan.borrower == msg.sender && pools.length > 0 ) {
+            voter.vote(borrower, pools, weights);
             loan.voteTimestamp = block.timestamp;
             return true; // if the user has manually voted, we don't want to override their vote
         }
         
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
         if(!isActive && _withinVotingWindow()) {
-            try voter.vote(0, _defaultPools, _defaultWeights) {
+            try voter.vote(borrower, _defaultPools, _defaultWeights) {
                 return true;
             } catch { }
         } 
         return false;
     }
     
+
+
     
 
+    /**
+     * @notice Retrieves the locked amount for a specific borrower.
+     * @dev This function returns the balance of the locked asset for the borrower. (Must be both locked and staked)
+     * @param borrower The address of the borrower.
+     * @return The locked amount for the borrower.
+     */
     function _getLockedAmount(
         address borrower
     ) internal view virtual returns (uint256) {
-        return IERC20(_lockedAsset).balanceOf(borrower);
+        uint256 balance = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(borrower);
+        console.log("balance", balance);
+        return balance;
     }
     /**
      * @notice Sets the increase percentage for a specific loan.
@@ -1109,19 +1080,19 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
      * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
      */
     function confirmUsdcPrice() virtual internal view returns (bool) {
-        // (
-        //     /* uint80 roundID */,
-        //     int answer ,
-        //     /*uint startedAt*/,
-        //     uint256 timestamp,
-        //     /*uint80 answeredInRound*/
+        (
+            /* uint80 roundID */,
+            int answer ,
+            /*uint startedAt*/,
+            uint256 timestamp,
+            /*uint80 answeredInRound*/
 
-        // ) = AggregatorV3Interface(address(0x7e860098F58bBFC8648a4311b374B1D669a2bc6B)).latestRoundData();
+        ) = AggregatorV3Interface(address(0xAADAa473C1bDF7317ec07c915680Af29DeBfdCb5)).latestRoundData();
 
-        // // add staleness check, data updates every 24 hours
-        // require(timestamp > block.timestamp - 25 hours);
-        // // confirm price of usdc is $1
-        // return answer >= 99900000;
+        // add staleness check, data updates every 24 hours
+        require(timestamp > block.timestamp - 25 hours);
+        // confirm price of usdc is $1
+        return answer >= 99900000;
         return true;
     }
 
@@ -1141,7 +1112,7 @@ contract EtherexLoanV2 is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownab
     }
     
     function isUserAccount(address owner) public view returns (bool) {
-        address portfolioFactory = getAccountStorage();
+        address portfolioFactory = getPortfolioFactory();
         if(portfolioFactory != address(0)) {
             try PortfolioFactory(portfolioFactory).isUserAccount(owner) returns (bool exists) {
                 return exists;

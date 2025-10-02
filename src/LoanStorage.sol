@@ -158,13 +158,13 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         return $._FlashLoanPaused;
     }
     
-    function setAccountStorage(address _newAccountStorage) external onlyOwner {
+    function setPortfolioFactory(address _newAccountStorage) external onlyOwner {
         require(_newAccountStorage != address(0));
         LoanStorageStruct storage $ = _getLoanStorage();
        $._accountStorage = _newAccountStorage;
     }
 
-    function getAccountStorage() public view returns (address) {
+    function getPortfolioFactory() public view returns (address) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return address($._accountStorage);
     }

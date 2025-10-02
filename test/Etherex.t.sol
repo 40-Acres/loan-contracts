@@ -7,7 +7,7 @@ import {EtherexLoanV2} from "../src/Etherex/EtherexLoanV2.sol";
 import {XRexFacet} from "../src/facets/account/XRexFacet.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IVoter} from "src/interfaces/IVoter.sol";
+import {IXVoter} from "src/interfaces/IXVoter.sol";
 import {Vault} from "src/Vault.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../src/interfaces/IVotingEscrow.sol";
@@ -25,7 +25,6 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {CollateralStorage} from "../src/storage/CollateralStorage.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -56,7 +55,7 @@ contract EtherexTest is Test {
     IERC20 votingEscrow =
         IERC20(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
     IERC20 weth = IERC20(0x4200000000000000000000000000000000000006);
-    IVoter public voter = IVoter(0x942117Ec0458a8AA08669E94B52001Bd43F889C1);
+    IXVoter public voter = IXVoter(0x942117Ec0458a8AA08669E94B52001Bd43F889C1);
     address[] pool = [address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e)];
     ProxyAdmin admin;
     address userAccount;
@@ -76,7 +75,6 @@ contract EtherexTest is Test {
 
     // Account Factory system
     PortfolioFactory public portfolioFactory;
-    CollateralStorage public collateralStorage;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
@@ -103,7 +101,7 @@ contract EtherexTest is Test {
         loan.setLenderPremium(2000);
         loan.setProtocolFee(500); // 5% protocol fee
         IOwnable(address(loan)).transferOwnership(owner);
-        loan.setAccountStorage(address(portfolioFactory));
+        loan.setPortfolioFactory(address(portfolioFactory));
         vm.stopPrank();
 
         vm.startPrank(owner);
@@ -116,7 +114,7 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         // Deploy the XRexFacet
-        loanFacet = new XRexFacet(address(portfolioFactory), address(collateralStorage));
+        loanFacet = new XRexFacet(address(portfolioFactory));
 
         // Register XRexFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);
@@ -172,9 +170,6 @@ contract EtherexTest is Test {
         portfolioFactory = new PortfolioFactory(
             address(facetRegistry)
         );
-
-        // Deploy CollateralStorage
-        collateralStorage = new CollateralStorage(address(portfolioFactory));
 
         // Note: We'll authorize user accounts as they're created
     }
@@ -471,7 +466,7 @@ contract EtherexTest is Test {
         // Test userVote function with actual pools and weights
         vm.startPrank(user);
         pools = new address[](1);
-        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
+        pools[0] = address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e);
         weights = new uint256[](1);
         weights[0] = 100e18; // 100% weight
         XRexFacet(userAccount).xRexUserVote(
@@ -583,10 +578,13 @@ contract EtherexTest is Test {
 
         // Test that the user account can vote (this tests the user account integration)
         address[] memory pools = new address[](1);
-        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
+        pools[0] = address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e);
         uint256[] memory weights = new uint256[](1);
         weights[0] = 100000000000000000000; // 100 tokens
 
+        // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
+        vm.expectEmit(true, true, true, true);
+        emit IXVoter.Voted(userAccount, 7027498817418762342, pools[0]);
         // This should work through the user account
         XRexFacet(userAccount).xRexUserVote(
             address(loan),
@@ -594,10 +592,6 @@ contract EtherexTest is Test {
             weights
         );
         vm.stopPrank();
-
-        // Verify the vote was recorded
-        address votedPool = voter.poolVote(tokenId, 0);
-        assertEq(votedPool, pools[0], "Pool should be voted for");
 
         console.log("User account integration test passed");
         console.log("Loan balance:", balance);
@@ -607,13 +601,14 @@ contract EtherexTest is Test {
         );
 
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(user));
-        address[] memory bribes = new address[](0);
         bytes
             memory data = hex"84a7f3dd020100016877B1b0c6267E0AD9aa4C0df18A547AA2f6B08d073a9f858ec468c400020704077c61afebec0001df033790907c60c9B81aE355F76F74f52F92114A00016e2c81b6c2c0e02360f00a0da694e489acb0b05e090764453ee13b356a3700000004043b927079000187f18b377e625b62c708D5f6EA96EC193558EFD0000000000401030500340201000102018000001702080201030401ff000000000000000000df033790907c60c9b81ae355f76f74f52f92114a420000000000000000000000000000000000000651c230951b82dbf7b8696b6fcd2be199cc10779f6e2c81b6c2c0e02360f00a0da694e489acb0b05e00000000000000000000000000000000";
         uint256[2] memory allocations = [
             uint256(41349),
             uint256(21919478169541)
         ];
+        address[] memory bribes = new address[](1);
+        bribes[0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
         uint256 rewards = _claimRewards(
             Loan(userAccount),
             bribes,
@@ -633,40 +628,22 @@ contract EtherexTest is Test {
         bytes memory tradeData,
         uint256[2] memory allocations
     ) internal returns (uint256) {
-        address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
-        uint256 index = 0;
 
-        // while (true) {
-        //     try voter.poolVote(_tokenId, index) returns (address _pool) {
-        //         pools[index] = _pool;
-        //         index++;
-        //     } catch {
-        //         break; // Exit the loop when it reverts
-        //     }
-        // }
+       address[] memory voterPools = voter.getAllUserVotedPoolsPerPeriod(address(user), 2908);
 
-        address[] memory voterPools = new address[](index);
-        for (uint256 i = 0; i < index; i++) {
-            voterPools[i] = pools[i];
-        }
-        address[] memory fees = new address[](2 * voterPools.length);
-        address[][] memory tokens = new address[][](2 * voterPools.length);
+        address[] memory fees = new address[](voterPools.length);
+        address[][] memory tokens = new address[][](voterPools.length);
 
         for (uint256 i = 0; i < voterPools.length; i++) {
-            address gauge = voter.gauges(voterPools[i]);
-            fees[2 * i] = voter.gaugeToFees(gauge);
-            fees[2 * i + 1] = voter.gaugeToBribe(gauge);
-            address[] memory token = new address[](2);
-            token[0] = ICLGauge(voterPools[i]).token0();
-            token[1] = ICLGauge(voterPools[i]).token1();
-            tokens[2 * i] = token;
-            address[] memory bribeTokens = new address[](bribes.length + 2);
-            for (uint256 j = 0; j < bribes.length; j++) {
-                bribeTokens[j] = bribes[j];
-            }
-            bribeTokens[bribes.length] = token[0];
-            bribeTokens[bribes.length + 1] = token[1];
-            tokens[2 * i + 1] = bribeTokens;
+            address gauge = voter.gaugeForPool(voterPools[i]);
+            fees[i] = voter.feeDistributorForGauge(gauge);
+            // 0x176211869cA2b568f2A7D4EE941E073a821EE1ff, 0xacA92E438df0B2401fF60dA7E4337B687a2435DA, 0xA219439258ca9da29E9Cc4cE5596924745e12B93, 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f
+            address[] memory tokenIds = new address[](4);
+            tokenIds[0] = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
+            tokenIds[1] = 0xacA92E438df0B2401fF60dA7E4337B687a2435DA;
+            tokenIds[2] = 0xA219439258ca9da29E9Cc4cE5596924745e12B93;
+            tokenIds[3] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+            tokens[i] = tokenIds;
         }
         bytes memory data = "";
         vm.startPrank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);

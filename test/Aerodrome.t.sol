@@ -25,7 +25,6 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {CollateralStorage} from "../src/storage/CollateralStorage.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -74,7 +73,6 @@ contract AerodromeTest is Test {
 
     // Account Factory system
     PortfolioFactory public portfolioFactory;
-    CollateralStorage public collateralStorage;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -97,7 +95,7 @@ contract AerodromeTest is Test {
         DeploySwapper swapperDeploy = new DeploySwapper();
         swapper = Swapper(swapperDeploy.deploy());
         loan.setSwapper(address(swapper));
-        loan.setAccountStorage(address(portfolioFactory));
+        loan.setPortfolioFactory(address(portfolioFactory));
         vm.stopPrank();
 
         vm.startPrank(owner);
@@ -110,7 +108,7 @@ contract AerodromeTest is Test {
         vm.stopPrank();
 
         // Deploy the LoanFacet
-        loanFacet = new LoanFacet(address(portfolioFactory), address(collateralStorage));
+        loanFacet = new LoanFacet(address(portfolioFactory));
 
         // Register LoanFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);
@@ -150,10 +148,6 @@ contract AerodromeTest is Test {
             address(facetRegistry)
         );
 
-        // Deploy CollateralStorage
-        collateralStorage = new CollateralStorage(address(portfolioFactory));
-
-        // Note: We'll authorize user accounts as they're created
     }
 
     function testOwner() public view {
