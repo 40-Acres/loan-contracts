@@ -111,14 +111,13 @@ contract AerodromeTest is Test {
         loanFacet = new AerodromeFacet(address(portfolioFactory));
 
         // Register AerodromeFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](7);
-        loanSelectors[0] = 0xc9dcc2a7; // requestLoan(address,uint256,uint256,uint8,uint256,address,bool,bool)
-        loanSelectors[1] = 0x219e7899; // increaseLoan(address,uint256,uint256)
-        loanSelectors[2] = 0xed9df540; // claimCollateral(address,uint256)
-        loanSelectors[3] = 0x5f74bbde; // vote(address,uint256)
-        loanSelectors[4] = 0x65929172; // userVote(address,uint256[],address[],uint256[])
-        loanSelectors[5] = 0xe5b8778f; // claim(address,uint256,address[],address[][],bytes,uint256[2])
-        loanSelectors[6] = 0xba1e30c1; // claim(uint256,address[],address[][],bytes,uint256[2])
+        bytes4[] memory loanSelectors = new bytes4[](6);
+        loanSelectors[0] = 0xd3f8e227; // aerodromeRequestLoan(address,uint256,uint256,uint8,uint256,address,bool,bool)
+        loanSelectors[1] = 0x68f84e48; // aerodromeIncreaseLoan(address,uint256,uint256)
+        loanSelectors[2] = 0x5780b3ee; // aerodromeClaimCollateral(address,uint256)
+        loanSelectors[3] = 0xfbb66d95; // aerodromeVote(address,uint256)
+        loanSelectors[4] = 0xe8b820ba; // aerodromeUserVote(address,uint256[],address[],uint256[])
+        loanSelectors[5] = 0xd69af01c; // aerodromeClaim(address,uint256,address[],address[][],bytes,uint256[2])
 
         // Get the FacetRegistry from the PortfolioFactory
         FacetRegistry facetRegistry = FacetRegistry(

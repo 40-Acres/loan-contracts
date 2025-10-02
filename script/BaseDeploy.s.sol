@@ -10,7 +10,7 @@ import { Swapper } from "../src/Swapper.sol";
 import {Loan as LoanV2} from "src/LoanV2.sol";
 import {Vault} from "../src/VaultV2.sol";
 contract BaseDeploy is Script {
-    address usdc = address(0x176211869cA2b568f2A7D4EE941E073a821EE1ff);
+    address usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
 
     
     function run() external  {

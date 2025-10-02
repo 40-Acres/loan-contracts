@@ -9,6 +9,7 @@ import {ISwapper} from "./interfaces/ISwapper.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import { ProtocolTimeLibrary } from "../libraries/ProtocolTimeLibrary.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
+import { console } from "forge-std/console.sol";
 
 contract PharaohLoanV2 is Loan {
     /* ORACLE */
