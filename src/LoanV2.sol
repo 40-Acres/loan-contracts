@@ -1462,11 +1462,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             revert UnsupportedToken(token);
         }
         
-        // 0% fee for market diamond, regular fee for others
-        if (msg.sender == getMarketDiamond()) {
-            return 0;
-        }
-        
         return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
     }
 
