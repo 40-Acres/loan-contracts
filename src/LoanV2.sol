@@ -26,7 +26,7 @@ import {IFlashLoanProvider} from "./interfaces/IFlashLoanProvider.sol";
 import {IFlashLoanReceiver} from "./interfaces/IFlashLoanReceiver.sol";
 import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 
-contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
+contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage, IFlashLoanProvider {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
     IVoter internal _voter;
@@ -75,7 +75,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken; // preferred token to receive for zero balance option
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
-        bool    optInCommunityRewards; // opt in to community rewards
+        bool    optInCommunityRewards; // DEPRECATED - opt in to community rewards (no longer functional)
     }
 
     // Pools each token votes on for this epoch
@@ -420,10 +420,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // take out unpaid fees first
         if(loan.unpaidFees > 0) {
             uint256 feesPaid = loan.unpaidFees;
-            // set maxFees to 25% of the amount being paid
-            uint256 maxFees = (amount * 25) / 100; // 25% of the amount being paid
-            if(feesPaid > maxFees) {
-                feesPaid = maxFees; // cap the fees paid to 25% of the amount being paid
+            // For partial payments, cap fees at 25% to protect borrower
+            // For full settlement, collect all fees to ensure protocol is paid
+            if(amount < loan.balance) {
+                uint256 maxFees = (amount * 25) / 100;
+                if(feesPaid > maxFees) {
+                    feesPaid = maxFees;
+                }
             }
             amount -= feesPaid;
             loan.unpaidFees -= feesPaid;
@@ -794,10 +797,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
-     * @dev Internal function to increase the
-      NFT-related value for a loan.
+     * @dev Internal function to increase the NFT-related value for a loan.
      * @param loan The LoanInfo struct containing details of the loan.
-     * @param allocation The amount  to be allocated for increasing the veNFT balance.
+     * @param allocation The amount to be allocated for increasing the veNFT balance.
      * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
     function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
@@ -1164,18 +1166,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
     }
-    
-    function setOptInCommunityRewards(
-        uint256[] calldata tokenIds,
-        bool optIn
-    ) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            LoanInfo storage loan = _loanDetails[tokenIds[i]];
-            require(loan.borrower == msg.sender);
-            loan.optInCommunityRewards = optIn;
-        }
-    }
-
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.
@@ -1227,18 +1217,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
         LoanInfo storage loan = _loanDetails[tokenId];
-        IVoter voter = _voter;
-        // Always use the actual voter contract, not the FortyAcresPortfolioAccount
         if(loan.borrower == msg.sender && pools.length > 0) {
             // not within try catch because we want to revert if the transaction fails so the user can try again
-            voter.vote(tokenId, pools, weights); 
+            _voter.vote(tokenId, pools, weights); 
             loan.voteTimestamp = block.timestamp;
             return true; // if the user has manually voted, we don't want to override their vote
         }
         
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
         if(!isActive && _withinVotingWindow()) {
-            try voter.vote(tokenId, _defaultPools, _defaultWeights) {
+            try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 return true;
             } catch { }
         } 
@@ -1262,7 +1250,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) internal view virtual returns (uint256) {
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
         if (
-            !lockedBalance.isPermanent && lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp)
+            !lockedBalance.isPermanent && lockedBalance.end <= block.timestamp
         ) {
             return 0;
         }
@@ -1351,8 +1339,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _setBorrower(uint256 tokenId, address newBorrower) internal {
         if (newBorrower == address(0)) revert ZeroAddress();
         LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
         address previousBorrower = loan.borrower;
+        // If the seller had this token set as their payoff token, reset it to prevent
+        // stale references that could affect fee calculations post-transfer
+        if (getUserPayoffToken(previousBorrower) == tokenId) {
+            _setUserPayoffToken(previousBorrower, 0);
+        }
         loan.borrower = newBorrower;
         emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
     }
@@ -1408,8 +1400,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         loan.balance -= loan.unpaidFees;
         loan.unpaidFees = 0;
-        
-        require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
+        require(loan.balance == loan.outstandingCapital);
 
         // Transfer veNFT ownership to buyer
         _setBorrower(tokenId, buyer);
@@ -1442,11 +1433,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function flashFee(address token, uint256 amount) public view override returns (uint256) {
         if (token != address(_asset)) {
             revert UnsupportedToken(token);
-        }
-        
-        // 0% fee for market diamond, regular fee for others
-        if (msg.sender == getMarketDiamond()) {
-            return 0;
         }
         
         return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points

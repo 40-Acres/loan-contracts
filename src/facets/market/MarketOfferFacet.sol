@@ -52,6 +52,11 @@ contract MarketOfferFacet is IMarketOfferFacet {
         require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], Errors.InvalidPaymentToken());
         require(minWeight > 0, Errors.InsufficientWeight());
         if (expiresAt != 0) require(expiresAt > block.timestamp, Errors.InvalidExpiration());
+        
+        // If accepting loans with debt, payment token must match the loan asset
+        if (debtTolerance > 0) {
+            require(paymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
+        }
 
         // Approval-based offers: no escrow pull at creation
 
@@ -78,10 +83,15 @@ contract MarketOfferFacet is IMarketOfferFacet {
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), Errors.OfferNotFound());
-        require(offer.creator == msg.sender, Errors.NotAuthorized());
+        require(MarketLogicLib.canOperate(offer.creator, msg.sender), Errors.NotAuthorized());
         require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], Errors.InvalidPaymentToken());
         require(newMinWeight > 0, Errors.InsufficientWeight());
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
+        
+        // If accepting loans with debt, payment token must match the loan asset
+        if (newDebtTolerance > 0) {
+            require(newPaymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
+        }
 
         // Approval-based offers: price changes do not move funds at update time
 
@@ -97,7 +107,7 @@ contract MarketOfferFacet is IMarketOfferFacet {
     function cancelOffer(uint256 offerId) external nonReentrant {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), Errors.OfferNotFound());
-        require(offer.creator == msg.sender, Errors.NotAuthorized());
+        require(MarketLogicLib.canOperate(offer.creator, msg.sender), Errors.NotAuthorized());
         // Approval-based offers: nothing to refund; just delete the offer
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferCancelled(offerId);
@@ -124,23 +134,46 @@ contract MarketOfferFacet is IMarketOfferFacet {
 
         _validateOfferCriteria(tokenId, offer, isInLoanV2);
 
-        // Pull full offer amount at fill time from offer creator
-        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
+        // Get loan balance to calculate total amount buyer must provide
+        uint256 loanBalance = 0;
+        if (isInLoanV2) {
+            (loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+            if (loanBalance > 0) {
+                address loanAsset = MarketStorage.configLayout().loanAsset;
+                // Ensure payment token matches loan asset (enforced at offer creation)
+                require(offer.paymentToken == loanAsset, Errors.InvalidPaymentToken());
+            }
+        }
+
+        // Pull total amount from buyer: offer price + any outstanding debt
+        uint256 totalFromBuyer = offer.price + loanBalance;
+        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), totalFromBuyer);
+        
+        // Pay off loan debt separately if it exists
+        if (loanBalance > 0) {
+            address loanContract = MarketStorage.configLayout().loan;
+            IERC20(offer.paymentToken).forceApprove(loanContract, loanBalance);
+            ILoan(loanContract).pay(tokenId, loanBalance);
+            IERC20(offer.paymentToken).forceApprove(loanContract, 0);
+        }
+        
+        // Seller receives full offer price minus protocol fee (debt paid separately)
         uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, offer.price);
         uint256 sellerAmount = offer.price - fee;
+        
         if (fee > 0) {
             IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
         }
-        IERC20(offer.paymentToken).safeTransfer(msg.sender, sellerAmount);
+        IERC20(offer.paymentToken).safeTransfer(tokenOwner, sellerAmount);
 
         if (isInLoanV2) {
-            ILoan(MarketStorage.configLayout().loan).finalizeOfferPurchase(tokenId, offer.creator, msg.sender, offerId);
+            ILoan(MarketStorage.configLayout().loan).finalizeOfferPurchase(tokenId, offer.creator, tokenOwner, offerId);
         } else {
-            IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(msg.sender, offer.creator, tokenId);
+            IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(tokenOwner, offer.creator, tokenId);
         }
 
         delete MarketStorage.orderbookLayout().offers[offerId];
-        emit OfferAccepted(offerId, tokenId, msg.sender, offer.price, fee);
+        emit OfferAccepted(offerId, tokenId, tokenOwner, offer.price, fee);
     }
 
     function _validateOfferCriteria(uint256 tokenId, MarketStorage.Offer storage offer, bool isInLoanV2) internal view {
