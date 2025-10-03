@@ -123,12 +123,12 @@ contract VexyAdapterTest is DiamondMarketTestBase {
             IERC20(currency).transfer(buyer, offerPrice);
         }
 
-        // Create a wide-tolerance offer from buyer
+        // Create offer from buyer (debtTolerance=0 since Vexy listings are wallet NFTs with no debt)
         vm.startPrank(buyer);
         IERC20(currency).approve(diamond, offerPrice+fee);
         IMarketOfferFacet(diamond).createOffer({
             minWeight: 1,
-            debtTolerance: type(uint256).max,
+            debtTolerance: 0,
             price: offerPrice,
             paymentToken: currency,
             expiresAt: block.timestamp + 7 days
