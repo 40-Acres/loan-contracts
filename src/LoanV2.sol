@@ -1342,176 +1342,176 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
 
-    // /**
-    //  * @notice Sets the borrower for a specific loan.
-    //  * @dev This function can only be called by an approved contract.
-    //  * @param tokenId The ID of the loan (NFT).
-    //  * @param newBorrower The address of the new borrower.
-    //  */
-    // function _setBorrower(uint256 tokenId, address newBorrower) internal {
-    //     if (newBorrower == address(0)) revert ZeroAddress();
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
-    //     address previousBorrower = loan.borrower;
-    //     loan.borrower = newBorrower;
-    //     emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
-    // }
+    /**
+     * @notice Sets the borrower for a specific loan.
+     * @dev This function can only be called by an approved contract.
+     * @param tokenId The ID of the loan (NFT).
+     * @param newBorrower The address of the new borrower.
+     */
+    function _setBorrower(uint256 tokenId, address newBorrower) internal {
+        if (newBorrower == address(0)) revert ZeroAddress();
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if (loan.borrower != msg.sender && msg.sender != getMarketDiamond()) revert Unauthorized();
+        address previousBorrower = loan.borrower;
+        loan.borrower = newBorrower;
+        emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
+    }
 
-    // function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
-    //     if (buyer == address(0)) revert ZeroAddress();
+    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external onlyMarketDiamond {
+        if (buyer == address(0)) revert ZeroAddress();
 
-    //     // Verify listing presence and consistency via MarketView facet on the diamond caller
-    //     (address listingOwner, , , , uint256 expiresAt) = IMarketViewFacet(msg.sender).getListing(tokenId);
-    //     if (listingOwner == address(0)) revert InvalidListing();
-    //     if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidListing();
+        // Verify listing presence and consistency via MarketView facet on the diamond caller
+        (address listingOwner, , , , uint256 expiresAt) = IMarketViewFacet(msg.sender).getListing(tokenId);
+        if (listingOwner == address(0)) revert InvalidListing();
+        if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidListing();
 
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert SellerMismatch();
-    //     if (loan.balance != 0) revert LoanNotPaidOff();
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert SellerMismatch();
+        if (loan.balance != 0) revert LoanNotPaidOff();
 
-    //     _setBorrower(tokenId, buyer);
-    // }
+        _setBorrower(tokenId, buyer);
+    }
 
-    // /**
-    //  * @notice Finalize offer acceptance by setting borrower post-payoff in the same tx
-    //  * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
-    //  */
-    // function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external onlyMarketDiamond {
-    //     if (buyer == address(0)) revert ZeroAddress();
+    /**
+     * @notice Finalize offer acceptance by setting borrower post-payoff in the same tx
+     * @dev Callable ONLY by market diamond; requires loan payoff is complete and seller identity matches
+     */
+    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external onlyMarketDiamond {
+        if (buyer == address(0)) revert ZeroAddress();
 
-    //     // Validate the offer is present and active, and belongs to the buyer
-    //     (
-    //         address creator,
-    //         ,
-    //         ,
-    //         ,
-    //         ,
-    //         uint256 expiresAt
-    //     ) = IMarketViewFacet(msg.sender).getOffer(offerId);
-    //     if (creator == address(0)) revert InvalidOffer();
-    //     if (creator != buyer) revert CreatorMismatch();
-    //     if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidOffer();
+        // Validate the offer is present and active, and belongs to the buyer
+        (
+            address creator,
+            ,
+            ,
+            ,
+            ,
+            uint256 expiresAt
+        ) = IMarketViewFacet(msg.sender).getOffer(offerId);
+        if (creator == address(0)) revert InvalidOffer();
+        if (creator != buyer) revert CreatorMismatch();
+        if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidOffer();
 
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     if (loan.borrower != expectedSeller) revert SellerMismatch();
-    //     // debts should be paid off already
-    //     if (loan.balance != 0) revert LoanNotPaidOff();
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if (loan.borrower != expectedSeller) revert SellerMismatch();
+        // debts should be paid off already
+        if (loan.balance != 0) revert LoanNotPaidOff();
 
-    //     _setBorrower(tokenId, buyer);
-    // }
+        _setBorrower(tokenId, buyer);
+    }
 
-    // function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
-    //     if (buyer == address(0)) revert ZeroAddress();
+    function finalizeLBOPurchase(uint256 tokenId, address buyer) external onlyMarketDiamond {
+        if (buyer == address(0)) revert ZeroAddress();
         
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     if (loan.borrower != msg.sender) revert Unauthorized(); // Market diamond should be current borrower
+        LoanInfo storage loan = _loanDetails[tokenId];
+        if (loan.borrower != msg.sender) revert Unauthorized(); // Market diamond should be current borrower
 
-    //     loan.balance -= loan.unpaidFees;
-    //     loan.unpaidFees = 0;
+        loan.balance -= loan.unpaidFees;
+        loan.unpaidFees = 0;
         
-    //     require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
+        require(loan.balance == loan.outstandingCapital + loan.unpaidFees);
 
-    //     // Transfer veNFT ownership to buyer
-    //     _setBorrower(tokenId, buyer);
-    // }
+        // Transfer veNFT ownership to buyer
+        _setBorrower(tokenId, buyer);
+    }
 
-    // /* FLASH LOAN FUNCTIONS */
+    /* FLASH LOAN FUNCTIONS */
 
-    // /**
-    //  * @notice Returns the maximum amount of tokens available for a flash loan
-    //  * @dev Implements the IFlashLoanProvider interface
-    //  * @param token The address of the token to be flash loaned
-    //  * @return The maximum amount of tokens available for flash loan
-    //  */
-    // function maxFlashLoan(address token) public view override returns (uint256) {
-    //     if (token != address(_asset)) {
-    //         return 0;
-    //     }
+    /**
+     * @notice Returns the maximum amount of tokens available for a flash loan
+     * @dev Implements the IFlashLoanProvider interface
+     * @param token The address of the token to be flash loaned
+     * @return The maximum amount of tokens available for flash loan
+     */
+    function maxFlashLoan(address token) public view override returns (uint256) {
+        if (token != address(_asset)) {
+            return 0;
+        }
         
-    //     // The maximum flash loan amount is the total balance in the vault
-    //     return _asset.balanceOf(_vault);
-    // }
+        // The maximum flash loan amount is the total balance in the vault
+        return _asset.balanceOf(_vault);
+    }
 
-    // /**
-    //  * @notice Calculates the fee for a flash loan
-    //  * @dev Implements the IFlashLoanProvider interface
-    //  * @param token The address of the token to be flash loaned
-    //  * @param amount The amount of tokens to be loaned
-    //  * @return The flash loan fee
-    //  */
-    // function flashFee(address token, uint256 amount) public view override returns (uint256) {
-    //     if (token != address(_asset)) {
-    //         revert UnsupportedToken(token);
-    //     }
+    /**
+     * @notice Calculates the fee for a flash loan
+     * @dev Implements the IFlashLoanProvider interface
+     * @param token The address of the token to be flash loaned
+     * @param amount The amount of tokens to be loaned
+     * @return The flash loan fee
+     */
+    function flashFee(address token, uint256 amount) public view override returns (uint256) {
+        if (token != address(_asset)) {
+            revert UnsupportedToken(token);
+        }
         
-    //     // 0% fee for market diamond, regular fee for others
-    //     if (msg.sender == getMarketDiamond()) {
-    //         return 0;
-    //     }
+        // 0% fee for market diamond, regular fee for others
+        if (msg.sender == getMarketDiamond()) {
+            return 0;
+        }
         
-    //     return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
-    // }
+        return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
+    }
 
-    // /**
-    //  * @notice Executes a flash loan
-    //  * @dev Implements the IFlashLoanProvider interface
-    //  * @param receiver The contract receiving the flash loan
-    //  * @param token The token to be flash loaned
-    //  * @param amount The amount of tokens to be loaned
-    //  * @param data Additional data to be passed to the receiver. Must contain the LBO purchaseOrder struct to call buyToken on MarketRouterFacet
-    //  * @return success Boolean indicating whether the flash loan was successful
-    //  */
-    // function flashLoan(
-    //     IFlashLoanReceiver receiver,
-    //     address token,
-    //     uint256 amount,
-    //     bytes calldata data
-    // ) external override nonReentrant onlyMarketDiamond returns (bool) {
-    //     // Check if flash loan is paused
-    //     if (getFlashLoanPaused()) revert FlashLoansPaused();
+    /**
+     * @notice Executes a flash loan
+     * @dev Implements the IFlashLoanProvider interface
+     * @param receiver The contract receiving the flash loan
+     * @param token The token to be flash loaned
+     * @param amount The amount of tokens to be loaned
+     * @param data Additional data to be passed to the receiver. Must contain the LBO purchaseOrder struct to call buyToken on MarketRouterFacet
+     * @return success Boolean indicating whether the flash loan was successful
+     */
+    function flashLoan(
+        IFlashLoanReceiver receiver,
+        address token,
+        uint256 amount,
+        bytes calldata data
+    ) external override nonReentrant onlyMarketDiamond returns (bool) {
+        // Check if flash loan is paused
+        if (getFlashLoanPaused()) revert FlashLoansPaused();
 
-    //     // require flash loan receiver to be market diamond
-    //     if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
+        // require flash loan receiver to be market diamond
+        if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
 
-    //     // will revert if token is not supported
-    //     if (token != address(_asset)) {
-    //         revert UnsupportedToken(token);
-    //     }
+        // will revert if token is not supported
+        if (token != address(_asset)) {
+            revert UnsupportedToken(token);
+        }
         
-    //     // Check if the amount exceeds the maximum available
-    //     uint256 maxLoan = maxFlashLoan(token);
-    //     if (amount > maxLoan) {
-    //         revert ExceededMaxLoan(maxLoan);
-    //     }
+        // Check if the amount exceeds the maximum available
+        uint256 maxLoan = maxFlashLoan(token);
+        if (amount > maxLoan) {
+            revert ExceededMaxLoan(maxLoan);
+        }
         
-    //     // Calculate the fee (0% for LBO operations from market diamond)
-    //     uint256 fee = flashFee(token, amount);
+        // Calculate the fee (0% for LBO operations from market diamond)
+        uint256 fee = flashFee(token, amount);
         
-    //     // Transfer the loan amount from the vault to the receiver
-    //     // For flash loans to work, the vault needs to approve this contract to transfer funds
-    //     // This is similar to how _increaseLoan function works
-    //     _asset.transferFrom(_vault, address(receiver), amount);
+        // Transfer the loan amount from the vault to the receiver
+        // For flash loans to work, the vault needs to approve this contract to transfer funds
+        // This is similar to how _increaseLoan function works
+        _asset.transferFrom(_vault, address(receiver), amount);
         
-    //     // Execute the callback on the receiver
-    //     if (receiver.onFlashLoan(msg.sender, token, amount, fee, data) != CALLBACK_SUCCESS) {
-    //         revert InvalidFlashLoanReceiver(address(receiver));
-    //     }
+        // Execute the callback on the receiver
+        if (receiver.onFlashLoan(msg.sender, token, amount, fee, data) != CALLBACK_SUCCESS) {
+            revert InvalidFlashLoanReceiver(address(receiver));
+        }
         
-    //     // Ensure the contract has enough allowance to transfer the funds back to the vault
-    //     uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
-    //     uint256 required = amount + fee;
-    //     if (receiverAllowance < required) revert InsufficientAllowance(required, receiverAllowance);
+        // Ensure the contract has enough allowance to transfer the funds back to the vault
+        uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
+        uint256 required = amount + fee;
+        if (receiverAllowance < required) revert InsufficientAllowance(required, receiverAllowance);
         
-    //     // Transfer the loan amount plus fee back to the vault
-    //     _asset.transferFrom(address(receiver), _vault, amount + fee);
+        // Transfer the loan amount plus fee back to the vault
+        _asset.transferFrom(address(receiver), _vault, amount + fee);
         
-    //     // flash loans are restricted to market diamond which is charged 0 flash loan fee
+        // flash loans are restricted to market diamond which is charged 0 flash loan fee
         
-    //     // Emit the flash loan event
-    //     emit FlashLoan(address(receiver), msg.sender, token, amount, fee);
+        // Emit the flash loan event
+        emit FlashLoan(address(receiver), msg.sender, token, amount, fee);
         
-    //     return true;
-    // }
+        return true;
+    }
     
     function isUserAccount(address owner) public view returns (bool) {
         address portfolioFactory = getPortfolioFactory();
