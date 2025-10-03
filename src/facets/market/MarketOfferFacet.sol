@@ -88,14 +88,9 @@ contract MarketOfferFacet is IMarketOfferFacet {
         require(newMinWeight > 0, Errors.InsufficientWeight());
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
         
-        address loanAsset = MarketStorage.configLayout().loanAsset;
-        
-        // Enforce bidirectional constraint: debt tolerance and payment token must align
+        // If accepting loans with debt, payment token must match the loan asset
         if (newDebtTolerance > 0) {
-            require(newPaymentToken == loanAsset, Errors.InvalidPaymentToken());
-        }
-        if (newPaymentToken != loanAsset) {
-            require(newDebtTolerance == 0, Errors.InsufficientDebtTolerance());
+            require(newPaymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
         }
 
         // Approval-based offers: price changes do not move funds at update time
