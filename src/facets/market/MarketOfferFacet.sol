@@ -83,7 +83,7 @@ contract MarketOfferFacet is IMarketOfferFacet {
     ) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), Errors.OfferNotFound());
-        require(offer.creator == msg.sender, Errors.NotAuthorized());
+        require(MarketLogicLib.canOperate(offer.creator, msg.sender), Errors.NotAuthorized());
         require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], Errors.InvalidPaymentToken());
         require(newMinWeight > 0, Errors.InsufficientWeight());
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
@@ -107,7 +107,7 @@ contract MarketOfferFacet is IMarketOfferFacet {
     function cancelOffer(uint256 offerId) external nonReentrant {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), Errors.OfferNotFound());
-        require(offer.creator == msg.sender, Errors.NotAuthorized());
+        require(MarketLogicLib.canOperate(offer.creator, msg.sender), Errors.NotAuthorized());
         // Approval-based offers: nothing to refund; just delete the offer
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferCancelled(offerId);
