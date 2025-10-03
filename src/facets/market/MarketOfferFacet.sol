@@ -52,11 +52,6 @@ contract MarketOfferFacet is IMarketOfferFacet {
         require(MarketStorage.configLayout().allowedPaymentToken[paymentToken], Errors.InvalidPaymentToken());
         require(minWeight > 0, Errors.InsufficientWeight());
         if (expiresAt != 0) require(expiresAt > block.timestamp, Errors.InvalidExpiration());
-        
-        // If accepting loans with debt, payment token must match the loan asset
-        if (debtTolerance > 0) {
-            require(paymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
-        }
 
         // Approval-based offers: no escrow pull at creation
 
@@ -87,11 +82,6 @@ contract MarketOfferFacet is IMarketOfferFacet {
         require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], Errors.InvalidPaymentToken());
         require(newMinWeight > 0, Errors.InsufficientWeight());
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
-        
-        // If accepting loans with debt, payment token must match the loan asset
-        if (newDebtTolerance > 0) {
-            require(newPaymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
-        }
 
         // Approval-based offers: price changes do not move funds at update time
 
@@ -134,33 +124,10 @@ contract MarketOfferFacet is IMarketOfferFacet {
 
         _validateOfferCriteria(tokenId, offer, isInLoanV2);
 
-        // Get loan balance to calculate total amount buyer must provide
-        uint256 loanBalance = 0;
-        if (isInLoanV2) {
-            (loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
-            if (loanBalance > 0) {
-                address loanAsset = MarketStorage.configLayout().loanAsset;
-                // Ensure payment token matches loan asset (enforced at offer creation)
-                require(offer.paymentToken == loanAsset, Errors.InvalidPaymentToken());
-            }
-        }
-
-        // Pull total amount from buyer: offer price + any outstanding debt
-        uint256 totalFromBuyer = offer.price + loanBalance;
-        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), totalFromBuyer);
-        
-        // Pay off loan debt separately if it exists
-        if (loanBalance > 0) {
-            address loanContract = MarketStorage.configLayout().loan;
-            IERC20(offer.paymentToken).forceApprove(loanContract, loanBalance);
-            ILoan(loanContract).pay(tokenId, loanBalance);
-            IERC20(offer.paymentToken).forceApprove(loanContract, 0);
-        }
-        
-        // Seller receives full offer price minus protocol fee (debt paid separately)
+        // Pull full offer amount at fill time from offer creator
+        IERC20(offer.paymentToken).safeTransferFrom(offer.creator, address(this), offer.price);
         uint256 fee = FeeLib.calculateFee(RouteLib.BuyRoute.InternalWallet, offer.price);
         uint256 sellerAmount = offer.price - fee;
-        
         if (fee > 0) {
             IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
         }
