@@ -59,6 +59,7 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
         address tokenOwner = IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId);
+        // Only the token owner can create listings (operators cannot at this time)
         if (tokenOwner != msg.sender) revert Errors.NotAuthorized();
 
         // Must not be in Loan custody (borrower must be zero if loan configured)
