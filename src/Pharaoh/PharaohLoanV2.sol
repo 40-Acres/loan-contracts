@@ -91,7 +91,7 @@ contract PharaohLoanV2 is Loan {
 
     function _getLockedAmount(uint256 tokenId) internal view override returns (uint256) {
         IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(address(_ve)).locked(tokenId);
-        if (lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp)) {
+        if (lockedBalance.end <= block.timestamp) {
             return 0;
         }
         require(lockedBalance.amount >= 0);
