@@ -19,7 +19,6 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import {ISwapper} from "./interfaces/ISwapper.sol";
-import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import {LoanUtils} from "./LoanUtils.sol";
 import { IMarketViewFacet } from "./interfaces/IMarketViewFacet.sol";
 import {IFlashLoanProvider} from "./interfaces/IFlashLoanProvider.sol";
@@ -74,7 +73,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address preferredToken; // preferred token to receive for zero balance option
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
-        bool    optInCommunityRewards; // opt in to community rewards
+        bool    optInCommunityRewards; // DEPRECATED - opt in to community rewards (no longer functional)
     }
 
     // Pools each token votes on for this epoch
@@ -499,7 +498,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (claimable > 0) {
             try _rewardsDistributor.claim(loan.tokenId) {
                 addTotalWeight(claimable);
-                _recordDepositOnManagedNft(loan.tokenId, claimable, loan.borrower);
                 loan.weight += claimable;
             } catch {
             }
@@ -546,9 +544,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
-        if(tokenId == getManagedNft() && remaining > 0) {
-            ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), remaining);
-        }
     }
 
 
@@ -780,10 +775,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
-     * @dev Internal function to increase the
-      NFT-related value for a loan.
+     * @dev Internal function to increase the NFT-related value for a loan.
      * @param loan The LoanInfo struct containing details of the loan.
-     * @param allocation The amount  to be allocated for increasing the veNFT balance.
+     * @param allocation The amount to be allocated for increasing the veNFT balance.
      * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
     function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
@@ -794,13 +788,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
         _aero.approve(address(_ve), allocation);
-        uint256 managedNft = getManagedNft();
-        uint256 tokenToIncrease = (userIncreasesManagedToken(loan.borrower) || loan.optInCommunityRewards) && managedNft != 0 ? managedNft : loan.tokenId;
-        _ve.increaseAmount(tokenToIncrease, allocation);
-        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
+        // Managed NFT functionality deprecated - always use loan's own tokenId
+        _ve.increaseAmount(loan.tokenId, allocation);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, allocation, loan.tokenId);
         addTotalWeight(allocation);
         loan.weight += allocation;
-        _recordDepositOnManagedNft(tokenToIncrease, allocation, loan.borrower);
         return allocation;
     }
 
@@ -821,23 +813,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         addTotalWeight(amount);
         LoanInfo storage loan = _loanDetails[tokenId];
         loan.weight += amount;
-        _recordDepositOnManagedNft(tokenId, amount, msg.sender);
     }
 
 
-    /**
-     * @dev Records a deposit on the managed NFT for community rewards.
-     * @param tokenId The ID of the token being deposited.
-     * @param amount The amount being deposited.
-     * @param owner The address of the owner of the token.
-     */
-    function _recordDepositOnManagedNft(uint256 tokenId, uint256 amount, address owner) internal {
-        uint256 managedNft = getManagedNft();
-        (, address managedNftAddress) = getLoanDetails(managedNft);
-        if(managedNftAddress != address(0)) {
-            ICommunityRewards(managedNftAddress).deposit(tokenId, amount, owner);
-        }
-    }
 
     /**
      * @notice Allows the borrower to claim their collateral (veNFT) after the loan is fully repaid.
@@ -984,31 +962,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /* OWNER METHODS */
-
-    /**
-     * @notice Allows the owner to merge the managed NFT with a specified token ID.
-     * @dev This function can only be called by the owner of the contract.
-     *      Note: This should only be possible for Flight School rewards sent to the contract.
-     * @param tokenId The ID of the token to merge with the managed NFT.
-     *
-     * ManagedNFT is essentially a community owned veNFT where users can increase the NFT to obtain shares
-     * In the future this can be used as collateral for loans
-     */
-   function mergeIntoManagedNft(uint256 tokenId) public onlyOwner {
-        uint256 managedNft = getManagedNft();
-        require(_ve.ownerOf(tokenId) == address(this));
-        require(_ve.ownerOf(managedNft) == address(this));
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == address(0));
-        uint256 beginningBalance = _getLockedAmount(tokenId);
-        _ve.merge(tokenId, managedNft);
-        uint256 weightAdded = _getLockedAmount(tokenId) - beginningBalance;
-        addTotalWeight(weightAdded);
-        loan.weight += weightAdded;
-        (, address managedNftAddress) = getLoanDetails(managedNft);
-        ICommunityRewards(managedNftAddress).notifyFlightBonus(weightAdded);
-    }
-    
 
     /**
      * @notice Allows user to merge their veNFT into another veNFT.
@@ -1185,18 +1138,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(isApprovedToken(preferredToken));
         loan.preferredToken = preferredToken;
     }
-    
-    function setOptInCommunityRewards(
-        uint256[] calldata tokenIds,
-        bool optIn
-    ) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            LoanInfo storage loan = _loanDetails[tokenIds[i]];
-            require(loan.borrower == msg.sender);
-            loan.optInCommunityRewards = optIn;
-        }
-    }
-
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.
