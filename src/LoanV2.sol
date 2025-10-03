@@ -1225,7 +1225,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) internal view virtual returns (uint256) {
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
         if (
-            !lockedBalance.isPermanent && lockedBalance.end < ProtocolTimeLibrary.epochStart(block.timestamp)
+            !lockedBalance.isPermanent && lockedBalance.end <= block.timestamp
         ) {
             return 0;
         }
