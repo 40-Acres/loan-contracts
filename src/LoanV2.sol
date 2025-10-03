@@ -402,8 +402,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // take out unpaid fees first
         if(loan.unpaidFees > 0) {
             uint256 feesPaid = loan.unpaidFees;
-            // Apply 25% cap only if payment won't fully settle the loan
-            if(amount - feesPaid < loan.balance) {
+            // For partial payments, cap fees at 25% to protect borrower
+            // For full settlement, collect all fees to ensure protocol is paid
+            if(amount < loan.balance) {
                 uint256 maxFees = (amount * 25) / 100;
                 if(feesPaid > maxFees) {
                     feesPaid = maxFees;
