@@ -56,10 +56,12 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
         address tokenOwner = MarketLogicLib.getTokenOwnerOrBorrower(tokenId);
-        if (!MarketLogicLib.canOperate(tokenOwner, msg.sender)) revert Errors.NotAuthorized();
+        // Only the token owner can create listings (operators cannot at this time)
+        if (tokenOwner != msg.sender) revert Errors.NotAuthorized();
 
-        // Ensure token is in Loan custody (not wallet): ownerOf(tokenId) != msg.sender
-        if (IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) == msg.sender) revert Errors.BadCustody();
+        // Ensure token is in Loan custody (not wallet)
+        address loanContract = MarketStorage.configLayout().loan;
+        if (IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) != loanContract) revert Errors.BadCustody();
 
         (uint256 balance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
         bool hasOutstandingLoan = balance > 0;
