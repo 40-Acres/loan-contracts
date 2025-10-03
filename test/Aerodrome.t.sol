@@ -26,6 +26,33 @@ import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 
+contract MockOdosRouterRL {
+    address public testContract;
+
+    address ODOS = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+    address USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+    address AERO = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
+    
+    function initMock(address _testContract) external { testContract = _testContract; }
+    function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external returns (bool) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", address(this), msg.sender, amountOut));
+        require(success, "mint fail");
+        return true;
+    }
+
+
+    function executeSwapMultiOutput(uint256 amount1, uint256 amount2) external returns (bool) {
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", address(this), msg.sender, amount1));
+        require(success, "mint fail");
+
+        (bool success2,) = testContract.call(abi.encodeWithSignature("mintAero(address,uint256)", msg.sender, amount2));
+        require(success2, "mint rex fail");
+
+        return true;
+    }
+}
+
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
     function mint(address to, uint256 amount) external;
@@ -50,6 +77,7 @@ interface IOwnable {
 contract AerodromeTest is Test {
     uint256 fork;
 
+    address ODOS = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
     IERC20 aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IUSDC usdc = IUSDC(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
     IVotingEscrow votingEscrow =
@@ -106,10 +134,6 @@ contract AerodromeTest is Test {
         pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
         loan.setApprovedPools(pools, true);
         
-        // Set default pools and weights for automatic voting
-        uint256[] memory weights = new uint256[](1);
-        weights[0] = 100e18;
-        loan.setDefaultPools(pools, weights);
         vm.stopPrank();
 
         // Deploy the AerodromeFacet
@@ -139,8 +163,12 @@ contract AerodromeTest is Test {
         usdc.configureMinter(address(this), type(uint256).max);
         usdc.mint(address(voter), 100e6);
         usdc.mint(address(vault), 100e6);
-
-        vm.stopPrank();
+        MockOdosRouterRL mock = new MockOdosRouterRL();
+        bytes memory code = address(mock).code;
+        vm.etch(ODOS, code);
+        MockOdosRouterRL(ODOS).initMock(address(this));
+        vm.prank(0x7269de76188E6597444D0859C4e5c336D3c39dDb);
+        IERC20(aero).transfer(address(this), 10000e18);
     }
 
     function _deployPortfolioFactory() internal {
@@ -152,6 +180,20 @@ contract AerodromeTest is Test {
             address(facetRegistry)
         );
 
+    }
+
+    // helper for mock to mint USDC to a recipient
+    function mintUsdc(address /*minter*/, address to, uint256 amount) external {
+        console.log("mintUsdc", to, amount);
+        usdc.mint(to, amount);
+    }
+
+    // helper for mock to mint REX to a recipient
+    function mintAero(address to, uint256 amount) external {
+        console.log("mintAero", to, amount);
+        console.log("aero balance before:", aero.balanceOf(address(this)));
+        aero.transfer(to, amount);
+        console.log("aero transfer successful");
     }
 
     function testOwner() public view {
@@ -636,24 +678,27 @@ contract AerodromeTest is Test {
 
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(user));
         address[] memory bribes = new address[](0);
-        bytes
-            memory data = hex"84a7f3dd020100016877B1b0c6267E0AD9aa4C0df18A547AA2f6B08d073a9f858ec468c400020704077c61afebec0001df033790907c60c9B81aE355F76F74f52F92114A00016e2c81b6c2c0e02360f00a0da694e489acb0b05e090764453ee13b356a3700000004043b927079000187f18b377e625b62c708D5f6EA96EC193558EFD0000000000401030500340201000102018000001702080201030401ff000000000000000000df033790907c60c9b81ae355f76f74f52f92114a420000000000000000000000000000000000000651c230951b82dbf7b8696b6fcd2be199cc10779f6e2c81b6c2c0e02360f00a0da694e489acb0b05e00000000000000000000000000000000";
         uint256[2] memory allocations = [
-            uint256(41349),
+            uint256(100e6),
             uint256(21919478169541)
         ];
+
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwapMultiOutput.selector,
+            100e6,
+            21919478169540 // send less to account for slippage
+        );
         uint256 rewards = _claimRewards(
             Loan(userAccount),
             tokenId,
             bribes,
-            data,
+            tradeData,
             allocations
         );
-        uint256 endingUserUsdcBalance = usdc.balanceOf(address(user));
-        assertTrue(
-            endingUserUsdcBalance > beginningUserUsdcBalance,
-            "User should have received rewards"
-        );
+
+        // loan balance should be 0
+        ( balance, ) = loan.getLoanDetails(tokenId);
+        assertEq(balance, 0, "Balance should be 0");
     }
 
     // test claims without transferring the NFT to the user account
@@ -671,6 +716,7 @@ contract AerodromeTest is Test {
         // Transfer NFT to user account
         vm.stopPrank();
 
+        int128 beginningNftLockedAmount = votingEscrow.locked(tokenId).amount;
         // Request loan through the user account
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(userAccount), tokenId);
@@ -731,24 +777,32 @@ contract AerodromeTest is Test {
 
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(user));
         address[] memory bribes = new address[](0);
-        bytes
-            memory data = hex"84a7f3dd020100016877B1b0c6267E0AD9aa4C0df18A547AA2f6B08d073a9f858ec468c400020704077c61afebec0001df033790907c60c9B81aE355F76F74f52F92114A00016e2c81b6c2c0e02360f00a0da694e489acb0b05e090764453ee13b356a3700000004043b927079000187f18b377e625b62c708D5f6EA96EC193558EFD0000000000401030500340201000102018000001702080201030401ff000000000000000000df033790907c60c9b81ae355f76f74f52f92114a420000000000000000000000000000000000000651c230951b82dbf7b8696b6fcd2be199cc10779f6e2c81b6c2c0e02360f00a0da694e489acb0b05e00000000000000000000000000000000";
+
         uint256[2] memory allocations = [
-            uint256(41349),
+            uint256(100e6),
             uint256(21919478169541)
         ];
+
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwapMultiOutput.selector,
+            100e6,
+            21919478169540 // send less to account for slippage
+        );
         uint256 rewards = _claimRewards(
             Loan(userAccount),
             tokenId,
             bribes,
-            data,
+            tradeData,
             allocations
         );
-        uint256 endingUserUsdcBalance = usdc.balanceOf(address(user));
-        assertTrue(
-            endingUserUsdcBalance > beginningUserUsdcBalance,
-            "User should have received rewards"
-        );
+        // loan balance should be 0
+        ( balance, ) = loan.getLoanDetails(tokenId);
+        assertEq(balance, 0, "Balance should be 0");
+
+        int128 endingNftLockedAmount = votingEscrow.locked(tokenId).amount;
+        console.log("endingNftLockedAmount", endingNftLockedAmount);
+        console.log("beginningNftLockedAmount", beginningNftLockedAmount);
+        assertTrue(endingNftLockedAmount >= beginningNftLockedAmount + 21919478169540, "NFT locked amount should increase");
     }
 
     function _claimRewards(
@@ -793,7 +847,7 @@ contract AerodromeTest is Test {
             bribeTokens[bribes.length + 1] = token[1];
             tokens[2 * i + 1] = bribeTokens;
         }
-        bytes memory data = "";
+        bytes memory data = "";  
         vm.startPrank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
         uint256 result = AerodromeFacet(address(_loan)).aerodromeClaim(
             address(loan), // Use the actual loan contract address

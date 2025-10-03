@@ -590,7 +590,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        // require(msg.sender == _entryPoint());
+        require(msg.sender == _entryPoint() || isUserAccount(msg.sender));
         LoanInfo storage loan = _loanDetails[tokenId];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
@@ -644,7 +644,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         _claimRebase(loan);
-        require(_ve.ownerOf(tokenId) == address(this));
+        if(!isUserAccount(msg.sender)) {
+            require(_ve.ownerOf(tokenId) == address(this));
+        }
         
         return allocations[0];
     }
@@ -805,8 +807,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(allocation == 0) {
             return 0;
         }
-        _aero.approve(address(_ve), allocation);
-        _ve.increaseAmount(loan.tokenId, allocation);
+        if(isUserAccount(loan.borrower)) {
+            _aero.transfer(loan.borrower, allocation);
+        } else {
+            _aero.approve(address(_ve), allocation);
+            _ve.increaseAmount(loan.tokenId, allocation);
+        }
         emit VeNftIncreased(currentEpochStart(), loan.borrower, loan.tokenId, allocation, loan.tokenId);
         addTotalWeight(allocation);
         loan.weight += allocation;

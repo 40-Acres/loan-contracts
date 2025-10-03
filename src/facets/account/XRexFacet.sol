@@ -89,11 +89,11 @@ contract XRexFacet {
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
         IVoteModule(_voteModule).setAdmin(address(0));
         if(allocations[1] > 0) {
-            uint256 aeroAmount = _rex.balanceOf(address(this));
-            if(allocations[1] < aeroAmount) {
-                aeroAmount = allocations[1];
+            uint256 rexAmount = _rex.balanceOf(address(this));
+            if(allocations[1] < rexAmount) {
+                rexAmount = allocations[1];
             }
-            _increaseCollateral(aeroAmount, address(IXLoan(loanContract)._lockedAsset()));
+            _increaseCollateral(rexAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
         return result;
     }

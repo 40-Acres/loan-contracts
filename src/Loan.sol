@@ -19,7 +19,6 @@ import {LoanStorage} from "./LoanStorage.sol";
 import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
-import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -229,11 +228,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function requestLoan(
         uint256 tokenId,
         uint256 amount,
-        ZeroBalanceOption zeroBalanceOption,
-        uint256 increasePercentage,
-        address preferredToken,
-        bool topUp,
-        bool optInCommunityRewards
+        ZeroBalanceOption zeroBalanceOption
     ) public  {
         require(confirmUsdcPrice());
         // require the msg.sender to be the owner of the token
@@ -248,22 +243,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _vote(tokenId);
         }
 
-        // Check if caller is a user account - if so, don't transfer the NFT
-        bool isUserAccount = false;
-        if (address(_PortfolioFactory) != address(0)) {
-            try _PortfolioFactory.isUserAccount(msg.sender) returns (bool exists) {
-                isUserAccount = exists;
-            } catch {
-                // If the call fails, assume it's not a user account
-                isUserAccount = false;
-            }
-        }
-        
-        if (!isUserAccount) {
-            // transfer the token to the contract
-            _ve.transferFrom(msg.sender, address(this), tokenId);
-            require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
-        } 
+        // transfer the token to the contract
+        _ve.transferFrom(msg.sender, address(this), tokenId);
+        require(_ve.ownerOf(tokenId) == address(this), TokenNotLocked());
 
         // ensure the token is locked permanently
         IVotingEscrow.LockedBalance memory lockedBalance = _ve.locked(tokenId);
@@ -1071,6 +1053,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _multiplier = multiplier;
     }
 
+
     /**
      * @notice Overrides the renounceOwnership function to prevent the owner from renouncing ownership.
      */
@@ -1078,80 +1061,80 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         revert();
     }
 
-    // /**
-    //  * @notice Rescue any ERC20 tokens that are stuck in the contract.
-    //  * @dev This function can only be called by the owner of the contract.
-    //  * @param token The address of the ERC20 token to rescue.
-    //  * @param amount The amount of tokens to rescue.
-    //  */
-    // function rescueERC20(address token, uint256 amount) public onlyOwner {
-    //     require(IERC20(token).transfer(owner(), amount));
-    // }
+    /**
+     * @notice Rescue any ERC20 tokens that are stuck in the contract.
+     * @dev This function can only be called by the owner of the contract.
+     * @param token The address of the ERC20 token to rescue.
+     * @param amount The amount of tokens to rescue.
+     */
+    function rescueERC20(address token, uint256 amount) public onlyOwner {
+        require(IERC20(token).transfer(owner(), amount));
+    }
 
-    // /* USER METHODS */
-    // /**
-    //  * @notice Sets the zero balance option for a specific loan.
-    //  * @dev This function can only be called by the borrower of the loan.
-    //  * @param tokenId The ID of the loan (NFT).
-    //  * @param option The zero balance option to set.
-    //  */
-    // function setZeroBalanceOption(
-    //     uint256 tokenId,
-    //     ZeroBalanceOption option
-    // ) public {
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     require(
-    //         loan.borrower == msg.sender,
-    //         NotOwnerOfToken(tokenId, loan.borrower)
-    //     );
-    //     loan.zeroBalanceOption = option;
-    //     emit ZeroBalanceOptionSet(tokenId, option);
-    // }
+    /* USER METHODS */
+    /**
+     * @notice Sets the zero balance option for a specific loan.
+     * @dev This function can only be called by the borrower of the loan.
+     * @param tokenId The ID of the loan (NFT).
+     * @param option The zero balance option to set.
+     */
+    function setZeroBalanceOption(
+        uint256 tokenId,
+        ZeroBalanceOption option
+    ) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(
+            loan.borrower == msg.sender,
+            NotOwnerOfToken(tokenId, loan.borrower)
+        );
+        loan.zeroBalanceOption = option;
+        emit ZeroBalanceOptionSet(tokenId, option);
+    }
 
-    // /**
-    //  * @notice Sets the preferred token for a specific loan.
-    //  * @dev This function can only be called by the borrower of the loan.
-    //  * @param tokenId The ID of the loan (NFT).
-    //  * @param preferredToken The address of the preferred token to set.
-    //  */
-    // function setPreferredToken(
-    //     uint256 tokenId,
-    //     address preferredToken
-    // ) public {
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     require(
-    //         loan.borrower == msg.sender
-    //     );
-    //     require(isApprovedToken(preferredToken));
-    //     loan.preferredToken = preferredToken;
-    // }
+    /**
+     * @notice Sets the preferred token for a specific loan.
+     * @dev This function can only be called by the borrower of the loan.
+     * @param tokenId The ID of the loan (NFT).
+     * @param preferredToken The address of the preferred token to set.
+     */
+    function setPreferredToken(
+        uint256 tokenId,
+        address preferredToken
+    ) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(
+            loan.borrower == msg.sender
+        );
+        require(isApprovedToken(preferredToken));
+        loan.preferredToken = preferredToken;
+    }
     
-    // /**
-    //  * @notice Sets the increase percentage for a specific loan.
-    //  * @dev This function allows the borrower to set the increase percentage for their loan.
-    //  *      The increase percentage must not exceed 25% (represented as 2500 basis points).
-    //  * @param tokenId The unique identifier of the loan.
-    //  * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100 basis points).
-    //  */
-    // function setIncreasePercentage(
-    //     uint256 tokenId,
-    //     uint256 increasePercentage
-    // ) public {
-    //     LoanInfo storage loan = _loanDetails[tokenId];
-    //     require(
-    //         loan.borrower == msg.sender
-    //     );
-    //     require(increasePercentage <= 2500);
-    //     loan.increasePercentage = increasePercentage;
-    // }
+    /**
+     * @notice Sets the increase percentage for a specific loan.
+     * @dev This function allows the borrower to set the increase percentage for their loan.
+     *      The increase percentage must not exceed 25% (represented as 2500 basis points).
+     * @param tokenId The unique identifier of the loan.
+     * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100 basis points).
+     */
+    function setIncreasePercentage(
+        uint256 tokenId,
+        uint256 increasePercentage
+    ) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(
+            loan.borrower == msg.sender
+        );
+        require(increasePercentage <= 2500);
+        loan.increasePercentage = increasePercentage;
+    }
 
-    // /** ORACLE */
+    /** ORACLE */
     
-    // /**
-    //  * @notice Confirms the price of USDC is $1.
-    //  * @dev This function checks the latest round data from the Chainlink price feed for USDC.
-    //  * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
-    //  */
+    /**
+     * @notice Confirms the price of USDC is $1.
+     * @dev This function checks the latest round data from the Chainlink price feed for USDC.
+     * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
+     */
     function confirmUsdcPrice() virtual internal view returns (bool) {
         (
             ,
@@ -1165,12 +1148,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return answer >= 99900000;
     }
 
-    // /** MODIFIERS */
+    /** MODIFIERS */
     
-    // /**
-    //  * @notice Modifier to restrict function calls to the last day of the epoch.
-    //  * @dev This modifier checks if the current block timestamp is within the last day of the epoch.
-    //  */
+    /**
+     * @notice Modifier to restrict function calls to the last day of the epoch.
+     * @dev This modifier checks if the current block timestamp is within the last day of the epoch.
+     */
     modifier onlyLastDayOfEpoch() {
         uint256 timestamp = block.timestamp;
         uint256 lastDayStart = ProtocolTimeLibrary.epochStart(block.timestamp) + 6 days;

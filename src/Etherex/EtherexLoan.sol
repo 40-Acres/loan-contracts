@@ -462,7 +462,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        // require(msg.sender == _entryPoint());
+        require(isUserAccount(msg.sender));
         LoanInfo storage loan = _loanDetails[msg.sender];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
