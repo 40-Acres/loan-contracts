@@ -5,11 +5,18 @@ pragma solidity ^0.8.27;
 import { Loan } from "../LoanV2.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ISwapper} from "./interfaces/ISwapper.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import { ProtocolTimeLibrary } from "../libraries/ProtocolTimeLibrary.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import { console } from "forge-std/console.sol";
+import {IXPharaohLoan} from "./interfaces/IXPharaohLoan.sol";
+
+
+interface IPharaohFacet {
+    function pharaohIncreaseCollateral(uint256 amount) external;
+}
 
 contract PharaohLoanV2 is Loan {
     /* ORACLE */
@@ -163,5 +170,23 @@ contract PharaohLoanV2 is Loan {
         _asset.transferFrom(msg.sender, _vault, amount);
         _rewardsPerEpoch[currentEpochStart()] += amount;
         emit RewardsReceived(currentEpochStart(), amount, msg.sender, type(uint256).max);
+    }
+
+
+    /**
+     * @notice Migrates an NFT from Pharaoh Loan to XPharaoh Loan.
+     * @dev This function kicks off the migration process by approving the veNFT to the XPharaoh Loan contract.
+     * @param tokenId The ID of the NFT to migrate.
+     * @param xPharaohLoan The address of the XPharaoh Loan contract.
+     */
+    function migrateNft(uint256 tokenId, address xPharaohLoan) public onlyOwner {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower != address(0));
+        (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(loan.borrower);
+        IERC721(address(_ve)).approve(xPharaohLoan, tokenId);
+        IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption));
+        (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(loan.borrower);
+        require(previousBalance + loan.balance == postBalance);
+        delete _loanDetails[tokenId];
     }
 }

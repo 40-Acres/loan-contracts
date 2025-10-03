@@ -67,7 +67,7 @@ contract EtherexDeploy is Script {
             supportedTokens
         );
         loan.setSwapper(address(swapper));
-        
+
         loan.transferOwnership(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
         return (loan, vault, swapper, accountConfigStorage);
     }
@@ -113,16 +113,5 @@ contract EtherexUpgradeVault is Script {
 }
 
 
-contract EtherexDepositNft is Script {
-    function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        depositNft();
-    }
-
-    function depositNft() public {
-        IVoter(address(0xE30D0C8532721551a51a9FeC7FB233759964d9e3)).reset(16201);
-        Loan(address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558)).requestLoan(0, Loan.ZeroBalanceOption.PayToOwner, 0, address(0), false);
-    }
-}
 // forge script script/EtherexDeploy.s.sol:EtherexDeploy  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
 // forge script script/EtherexDeploy.s.sol:EtherexDepositNft  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir

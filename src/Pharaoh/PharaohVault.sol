@@ -13,4 +13,8 @@ contract Vault is VaultV2 {
     function totalAssets() public view override returns (uint256) {
         return _asset.balanceOf(address(this)) + _loanContract.activeAssets(); 
     }
+
+    function approveContract(address contractAddress) public onlyOwner {
+        ERC20(address(_asset)).approve(contractAddress, type(uint256).max);
+    }
 }
