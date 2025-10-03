@@ -1315,6 +1315,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (newBorrower == address(0)) revert ZeroAddress();
         LoanInfo storage loan = _loanDetails[tokenId];
         address previousBorrower = loan.borrower;
+        // If the seller had this token set as their payoff token, reset it to prevent
+        // stale references that could affect fee calculations post-transfer
+        if (getUserPayoffToken(previousBorrower) == tokenId) {
+            _setUserPayoffToken(previousBorrower, 0);
+        }
         loan.borrower = newBorrower;
         emit BorrowerChanged(tokenId, previousBorrower, newBorrower, msg.sender);
     }
