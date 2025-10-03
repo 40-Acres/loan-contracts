@@ -31,7 +31,9 @@ contract EtherexDeploy is Script {
         ERC1967Proxy _loan = new ERC1967Proxy(address(loanImplementation), "");
         VaultV2 vaultImplementation = new VaultV2();
         ERC1967Proxy _vault = new ERC1967Proxy(address(vaultImplementation), "");
-        AccountConfigStorage accountConfigStorage = new AccountConfigStorage();
+        AccountConfigStorage _accountConfigStorage = new AccountConfigStorage();
+        ERC1967Proxy accountConfigStorageProxy = new ERC1967Proxy(address(_accountConfigStorage), "");
+        AccountConfigStorage accountConfigStorage = AccountConfigStorage(address(accountConfigStorageProxy));
 
         Vault vault = Vault(payable(_vault));        
         VaultV2(address(vault)).initialize(address(_asset), address(_loan), "40ETHEREX-USDC-VAULT", "40ETHEREX-USDC-VAULT");

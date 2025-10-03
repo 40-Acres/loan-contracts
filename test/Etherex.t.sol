@@ -102,6 +102,7 @@ contract EtherexTest is Test {
     uint256 tokenId = 14054997634637524683;
 
     uint256 expectedRewards = 957174473;
+    AccountConfigStorage accountConfigStorage;
 
     Swapper public swapper;
 
@@ -117,12 +118,11 @@ contract EtherexTest is Test {
         user = 0x97BE22DBb49C88451fBd1099F59EED963d9d8A12;
         EtherexDeploy deployer = new EtherexDeploy();
         (EtherexLoan loanV2, Vault deployedVault, Swapper deployedSwapper, AccountConfigStorage _accountConfigStorage) = deployer.deploy();
+        accountConfigStorage = _accountConfigStorage;
         loan = EtherexLoan(address(loanV2));
         vault = deployedVault;
         swapper = deployedSwapper;
         
-        // Deploy a simple AccountConfigStorage for testing
-        AccountConfigStorage accountConfigStorage = new AccountConfigStorage();
 
 
         // Send REX token to the user
@@ -151,6 +151,7 @@ contract EtherexTest is Test {
 
         // Deploy the XRexFacet
         // The test contract is the owner of the simple AccountConfigStorage
+        vm.prank(IOwnable(address(accountConfigStorage)).owner());
         accountConfigStorage.setApprovedContract(address(loan), true);
         loanFacet = new XRexFacet(address(portfolioFactory), address(accountConfigStorage));
 

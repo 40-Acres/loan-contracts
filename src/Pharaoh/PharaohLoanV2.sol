@@ -184,7 +184,7 @@ contract PharaohLoanV2 is Loan {
         require(loan.borrower != address(0));
         (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(loan.borrower);
         IERC721(address(_ve)).approve(xPharaohLoan, tokenId);
-        IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption));
+        IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, tokenId, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption));
         (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(loan.borrower);
         require(previousBalance + loan.balance == postBalance);
         delete _loanDetails[tokenId];

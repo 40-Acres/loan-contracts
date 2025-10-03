@@ -24,8 +24,16 @@ import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
 import { PortfolioFactory } from "../accounts/PortfolioFactory.sol";
 import {IVoteModule} from "../interfaces/IVoteModule.sol";
 import {IXRex} from "../interfaces/IXRex.sol";
+import {ILoan} from "../interfaces/ILoan.sol";
 
-contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
+
+import { console } from "forge-std/console.sol";
+
+interface IPharoahFacet {
+    function migratePharaohToXPharaoh(uint256 tokenId) external;
+}
+
+contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
     IERC20 public _vaultAsset;
@@ -184,20 +192,20 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         __Ownable_init(msg.sender); 
         __UUPSUpgradeable_init();
         address[] memory pools = new address[](1);
-        pools[0] = 0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e;
+        pools[0] = 0x0000000000000000000000000000000000000000;
         _defaultPools = pools;
 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = 100e18;
         _defaultWeights = amounts;
         _vault = vault;
-        _voter = IXVoter(0x942117Ec0458a8AA08669E94B52001Bd43F889C1); // Linea voter 
-        _rewardsDistributor = IRewardsDistributor(0x88a49cFCee0Ed5B176073DDE12186C4c922A9cD0);
+        _voter = IXVoter(0x0000000000000000000000000000000000000000); 
+        _rewardsDistributor = IRewardsDistributor(0x0000000000000000000000000000000000000000);
         _vaultAsset = IERC20(asset);
-        _liquidAsset = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
-        _lockedAsset = IERC20(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
+        _liquidAsset = IERC20(0x0000000000000000000000000000000000000000);
+        _lockedAsset = IERC20(0x0000000000000000000000000000000000000000);
         _multiplier = 12;
-        _voteModule = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1);
+        _voteModule = IVoteModule(0x0000000000000000000000000000000000000000);
     }
 
     
@@ -1040,6 +1048,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         address borrower
     ) internal view virtual returns (uint256) {
         uint256 balance = _voteModule.balanceOf(borrower);
+        console.log("balance", balance);
         return balance;
     }
     /**
@@ -1105,5 +1114,63 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
             } catch {}
         }
         return false;
+    }
+
+
+    /**
+     * @notice Migrates an NFT from PHAR Loan to XPharaoh Loan
+     * @dev This function migrates an NFT from PHAR Loan to XPharaoh Loan by converting the PHAR balance to the XPharaoh Loan balance.
+     * @param user The address of the user to migrate the NFT to.
+     * @param balance The balance of the NFT.
+     * @param outstandingCapital The outstanding capital of the NFT.
+     * @param preferredToken The preferred token to receive for the zero balance option.
+     * @param increasePercentage The increase percentage of the NFT.
+     * @param topUp The top-up option of the NFT.
+     */
+    function migrateNft(address user, uint256 tokenId, uint256 balance, uint256 outstandingCapital, address preferredToken, uint256 increasePercentage, bool topUp, uint8 zeroBalanceOption) public {
+        require(msg.sender == 0xf6A044c3b2a3373eF2909E2474f3229f23279B5F); // PHAR -> USDC Contract
+        address portfolioFactory = getPortfolioFactory();
+        address userAccount = PortfolioFactory(portfolioFactory).getUserAccount(user);
+        if(userAccount == address(0)) {
+            PortfolioFactory(portfolioFactory).createAccount(user);
+        }
+        userAccount = PortfolioFactory(portfolioFactory).getUserAccount(user);
+        require(userAccount != address(0));
+        LoanInfo storage loan = _loanDetails[userAccount];
+        if(loan.borrower != address(0)) {
+            loan.balance += balance;
+            loan.outstandingCapital += balance;
+            if(preferredToken != address(0) && loan.preferredToken == address(0)) {
+                loan.preferredToken = preferredToken;
+            }
+            if(increasePercentage != 0 && loan.increasePercentage == 0) {
+                loan.increasePercentage = increasePercentage;
+            }
+            if(topUp && !loan.topUp) {
+                loan.topUp = topUp;
+            }
+            if (
+                zeroBalanceOption != uint8(ILoan.ZeroBalanceOption.DoNothing) &&
+                loan.zeroBalanceOption == XPharaohLoan.ZeroBalanceOption.DoNothing
+            ) {
+                loan.zeroBalanceOption = XPharaohLoan.ZeroBalanceOption(uint8(zeroBalanceOption));
+            }
+            return;
+        }
+        _loanDetails[userAccount] = LoanInfo({
+            balance: balance,
+            borrower: user,
+            timestamp: block.timestamp,
+            outstandingCapital: outstandingCapital,
+            zeroBalanceOption: XPharaohLoan.ZeroBalanceOption(uint8(zeroBalanceOption)),
+            voteTimestamp: 0,
+            unpaidFees: 0,
+            preferredToken: preferredToken,
+            increasePercentage: increasePercentage,
+            topUp: topUp
+        });
+        // transfer vePHAR to user account
+        IERC721(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F).transferFrom(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, userAccount, tokenId);
+        IPharoahFacet(userAccount).migratePharaohToXPharaoh(tokenId);
     }
 }
