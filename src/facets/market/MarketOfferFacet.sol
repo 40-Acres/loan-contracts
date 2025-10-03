@@ -164,16 +164,16 @@ contract MarketOfferFacet is IMarketOfferFacet {
         if (fee > 0) {
             IERC20(offer.paymentToken).safeTransfer(FeeLib.feeRecipient(), fee);
         }
-        IERC20(offer.paymentToken).safeTransfer(msg.sender, sellerAmount);
+        IERC20(offer.paymentToken).safeTransfer(tokenOwner, sellerAmount);
 
         if (isInLoanV2) {
-            ILoan(MarketStorage.configLayout().loan).finalizeOfferPurchase(tokenId, offer.creator, msg.sender, offerId);
+            ILoan(MarketStorage.configLayout().loan).finalizeOfferPurchase(tokenId, offer.creator, tokenOwner, offerId);
         } else {
-            IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(msg.sender, offer.creator, tokenId);
+            IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(tokenOwner, offer.creator, tokenId);
         }
 
         delete MarketStorage.orderbookLayout().offers[offerId];
-        emit OfferAccepted(offerId, tokenId, msg.sender, offer.price, fee);
+        emit OfferAccepted(offerId, tokenId, tokenOwner, offer.price, fee);
     }
 
     function _validateOfferCriteria(uint256 tokenId, MarketStorage.Offer storage offer, bool isInLoanV2) internal view {
