@@ -536,7 +536,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
-            remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(_asset));
+            remaining -= _payZeroBalanceFee(loan.borrower, tokenId, totalRewards, address(_asset));
             _asset.approve(_vault, remaining);
             IERC4626(_vault).deposit(remaining, loan.borrower);
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, tokenId);
@@ -544,7 +544,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _asset : IERC20(loan.preferredToken);
-        remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
+        remaining -= _payZeroBalanceFee(loan.borrower, tokenId, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
     }
@@ -554,12 +554,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @dev Handles the payment of zero balance fees for a given loan.
      * @param borrower The address of the borrower.
      * @param tokenId The ID of the loan token.
-     * @param remaining The token balance available for payment.
      * @param totalRewards The total amount of rewards claimed for the loan.
      * @param token The address of the token being used for payment.
      * @return fee The amount of the zero balance fee paid.
      */
-    function _payZeroBalanceFee(address borrower, uint256 tokenId, uint256 remaining, uint256 totalRewards, address token) internal returns (uint256) {
+    function _payZeroBalanceFee(address borrower, uint256 tokenId, uint256 totalRewards, address token) internal returns (uint256 fee) {
         uint256 zeroBalanceFee = (totalRewards * getZeroBalanceFee()) / 10000;
         IERC20(token).transfer(owner(), zeroBalanceFee);
         emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, tokenId, address(token));
@@ -692,7 +691,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 totalRewards,
         uint256 amountToIncrease
     ) internal {
-        _increaseNft(loan, amountToIncrease, true);
+        _increaseNft(loan, amountToIncrease);
         _handleZeroBalance(loan.tokenId, remaining, totalRewards, false);
     }
 
@@ -716,10 +715,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, totalRewards);
         
         // Process fees
-        remaining -= _processFees(loan, tokenId, feeEligibleAmount, remaining);
+        remaining -= _processFees(loan, tokenId, feeEligibleAmount);
         
         // Handle NFT increase
-        _increaseNft(loan, amountToIncrease, false);
+        _increaseNft(loan, amountToIncrease);
         // Handle payoff token and payment
         remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
         _pay(tokenId, remaining, false);
@@ -732,15 +731,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param loan The loan information storage struct
      * @param tokenId The NFT token ID associated with the loan
      * @param totalRewards The total rewards amount to process fees from
-     * @param remaining The remaining amount after previous deductions (unused in current implementation)
-     * @return The sum of the protocol fee and lender premium
+     * @return totalFees The sum of the protocol fee and lender premium
      */
     function _processFees(
         LoanInfo storage loan,
         uint256 tokenId,
-        uint256 totalRewards,
-        uint256 remaining
-    ) internal returns (uint256) {
+        uint256 totalRewards
+    ) internal returns (uint256 totalFees) {
         // Calculate and transfer protocol fee
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
         _asset.transfer(owner(), protocolFee);
@@ -783,7 +780,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param allocation The amount to be allocated for increasing the veNFT balance.
      * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
-    function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
+    function _increaseNft(LoanInfo storage loan, uint256 allocation) internal  returns (uint256 spent) {
         if(loan.increasePercentage > 0 && allocation == 0) {
             revert(); // Should be an allocation if increasePercentage is set
         }
