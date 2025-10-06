@@ -86,7 +86,7 @@ contract OffersTest is DiamondMarketTestBase {
         IMarketListingsLoanFacet(diamond); // touch type
         // Using Matching contract paths is separate; here call accept directly via offer facet
         // Note: in split facets, acceptOffer is on Offer facet
-        IMarketOfferFacet(diamond).acceptOffer(tokenId, 1, true);
+        IMarketOfferFacet(diamond).acceptOffer(tokenId, 1, true, 2_000e6, address(usdc));
         vm.stopPrank();
         (, address newBorrower) = ILoan(address(loan)).getLoanDetails(tokenId);
         assertEq(newBorrower, buyer);
@@ -105,7 +105,7 @@ contract OffersTest is DiamondMarketTestBase {
 
         vm.startPrank(walletOwner);
         IVotingEscrow(address(votingEscrow)).approve(diamond, walletTokenId);
-        IMarketOfferFacet(diamond).acceptOffer(walletTokenId, 2, false);
+        IMarketOfferFacet(diamond).acceptOffer(walletTokenId, 2, false, 2_000e6, address(usdc));
         vm.stopPrank();
         assertEq(votingEscrow.ownerOf(walletTokenId), buyer);
     }

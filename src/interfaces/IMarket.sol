@@ -83,7 +83,7 @@ interface IMarket {
     
     function cancelOffer(uint256 offerId) external;
     
-    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external;
+    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2, uint256 expectedPrice, address expectedPaymentToken) external;
     
     function matchOfferWithListing(uint256 offerId, uint256 tokenId) external;
     

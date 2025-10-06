@@ -124,11 +124,13 @@ contract MarketOfferFacet is IMarketOfferFacet {
         }
     }
 
-    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external nonReentrant onlyWhenNotPaused {
+    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2, uint256 expectedPrice, address expectedPaymentToken) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), Errors.OfferNotFound());
         require(MarketLogicLib.isOfferActive(offerId), Errors.OfferExpired());
-
+        require(expectedPrice == offer.price, Errors.InvalidPrice());
+        require(expectedPaymentToken == offer.paymentToken, Errors.InvalidPaymentToken());
+        
         address tokenOwner = MarketLogicLib.getTokenOwnerOrBorrower(tokenId);
         require(MarketLogicLib.canOperate(tokenOwner, msg.sender), Errors.NotAuthorized());
 

@@ -47,6 +47,7 @@ library Errors {
     error InvalidExpiration();
     error InvalidTokenId();
     error InvalidPaymentToken();
+    error InvalidPrice();
 
     // Settlement / swaps / custody
     error Slippage();
