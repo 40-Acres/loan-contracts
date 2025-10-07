@@ -7,8 +7,8 @@ pragma solidity ^0.8.28;
  * @dev Script 1: Deploy wallet-only marketplace. Run MarketDeployLoanListingsAERO.s.sol for loan features.
  * 
  * Usage:
- *   PRIVATE_KEY=0x... forge script script/MarketDeployInitAERO.s.sol:MarketDeployInitAERO \
- *     --rpc-url $BASE_RPC_URL --broadcast --verify
+ *   forge script script/MarketDeployInitAERO.s.sol:MarketDeployInitAERO \
+ *     --rpc-url $BASE_RPC_URL --account <wallet-name> --broadcast --verify
  * 
  * Save the output addresses and update MarketDeployLoanListingsAERO.s.sol before running Script 2.
  */
@@ -74,6 +74,9 @@ contract MarketDeployInitAERO is Script {
     // Fee recipient (set to address(0) to use deployer)
     address constant FEE_RECIPIENT = address(0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23);
 
+    // Permit2 address
+    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
     // ============================================================================
     // State
     // ============================================================================
@@ -117,8 +120,7 @@ contract MarketDeployInitAERO is Script {
         paymentTokens.push(AERO);
         //
         
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         
         console.log("");
         console.log("=== AERO Market Diamond Deployment (Base) ===");
@@ -126,7 +128,7 @@ contract MarketDeployInitAERO is Script {
         console.log("Chain ID:", CHAIN_ID);
         console.log("");
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         // Deploy diamond and facets
         address diamondAddress = deployMarketDiamond(deployer);
@@ -154,6 +156,12 @@ contract MarketDeployInitAERO is Script {
             IMarketConfigFacet(diamondAddress).setAllowedPaymentToken(paymentTokens[i], true);
             console.log("- Enabled:", paymentTokens[i]);
         }
+
+        // @dev set permit2 address
+        console.log("");
+        console.log("Setting permit2 address...");
+        IMarketConfigFacet(diamondAddress).setPermit2(PERMIT2);
+        console.log("Permit2 address set");
 
         // @dev Configure external adapters
         externalAdapters.push(ExternalAdapter({key: "VEXY", adapterFacet: address(vexyAdapterFacet)}));
@@ -232,7 +240,7 @@ contract MarketDeployInitAERO is Script {
         ownSelectors[2] = OwnershipFacet.acceptOwnership.selector;
         ownSelectors[3] = OwnershipFacet.renounceOwnership.selector;
 
-        bytes4[] memory cfgSelectors = new bytes4[](14);
+        bytes4[] memory cfgSelectors = new bytes4[](16);
         cfgSelectors[0] = IMarketConfigFacet.initMarket.selector;
         cfgSelectors[1] = IMarketConfigFacet.setMarketFee.selector;
         cfgSelectors[2] = IMarketConfigFacet.setFeeRecipient.selector;
@@ -247,6 +255,8 @@ contract MarketDeployInitAERO is Script {
         cfgSelectors[11] = IMarketConfigFacet.setLBOProtocolFeeBps.selector;
         cfgSelectors[12] = IMarketConfigFacet.setLoan.selector;
         cfgSelectors[13] = IMarketConfigFacet.setLoanAsset.selector;
+        cfgSelectors[14] = IMarketConfigFacet.rescueERC20.selector;
+        cfgSelectors[15] = IMarketConfigFacet.rescueETH.selector;
 
         bytes4[] memory viewSelectors = new bytes4[](13);
         viewSelectors[0] = IMarketViewFacet.loan.selector;
@@ -263,25 +273,27 @@ contract MarketDeployInitAERO is Script {
         viewSelectors[11] = IMarketViewFacet.getLBOLenderFeeBps.selector;
         viewSelectors[12] = IMarketViewFacet.getLBOProtocolFeeBps.selector;
 
-        bytes4[] memory walletSelectors = new bytes4[](5);
+        bytes4[] memory walletSelectors = new bytes4[](7);
         walletSelectors[0] = IMarketListingsWalletFacet.makeWalletListing.selector;
         walletSelectors[1] = IMarketListingsWalletFacet.updateWalletListing.selector;
         walletSelectors[2] = IMarketListingsWalletFacet.cancelWalletListing.selector;
-        walletSelectors[3] = IMarketListingsWalletFacet.takeWalletListing.selector;
-        walletSelectors[4] = IMarketListingsWalletFacet.takeWalletListingFor.selector;
-        
-        bytes4[] memory walletSelectors2 = new bytes4[](1);
-        walletSelectors2[0] = IMarketListingsWalletFacet.quoteWalletListing.selector;
+        walletSelectors[3] = IMarketListingsWalletFacet.cancelExpiredWalletListings.selector;
+        walletSelectors[4] = IMarketListingsWalletFacet.takeWalletListing.selector;
+        walletSelectors[5] = IMarketListingsWalletFacet.takeWalletListingFor.selector;
+        walletSelectors[6] = IMarketListingsWalletFacet.quoteWalletListing.selector;
 
-        bytes4[] memory offerSelectors = new bytes4[](4);
+        bytes4[] memory offerSelectors = new bytes4[](5);
         offerSelectors[0] = IMarketOfferFacet.createOffer.selector;
         offerSelectors[1] = IMarketOfferFacet.updateOffer.selector;
         offerSelectors[2] = IMarketOfferFacet.cancelOffer.selector;
-        offerSelectors[3] = IMarketOfferFacet.acceptOffer.selector;
+        offerSelectors[3] = IMarketOfferFacet.cancelExpiredOffers.selector;
+        offerSelectors[4] = IMarketOfferFacet.acceptOffer.selector;
 
-        bytes4[] memory matchingSelectors = new bytes4[](2);
-        matchingSelectors[0] = IMarketMatchingFacet.matchOfferWithLoanListing.selector;
-        matchingSelectors[1] = IMarketMatchingFacet.matchOfferWithWalletListing.selector;
+        bytes4[] memory matchingSelectors = new bytes4[](4);
+        matchingSelectors[0] = IMarketMatchingFacet.matchOfferWithWalletListing.selector;
+        matchingSelectors[1] = IMarketMatchingFacet.matchOfferWithLoanListing.selector;
+        matchingSelectors[2] = IMarketMatchingFacet.matchOfferWithVexyListing.selector;
+        matchingSelectors[3] = IMarketMatchingFacet.matchOfferWithOpenXListing.selector;
 
         bytes4[] memory operatorSelectors = new bytes4[](1);
         operatorSelectors[0] = IMarketOperatorFacet.setOperatorApproval.selector;
@@ -313,11 +325,6 @@ contract MarketDeployInitAERO is Script {
 
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
         
-        // Add wallet listing quote selector separately (function overload)
-        IDiamondCut.FacetCut[] memory cutWallet = new IDiamondCut.FacetCut[](1);
-        cutWallet[0] = _cutAdd(address(walletListingsFacet), walletSelectors2);
-        IDiamondCut(diamond).diamondCut(cutWallet, address(0), "");
-
         // Add operator selectors
         IDiamondCut.FacetCut[] memory cut2 = new IDiamondCut.FacetCut[](1);
         cut2[0] = _cutAdd(address(operatorFacet), operatorSelectors);

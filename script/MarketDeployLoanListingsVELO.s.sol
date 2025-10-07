@@ -12,8 +12,8 @@ pragma solidity ^0.8.28;
  * 3. Ensure LoanV2 is deployed with market functionality
  * 
  * Usage:
- *   PRIVATE_KEY=0x... forge script script/MarketDeployLoanListingsVELO.s.sol:MarketDeployLoanListingsVELO \
- *     --rpc-url $BASE_RPC_URL --broadcast
+ *   forge script script/MarketDeployLoanListingsVELO.s.sol:MarketDeployLoanListingsVELO \
+ *     --rpc-url $OP_RPC_URL --account <wallet-name> --broadcast
  */
 
 import {Script, console} from "forge-std/Script.sol";
@@ -53,8 +53,7 @@ contract MarketDeployLoanListingsVELO is Script {
         require(LOAN_LISTINGS_FACET_ADDRESS != address(0), "Update LOAN_LISTINGS_FACET_ADDRESS from Script 1 output");
         require(LOAN_CONTRACT != address(0), "LOAN_CONTRACT not configured");
         
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         
         console.log("");
         console.log("=== Enable Loan Listings & LBO (VELO Market) ===");
@@ -65,7 +64,7 @@ contract MarketDeployLoanListingsVELO is Script {
         console.log("Loan Asset:", LOAN_ASSET);
         console.log("");
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         // Step 1: Set the loan contract address
         console.log("Step 1: Setting loan contract...");
@@ -86,9 +85,9 @@ contract MarketDeployLoanListingsVELO is Script {
         loanSelectors[0] = IMarketListingsLoanFacet.makeLoanListing.selector;
         loanSelectors[1] = IMarketListingsLoanFacet.updateLoanListing.selector;
         loanSelectors[2] = IMarketListingsLoanFacet.cancelLoanListing.selector;
-        loanSelectors[3] = bytes4(keccak256("cancelExpiredLoanListings(uint256[])"));
+        loanSelectors[3] = IMarketListingsLoanFacet.cancelExpiredLoanListings.selector;
         loanSelectors[4] = IMarketListingsLoanFacet.quoteLoanListing.selector;
-        loanSelectors[5] = bytes4(keccak256("takeLoanListing(uint256,address,uint256,bytes,bytes)"));
+        loanSelectors[5] = IMarketListingsLoanFacet.takeLoanListing.selector;
         loanSelectors[6] = IMarketListingsLoanFacet.takeLoanListingFor.selector;
         loanSelectors[7] = IMarketListingsLoanFacet.takeLoanListingWithPermit.selector;
         
@@ -102,7 +101,7 @@ contract MarketDeployLoanListingsVELO is Script {
         IDiamondCut(DIAMOND_ADDRESS).diamondCut(cut, address(0), "");
         console.log("LoanListingsFacet added");
         
-        // Step 4: Configure LBO fees (only if the current LBO fees in this script do not match the current LBO fees in the diamond)
+        // Step 4: Configure LBO fees
         console.log("");
         console.log("Step 4: Configuring LBO fees...");
         IMarketConfigFacet(DIAMOND_ADDRESS).setLBOLenderFeeBps(LBO_LENDER_FEE_BPS);

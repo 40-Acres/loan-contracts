@@ -4,14 +4,28 @@
 
 Deploy market diamonds with a simple copy-paste approach. Each market has its own pair of deployment scripts with all configuration marked in file.
 
+## Setup: Import Your Deployment Wallet
+
+Before deploying, import your wallet using Cast's encrypted keystore:
+
+```bash
+cast wallet import <wallet-name> --interactive
+```
+
+This will prompt you to enter your private key and encrypt it with a password. 
+
+You'll be prompted to enter the wallet password each time you deploy. This is much more secure than using environment variables.
+
 ## Quick Start
 
 ### AERO Market on Base
 
 **Step 1: Deploy Market Diamond**
 ```bash
-PRIVATE_KEY=0x... forge script script/MarketDeployInitAERO.s.sol:MarketDeployInitAERO \
-  --rpc-url $BASE_RPC_URL --broadcast --verify
+forge script script/MarketDeployInitAERO.s.sol:MarketDeployInitAERO \
+  --rpc-url $BASE_RPC_URL \
+  --account <wallet-name> \
+  --broadcast --verify
 ```
 
 **Step 2: Enable Loan Listings (Optional)**
@@ -22,8 +36,10 @@ After Step 1, update the addresses in `MarketDeployLoanListingsAERO.s.sol`:
 
 Then run:
 ```bash
-PRIVATE_KEY=0x... forge script script/MarketDeployLoanListingsAERO.s.sol:MarketDeployLoanListingsAERO \
-  --rpc-url $BASE_RPC_URL --broadcast
+forge script script/MarketDeployLoanListingsAERO.s.sol:MarketDeployLoanListingsAERO \
+  --rpc-url $BASE_RPC_URL \
+  --account <wallet-name> \
+  --broadcast
 ```
 
 ## Creating a New Market
