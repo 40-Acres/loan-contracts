@@ -198,20 +198,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     // error NotOwnerOfToken(uint256 tokenId, address owner);
     // error LoanActive(uint256 tokenId);
     
-    // Flash loan error codes
-    error UnsupportedToken(address token);
-    error ExceededMaxLoan(uint256 maxLoan);
-    error InvalidFlashLoanReceiver(address receiver);
-    
-    // General validation errors (reusable)
+    // Flash loan errors
+    error UnsupportedToken();
+    error ExceededMaxLoan();
+    error InvalidFlashLoanReceiver();
+    error FlashLoansPaused();
+
+    // Market validation errors
     error InvalidOffer();
     error InvalidListing();
     error Unauthorized();
     error LoanNotPaidOff();
-    error SellerMismatch();
-    error CreatorMismatch();
-    error FlashLoansPaused();
-    error InsufficientAllowance(uint256 required, uint256 available);
     error MarketNotConfigured();
     error ZeroAddress();
 
@@ -1329,7 +1326,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidListing();
 
         LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert SellerMismatch();
+        if (loan.borrower != expectedSeller || listingOwner != expectedSeller) revert InvalidListing();
         if (loan.balance != 0) revert LoanNotPaidOff();
 
         _setBorrower(tokenId, buyer);
@@ -1352,11 +1349,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             uint256 expiresAt
         ) = IMarketViewFacet(msg.sender).getOffer(offerId);
         if (creator == address(0)) revert InvalidOffer();
-        if (creator != buyer) revert CreatorMismatch();
+        if (creator != buyer) revert InvalidOffer();
         if (expiresAt != 0 && block.timestamp >= expiresAt) revert InvalidOffer();
 
         LoanInfo storage loan = _loanDetails[tokenId];
-        if (loan.borrower != expectedSeller) revert SellerMismatch();
+        if (loan.borrower != expectedSeller) revert InvalidListing();
         // debts should be paid off already
         if (loan.balance != 0) revert LoanNotPaidOff();
 
@@ -1403,7 +1400,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function flashFee(address token, uint256 amount) public view override returns (uint256) {
         if (token != address(_asset)) {
-            revert UnsupportedToken(token);
+            revert UnsupportedToken();
         }
         
         return (amount * getFlashLoanFee()) / 10000; // Fee is in basis points
@@ -1428,17 +1425,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if (getFlashLoanPaused()) revert FlashLoansPaused();
 
         // require flash loan receiver to be market diamond
-        if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver(address(receiver));
+        if (address(receiver) != getMarketDiamond()) revert InvalidFlashLoanReceiver();
 
         // will revert if token is not supported
         if (token != address(_asset)) {
-            revert UnsupportedToken(token);
+            revert UnsupportedToken();
         }
         
         // Check if the amount exceeds the maximum available
         uint256 maxLoan = maxFlashLoan(token);
         if (amount > maxLoan) {
-            revert ExceededMaxLoan(maxLoan);
+            revert ExceededMaxLoan();
         }
         
         // Calculate the fee (0% for LBO operations from market diamond)
@@ -1451,15 +1448,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         // Execute the callback on the receiver
         if (receiver.onFlashLoan(msg.sender, token, amount, fee, data) != CALLBACK_SUCCESS) {
-            revert InvalidFlashLoanReceiver(address(receiver));
+            revert InvalidFlashLoanReceiver();
         }
         
-        // Ensure the contract has enough allowance to transfer the funds back to the vault
-        uint256 receiverAllowance = _asset.allowance(address(receiver), address(this));
-        uint256 required = amount + fee;
-        if (receiverAllowance < required) revert InsufficientAllowance(required, receiverAllowance);
-        
-        // Transfer the loan amount plus fee back to the vault
+        // Contract must have enough allowance to transfer the funds back to the vault        
+        // Transfer the loan amount plus fee back to the vault, will revert if not enough allowance
         _asset.transferFrom(address(receiver), _vault, amount + fee);
         
         // flash loans are restricted to market diamond which is charged 0 flash loan fee
