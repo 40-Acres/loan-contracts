@@ -131,6 +131,18 @@ contract MarketConfigFacet is IMarketConfigFacet {
         emit AccessManagerSet(accessManager);
     }
 
+    // ============ LOAN CONTRACT CONFIG ==========
+    /// @notice Sets the loan contract address (one-time operation after deployment)
+    /// @dev Can only be called once, and only if loan was initialized as address(0)
+    /// @param loan Address of the ILoan contract
+    function setLoan(address loan) external onlyOwner {
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        require(cfg.loan == address(0), "Loan already configured");
+        require(loan != address(0), Errors.ZeroAddress());
+        cfg.loan = loan;
+        emit LoanSet(loan);
+    }
+
     // ============ LOAN ASSET CONFIG ==========
     function setLoanAsset(address asset) external onlyOwnerOrSystemAdmin {
         if (asset == address(0)) revert Errors.ZeroAddress();

@@ -9,6 +9,7 @@ interface IMarketConfigFacet {
     event FeeRecipientChanged(address newRecipient);
     event MarketInitialized(address loan, address votingEscrow, uint16 baseMarketFeeBps, uint16 externalMarketFeeBps, uint16 lboLenderFeeBps, uint16 lboProtocolFeeBps, address feeRecipient, address defaultPaymentToken);
     event MarketPauseStatusChanged(bool isPaused);
+    event LoanSet(address indexed loan);
     event LoanAssetSet(address asset);
     event ExternalAdapterSet(bytes32 key, address facet);
     event LBOLenderFeeChanged(uint256 newBps);
@@ -38,6 +39,9 @@ interface IMarketConfigFacet {
     // AccessManager
     function initAccessManager(address _accessManager) external;
     function setAccessManager(address accessManager) external;
+
+    // Loan contract configuration
+    function setLoan(address loan) external;
 
     // Loan asset configuration for settlement on loan chains
     function setLoanAsset(address asset) external;
