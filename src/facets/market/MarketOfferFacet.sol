@@ -54,8 +54,11 @@ contract MarketOfferFacet is IMarketOfferFacet {
         if (expiresAt != 0) require(expiresAt > block.timestamp, Errors.InvalidExpiration());
         
         // If accepting loans with debt, payment token must match the loan asset
+        // Note: loanAsset can only be set if loan is configured (enforced in setLoanAsset)
         if (debtTolerance > 0) {
-            require(paymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
+            address loanAsset = MarketStorage.configLayout().loanAsset;
+            require(loanAsset != address(0), Errors.LoanNotConfigured());
+            require(paymentToken == loanAsset, Errors.InvalidPaymentToken());
         }
 
         // Approval-based offers: no escrow pull at creation
@@ -89,8 +92,11 @@ contract MarketOfferFacet is IMarketOfferFacet {
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
         
         // If accepting loans with debt, payment token must match the loan asset
+        // Note: loanAsset can only be set if loan is configured (enforced in setLoanAsset)
         if (newDebtTolerance > 0) {
-            require(newPaymentToken == MarketStorage.configLayout().loanAsset, Errors.InvalidPaymentToken());
+            address loanAsset = MarketStorage.configLayout().loanAsset;
+            require(loanAsset != address(0), Errors.LoanNotConfigured());
+            require(newPaymentToken == loanAsset, Errors.InvalidPaymentToken());
         }
 
         // Approval-based offers: price changes do not move funds at update time
@@ -139,7 +145,10 @@ contract MarketOfferFacet is IMarketOfferFacet {
         // Get loan balance to calculate total amount buyer must provide
         uint256 loanBalance = 0;
         if (isInLoanV2) {
-            (loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+            address loanAddr = MarketStorage.configLayout().loan;
+            require(loanAddr != address(0), Errors.LoanNotConfigured());
+            
+            (loanBalance,) = ILoan(loanAddr).getLoanDetails(tokenId);
             if (loanBalance > 0) {
                 address loanAsset = MarketStorage.configLayout().loanAsset;
                 // Ensure payment token matches loan asset (enforced at offer creation)
@@ -179,12 +188,20 @@ contract MarketOfferFacet is IMarketOfferFacet {
     }
 
     function _validateOfferCriteria(uint256 tokenId, MarketStorage.Offer storage offer, bool isInLoanV2) internal view {
+        address loanAddr = MarketStorage.configLayout().loan;
+        
         uint256 weight = isInLoanV2
-            ? ILoan(MarketStorage.configLayout().loan).getLoanWeight(tokenId)
+            ? ILoan(loanAddr).getLoanWeight(tokenId)
             : MarketLogicLib.getVeNFTWeight(tokenId);
         require(weight >= offer.minWeight, Errors.InsufficientWeight());
-        (uint256 loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
-        require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
+        
+        // Only check loan balance if loan contract is configured
+        if (loanAddr != address(0)) {
+            (uint256 loanBalance,) = ILoan(loanAddr).getLoanDetails(tokenId);
+            require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
+        }
+        // If no loan contract, loanBalance is effectively 0, which always satisfies debtTolerance >= 0
+        
         IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
     }
 }
