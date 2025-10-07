@@ -106,7 +106,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             uint256 total = price; // seller pays fee; total user spend bounded by maxTotal
             if (inputAsset == paymentToken && tradeData.length == 0) {
                 if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
-                IMarketListingsWalletFacet(address(this)).takeWalletListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
+                IMarketListingsWalletFacet(address(this)).takeWalletListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, maxPaymentTotal, bytes(""), optionalPermit2);
             } else if (tradeData.length > 0) {
                 IMarketListingsWalletFacet(address(this)).takeWalletListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
             } else {
@@ -120,7 +120,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
                 (uint256 total,,) = _quoteInternalLoan(tokenId);
                 if (total > maxPaymentTotal) revert Errors.MaxTotalExceeded();
                 if (inputAsset == address(0)) revert Errors.NoETHForTokenPayment();
-                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, 0, bytes(""), optionalPermit2);
+                IMarketListingsLoanFacet(address(this)).takeLoanListingFor(tokenId, msg.sender, inputAsset, maxPaymentTotal, bytes(""), optionalPermit2);
             } else {
                 IMarketListingsLoanFacet(address(this)).takeLoanListingFor{value: msg.value}(tokenId, msg.sender, inputAsset, maxInputAmount, tradeData, optionalPermit2);
             }

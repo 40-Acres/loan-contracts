@@ -166,7 +166,9 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
         // Optional Permit2 handled via Permit2Lib
 
         if (inputToken == paymentToken && tradeData.length == 0) {
-            // No swap path
+            // No swap path - protect buyer from seller front-running price increase
+            if (price > amountInMax) revert Errors.MaxTotalExceeded();
+            
             if (inputToken == address(0)) {
                 if (msg.value < price) revert Errors.InsufficientETH();
             } else {

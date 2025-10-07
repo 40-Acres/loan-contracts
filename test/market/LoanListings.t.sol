@@ -166,7 +166,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
         uint256 sellerInitial = usdc.balanceOf(user);
         console.log("sellerInitial", sellerInitial);
 
-        IMarketListingsLoanFacet(diamond).takeLoanListing(tokenId, address(usdc), 0, bytes(""), bytes(""));
+        IMarketListingsLoanFacet(diamond).takeLoanListing(tokenId, address(usdc), requiredInputTokenAmount, bytes(""), bytes(""));
         vm.stopPrank();
 
         (, address newBorrower) = loan.getLoanDetails(tokenId);
@@ -299,7 +299,7 @@ contract LoanListingsTest is DiamondMarketTestBase {
 
         vm.startPrank(buyer);
         usdc.approve(diamond, LISTING_PRICE);
-        IMarketListingsLoanFacet(diamond).takeLoanListing(newTokenId, address(usdc), 0, bytes(""), bytes(""));
+        IMarketListingsLoanFacet(diamond).takeLoanListing(newTokenId, address(usdc), requiredInputTokenAmount, bytes(""), bytes(""));
         vm.stopPrank();
 
         (, address newBorrower) = loan.getLoanDetails(newTokenId);

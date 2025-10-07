@@ -156,6 +156,9 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         // Optional Permit2 handled via Permit2Lib
 
         if (inputToken == paymentToken && tradeData.length == 0) {
+            // No swap path - protect buyer from seller front-running price increase
+            if (total > amountInMax) revert Errors.MaxTotalExceeded();
+            
             // Pull exactly listing price + loan payoff; seller pays protocol fee from proceeds
             Permit2Lib.permitAndPull(buyer, address(this), inputToken, total, optionalPermit2);
             if (optionalPermit2.length == 0) {

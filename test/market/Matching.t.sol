@@ -77,7 +77,7 @@ contract MatchingTest is DiamondMarketTestBase {
             tokenId,
             address(usdcErc),
             2_000e6,
-            0,
+            2_000e6,
             bytes("") /* tradeData */, 
             bytes("") /* optionalPermit2 */
         );
@@ -113,7 +113,7 @@ contract MatchingTest is DiamondMarketTestBase {
             walletTokenId,
             address(usdcErc),
             2_000e6,
-            0,
+            2_000e6,
             bytes("") /* tradeData */, 
             bytes("") /* optionalPermit2 */
         );
