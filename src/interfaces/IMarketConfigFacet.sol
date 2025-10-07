@@ -55,6 +55,21 @@ interface IMarketConfigFacet {
 
     // External adapters
     function setExternalAdapter(bytes32 key, address facet) external;
+
+    // ============ OWNER-ONLY UTILITY FUNCTIONS ==========
+    /**
+     * @notice Rescue any ERC20 tokens that are stuck in the contract.
+     * @dev This function can only be called by the owner of the contract.
+     * @param token The address of the ERC20 token to rescue.
+     * @param amount The amount of tokens to rescue.
+     */
+    function rescueERC20(address token, uint256 amount) external;
+    /**
+     * @notice Rescue any ETH that is stuck in the contract.
+     * @dev This function can only be called by the owner of the contract.
+     * @param amount The amount of ETH to rescue.
+     */
+    function rescueETH(uint256 amount) external;
 }
 
 

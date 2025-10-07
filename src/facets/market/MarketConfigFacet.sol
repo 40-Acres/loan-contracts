@@ -8,6 +8,7 @@ import {RouteLib} from "../../libraries/RouteLib.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import "../../libraries/Errors.sol";
 
@@ -192,4 +193,14 @@ contract MarketConfigFacet is IMarketConfigFacet {
         MarketStorage.configLayout().externalAdapter[key] = facet;
         emit ExternalAdapterSet(key, facet);
     }
+
+    // ============ OWNER-ONLY UTILITY FUNCTIONS ==========
+    function rescueERC20(address token, uint256 amount) external onlyOwner {
+        IERC20(token).transfer(LibDiamond.contractOwner(), amount);
+    }
+
+    function rescueETH(uint256 amount) external onlyOwner {
+        payable(LibDiamond.contractOwner()).transfer(amount);
+    }
+
 }
