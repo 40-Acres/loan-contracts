@@ -43,11 +43,14 @@ Copy the MarketDeployInit and MarketDeployLoanListings and configure for new mar
 **What works after Script 1:**
 - ✅ Wallet listings (NFTs in user wallets)
 - ✅ External marketplace integrations
-- ✅ Offers and matching
+- ✅ Offers (with `debtTolerance = 0` only)
+- ✅ Matching with wallet listings
 - ✅ All payment tokens
 
 **What requires Script 2:**
 - ❌ Loan listings (NFTs in loan custody)
+- ❌ Offers with `debtTolerance > 0`
+- ❌ Matching with loan listings
 - ❌ LBO (Leveraged Buyout)
 - ❌ Flash loans
 
