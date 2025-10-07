@@ -43,7 +43,7 @@ library MarketStorage {
         bool marketPaused;
         // Simple reentrancy guard status: 1 = NOT_ENTERED, 2 = ENTERED
         uint256 reentrancyStatus;
-        uint256[48] _gap;
+        uint256[10] _gap;
     }
 
     // @custom:storage-location erc7201:market.config.storage
@@ -59,7 +59,7 @@ library MarketStorage {
         address permit2;
         uint lboProtocolFeeBps;                                     // protocol fee in bps of total price
         uint lboLenderFeeBps;                                       // lender fee in bps of max loan
-        uint256[49] _gap;
+        uint256[50] _gap;
     }
 
     // @custom:storage-location erc7201:market.orderbook.storage
@@ -70,7 +70,7 @@ library MarketStorage {
         // Offer-specific storage
         mapping(uint256 => Offer) offers;                             // offerId => Offer
         uint256 _offerCounter;                                        // auto-incrementing offer ID
-        uint256[50] _gap;
+        uint256[20] _gap;
     }
 
     function configLayout() internal pure returns (MarketConfigLayout storage l) {
