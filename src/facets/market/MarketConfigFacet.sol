@@ -6,6 +6,8 @@ import {MarketStorage} from "../../libraries/storage/MarketStorage.sol";
 import {IMarketConfigFacet} from "../../interfaces/IMarketConfigFacet.sol";
 import {RouteLib} from "../../libraries/RouteLib.sol";
 import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
+import {ILoan} from "../../interfaces/ILoan.sol";
+import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import "../../libraries/Errors.sol";
 
@@ -137,7 +139,7 @@ contract MarketConfigFacet is IMarketConfigFacet {
     /// @param loan Address of the ILoan contract
     function setLoan(address loan) external onlyOwner {
         MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
-        require(cfg.loan == address(0), "Loan already configured");
+        require(cfg.loan == address(0), Errors.AlreadyInitialized());
         require(loan != address(0), Errors.ZeroAddress());
         cfg.loan = loan;
         emit LoanSet(loan);
@@ -145,8 +147,18 @@ contract MarketConfigFacet is IMarketConfigFacet {
 
     // ============ LOAN ASSET CONFIG ==========
     function setLoanAsset(address asset) external onlyOwnerOrSystemAdmin {
-        if (asset == address(0)) revert Errors.ZeroAddress();
-        MarketStorage.configLayout().loanAsset = asset;
+        require(asset != address(0), Errors.ZeroAddress());
+
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        // loan must be configured first
+        require(cfg.loan != address(0), Errors.LoanNotConfigured());
+        
+        // Since loan is configured, validate that asset matches the loan's vault asset
+        address vault = ILoan(cfg.loan)._vault();
+        address vaultAsset = IERC4626(vault).asset();
+        require(asset == vaultAsset);
+        
+        cfg.loanAsset = asset;
         emit LoanAssetSet(asset);
     }
 
