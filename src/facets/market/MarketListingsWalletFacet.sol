@@ -14,6 +14,7 @@ import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
+import {LibDiamond} from "../../libraries/LibDiamond.sol";
 
 contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
     using SafeERC20 for IERC20;
@@ -44,6 +45,9 @@ contract MarketListingsWalletFacet is IMarketListingsWalletFacet {
                 _;
                 return;
             }
+        } else if (msg.sender == LibDiamond.contractOwner()) {
+            _;
+            return;
         }
         revert Errors.NotAuthorized();
     }

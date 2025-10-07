@@ -13,6 +13,7 @@ import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {Errors} from "../../libraries/Errors.sol";
+import {LibDiamond} from "../../libraries/LibDiamond.sol";
 
 contract MarketOfferFacet is IMarketOfferFacet {
     using SafeERC20 for IERC20;
@@ -38,6 +39,9 @@ contract MarketOfferFacet is IMarketOfferFacet {
                 _;
                 return;
             }
+        } else if (msg.sender == LibDiamond.contractOwner()) {
+            _;
+            return;
         }
         revert Errors.NotAuthorized();
     }

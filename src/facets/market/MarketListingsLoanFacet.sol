@@ -14,6 +14,7 @@ import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {LibDiamond} from "../../libraries/LibDiamond.sol";
 
 // Permit2 handled via Permit2Lib
 
@@ -41,6 +42,9 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 _;
                 return;
             }
+        } else if (msg.sender == LibDiamond.contractOwner()) {
+            _;
+            return;
         }
         revert Errors.NotAuthorized();
     }
