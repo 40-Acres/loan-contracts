@@ -8,7 +8,7 @@ pragma solidity ^0.8.28;
  * 
  * Usage:
  *   forge script script/MarketDeployInitVELO.s.sol:MarketDeployInitVELO \
- *     --rpc-url $OP_RPC_URL --account <wallet-name> --broadcast --verify
+ *     --rpc-url $OP_RPC_URL --account <wallet-name> --sender <wallet-address> --broadcast --verify
  * 
  * Save the output addresses and update MarketDeployLoanListingsVELO.s.sol before running Script 2.
  */
@@ -36,8 +36,6 @@ import {MarketOperatorFacet} from "src/facets/market/MarketOperatorFacet.sol";
 import {MarketRouterFacet} from "src/facets/market/MarketRouterFacet.sol";
 
 // External adapter facets
-import {VexyAdapterFacet} from "src/facets/market/VexyAdapterFacet.sol";
-import {OpenXAdapterFacet} from "src/facets/market/OpenXAdapterFacet.sol";
 
 // Market facet interfaces
 import {IMarketConfigFacet} from "src/interfaces/IMarketConfigFacet.sol";
@@ -110,9 +108,7 @@ contract MarketDeployInitVELO is Script {
     MarketOperatorFacet internal operatorFacet;
     MarketRouterFacet internal routerFacet;
     
-    // External adapter facets
-    VexyAdapterFacet internal vexyAdapterFacet;
-    OpenXAdapterFacet internal openXAdapterFacet;
+    // Note: No external adapter facets for VELO (Vexy/OpenX are Base-only)
 
     function run() external {
         // @dev Configure payment tokens
@@ -120,15 +116,16 @@ contract MarketDeployInitVELO is Script {
         paymentTokens.push(VELO);
         //
         
-        address deployer = msg.sender;
-        
         console.log("");
         console.log("=== VELO Market Diamond Deployment (OP Mainnet) ===");
-        console.log("Deployer:", deployer);
         console.log("Chain ID:", CHAIN_ID);
         console.log("");
         
         vm.startBroadcast();
+        
+        // tx.origin is the actual EOA sending transactions (your keystore account)
+        address deployer = tx.origin;
+        console.log("Deployer:", deployer);
         
         // Deploy diamond and facets
         address diamondAddress = deployMarketDiamond(deployer);
@@ -163,19 +160,7 @@ contract MarketDeployInitVELO is Script {
         IMarketConfigFacet(diamondAddress).setPermit2(PERMIT2);
         console.log("Permit2 address set");
 
-        // @dev Configure external adapters
-        externalAdapters.push(ExternalAdapter({key: "VEXY", adapterFacet: address(vexyAdapterFacet)}));
-        externalAdapters.push(ExternalAdapter({key: "OPENX", adapterFacet: address(openXAdapterFacet)}));
-        //
-        
-        // Register external adapters
-        console.log("");
-        console.log("Registering external adapters...");
-        for (uint i = 0; i < externalAdapters.length; i++) {
-            bytes32 key = keccak256(abi.encodePacked(externalAdapters[i].key));
-            IMarketConfigFacet(diamondAddress).setExternalAdapter(key, address(externalAdapters[i].adapterFacet));
-            console.log("-", externalAdapters[i].key, "adapter enabled");
-        }
+        // Note: No external adapters for VELO (Vexy and OpenX are Base-only marketplaces)
         
         console.log("");
         console.log("=== Deployment Complete ===");
@@ -216,10 +201,7 @@ contract MarketDeployInitVELO is Script {
         operatorFacet = new MarketOperatorFacet();
         routerFacet = new MarketRouterFacet();
         
-        // Deploy external adapter facets
-        console.log("Deploying external adapter facets...");
-        vexyAdapterFacet = new VexyAdapterFacet();
-        openXAdapterFacet = new OpenXAdapterFacet();
+        // Note: No external adapter facets for VELO (Vexy/OpenX are Base-only)
 
         // Deploy diamond root
         console.log("Deploying diamond root...");
@@ -289,11 +271,10 @@ contract MarketDeployInitVELO is Script {
         offerSelectors[3] = IMarketOfferFacet.cancelExpiredOffers.selector;
         offerSelectors[4] = IMarketOfferFacet.acceptOffer.selector;
 
-        bytes4[] memory matchingSelectors = new bytes4[](4);
+        bytes4[] memory matchingSelectors = new bytes4[](2);
         matchingSelectors[0] = IMarketMatchingFacet.matchOfferWithWalletListing.selector;
         matchingSelectors[1] = IMarketMatchingFacet.matchOfferWithLoanListing.selector;
-        matchingSelectors[2] = IMarketMatchingFacet.matchOfferWithVexyListing.selector;
-        matchingSelectors[3] = IMarketMatchingFacet.matchOfferWithOpenXListing.selector;
+        // Note: No Vexy/OpenX matching on VELO (Base-only marketplaces)
 
         bytes4[] memory operatorSelectors = new bytes4[](1);
         operatorSelectors[0] = IMarketOperatorFacet.setOperatorApproval.selector;
@@ -303,15 +284,12 @@ contract MarketDeployInitVELO is Script {
         routerSelectors[1] = IMarketRouterFacet.buyToken.selector;
         routerSelectors[2] = IMarketRouterFacet.buyTokenWithLBO.selector;
         routerSelectors[3] = IFlashLoanReceiver.onFlashLoan.selector;
-        
-        bytes4[] memory adapterSelectors = new bytes4[](2);
-        adapterSelectors[0] = bytes4(keccak256("quoteToken(uint256,bytes)"));
-        adapterSelectors[1] = bytes4(keccak256("buyToken(uint256,uint256,address,uint256,bytes,bytes,bytes)"));
 
         // Perform diamond cuts (skip LoanListingsFacet - added in Script 2)
+        // Note: No external adapters for VELO (Vexy/OpenX are Base-only)
         console.log("Performing diamond cuts...");
         
-        IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](10);
+        IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](8);
         cut[0] = _cutAdd(address(diamondLoupeFacet), loupeSelectors);
         cut[1] = _cutAdd(address(ownershipFacet), ownSelectors);
         cut[2] = _cutAdd(address(marketConfigFacet), cfgSelectors);
@@ -320,8 +298,6 @@ contract MarketDeployInitVELO is Script {
         cut[5] = _cutAdd(address(offerFacet), offerSelectors);
         cut[6] = _cutAdd(address(matchingFacet), matchingSelectors);
         cut[7] = _cutAdd(address(routerFacet), routerSelectors);
-        cut[8] = _cutAdd(address(vexyAdapterFacet), adapterSelectors);
-        cut[9] = _cutAdd(address(openXAdapterFacet), adapterSelectors);
 
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
         

@@ -16,6 +16,11 @@ This will prompt you to enter your private key and encrypt it with a password.
 
 You'll be prompted to enter the wallet password each time you deploy. This is much more secure than using environment variables.
 
+To get your wallet's public address (needed for deployment):
+```bash
+cast wallet address --account <wallet-name>
+```
+
 ## Quick Start
 
 ### AERO Market on Base
@@ -25,6 +30,7 @@ You'll be prompted to enter the wallet password each time you deploy. This is mu
 forge script script/MarketDeployInitAERO.s.sol:MarketDeployInitAERO \
   --rpc-url $BASE_RPC_URL \
   --account <wallet-name> \
+  --sender <wallet-address> \
   --broadcast --verify
 ```
 
@@ -39,6 +45,7 @@ Then run:
 forge script script/MarketDeployLoanListingsAERO.s.sol:MarketDeployLoanListingsAERO \
   --rpc-url $BASE_RPC_URL \
   --account <wallet-name> \
+  --sender <wallet-address> \
   --broadcast
 ```
 
@@ -54,13 +61,16 @@ Copy the MarketDeployInit and MarketDeployLoanListings and configure for new mar
 **What it deploys:**
 - Diamond proxy with all facets
 - Wallet listings, offers, matching, router
-- External adapters (Vexy, OpenX)
+- External adapters (Base only: Vexy, OpenX)
+  - Note: Adapters are added to the diamond with their direct-call selectors (`takeVexyListing`, `takeOpenXListing`)
+  - They're also registered via `setExternalAdapter()` for router delegatecall usage
+  - Optimism: No external adapters deployed (Vexy/OpenX don't exist on OP)
 
 **What works after Script 1:**
 - ✅ Wallet listings (NFTs in user wallets)
-- ✅ External marketplace integrations
+- ✅ External marketplace integrations (Base: Vexy/OpenX, Optimism: none yet)
 - ✅ Offers (with `debtTolerance = 0` only)
-- ✅ Matching with wallet listings
+- ✅ Matching with wallet listings (and external listings on Base)
 - ✅ All payment tokens
 
 **What requires Script 2:**

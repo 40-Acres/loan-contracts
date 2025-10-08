@@ -13,7 +13,7 @@ pragma solidity ^0.8.28;
  * 
  * Usage:
  *   forge script script/MarketDeployLoanListingsAERO.s.sol:MarketDeployLoanListingsAERO \
- *     --rpc-url $BASE_RPC_URL --account <wallet-name> --broadcast
+ *     --rpc-url $BASE_RPC_URL --account <wallet-name> --sender <wallet-address> --broadcast
  */
 
 import {Script, console} from "forge-std/Script.sol";
@@ -53,11 +53,8 @@ contract MarketDeployLoanListingsAERO is Script {
         require(LOAN_LISTINGS_FACET_ADDRESS != address(0), "Update LOAN_LISTINGS_FACET_ADDRESS from Script 1 output");
         require(LOAN_CONTRACT != address(0), "LOAN_CONTRACT not configured");
         
-        address deployer = msg.sender;
-        
         console.log("");
         console.log("=== Enable Loan Listings & LBO (AERO Market) ===");
-        console.log("Deployer:", deployer);
         console.log("Diamond:", DIAMOND_ADDRESS);
         console.log("Loan Contract:", LOAN_CONTRACT);
         console.log("Loan Listings Facet:", LOAN_LISTINGS_FACET_ADDRESS);
@@ -65,6 +62,10 @@ contract MarketDeployLoanListingsAERO is Script {
         console.log("");
         
         vm.startBroadcast();
+        
+        // tx.origin is the actual EOA sending transactions (your keystore account)
+        address deployer = tx.origin;
+        console.log("Deployer:", deployer);
         
         // Step 1: Set the loan contract address
         console.log("Step 1: Setting loan contract...");

@@ -8,7 +8,7 @@ pragma solidity ^0.8.28;
  * 
  * Usage:
  *   forge script script/MarketDeployInitAERO.s.sol:MarketDeployInitAERO \
- *     --rpc-url $BASE_RPC_URL --account <wallet-name> --broadcast --verify
+ *     --rpc-url $BASE_RPC_URL --account <wallet-name> --sender <wallet-address> --broadcast --verify
  * 
  * Save the output addresses and update MarketDeployLoanListingsAERO.s.sol before running Script 2.
  */
@@ -49,6 +49,8 @@ import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
 import {IMarketOperatorFacet} from "src/interfaces/IMarketOperatorFacet.sol";
 import {IMarketRouterFacet} from "src/interfaces/IMarketRouterFacet.sol";
 import {IFlashLoanReceiver} from "src/interfaces/IFlashLoanReceiver.sol";
+import {IVexyAdapterFacet} from "src/interfaces/IVexyAdapterFacet.sol";
+import {IOpenXAdapterFacet} from "src/interfaces/IOpenXAdapterFacet.sol";
 
 contract MarketDeployInitAERO is Script {
     
@@ -120,15 +122,16 @@ contract MarketDeployInitAERO is Script {
         paymentTokens.push(AERO);
         //
         
-        address deployer = msg.sender;
-        
         console.log("");
         console.log("=== AERO Market Diamond Deployment (Base) ===");
-        console.log("Deployer:", deployer);
         console.log("Chain ID:", CHAIN_ID);
         console.log("");
         
         vm.startBroadcast();
+        
+        // tx.origin is the actual EOA sending transactions (your keystore account)
+        address deployer = tx.origin;
+        console.log("Deployer:", deployer);
         
         // Deploy diamond and facets
         address diamondAddress = deployMarketDiamond(deployer);
@@ -303,10 +306,14 @@ contract MarketDeployInitAERO is Script {
         routerSelectors[1] = IMarketRouterFacet.buyToken.selector;
         routerSelectors[2] = IMarketRouterFacet.buyTokenWithLBO.selector;
         routerSelectors[3] = IFlashLoanReceiver.onFlashLoan.selector;
+
+        // External adapter selectors for direct calls from MarketMatchingFacet
+        // Note: Generic adapter functions (quoteToken/buyToken) are NOT added - they're called via delegatecall from router
+        bytes4[] memory vexyDirectSelectors = new bytes4[](1);
+        vexyDirectSelectors[0] = IVexyAdapterFacet.takeVexyListing.selector;
         
-        bytes4[] memory adapterSelectors = new bytes4[](2);
-        adapterSelectors[0] = bytes4(keccak256("quoteToken(uint256,bytes)"));
-        adapterSelectors[1] = bytes4(keccak256("buyToken(uint256,uint256,address,uint256,bytes,bytes,bytes)"));
+        bytes4[] memory openxDirectSelectors = new bytes4[](1);
+        openxDirectSelectors[0] = IOpenXAdapterFacet.takeOpenXListing.selector;
 
         // Perform diamond cuts (skip LoanListingsFacet - added in Script 2)
         console.log("Performing diamond cuts...");
@@ -320,8 +327,8 @@ contract MarketDeployInitAERO is Script {
         cut[5] = _cutAdd(address(offerFacet), offerSelectors);
         cut[6] = _cutAdd(address(matchingFacet), matchingSelectors);
         cut[7] = _cutAdd(address(routerFacet), routerSelectors);
-        cut[8] = _cutAdd(address(vexyAdapterFacet), adapterSelectors);
-        cut[9] = _cutAdd(address(openXAdapterFacet), adapterSelectors);
+        cut[8] = _cutAdd(address(vexyAdapterFacet), vexyDirectSelectors);
+        cut[9] = _cutAdd(address(openXAdapterFacet), openxDirectSelectors);
 
         IDiamondCut(diamond).diamondCut(cut, address(0), "");
         
