@@ -25,6 +25,7 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
+import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 
 contract MockOdosRouterRL {
     address public testContract;
@@ -136,8 +137,17 @@ contract AerodromeTest is Test {
         
         vm.stopPrank();
 
-        // Deploy the AerodromeFacet
-        loanFacet = new AerodromeFacet(address(portfolioFactory));
+
+        // Deploy the XPharaohFacet
+        AccountConfigStorage _accountConfigStorage = new AccountConfigStorage();
+        ERC1967Proxy accountConfigStorageProxy = new ERC1967Proxy(address(_accountConfigStorage), "");
+        AccountConfigStorage accountConfigStorage = AccountConfigStorage(address(accountConfigStorageProxy));
+        loanFacet = new AerodromeFacet(address(portfolioFactory), address(accountConfigStorage));
+        
+        // Set up account configuration to approve the loan contract
+        vm.prank(IOwnable(address(accountConfigStorage)).owner());
+        accountConfigStorage.setApprovedContract(address(loan), true);
+        
 
         // Register AerodromeFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);

@@ -9,6 +9,7 @@ import {IVoter} from "../../interfaces/IVoter.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 import {CollateralStorage} from "../../storage/CollateralStorage.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {AccountConfigStorage} from "../../storage/AccountConfigStorage.sol";
 
 /**
  * @title AerodromeFacet
@@ -16,17 +17,19 @@ import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
  */
 contract AerodromeFacet {
     PortfolioFactory public immutable _portfolioFactory;
+    AccountConfigStorage public immutable _accountConfigStorage;
     IERC20 public immutable _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IERC721 public immutable _ve = IERC721(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
     address public immutable _entryPoint = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
 
 
-    constructor(address portfolioFactory) {
+    constructor(address portfolioFactory, address accountConfigStorage) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
+        _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
     }
 
-    function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external {
+    function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external onlyApprovedContract(loanContract)  {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         ILoan(loanContract).claimCollateral(tokenId);
         address asset = address(ILoan(loanContract)._ve());
@@ -37,14 +40,14 @@ contract AerodromeFacet {
         CollateralStorage.removeNonfungibleCollateral(asset, tokenId);
     }
 
-    function aerodromeIncreaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
+    function aerodromeIncreaseLoan(address loanContract, uint256 tokenId, uint256 amount) onlyApprovedContract(loanContract)  external {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         ILoan(loanContract).increaseLoan(tokenId, amount);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
     }
     
-    function aerodromeRequestLoan(address loanContract, uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp, bool optInCommunityRewards) external {
+    function aerodromeRequestLoan(address loanContract, uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp, bool optInCommunityRewards) onlyApprovedContract(loanContract)  external {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         if(IERC721(_ve).ownerOf(tokenId) != address(this)) {
             IERC721(_ve).transferFrom(msg.sender, address(this), tokenId);
@@ -57,20 +60,20 @@ contract AerodromeFacet {
 
     }
 
-    function aerodromeVote(address loanContract, uint256 tokenId) external returns (bool success) {
+    function aerodromeVote(address loanContract, uint256 tokenId) onlyApprovedContract(loanContract)  external returns (bool success) {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         success = ILoan(loanContract).vote(tokenId);
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
     }
 
-    function aerodromeUserVote(address loanContract, uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external {
+    function aerodromeUserVote(address loanContract, uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) onlyApprovedContract(loanContract)  external {
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         ILoan(loanContract).userVote(tokenIds, pools, weights);
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
     }
 
-    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
+    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) onlyApprovedContract(loanContract) external returns (uint256) {
         require(msg.sender == _entryPoint);
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
@@ -90,6 +93,14 @@ contract AerodromeFacet {
         require(CollateralStorage.getNonfungibleCollateral(address(_ve), tokenId) == false);
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IERC721(_ve).transferFrom(address(this), msg.sender, tokenId);
+    }
+
+
+
+
+    modifier onlyApprovedContract(address destination) {
+        require(_accountConfigStorage.isApprovedContract(destination));
+        _;
     }
 }
 
