@@ -140,14 +140,14 @@ contract AerodromeTest is Test {
         loanFacet = new AerodromeFacet(address(portfolioFactory));
 
         // Register AerodromeFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](6);
+        bytes4[] memory loanSelectors = new bytes4[](7);
         loanSelectors[0] = 0xd3f8e227; // aerodromeRequestLoan(address,uint256,uint256,uint8,uint256,address,bool,bool)
         loanSelectors[1] = 0x68f84e48; // aerodromeIncreaseLoan(address,uint256,uint256)
         loanSelectors[2] = 0x5780b3ee; // aerodromeClaimCollateral(address,uint256)
         loanSelectors[3] = 0xfbb66d95; // aerodromeVote(address,uint256)
         loanSelectors[4] = 0xe8b820ba; // aerodromeUserVote(address,uint256[],address[],uint256[])
         loanSelectors[5] = 0xd69af01c; // aerodromeClaim(address,uint256,address[],address[][],bytes,uint256[2])
-
+        loanSelectors[6] = 0x023245d7; // withdrawNFT(uint256)
         // Get the FacetRegistry from the PortfolioFactory
         FacetRegistry facetRegistry = FacetRegistry(
             portfolioFactory.facetRegistry()
@@ -340,6 +340,30 @@ contract AerodromeTest is Test {
 
         // Verify the NFT ownership - should be owned by user account after requesting loan
         assertEq(votingEscrow.ownerOf(tokenId), address(userAccount));
+    }
+
+    /**
+     * @dev Test withdrawNFT functionality
+     */
+    function testWithdrawNFT() public {
+        address userAccount = portfolioFactory.getUserAccount(user);
+        if (userAccount == address(0)) {
+            portfolioFactory.createAccount(user);
+            userAccount = portfolioFactory.getAccount(user);
+        }
+
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).transferFrom(
+            user,
+            address(userAccount),
+            tokenId
+        );
+        
+        AerodromeFacet(userAccount).withdrawNFT(tokenId);
+        vm.stopPrank();
+        assertEq(votingEscrow.ownerOf(tokenId), address(user));
     }
 
     /**
@@ -631,6 +655,9 @@ contract AerodromeTest is Test {
             false,
             false
         );
+
+        vm.expectRevert();
+        AerodromeFacet(userAccount).withdrawNFT(tokenId);
         vm.stopPrank();
 
         // Verify loan was created

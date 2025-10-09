@@ -23,7 +23,7 @@ contract AerodromeFacet {
 
     constructor(address portfolioFactory) {
         require(portfolioFactory != address(0));
-        _portfolioFactory = PortfolioFactory(_portfolioFactory);
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
     }
 
     function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external {
@@ -84,6 +84,12 @@ contract AerodromeFacet {
             IVotingEscrow(address(_ve)).increaseAmount(tokenId, aeroAmount);
         }
         return result;
+    }
+
+    function withdrawNFT(uint256 tokenId) external {
+        require(CollateralStorage.getNonfungibleCollateral(address(_ve), tokenId) == false);
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IERC721(_ve).transferFrom(address(this), msg.sender, tokenId);
     }
 }
 
