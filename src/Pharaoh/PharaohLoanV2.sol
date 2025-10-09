@@ -12,7 +12,8 @@ import { ProtocolTimeLibrary } from "../libraries/ProtocolTimeLibrary.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import { console } from "forge-std/console.sol";
 import {IXPharaohLoan} from "./interfaces/IXPharaohLoan.sol";
-
+import {PortfolioFactory} from "../accounts/PortfolioFactory.sol";
+import {console} from "forge-std/console.sol";
 
 interface IPharaohFacet {
     function pharaohIncreaseCollateral(uint256 amount) external;
@@ -179,13 +180,17 @@ contract PharaohLoanV2 is Loan {
      * @param tokenId The ID of the NFT to migrate.
      * @param xPharaohLoan The address of the XPharaoh Loan contract.
      */
-    function migrateNft(uint256 tokenId, address xPharaohLoan) public onlyOwner {
+    function migrateNft(uint256 tokenId, address xPharaohLoan, address portfolioFactory) public onlyOwner {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower != address(0));
-        (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(loan.borrower);
+        address portfolio = PortfolioFactory(portfolioFactory).getUserAccount(loan.borrower);
+        (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
+        _voter.reset(tokenId);
         IERC721(address(_ve)).approve(xPharaohLoan, tokenId);
         IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, tokenId, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption));
-        (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(loan.borrower);
+        // Get the portfolio address again after migration (it might have been created)
+        portfolio = PortfolioFactory(portfolioFactory).getUserAccount(loan.borrower);
+        (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
         require(previousBalance + loan.balance == postBalance);
         delete _loanDetails[tokenId];
     }

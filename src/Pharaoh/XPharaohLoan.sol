@@ -27,8 +27,6 @@ import {IXRex} from "../interfaces/IXRex.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 
 
-import { console } from "forge-std/console.sol";
-
 interface IPharoahFacet {
     function migratePharaohToXPharaoh(uint256 tokenId) external;
 }
@@ -1048,7 +1046,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         address borrower
     ) internal view virtual returns (uint256) {
         uint256 balance = _voteModule.balanceOf(borrower);
-        console.log("balance", balance);
         return balance;
     }
     /**
@@ -1159,7 +1156,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         }
         _loanDetails[userAccount] = LoanInfo({
             balance: balance,
-            borrower: user,
+            borrower: userAccount,
             timestamp: block.timestamp,
             outstandingCapital: outstandingCapital,
             zeroBalanceOption: XPharaohLoan.ZeroBalanceOption(uint8(zeroBalanceOption)),
@@ -1169,7 +1166,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             increasePercentage: increasePercentage,
             topUp: topUp
         });
-        // transfer vePHAR to user account
+        _outstandingCapital += outstandingCapital;
         IERC721(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F).transferFrom(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, userAccount, tokenId);
         IPharoahFacet(userAccount).migratePharaohToXPharaoh(tokenId);
     }
