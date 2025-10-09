@@ -15,18 +15,19 @@ import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
  * @dev Middleware facet that interfaces with the loan contract
  */
 contract AerodromeFacet {
-    PortfolioFactory public immutable portfolioFactory;
+    PortfolioFactory public immutable _portfolioFactory;
     IERC20 public immutable _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IERC721 public immutable _ve = IERC721(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
     address public immutable _entryPoint = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
 
 
-    constructor(address _portfolioFactory) {
-        require(_portfolioFactory != address(0));
-        portfolioFactory = PortfolioFactory(_portfolioFactory);
+    constructor(address portfolioFactory) {
+        require(portfolioFactory != address(0));
+        _portfolioFactory = PortfolioFactory(_portfolioFactory);
     }
 
     function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         ILoan(loanContract).claimCollateral(tokenId);
         address asset = address(ILoan(loanContract)._ve());
         (uint256 balance, address borrower) = ILoan(loanContract).getLoanDetails(tokenId);
@@ -37,12 +38,14 @@ contract AerodromeFacet {
     }
 
     function aerodromeIncreaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         ILoan(loanContract).increaseLoan(tokenId, amount);
         address asset = address(ILoan(loanContract)._asset());
         IERC20(asset).transfer(msg.sender, amount);
     }
     
     function aerodromeRequestLoan(address loanContract, uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp, bool optInCommunityRewards) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         if(IERC721(_ve).ownerOf(tokenId) != address(this)) {
             IERC721(_ve).transferFrom(msg.sender, address(this), tokenId);
         }
@@ -55,6 +58,7 @@ contract AerodromeFacet {
     }
 
     function aerodromeVote(address loanContract, uint256 tokenId) external returns (bool success) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         success = ILoan(loanContract).vote(tokenId);
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
