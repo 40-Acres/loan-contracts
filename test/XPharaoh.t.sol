@@ -286,6 +286,9 @@ contract XPharaohMigrationTest is Test {
         // Deploy XPharaohLoan implementation
         XPharaohLoan xPharaohLoanImpl = new XPharaohLoan();
         uint256 tokenId = 93;
+        (,address _user) = PharaohLoanV2(address(loan)).getLoanDetails(tokenId);
+
+        address _xrex = 0xE8164Ea89665DAb7a553e667F81F30CfDA736B9A;
         
         // Deploy proxy for XPharaohLoan
         bytes memory initData = abi.encodeWithSelector(
@@ -297,10 +300,10 @@ contract XPharaohMigrationTest is Test {
         ERC1967Proxy xPharaohLoanProxy = new ERC1967Proxy(address(xPharaohLoanImpl), initData);
         XPharaohLoan xPharaohLoan = XPharaohLoan(address(xPharaohLoanProxy));
 
-        address userPortfolio = portfolioFactory.getUserAccount(user);
+        address userPortfolio = portfolioFactory.getUserAccount(_user);
         uint256 beginningXPharBalance;
         if(userPortfolio != address(0)) {
-            beginningXPharBalance = IERC20(address(xPharaohLoan)).balanceOf(userPortfolio);
+            beginningXPharBalance = IERC20(address(_xrex)).balanceOf(userPortfolio);
         }
 
         
@@ -322,8 +325,8 @@ contract XPharaohMigrationTest is Test {
         vm.stopPrank();
 
         // get XREX Balance of the user portfolio
-        userPortfolio = portfolioFactory.getUserAccount(user);
-        uint256 xRexBalance = IERC20(address(xPharaohLoan)).balanceOf(userPortfolio);
+        userPortfolio = portfolioFactory.getUserAccount(_user);
+        uint256 xRexBalance = IERC20(address(_xrex)).balanceOf(userPortfolio);
         console.log("xRexBalance:", xRexBalance);
         console.log("beginningXPharBalance:", beginningXPharBalance);
         console.log("xRexBalance - beginningXPharBalance:", xRexBalance - beginningXPharBalance);
