@@ -107,7 +107,6 @@ library LibCollateral {
         address tokenAddress
     ) internal {
         CollateralStorageData storage collateralStorageData = collateralStorage();
-        require(!collateralStorageData.isTotalCollateral[account][tokenAddress], "LibCollateral: Token already total collateral");
         collateralStorageData.isTotalCollateral[account][tokenAddress] = true;
     }
 
