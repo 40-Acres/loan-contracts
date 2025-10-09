@@ -338,7 +338,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
         }
             
-        require(_ve.ownerOf(tokenId) == address(this) || isAccount);
+        require(_ve.ownerOf(tokenId) == address(this) || (isAccount && _ve.ownerOf(tokenId) == msg.sender));
         
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
