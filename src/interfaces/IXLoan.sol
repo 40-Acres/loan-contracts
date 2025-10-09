@@ -49,4 +49,7 @@ interface IXLoan {
     function userVote(address[] calldata pools, uint256[] calldata weights) external;
     function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
     function confirmClaimCollateral() external;
+    function setZeroBalanceOption(ZeroBalanceOption zeroBalanceOption) external;
+    function setTopUp(bool topUp) external;
+    function setPreferredToken(address preferredToken) external;
 }
