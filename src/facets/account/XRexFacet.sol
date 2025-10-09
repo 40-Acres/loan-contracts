@@ -85,7 +85,7 @@ contract XRexFacet {
 
     function xRexClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
         IVoteModule(_voteModule).setAdmin(address(loanContract));
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || msg.sender == _entryPoint);
+        require(msg.sender == _entryPoint);
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
         IVoteModule(_voteModule).setAdmin(address(0));
         if(allocations[1] > 0) {

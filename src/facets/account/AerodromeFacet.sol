@@ -18,6 +18,7 @@ contract AerodromeFacet {
     PortfolioFactory public immutable portfolioFactory;
     IERC20 public immutable _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IERC721 public immutable _ve = IERC721(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+    address public immutable _entryPoint = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
 
 
     constructor(address _portfolioFactory) {
@@ -66,6 +67,7 @@ contract AerodromeFacet {
     }
 
     function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
+        require(msg.sender == _entryPoint);
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
