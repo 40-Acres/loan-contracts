@@ -21,8 +21,8 @@ contract XPharaohFacet {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
     IERC20 public immutable _phar = IERC20(0xAAAB9D12A30504559b0C5a9A5977fEE4A6081c6b);
-    address public immutable _xphar = 0x0000000000000000000000000000000000000000;
-    address public immutable _voteModule = 0x0000000000000000000000000000000000000000;
+    address public immutable _xphar = 0xE8164Ea89665DAb7a553e667F81F30CfDA736B9A;
+    address public immutable _voteModule = 0x34F233F868CdB42446a18562710eE705d66f846b;
     address public immutable _entryPoint = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
     address public immutable _vePhar = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
 
@@ -116,6 +116,26 @@ contract XPharaohFacet {
         IVoteModule(_voteModule).deposit(amount);
     }
 
+    function xPharSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setIncreasePercentage(increasePercentage);
+    }
+
+    function xPharSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setPreferredToken(preferredToken);
+    }
+
+    function xPharSetTopUp(address loanContract, bool topUp) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setTopUp(topUp);
+    }
+
+    function xPharSetZeroBalanceOption(address loanContract, IXLoan.ZeroBalanceOption zeroBalanceOption) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setZeroBalanceOption(zeroBalanceOption);
+    }
+
     function migratePharaohToXPharaoh(uint256 tokenId) external {
         // require(msg.sender == 0xa0Cb889707d426A7A386870A03bc70d1b0697598); // XPHAR - USDC Contract
         
@@ -132,5 +152,4 @@ contract XPharaohFacet {
         require(_accountConfigStorage.isApprovedContract(destination));
         _;
     }
-    
 }

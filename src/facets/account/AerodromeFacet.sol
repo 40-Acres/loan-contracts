@@ -15,14 +15,14 @@ import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
  * @dev Middleware facet that interfaces with the loan contract
  */
 contract AerodromeFacet {
-    PortfolioFactory public immutable portfolioFactory;
+    PortfolioFactory public immutable _portfolioFactory;
     IERC20 public immutable _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IERC721 public immutable _ve = IERC721(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
 
 
-    constructor(address _portfolioFactory) {
-        require(_portfolioFactory != address(0));
-        portfolioFactory = PortfolioFactory(_portfolioFactory);
+    constructor(address portfolioFactory) {
+        require(portfolioFactory != address(0));
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
     }
 
     function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external {
@@ -33,6 +33,21 @@ contract AerodromeFacet {
         require(borrower == address(0) && balance == 0);
         IVotingEscrow(asset).transferFrom(address(this), msg.sender, tokenId);
         CollateralStorage.removeNonfungibleCollateral(asset, tokenId);
+    }
+
+    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
+        IERC721(_ve).setApprovalForAll(address(loanContract), true);
+        uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
+        IERC721(_ve).setApprovalForAll(address(loanContract), false);
+        if(allocations[1] > 0) {
+            uint256 aeroAmount = _aero.balanceOf(address(this));
+            if(allocations[1] < aeroAmount) {
+                aeroAmount = allocations[1];
+            }
+            IERC20(_aero).approve(address(_ve), aeroAmount);
+            IVotingEscrow(address(_ve)).increaseAmount(tokenId, aeroAmount);
+        }
+        return result;
     }
 
     function aerodromeIncreaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
@@ -65,20 +80,27 @@ contract AerodromeFacet {
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
     }
 
-    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
-        IERC721(_ve).setApprovalForAll(address(loanContract), true);
-        uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
-        IERC721(_ve).setApprovalForAll(address(loanContract), false);
-        if(allocations[1] > 0) {
-            uint256 aeroAmount = _aero.balanceOf(address(this));
-            if(allocations[1] < aeroAmount) {
-                aeroAmount = allocations[1];
-            }
-            IERC20(_aero).approve(address(_ve), aeroAmount);
-            IVotingEscrow(address(_ve)).increaseAmount(tokenId, aeroAmount);
-        }
-        return result;
+
+    function aerodromeSetIncreasePercentage(address loanContract, uint256 tokenId, uint256 increasePercentage) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setIncreasePercentage(tokenId, increasePercentage);
     }
+
+    function aerodromeSetPreferredToken(address loanContract, uint256 tokenId, address preferredToken) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setPreferredToken(tokenId, preferredToken);
+    }
+
+    function aerodromeSetTopUp(address loanContract, uint256 tokenId, bool topUp) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setTopUp(tokenId, topUp);
+    }
+
+    function aerodromeSetZeroBalanceOption(address loanContract, uint256 tokenId, ILoan.ZeroBalanceOption zeroBalanceOption) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setZeroBalanceOption(tokenId, zeroBalanceOption);
+    }
+
 }
 
 
