@@ -39,6 +39,22 @@ contract AerodromeFacet {
         CollateralStorage.removeNonfungibleCollateral(asset, tokenId);
     }
 
+    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || _accountConfigStorage.isAuthorizedCaller(msg.sender));
+        IERC721(_ve).setApprovalForAll(address(loanContract), true);
+        uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
+        IERC721(_ve).setApprovalForAll(address(loanContract), false);
+        if(allocations[1] > 0) {
+            uint256 aeroAmount = _aero.balanceOf(address(this));
+            if(allocations[1] < aeroAmount) {
+                aeroAmount = allocations[1];
+            }
+            IERC20(_aero).approve(address(_ve), aeroAmount);
+            IVotingEscrow(address(_ve)).increaseAmount(tokenId, aeroAmount);
+        }
+        return result;
+    }
+
     function aerodromeIncreaseLoan(address loanContract, uint256 tokenId, uint256 amount) external {
         ILoan(loanContract).increaseLoan(tokenId, amount);
         address asset = address(ILoan(loanContract)._asset());
@@ -69,21 +85,27 @@ contract AerodromeFacet {
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
     }
 
-    function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || _accountConfigStorage.isAuthorizedCaller(msg.sender));
-        IERC721(_ve).setApprovalForAll(address(loanContract), true);
-        uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
-        IERC721(_ve).setApprovalForAll(address(loanContract), false);
-        if(allocations[1] > 0) {
-            uint256 aeroAmount = _aero.balanceOf(address(this));
-            if(allocations[1] < aeroAmount) {
-                aeroAmount = allocations[1];
-            }
-            IERC20(_aero).approve(address(_ve), aeroAmount);
-            IVotingEscrow(address(_ve)).increaseAmount(tokenId, aeroAmount);
-        }
-        return result;
+
+    function aerodromeSetIncreasePercentage(address loanContract, uint256 tokenId, uint256 increasePercentage) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setIncreasePercentage(tokenId, increasePercentage);
     }
+
+    function aerodromeSetPreferredToken(address loanContract, uint256 tokenId, address preferredToken) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setPreferredToken(tokenId, preferredToken);
+    }
+
+    function aerodromeSetTopUp(address loanContract, uint256 tokenId, bool topUp) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setTopUp(tokenId, topUp);
+    }
+
+    function aerodromeSetZeroBalanceOption(address loanContract, uint256 tokenId, ILoan.ZeroBalanceOption zeroBalanceOption) external {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        ILoan(loanContract).setZeroBalanceOption(tokenId, zeroBalanceOption);
+    }
+
 }
 
 

@@ -21,9 +21,11 @@ interface ILoan {
     function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);
     function pay(uint256 tokenId, uint256 amount) external;
     function setBorrower(uint256 tokenId, address borrower) external;
-    function increaseLoan(uint256 tokenId, uint256 amount) external;
-    
-    
+    function increaseLoan(uint256 tokenId, uint256 amount) external;    
+    function setPreferredToken(uint256 tokenId, address preferredToken) external;
+    function setTopUp(uint256 tokenId, bool topUp) external;
+    function setZeroBalanceOption(uint256 tokenId, ZeroBalanceOption zeroBalanceOption) external;
+
     /**
      * @notice Finalizes a marketplace purchase by assigning the borrower to the buyer
      * @dev Must only be callable by the configured marketplace/diamond/router

@@ -119,5 +119,24 @@ contract XRexFacet {
         require(_accountConfigStorage.isApprovedContract(destination));
         _;
     }
-    
+
+    function xRexSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setIncreasePercentage(increasePercentage);
+    }
+
+    function xRexSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setPreferredToken(preferredToken);
+    }
+
+    function xRexSetTopUp(address loanContract, bool topUp) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setTopUp(topUp);
+    }
+
+    function xRexSetZeroBalanceOption(address loanContract, IXLoan.ZeroBalanceOption zeroBalanceOption) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        IXLoan(loanContract).setZeroBalanceOption(zeroBalanceOption);
+    }
 }
