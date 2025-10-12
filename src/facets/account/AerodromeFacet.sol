@@ -9,20 +9,24 @@ import {IVoter} from "../../interfaces/IVoter.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 import {CollateralStorage} from "../../storage/CollateralStorage.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {AccountConfigStorage} from "../../storage/AccountConfigStorage.sol";
 
 /**
  * @title AerodromeFacet
  * @dev Middleware facet that interfaces with the loan contract
  */
 contract AerodromeFacet {
-    PortfolioFactory public immutable portfolioFactory;
+    PortfolioFactory public immutable _portfolioFactory;
     IERC20 public immutable _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IERC721 public immutable _ve = IERC721(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+    address public immutable _entryPoint = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
+    AccountConfigStorage public immutable _accountConfigStorage;
 
 
-    constructor(address _portfolioFactory) {
-        require(_portfolioFactory != address(0));
-        portfolioFactory = PortfolioFactory(_portfolioFactory);
+    constructor(address portfolioFactory, address accountConfigStorage) {
+        require(portfolioFactory != address(0));
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
+        _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
     }
 
     function aerodromeClaimCollateral(address loanContract, uint256 tokenId) external {
@@ -66,6 +70,7 @@ contract AerodromeFacet {
     }
 
     function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || _accountConfigStorage.isAuthorizedCaller(msg.sender));
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
