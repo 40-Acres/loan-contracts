@@ -6,7 +6,7 @@ import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC2
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { Vault as VaultV2 } from "../VaultV2.sol";
-import "../interfaces/ILoan.sol";
+import {ILoan} from "../interfaces/ILoan.sol";
 
 
 contract Vault is VaultV2 {
@@ -14,7 +14,10 @@ contract Vault is VaultV2 {
         return _asset.balanceOf(address(this)) + _loanContract.activeAssets(); 
     }
 
-    function approveContract(address contractAddress) public onlyOwner {
-        ERC20(address(_asset)).approve(contractAddress, type(uint256).max);
+    function setLoanContract(address newLoanContract) public onlyOwner {
+        require(ILoan(newLoanContract).activeAssets() == ILoan(_loanContract).activeAssets());
+        ERC20(address(_asset)).approve(address(_loanContract), 0);
+        _loanContract = ILoan(newLoanContract);
+        ERC20(address(_asset)).approve(newLoanContract, type(uint256).max);
     }
 }

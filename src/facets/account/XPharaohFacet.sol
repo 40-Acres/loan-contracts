@@ -12,11 +12,14 @@ import {IXRex} from "../../interfaces/IXRex.sol";
 import {IVoteModule} from "../../interfaces/IVoteModule.sol";
 import {AccountConfigStorage} from "../../storage/AccountConfigStorage.sol";
 
+interface PharaohMigrator {
+    function migrateVe(uint256 _tokenID) external;
+}
 
-import {console} from "forge-std/console.sol";
 /**
  * @title XPharaohFacet
  */
+
 contract XPharaohFacet {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
@@ -86,8 +89,8 @@ contract XPharaohFacet {
     }
 
     function pharaohClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || _accountConfigStorage.isAuthorizedCaller(msg.sender));
         IVoteModule(_voteModule).setAdmin(address(loanContract));
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || msg.sender == _entryPoint);
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
         IVoteModule(_voteModule).setAdmin(address(0));
         if(allocations[1] > 0) {
@@ -137,15 +140,11 @@ contract XPharaohFacet {
     }
 
     function migratePharaohToXPharaoh(uint256 tokenId) external {
-        // require(msg.sender == 0xa0Cb889707d426A7A386870A03bc70d1b0697598); // XPHAR - USDC Contract
+        require(_accountConfigStorage.isApprovedContract(msg.sender));
         
-        // Get the PHAR balance of this account
-        uint256 pharBalance = IERC20(_phar).balanceOf(address(this));
-        
-        if (pharBalance > 0) {
-            // Convert PHAR to XPHAR
-            // this method has not been released yet
-        }
+        require(IERC721(_vePhar).ownerOf(tokenId) == address(this));
+        IERC721(_vePhar).approve(0x2E1Ad4f8055D39442c86B1F40599293388277669, tokenId);
+        PharaohMigrator(0x2E1Ad4f8055D39442c86B1F40599293388277669).migrateVe(tokenId);
     }
 
     modifier onlyApprovedContract(address destination) {

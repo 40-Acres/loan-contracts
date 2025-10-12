@@ -27,8 +27,8 @@ contract AccountConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpg
     // Token storage data using named storage slot
     struct AccountConfigStorageData {
         mapping(address => bool) approvedContracts;
+        mapping(address => bool) authorizedCallers;
     }
-
 
     // Named storage slot for account data
     bytes32 private constant ACCOUNT_STORAGE_POSITION = keccak256("storage.AccountConfigStorage");
@@ -51,5 +51,15 @@ contract AccountConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpg
     function isApprovedContract(address addr) public view returns (bool) {
         AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
         return collateralStorage.approvedContracts[addr];
+    }
+
+    function setAuthorizedCaller(address addr, bool authorized) public onlyOwner {
+        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        collateralStorage.authorizedCallers[addr] = authorized;
+    }
+
+    function isAuthorizedCaller(address addr) public view returns (bool) {
+        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        return collateralStorage.authorizedCallers[addr];
     }
 }
