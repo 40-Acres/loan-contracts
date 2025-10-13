@@ -7,9 +7,9 @@ pragma solidity ^0.8.28;
 library CollateralStorage {
     // Token storage data using named storage slot
     struct CollateralStorageData {
-        mapping(address => mapping(address => mapping(uint256 => bool))) isNonfungibleCollateral;
-        mapping(address => mapping(address => uint256)) fungibleCollateral;
-        mapping(address => mapping(address => bool)) isTotalCollateral;
+        mapping(address => mapping(uint256 => bool)) isNonfungibleCollateral;
+        mapping(address => uint256) fungibleCollateral;
+        mapping(address => bool) isTotalCollateral;
     }
 
     // Named storage slot for account data
@@ -30,8 +30,8 @@ library CollateralStorage {
         uint256 assetId
     ) external {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        require(!collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId]);
-        collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId] = true;
+        require(!collateralStorage.isNonfungibleCollateral[tokenAddress][assetId]);
+        collateralStorage.isNonfungibleCollateral[tokenAddress][assetId] = true;
     }
 
     function addFungibleCollateral(
@@ -39,15 +39,15 @@ library CollateralStorage {
         uint256 amount
     ) external {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        collateralStorage.fungibleCollateral[msg.sender][tokenAddress] += amount;
+        collateralStorage.fungibleCollateral[tokenAddress] += amount;
     }
 
     function addTotalCollateral(
         address tokenAddress
     ) external {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        require(!collateralStorage.isTotalCollateral[msg.sender][tokenAddress]);
-        collateralStorage.isTotalCollateral[msg.sender][tokenAddress] = true;
+        require(!collateralStorage.isTotalCollateral[tokenAddress], "Total collateral already added");
+        collateralStorage.isTotalCollateral[tokenAddress] = true;
     }
 
     function removeNonfungibleCollateral(
@@ -55,8 +55,8 @@ library CollateralStorage {
         uint256 assetId
     ) external {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        require(collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId]);
-        collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId] = false;
+        require(collateralStorage.isNonfungibleCollateral[tokenAddress][assetId]);
+        collateralStorage.isNonfungibleCollateral[tokenAddress][assetId] = false;
     }
 
     function removeFungibleCollateral(
@@ -64,16 +64,16 @@ library CollateralStorage {
         uint256 amount
     ) external {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        require(collateralStorage.fungibleCollateral[msg.sender][tokenAddress] >= amount);
-        collateralStorage.fungibleCollateral[msg.sender][tokenAddress] -= amount;
+        require(collateralStorage.fungibleCollateral[tokenAddress] >= amount);
+        collateralStorage.fungibleCollateral[tokenAddress] -= amount;
     }
 
     function removeTotalCollateral(
         address tokenAddress
     ) external {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        require(collateralStorage.isTotalCollateral[msg.sender][tokenAddress]);
-        collateralStorage.isTotalCollateral[msg.sender][tokenAddress] = false;
+        require(collateralStorage.isTotalCollateral[tokenAddress]);
+        collateralStorage.isTotalCollateral[tokenAddress] = false;
     }
 
     function getNonfungibleCollateral(
@@ -81,14 +81,14 @@ library CollateralStorage {
         uint256 assetId
     ) external view returns (bool) {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        return collateralStorage.isNonfungibleCollateral[msg.sender][tokenAddress][assetId];
+        return collateralStorage.isNonfungibleCollateral[tokenAddress][assetId];
     }
     
     function getFungibleCollateral(
         address tokenAddress
     ) external view returns (uint256) {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        return collateralStorage.fungibleCollateral[msg.sender][tokenAddress];
+        return collateralStorage.fungibleCollateral[tokenAddress];
     }
     
     
@@ -96,8 +96,7 @@ library CollateralStorage {
         address tokenAddress
     ) external view returns (bool) {
         CollateralStorageData storage collateralStorage = _getCollateralStorage();
-        return collateralStorage.isTotalCollateral[msg.sender][tokenAddress];
+        return collateralStorage.isTotalCollateral[tokenAddress];
     }
-    
     
 }

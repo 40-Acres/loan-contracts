@@ -27,6 +27,7 @@ import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
+import {IVoteModule} from "../src/interfaces/IVoteModule.sol";
 
 
 contract MockOdosRouterRL {
@@ -596,7 +597,84 @@ contract EtherexTest is Test {
         loan.pay(userAccount, 0);
 
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 2);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount)));
+
+        // loan details should be 0
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertEq(balance, 0, "Balance should be 0");
+        assertEq(borrower, address(0), "Borrower should be 0");
+        vm.stopPrank();
+    }
+
+
+    /**
+     * @dev Test loan payoff through the facet
+     */
+    function testClaimCollateral() public {
+        vm.prank(usdc.masterMinter());
+        usdc.configureMinter(address(this), type(uint256).max);
+        usdc.mint(address(user), 100e6);
+        vm.stopPrank();
+
+        uint256 amount = 1e6;
+
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
+        assertEq(usdc.balanceOf(address(vault)), 100e6);
+
+        // user deposits the NFT to their account
+        vm.startPrank(user);
+        // approve AssetFacet to transfer the NFT
+        address userAccount = portfolioFactory.getUserAccount(user);
+        // create the user account if it doesn't exist
+        if (userAccount == address(0)) {
+            portfolioFactory.createAccount(user);
+            userAccount = portfolioFactory.getAccount(user);
+
+            // Authorize the user account to call CollateralStorage
+            vm.stopPrank(); // Stop current prank
+            vm.startPrank(user); // Resume user prank
+        }
+
+        // IERC721(address(votingEscrow)).transferFrom(
+        //     user,
+        //     address(userAccount),
+        //     tokenId
+        // );
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        XRexFacet(userAccount).xRexRequestLoan(
+            address(loan),
+            amount,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(address(user)), 1e6 + startingUserBalance, "User should have 1e6");
+        assertEq(usdc.balanceOf(address(vault)), 99e6);
+
+        // try to claim collateral which should fail
+        vm.startPrank(user);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 100);
+
+
+        uint256 xRexBalance = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount));
+        vm.expectRevert();
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance);
+
+
+        vm.expectRevert();
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance - 1);
+
+        usdc.approve(address(loan), 5e6);
+        loan.pay(userAccount, 0);
+
+
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount)));
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);

@@ -34,12 +34,11 @@ contract XRexFacet {
         IVoteModule(_voteModule).withdraw(amount);
         uint256 exitAmount = IXRex(_xrex).exit(amount);
         IERC20(_rex).transfer(msg.sender, exitAmount);
-
         IXLoan(loanContract).confirmClaimCollateral();
-        if(IXRex(_xrex).balanceOf(address(this)) == 0) {
+
+
+        if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
             address asset = address(IXLoan(loanContract)._lockedAsset());
-            (uint256 balance, address borrower) = IXLoan(loanContract).getLoanDetails(address(this));
-            require(borrower == address(0) && balance == 0);
             CollateralStorage.removeTotalCollateral(asset);
         }
     }
