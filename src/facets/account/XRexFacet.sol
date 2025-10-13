@@ -117,7 +117,6 @@ contract XRexFacet {
 
         // remove any approvals for the assets
         if(preferredToken != address(0)) {
-            uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
             IERC20(preferredToken).approve(address(msg.sender), 0);
         }
         IERC20(address(IXLoan(loanContract)._vaultAsset())).approve(address(msg.sender), 0);

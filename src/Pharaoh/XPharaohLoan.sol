@@ -25,15 +25,12 @@ import { PortfolioFactory } from "../accounts/PortfolioFactory.sol";
 import {IVoteModule} from "../interfaces/IVoteModule.sol";
 import {IXRex} from "../interfaces/IXRex.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
+import {IXPharFacet} from "../interfaces/IXPharFacet.sol";
 
 
-interface IPharoahFacet {
-    function migratePharaohToXPharaoh(uint256 tokenId) external;
-}
 
 contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
-    IRewardsDistributor internal _rewardsDistributor;
     IERC20 public _vaultAsset;
     IERC20 internal _liquidAsset;
     IERC20 public _lockedAsset;
@@ -190,20 +187,19 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         __Ownable_init(msg.sender); 
         __UUPSUpgradeable_init();
         address[] memory pools = new address[](1);
-        pools[0] = 0x0000000000000000000000000000000000000000;
+        pools[0] = 	0x5cA009013F6B898D134b6798B336A4592f3B4aF2;
         _defaultPools = pools;
 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = 100e18;
         _defaultWeights = amounts;
         _vault = vault;
-        _voter = IXVoter(0x0000000000000000000000000000000000000000); 
-        _rewardsDistributor = IRewardsDistributor(0x0000000000000000000000000000000000000000);
+        _voter = IXVoter(0x922b9Ca8e2207bfB850B6FF647c054d4b58a2Aa7); 
         _vaultAsset = IERC20(asset);
-        _liquidAsset = IERC20(0x0000000000000000000000000000000000000000);
-        _lockedAsset = IERC20(0x0000000000000000000000000000000000000000);
+        _liquidAsset = IERC20(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
+        _lockedAsset = IERC20(0xE8164Ea89665DAb7a553e667F81F30CfDA736B9A);
         _multiplier = 12;
-        _voteModule = IVoteModule(0x0000000000000000000000000000000000000000);
+        _voteModule = IVoteModule(0x34F233F868CdB42446a18562710eE705d66f846b);
     }
 
     
@@ -262,7 +258,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             increaseLoan(amount);
         }
 
-        vote(msg.sender);
+        // vote(msg.sender);
     }
 
     /**
@@ -478,10 +474,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             return 0;
         }
 
-        // if any of tokens or loan.preferres token has a balance, return to owner
-        _rescueTokens(tokens, loan.preferredToken == address(0) ? address(_vaultAsset) : loan.preferredToken);
-
-        _processRewards(fees, tokens, msg.sender, tradeData);
+        IXPharFacet(address(msg.sender)).xPharProcessRewards(fees, tokens, tradeData);
         uint256 rewardsAmount = _vaultAsset.balanceOf(address(this));
         address rewardToken = address(_vaultAsset);
         // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
@@ -521,41 +514,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         _claimRebase(loan);
         
         return allocations[0];
-    }
-
-    function _processRewards(
-        address[] calldata gauges,
-        address[][] calldata tokens,
-        address borrower,
-        bytes calldata tradeData
-    ) virtual internal {
-        _voter.claimIncentives(borrower, gauges, tokens);
-        
-        ISwapper swapper = ISwapper(getSwapper());
-        address[] memory flattenedTokens = swapper.flattenToken(tokens);
-
-        if (tradeData.length == 0) {
-            revert(); // No trade data provided, cannot proceed with claiming rewards
-        }
-        // get balance before claiming rewards
-        // loop through flattened tokens and set allowances
-        for (uint256 i = 0; i < flattenedTokens.length; i++) {
-            IERC20 token = IERC20(flattenedTokens[i]);
-            if (token.allowance(address(this), odosRouter()) < type(uint256).max) {
-                token.approve(odosRouter(), type(uint256).max);
-            }
-        }
-
-        (bool success,) = odosRouter().call{value: 0}(tradeData);
-        require(success);
-
-
-        for (uint256 i = 0; i < flattenedTokens.length; i++) {
-            IERC20 token = IERC20(flattenedTokens[i]);
-            if (token.allowance(address(this), odosRouter()) != 0) {
-                token.approve(odosRouter(), 0);
-            }
-        }
     }
 
     /**
@@ -684,10 +642,10 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         require(loan.borrower == msg.sender);
 
         (,uint256 maxLoanIgnoreSupply) = getMaxLoan(msg.sender);
-        uint256 collateralAfterWithdraw = IXRex(address(_lockedAsset)).balanceOf(address(this));
-        require(maxLoanIgnoreSupply >= collateralAfterWithdraw);
+        // ensure the loan balance is below the max loan the amount of collateral can borrow
+        require(loan.balance <= maxLoanIgnoreSupply);
 
-        if(IXRex(address(_lockedAsset)).balanceOf(address(this)) == 0) {
+        if(_getLockedAmount(msg.sender) == 0) {
             require(loan.balance == 0);
             emit CollateralWithdrawn(msg.sender);
             delete _loanDetails[msg.sender];
@@ -807,7 +765,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
     function activeAssets() public view returns (uint256) {
         return _outstandingCapital;
     }
-
 
     /**
      * @notice Retrieves the rewards for the current epoch.
@@ -972,6 +929,18 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         loan.preferredToken = preferredToken;
     }
 
+    /**
+     * @notice Retrieves the preferred token for a specific loan.
+     * @dev This function returns the preferred token for the loan.
+     * @param borrower The address of the borrower.
+     * @return The preferred token for the loan.
+     */
+    function getPreferredToken(
+        address borrower
+    ) public view returns (address) {
+        LoanInfo storage loan = _loanDetails[borrower];
+        return loan.preferredToken;
+    }
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.
@@ -1080,7 +1049,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             uint256 timestamp,
             /*uint80 answeredInRound*/
 
-        ) = AggregatorV3Interface(address(0xAADAa473C1bDF7317ec07c915680Af29DeBfdCb5)).latestRoundData();
+        ) = AggregatorV3Interface(address(0xF096872672F44d6EBA71458D74fe67F9a77a23B9)).latestRoundData();
 
         // add staleness check, data updates every 24 hours
         require(timestamp > block.timestamp - 25 hours);
@@ -1112,7 +1081,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         }
         return false;
     }
-
 
     /**
      * @notice Migrates an NFT from PHAR Loan to XPharaoh Loan
@@ -1168,6 +1136,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         });
         _outstandingCapital += outstandingCapital;
         IERC721(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F).transferFrom(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, userAccount, tokenId);
-        IPharoahFacet(userAccount).migratePharaohToXPharaoh(tokenId);
+        IXPharFacet(userAccount).migratePharaohToXPharaoh(tokenId);
     }
+
 }

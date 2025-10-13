@@ -2,25 +2,25 @@
 pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
-import {EtherexLoan as Loan} from "src/Etherex/EtherexLoan.sol";
+import {XPharaohLoan as Loan} from "src/Pharaoh/XPharaohLoan.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
 import {Vault} from "src/Vault.sol";
 import {Vault as VaultV2} from "src/VaultV2.sol";
-// import { EtherexSwapper as Swapper } from "../src/Etherex/EtherexSwapper.sol";
+// import { XPharaohSwapper as Swapper } from "../src/XPharaoh/XPharaohSwapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Swapper} from "../src/Swapper.sol";
 import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {XRexFacet} from "../src/facets/account/XRexFacet.sol";
+import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
-contract EtherexDeploy is Script {
+contract XPharaohDeploy is Script {
     Swapper public swapper;
     address[] public supportedTokens;
     uint256 fork;
-    address _rex = 0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4;
-    address _asset = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
+    address _rex = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
+    address _asset = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
 
     function run() external {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
@@ -62,16 +62,16 @@ contract EtherexDeploy is Script {
         loan.setLenderPremium(2000);
         loan.setZeroBalanceFee(100);
 
-        // Set default pools and weights after upgrade
-        address[] memory defaultPools = new address[](1);
-        defaultPools[0] = 0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e; // Use the working pool address
-        uint256[] memory defaultWeights = new uint256[](1);
-        defaultWeights[0] = 100e18;
+        // // Set default pools and weights after upgrade
+        // address[] memory defaultPools = new address[](1);
+        // defaultPools[0] = 0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e; // Use the working pool address
+        // uint256[] memory defaultWeights = new uint256[](1);
+        // defaultWeights[0] = 100e18;
 
-        // Approve the default pool
-        loan.setApprovedPools(defaultPools, true);
-        // Set the default pools and weights
-        loan.setDefaultPools(defaultPools, defaultWeights);
+        // // Approve the default pool
+        // loan.setApprovedPools(defaultPools, true);
+        // // Set the default pools and weights
+        // loan.setDefaultPools(defaultPools, defaultWeights);
 
         address[] memory _supportedTokens = new address[](2);
         _supportedTokens[0] = _rex;
@@ -81,12 +81,11 @@ contract EtherexDeploy is Script {
         FacetRegistry facetRegistry = new FacetRegistry();
 
         // Deploy PortfolioFactory
-        PortfolioFactory portfolioFactory = new PortfolioFactory{salt: keccak256("portfolioFactory")}(
+        PortfolioFactory portfolioFactory = new PortfolioFactory{salt: "1"}(
             address(facetRegistry)
         );
 
         console.log("PortfolioFactory:", address(portfolioFactory));
-
         // Deploy swapper with Avalanche factory and router addresses
         swapper = new Swapper(
             address(0x85974429677c2a701af470B82F3118e74307826e), // factory
@@ -101,28 +100,28 @@ contract EtherexDeploy is Script {
         );
 
         accountConfigStorage.setApprovedContract(address(loan), true);
-        XRexFacet loanFacet = new XRexFacet(
+        XPharaohFacet loanFacet = new XPharaohFacet(
             address(portfolioFactory),
             address(accountConfigStorage)
         );
 
-        // Register XRexFacet in the FacetRegistry
+        // Register XPharaohFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](8);
-        loanSelectors[0] = 0x6d3daeb9; // xRexRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
-        loanSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        loanSelectors[2] = 0x60be0290; // xRexIncreaseCollateral(address,uint256)
-        loanSelectors[3] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
-        loanSelectors[4] = 0x410f6461; // xRexVote(address)
-        loanSelectors[5] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
-        loanSelectors[6] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        loanSelectors[7] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
+        loanSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
+        loanSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
+        loanSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
+        loanSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
+        loanSelectors[4] = 0x31f84426; // xPharVote(address)
+        loanSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
+        loanSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
+        loanSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
 
         // Get the FacetRegistry from the PortfolioFactory
         facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
         facetRegistry.registerFacet(
             address(loanFacet),
             loanSelectors,
-            "XRexFacet"
+            "XPharaohFacet"
         );
         loan.setPortfolioFactory(address(portfolioFactory));
         return (loan, vault, swapper, accountConfigStorage);
@@ -130,7 +129,7 @@ contract EtherexDeploy is Script {
 }
 
 
-contract EtherexUpgrade is Script {
+contract XPharaohUpgrade is Script {
     address[] public supportedTokens;
     uint256 fork;
     AccountConfigStorage _accountConfigStorage = AccountConfigStorage(0x65EC3E4E01bD6DF8806106374c0Aa40FF2C5a6c3);
@@ -147,36 +146,36 @@ contract EtherexUpgrade is Script {
         // AccountConfigStorage accountConfigStorageImpl = new AccountConfigStorage();
         // AccountConfigStorage(address(_accountConfigStorage)).upgradeToAndCall(address(accountConfigStorageImpl), new bytes(0));
         // _accountConfigStorage.setAuthorizedCaller(address(0xf161e7c79e0c0A3FD8D75A05A53A04E05B2034d3), true);
-        XRexFacet xRexFacet = new XRexFacet(address(_portfolioFactory), address(_accountConfigStorage));
+        XPharaohFacet xPharaohFacet = new XPharaohFacet(address(_portfolioFactory), address(_accountConfigStorage));
         FacetRegistry facetRegistry = FacetRegistry(address(_facetRegistry));
         Loan loanImplementation = new Loan();
 
         vm.startPrank(0x97BE22DBb49C88451fBd1099F59EED963d9d8A12);
         _loan.upgradeToAndCall(address(loanImplementation), new bytes(0));
 
-        // All selectors for the new XRexFacet (including the new xRexProcessRewards function)
+        // All selectors for the new XPharaohFacet (including the new xPharProcessRewards function)
         bytes4[] memory newSelectors = new bytes4[](8);
-        newSelectors[0] = 0x6d3daeb9; // xRexRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
-        newSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        newSelectors[2] = 0x60be0290; // xRexIncreaseCollateral(address,uint256)
-        newSelectors[3] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
-        newSelectors[4] = 0x410f6461; // xRexVote(address)
-        newSelectors[5] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
-        newSelectors[6] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        newSelectors[7] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
+        newSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
+        newSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
+        newSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
+        newSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
+        newSelectors[4] = 0x31f84426; // xPharVote(address)
+        newSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
+        newSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
+        newSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
 
         // Replace the old facet with the new one (this handles removal and registration in one call)
         _facetRegistry.replaceFacet(
             0x7aF55307660d3e42088a8cAE0e36Fe6d001d00aa, // old facet address
-            address(xRexFacet), // new facet address
+            address(xPharaohFacet), // new facet address
             newSelectors,
-            "XRexFacet"
+            "XPharaohFacet"
         );
 
     }
 
 }
 
-// forge script script/EtherexDeploy.s.sol:EtherexDeploy  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
-// forge script script/EtherexDeploy.s.sol:EtherexDepositNft  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
-// forge script script/EtherexDeploy.s.sol:EtherexUpgrade  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
+// forge script script/XPharaohDeploy.s.sol:XPharaohDeploy  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
+// forge script script/XPharaohDeploy.s.sol:XPharaohDepositNft  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
+// forge script script/XPharaohDeploy.s.sol:XPharaohUpgrade  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london

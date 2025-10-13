@@ -103,15 +103,6 @@ contract PortfolioFactory {
     }
     
     /**
-     * @dev Gets portfolio owner
-     */
-    function getAccountOwner(address _portfolio) external view returns (address) {
-        address portfolioOwner = portfolioOwners[_portfolio];
-        require(portfolioOwner != address(0));
-        return portfolioOwner;
-    }
-
-    /**
      * @dev Gets the portfolio for a user
      */
     function getUserAccount(address _user) external view returns (address) {
