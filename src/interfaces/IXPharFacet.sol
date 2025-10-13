@@ -75,6 +75,11 @@ interface IXPharFacet {
      * @return Whether the vote was successful
      */
     function xPharVote(address loanContract) external returns (bool);
+
+
+    function migratePharaohToXPharaoh(uint256 tokenId) external;
+
+    function xPharProcessRewards(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData) external;
 }
 
 
