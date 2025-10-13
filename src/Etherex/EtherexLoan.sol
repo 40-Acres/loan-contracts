@@ -193,7 +193,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         _voter = IXVoter(0x942117Ec0458a8AA08669E94B52001Bd43F889C1); // Linea voter 
         _rewardsDistributor = IRewardsDistributor(0x88a49cFCee0Ed5B176073DDE12186C4c922A9cD0);
         _vaultAsset = IERC20(asset);
-        _liquidAsset = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
+        _liquidAsset = IERC20(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4); // rex33
         _lockedAsset = IERC20(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
         _multiplier = 12;
         _voteModule = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1);

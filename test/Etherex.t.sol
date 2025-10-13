@@ -16,7 +16,7 @@ import {ProtocolTimeLibrary} from "src/libraries/ProtocolTimeLibrary.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import {EtherexDeploy} from "../script/EtherexDeploy.sol";
+import {EtherexDeploy} from "../script/EtherexDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import {EtherexUpgrade} from "../script/EtherexDeploy.s.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
@@ -35,7 +35,7 @@ contract MockOdosRouterRL {
 
     address ODOS = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
     address USDC = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
-    address REX = 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348;
+    address REX = 0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4;
     
     function initMock(address _testContract) external { testContract = _testContract; }
     function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, address receiver) external returns (bool) {
@@ -82,7 +82,7 @@ interface IOwnable {
 contract EtherexTest is Test {
     uint256 fork;
 
-    IERC20 aero = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
+    IERC20 aero = IERC20(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4);
     IUSDC usdc = IUSDC(0x176211869cA2b568f2A7D4EE941E073a821EE1ff);
     IERC20 votingEscrow =
         IERC20(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
@@ -93,7 +93,7 @@ contract EtherexTest is Test {
     address userAccount;
 
     address ODOS = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
-    address REX = 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348;
+    address REX = 0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4;
     // deployed contracts
     Vault vault;
     EtherexLoan public loan;
@@ -128,8 +128,8 @@ contract EtherexTest is Test {
 
 
         // Send REX token to the user
-        vm.prank(0x97a51bAEF69335b6248AFEfEBD95E90399D37b0a);
-        aero.transfer(user, 100e6);
+        vm.prank(0x1C1002aB527289dDda9a41bd49140B978d3B6303);
+        aero.transfer(user, 100e18);
         // Deploy Account Factory system
         _deployPortfolioFactory();
 
@@ -160,14 +160,15 @@ contract EtherexTest is Test {
         accountConfigStorage.setAuthorizedCaller(address(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA), true);
 
         // Register XRexFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](7);
-        loanSelectors[0] = 0x6b298621; // xRexRequestLoan(address,uint256,uint8,uint256,address,bool)
+        bytes4[] memory loanSelectors = new bytes4[](8);
+        loanSelectors[0] = 0x6d3daeb9; // xRexRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
         loanSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        loanSelectors[2] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
-        loanSelectors[3] = 0x410f6461; // xRexVote(address)
-        loanSelectors[4] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
-        loanSelectors[5] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        loanSelectors[6] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
+        loanSelectors[2] = 0x60be0290; // xRexIncreaseCollateral(address,uint256)
+        loanSelectors[3] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
+        loanSelectors[4] = 0x410f6461; // xRexVote(address)
+        loanSelectors[5] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
+        loanSelectors[6] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
+        loanSelectors[7] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
         // Get the FacetRegistry from the PortfolioFactory
         FacetRegistry facetRegistry = FacetRegistry(
             portfolioFactory.facetRegistry()
@@ -200,7 +201,7 @@ contract EtherexTest is Test {
         }
 
       
-        IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348).approve(address(userAccount), type(uint256).max);
+        IERC20(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4).approve(address(userAccount), type(uint256).max);
         vm.stopPrank();
 
 
@@ -258,6 +259,7 @@ contract EtherexTest is Test {
         vm.startPrank(user);
         uint256 amount = 5e6;
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -334,6 +336,7 @@ contract EtherexTest is Test {
         vm.startPrank(user);
         uint256 amount = 1e6;
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -383,6 +386,7 @@ contract EtherexTest is Test {
 
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -440,6 +444,7 @@ contract EtherexTest is Test {
 
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -499,6 +504,7 @@ contract EtherexTest is Test {
 
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -579,6 +585,7 @@ contract EtherexTest is Test {
 
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -597,7 +604,7 @@ contract EtherexTest is Test {
         loan.pay(userAccount, 0);
 
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount)));
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 100e18);
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
@@ -645,6 +652,7 @@ contract EtherexTest is Test {
 
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -659,10 +667,10 @@ contract EtherexTest is Test {
 
         // try to claim collateral which should fail
         vm.startPrank(user);
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 100);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 1e18);
 
 
-        uint256 xRexBalance = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount));
+        uint256 xRexBalance = 100e18;
         vm.expectRevert();
         XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance);
 
@@ -670,11 +678,13 @@ contract EtherexTest is Test {
         vm.expectRevert();
         XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance - 1);
 
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 5e18);
         usdc.approve(address(loan), 5e6);
         loan.pay(userAccount, 0);
 
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 5e18);
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount)));
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 89e18);
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
@@ -705,6 +715,7 @@ contract EtherexTest is Test {
         // Request loan through the user account
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.PayToOwner,
@@ -741,7 +752,7 @@ contract EtherexTest is Test {
 
         // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
         vm.expectEmit(true, true, true, true);
-        emit IXVoter.Voted(userAccount, 7027498817418762342, pools[0]);
+        emit IXVoter.Voted(userAccount, 100e18, pools[0]);
         // This should work through the user account
         XRexFacet(userAccount).xRexUserVote(
             address(loan),
@@ -785,6 +796,7 @@ contract EtherexTest is Test {
         // Request loan through the user account
         vm.startPrank(user);
         XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
             address(loan),
             0,
             IXLoan.ZeroBalanceOption.PayToOwner,
@@ -818,7 +830,7 @@ contract EtherexTest is Test {
 
         // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
         vm.expectEmit(true, true, true, true);
-        emit IXVoter.Voted(userAccount, 7027498817418762342, pools[0]);
+        emit IXVoter.Voted(userAccount, 100e18, pools[0]);
         // This should work through the user account
         XRexFacet(userAccount).xRexUserVote(
             address(loan),

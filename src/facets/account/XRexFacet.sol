@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IXLoan} from "../../interfaces/IXLoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
@@ -11,13 +12,14 @@ import {IXRex} from "../../interfaces/IXRex.sol";
 import {IVoteModule} from "../../interfaces/IVoteModule.sol";
 import {AccountConfigStorage} from "../../storage/AccountConfigStorage.sol";
 import {IXVoter} from "../../interfaces/IXVoter.sol";
+
 /**
  * @title XRexFacet
  */
 contract XRexFacet {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
-    IERC20 public immutable _rex = IERC20(0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348);
+    IERC4626 public immutable _rex33 = IERC4626(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4);
     address public immutable _xrex = 0xc93B315971A4f260875103F5DA84cB1E30f366Cc;
     address public immutable _voteModule = 0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1;
     address public immutable _voter = 0x942117Ec0458a8AA08669E94B52001Bd43F889C1;
@@ -30,12 +32,12 @@ contract XRexFacet {
 
     function xRexClaimCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
-
+        
+        address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
+        IERC20(lockedAsset).approve(_voteModule, amount);
+        IXRex(_xrex).approve(address(_rex33), amount);
         IVoteModule(_voteModule).withdraw(amount);
-        uint256 exitAmount = IXRex(_xrex).exit(amount);
-        IERC20(_rex).transfer(msg.sender, exitAmount);
         IXLoan(loanContract).confirmClaimCollateral();
-
 
         if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
             address asset = address(IXLoan(loanContract)._lockedAsset());
@@ -49,27 +51,33 @@ contract XRexFacet {
         address asset = address(IXLoan(loanContract)._vaultAsset());
         IERC20(asset).transfer(msg.sender, amount);
     }
-    
-    function xRexRequestLoan(address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
+
+    function xRexIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
-        uint256 tokenBalance = IERC20(_rex).balanceOf(msg.sender);
-        IERC20(_rex).transferFrom(msg.sender, address(this), tokenBalance);
+        _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
+    }
+    
+    function xRexRequestLoan(uint256 collateralAmount, address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
 
-        // Approve the xREX contract to spend the REX tokens we just received
-        IERC20(_rex).approve(_xrex, tokenBalance);
+        address asset = address(IXLoan(loanContract)._vaultAsset());
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
-        IXRex(_xrex).convertEmissionsToken(tokenBalance);
 
-        IERC20(lockedAsset).approve(_voteModule, tokenBalance);
-        IVoteModule(_voteModule).depositAll();
+        _rex33.transferFrom(msg.sender, address(this), collateralAmount);
+        uint256 beginningAssetBalance = IERC20(asset).balanceOf(address(this));
+
+        _rex33.approve(_voteModule, collateralAmount);
+        _rex33.redeem(collateralAmount, address(this), address(this));
+        IERC20(lockedAsset).approve(_voteModule, collateralAmount);
+        IVoteModule(_voteModule).deposit(collateralAmount);
         IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).requestLoan(loanAmount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
         IVoteModule(_voteModule).delegate(address(0));
 
         CollateralStorage.addTotalCollateral(lockedAsset);
 
-        address asset = address(IXLoan(loanContract)._vaultAsset());
-        IERC20(asset).transfer(msg.sender, loanAmount);
+        uint256 assetBalance = IERC20(asset).balanceOf(address(this));
+        IERC20(asset).transfer(msg.sender, assetBalance - beginningAssetBalance);
 
     }
 
@@ -88,8 +96,7 @@ contract XRexFacet {
         address vaultAsset = address(IXLoan(loanContract)._vaultAsset());
         uint256 beginningAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
         uint256 beginningPreferredTokenBalance;
-        address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
-        uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
+        uint256 beginningUnderlyingAssetBalance = _rex33.balanceOf(address(this));
         address preferredToken = IXLoan(loanContract).getPreferredToken(address(this));
         if(preferredToken != address(0)) {
             beginningPreferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
@@ -101,7 +108,7 @@ contract XRexFacet {
         // increase the collateral if necessary
         if(allocations[1] > 0) {
             // max amount we can increase is the difference between the beginning and ending locked asset balance
-            uint256 rexAmount = _rex.balanceOf(address(this)) - beginningLockedAssetBalance;
+            uint256 rexAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
             if(allocations[1] < rexAmount) {
                 rexAmount = allocations[1];
             }
@@ -186,12 +193,9 @@ contract XRexFacet {
         return success;
     }
 
-    // increase the collateral
     function _increaseCollateral(uint256 amount, address lockedAsset) internal {
-        IERC20(_rex).approve(_xrex, amount);
-        IXRex(_xrex).convertEmissionsToken(amount);
-        IERC20(lockedAsset).approve(_voteModule, amount);
-        IVoteModule(_voteModule).deposit(amount);
+        _rex33.approve(_voteModule, amount);
+        uint256 assetsReceived = _rex33.redeem(amount, address(this), address(this));
     }
 
 
