@@ -52,4 +52,5 @@ interface IXLoan {
     function setZeroBalanceOption(ZeroBalanceOption zeroBalanceOption) external;
     function setTopUp(bool topUp) external;
     function setPreferredToken(address preferredToken) external;
+    function getPreferredToken(address user) external view returns (address);
 }

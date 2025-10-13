@@ -367,7 +367,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.balance += amount + originationFee;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
-        _asset.transferFrom(_vault, loan.borrower, amount);
+
+        PortfolioFactory portfolioFactory = PortfolioFactory(getPortfolioFactory());
+        address userAccount = portfolioFactory.getAccountOwner(msg.sender);
+        address borrower = userAccount == address(0) ? loan.borrower : userAccount;
+        _asset.transferFrom(_vault, borrower, amount);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
@@ -563,7 +567,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         IERC20 asset = loan.preferredToken == address(0) ? _asset : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
-        require(asset.transfer(loan.borrower, remaining));
+        address userAccount = PortfolioFactory(getPortfolioFactory()).getAccountOwner(msg.sender);
+        address borrower = userAccount == address(0) ? loan.borrower : userAccount;
+        require(asset.transfer(borrower, remaining));
     }
 
 

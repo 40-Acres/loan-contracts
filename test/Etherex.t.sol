@@ -18,6 +18,7 @@ import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transp
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {EtherexDeploy} from "../script/EtherexDeploy.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
+import {EtherexUpgrade} from "../script/EtherexDeploy.s.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import {Swapper} from "../src/Swapper.sol";
@@ -36,19 +37,19 @@ contract MockOdosRouterRL {
     address REX = 0xEfD81eeC32B9A8222D1842ec3d99c7532C31e348;
     
     function initMock(address _testContract) external { testContract = _testContract; }
-    function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut) external returns (bool) {
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), msg.sender, amountOut));
+    function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, address receiver) external returns (bool) {
+        IERC20(tokenIn).transferFrom(receiver, address(this), amountIn);
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), receiver, amountOut));
         require(success, "mint fail");
         return true;
     }
 
 
-    function executeSwapMultiOutput(uint256 amount1, uint256 amount2) external returns (bool) {
-        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(0x176211869cA2b568f2A7D4EE941E073a821EE1ff).masterMinter(), msg.sender, amount1));
+    function executeSwapMultiOutput(uint256 amount1, uint256 amount2, address receiver) external returns (bool) {
+        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(0x176211869cA2b568f2A7D4EE941E073a821EE1ff).masterMinter(), receiver, amount1));
         require(success, "mint fail");
 
-        (bool success2,) = testContract.call(abi.encodeWithSignature("mintRex(address,uint256)", msg.sender, amount2));
+        (bool success2,) = testContract.call(abi.encodeWithSignature("mintRex(address,uint256)", receiver, amount2));
         require(success2, "mint rex fail");
 
         return true;
@@ -154,6 +155,8 @@ contract EtherexTest is Test {
         vm.prank(IOwnable(address(accountConfigStorage)).owner());
         accountConfigStorage.setApprovedContract(address(loan), true);
         loanFacet = new XRexFacet(address(portfolioFactory), address(accountConfigStorage));
+        vm.prank(IOwnable(address(accountConfigStorage)).owner());
+        accountConfigStorage.setAuthorizedCaller(address(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA), true);
 
         // Register XRexFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](7);
@@ -163,8 +166,7 @@ contract EtherexTest is Test {
         loanSelectors[3] = 0x410f6461; // xRexVote(address)
         loanSelectors[4] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
         loanSelectors[5] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        loanSelectors[6] = 0xba1e30c1; // claim(uint256,address[],address[][],bytes,uint256[2])
-
+        loanSelectors[6] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
         // Get the FacetRegistry from the PortfolioFactory
         FacetRegistry facetRegistry = FacetRegistry(
             portfolioFactory.facetRegistry()
@@ -674,7 +676,8 @@ contract EtherexTest is Test {
         bytes memory tradeData = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwapMultiOutput.selector,
             10e6,
-            21919478169540 // send less to account for slippage
+            21919478169540, // send less to account for slippage
+            address(userAccount)
         );
 
         uint256[2] memory allocations = [
@@ -694,6 +697,100 @@ contract EtherexTest is Test {
         assertEq(balance, 0, "Balance should be 0");
     }
 
+
+    function testClaimWithPreferredToken() public {
+
+        address owner = loan.owner();
+        uint256 amount = 0;
+        vm.prank(owner);
+        loan.setApprovedToken(address(aero), true);
+        // Request loan through the user account
+        vm.startPrank(user);
+        XRexFacet(userAccount).xRexRequestLoan(
+            address(loan),
+            0,
+            IXLoan.ZeroBalanceOption.PayToOwner,
+            0,
+            address(aero),
+            false
+        );
+        vm.stopPrank();
+
+        uint256 startingUserBalance = aero.balanceOf(address(user));
+        uint256 startingPortfolioBalance = aero.balanceOf(address(portfolioFactory));
+
+        // Verify loan was created
+        (uint256 balance, ) = loan.getLoanDetails(userAccount);
+        assertTrue(
+            balance >= amount,
+            "Loan balance should be at least the requested amount"
+        );
+
+
+        // Test that the user account can interact with the loan
+        vm.startPrank(user);
+
+        // Test that the user account can vote (this tests the user account integration)
+        address[] memory pools = new address[](1);
+        pools[0] = address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100000000000000000000; // 100 tokens
+
+
+
+        // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
+        vm.expectEmit(true, true, true, true);
+        emit IXVoter.Voted(userAccount, 7027498817418762342, pools[0]);
+        // This should work through the user account
+        XRexFacet(userAccount).xRexUserVote(
+            address(loan),
+            pools,
+            weights
+        );
+        vm.stopPrank();
+
+        uint256 beginningUserUsdcBalance = usdc.balanceOf(address(userAccount));
+        bytes memory tradeData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwapMultiOutput.selector,
+            1,
+            25919478169541, // send less to account for slippage
+            address(userAccount)
+        );
+
+        uint256[2] memory allocations = [
+            uint256(25919478169541),
+            uint256(21919478169541)
+        ];
+        address[] memory bribes = new address[](1);
+        bribes[0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+        uint256 rewards = _claimRewards(
+            Loan(userAccount),
+            bribes,
+            tradeData,
+            allocations
+        );
+
+        // Verify the user received the loan
+        uint256 endingUserBalance = aero.balanceOf(address(user));
+        console.log("endingUserBalance", endingUserBalance);
+        console.log("startingUserBalance", startingUserBalance);
+        uint256 endingPortfolioBalance = aero.balanceOf(address(portfolioFactory));
+        console.log("endingPortfolioBalance", endingPortfolioBalance);
+        console.log("startingPortfolioBalance", startingPortfolioBalance);
+        assertEq(
+            endingPortfolioBalance,startingPortfolioBalance,
+            "Portfolio should not have received loan funds"
+        );
+        assertTrue(
+            endingUserBalance > startingUserBalance,
+            "User should have received loan funds"
+        );
+
+        // loan balance should be 0
+        (balance, ) = loan.getLoanDetails(userAccount);
+        assertEq(balance, 0, "Balance should be 0");
+    }
+    
     function _claimRewards(
         Loan _loan,
         address[] memory bribes,
@@ -728,5 +825,208 @@ contract EtherexTest is Test {
         );
         vm.stopPrank();
         return result;
+    }
+
+    function testXRexClaimWithSpecificData() public {
+        // Set up the fork to the specific block
+        uint256 fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
+        vm.selectFork(fork);
+        vm.rollFork(24382375);
+        
+        // Use the production loan contract
+        address productionLoan = 0xCca5628DF6e5B16a1610d62467df34E07317A891;
+        portfolioFactory = PortfolioFactory(0x2155F306d2806d745427A3E04721e8Cf6F8327dd);
+        
+        // Use the existing user account that already has a loan
+        address userAccount = 0x7A841521878F484438F40691D91d8FcCEa4e8577;
+        
+        // Verify the user account has a loan on the production contract
+        (uint256 balance, ) = IXLoan(productionLoan).getLoanDetails(userAccount);
+        assertTrue(balance > 0, "User account should have an existing loan");
+        
+        // Create the upgrade contract first
+        EtherexUpgrade upgrade = new EtherexUpgrade();
+        
+        // Get the facet registry from the portfolio factory
+        FacetRegistry facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
+        
+        // Get the current owner of the facet registry
+        address facetRegistryOwner = facetRegistry.owner();
+        
+        // Mock the owner for the facet registry
+        vm.startPrank(facetRegistryOwner);
+        
+        // Use the existing EtherexUpgrade to replace the facet
+        upgrade.upgrade();
+        
+        // Set up the specific claim data as provided
+        address[] memory fees = new address[](4);
+        fees[0] = 0x618BDec445317ee8b881303624ED13f9c0Ccd094;
+        fees[1] = 0xE949D829a2b9C4EEb61796fB9f6f7424a2097D3b;
+        fees[2] = 0x6868bAa12388b97EE289707D1C21972385432088;
+        fees[3] = 0x16b0Be9F403e3Ec0d4f7D44D85D5B15e2c7Af15D;
+
+        address[][] memory tokens = new address[][](4);
+        tokens[0] = new address[](4);
+        tokens[0][0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+        tokens[0][1] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+        tokens[0][2] = 0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4;
+        tokens[0][3] = 0x5FBDF89403270a1846F5ae7D113A989F850d1566;
+
+        tokens[1] = new address[](3);
+        tokens[1][0] = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
+        tokens[1][1] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+        tokens[1][2] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+
+        tokens[2] = new address[](2);
+        tokens[2][0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+        tokens[2][1] = 0xacA92E438df0B2401fF60dA7E4337B687a2435DA;
+
+        tokens[3] = new address[](3);
+        tokens[3][0] = 0xacA92E438df0B2401fF60dA7E4337B687a2435DA;
+        tokens[3][1] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+        tokens[3][2] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+
+        bytes memory tradeData = hex"84a7f3dd05010001fb66e944021bf915cfb4dac2b20653930bf7d35a062d8dd054ece800011789e0043623282d5dcc7f213d703c6d8bafbb0408bfebb362e0d77e2e00010b629fe58d1b8702c1cdb75d93a7851b7591778c0001e5d7c2a44ffddf6b295a15c148167daaaf5cf34f061aa191cf76a500000001e4eeb461ad1e4ef8b8ef71a33694ccd84af051c4058e00f0cc72000000015fbdf89403270a1846f5ae7d113a989f850d1566062fd42043e6d400000001aca92e438df0b2401ff60da7e4337b687a2435da03013f5200000001176211869ca2b568f2a7d4ee941e073a821ee1ff0405f6cd2100017a841521878f484438f40691d91d8fccea4e8577000000000902060b060805010102000305010003040032040a0501050600080a0501070800020d0501090a00ff0000000000000000000000000000000000000000000000002a4769bea90d379c96cdff7addee77b87016166e5fbdf89403270a1846f5ae7d113a989f850d15660b629fe58d1b8702c1cdb75d93a7851b7591778c1789e0043623282d5dcc7f213d703c6d8bafbb04b0091b7e234a67182712925ee4ef48c11bce6159e4eeb461ad1e4ef8b8ef71a33694ccd84af051c409666eaf650dc52cece84b1bcd2dd78997d239c7aca92e438df0b2401ff60da7e4337b687a2435dae1d9617c4dd72589733dd1d418854804d5c14437e5d7c2a44ffddf6b295a15c148167daaaf5cf34f000000000000000000000000000000000000000000000000";
+
+        uint256[2] memory allocations = [uint256(556336), uint256(0)];
+
+        // Record balances before the claim
+        uint256 userUsdcBalanceBefore = usdc.balanceOf(userAccount);
+        uint256 userRexBalanceBefore = aero.balanceOf(userAccount);
+
+        console.log("User USDC balance before claim:", userUsdcBalanceBefore);
+        console.log("User REX balance before claim:", userRexBalanceBefore);
+
+        // Call xRexClaim with the specific data
+        vm.startPrank(0xf161e7c79e0c0A3FD8D75A05A53A04E05B2034d3);
+        uint256 result = XRexFacet(userAccount).xRexClaim(
+            productionLoan,
+            fees,
+            tokens,
+            tradeData,
+            allocations
+        );
+        vm.stopPrank();
+
+        // Record balances after the claim
+        uint256 userUsdcBalanceAfter = usdc.balanceOf(userAccount);
+        uint256 userRexBalanceAfter = aero.balanceOf(userAccount);
+
+        // loan balance should have changed
+
+        console.log("balance", balance);
+        (uint256 afterBalance,) =  IXLoan(productionLoan).getLoanDetails(userAccount);
+        console.log("afterBalance", afterBalance);
+        assertTrue(afterBalance < balance, "Loan balance should have decreased");
+
+        // Verify that the claim was successful
+        assertTrue(result > 0, "Claim should return a positive result");
+     
+    }
+
+
+
+    function testXRexClaimWithTopup() public {
+        // Set up the fork to the specific block
+        uint256 fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
+        vm.selectFork(fork);
+        vm.rollFork(24382375);
+        
+        // Use the production loan contract
+        address productionLoan = 0xCca5628DF6e5B16a1610d62467df34E07317A891;
+        portfolioFactory = PortfolioFactory(0x2155F306d2806d745427A3E04721e8Cf6F8327dd);
+        
+        // Use the existing user account that already has a loan
+        address userAccount = 0x7A841521878F484438F40691D91d8FcCEa4e8577;
+
+        vm.prank(userAccount);
+        IXLoan(productionLoan).setTopUp(true);
+        
+        // Verify the user account has a loan on the production contract
+        (uint256 balance, ) = IXLoan(productionLoan).getLoanDetails(userAccount);
+        assertTrue(balance > 0, "User account should have an existing loan");
+        
+        // Create the upgrade contract first
+        EtherexUpgrade upgrade = new EtherexUpgrade();
+        
+        // Get the facet registry from the portfolio factory
+        FacetRegistry facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
+        
+        // Get the current owner of the facet registry
+        address facetRegistryOwner = facetRegistry.owner();
+        
+        // Mock the owner for the facet registry
+        vm.startPrank(facetRegistryOwner);
+        
+        // Use the existing EtherexUpgrade to replace the facet
+        upgrade.upgrade();
+        
+        // Set up the specific claim data as provided
+        address[] memory fees = new address[](4);
+        fees[0] = 0x618BDec445317ee8b881303624ED13f9c0Ccd094;
+        fees[1] = 0xE949D829a2b9C4EEb61796fB9f6f7424a2097D3b;
+        fees[2] = 0x6868bAa12388b97EE289707D1C21972385432088;
+        fees[3] = 0x16b0Be9F403e3Ec0d4f7D44D85D5B15e2c7Af15D;
+
+        address[][] memory tokens = new address[][](4);
+        tokens[0] = new address[](4);
+        tokens[0][0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+        tokens[0][1] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+        tokens[0][2] = 0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4;
+        tokens[0][3] = 0x5FBDF89403270a1846F5ae7D113A989F850d1566;
+
+        tokens[1] = new address[](3);
+        tokens[1][0] = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
+        tokens[1][1] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+        tokens[1][2] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+
+        tokens[2] = new address[](2);
+        tokens[2][0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+        tokens[2][1] = 0xacA92E438df0B2401fF60dA7E4337B687a2435DA;
+
+        tokens[3] = new address[](3);
+        tokens[3][0] = 0xacA92E438df0B2401fF60dA7E4337B687a2435DA;
+        tokens[3][1] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+        tokens[3][2] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
+
+        bytes memory tradeData = hex"84a7f3dd05010001fb66e944021bf915cfb4dac2b20653930bf7d35a062d8dd054ece800011789e0043623282d5dcc7f213d703c6d8bafbb0408bfebb362e0d77e2e00010b629fe58d1b8702c1cdb75d93a7851b7591778c0001e5d7c2a44ffddf6b295a15c148167daaaf5cf34f061aa191cf76a500000001e4eeb461ad1e4ef8b8ef71a33694ccd84af051c4058e00f0cc72000000015fbdf89403270a1846f5ae7d113a989f850d1566062fd42043e6d400000001aca92e438df0b2401ff60da7e4337b687a2435da03013f5200000001176211869ca2b568f2a7d4ee941e073a821ee1ff0405f6cd2100017a841521878f484438f40691d91d8fccea4e8577000000000902060b060805010102000305010003040032040a0501050600080a0501070800020d0501090a00ff0000000000000000000000000000000000000000000000002a4769bea90d379c96cdff7addee77b87016166e5fbdf89403270a1846f5ae7d113a989f850d15660b629fe58d1b8702c1cdb75d93a7851b7591778c1789e0043623282d5dcc7f213d703c6d8bafbb04b0091b7e234a67182712925ee4ef48c11bce6159e4eeb461ad1e4ef8b8ef71a33694ccd84af051c409666eaf650dc52cece84b1bcd2dd78997d239c7aca92e438df0b2401ff60da7e4337b687a2435dae1d9617c4dd72589733dd1d418854804d5c14437e5d7c2a44ffddf6b295a15c148167daaaf5cf34f000000000000000000000000000000000000000000000000";
+
+        uint256[2] memory allocations = [uint256(556336), uint256(0)];
+
+        // Record balances before the claim
+        uint256 userUsdcBalanceBefore = usdc.balanceOf(userAccount);
+        uint256 userRexBalanceBefore = aero.balanceOf(userAccount);
+
+        console.log("User USDC balance before claim:", userUsdcBalanceBefore);
+        console.log("User REX balance before claim:", userRexBalanceBefore);
+
+        // Call xRexClaim with the specific data
+        vm.startPrank(0xf161e7c79e0c0A3FD8D75A05A53A04E05B2034d3);
+        uint256 result = XRexFacet(userAccount).xRexClaim(
+            productionLoan,
+            fees,
+            tokens,
+            tradeData,
+            allocations
+        );
+        vm.stopPrank();
+
+        // Record balances after the claim
+        uint256 userUsdcBalanceAfter = usdc.balanceOf(userAccount);
+        uint256 userRexBalanceAfter = aero.balanceOf(userAccount);
+
+        // loan balance should have changed
+
+        console.log("balance", balance);
+        (uint256 afterBalance,) =  IXLoan(productionLoan).getLoanDetails(userAccount);
+        console.log("afterBalance", afterBalance);
+        assertTrue(afterBalance > balance, "Loan balance should have increased");
+
+        // Verify that the claim was successful
+        assertTrue(result > 0, "Claim should return a positive result");
+        // ensure user acocunt doesnt have USDC
+        assertEq(usdc.balanceOf(userAccount), userUsdcBalanceBefore, "User account should have same amount of USDC");
+     
     }
 }

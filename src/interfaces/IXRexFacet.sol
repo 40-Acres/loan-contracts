@@ -75,6 +75,13 @@ interface IXRexFacet {
      * @return Whether the vote was successful
      */
     function xRexVote(address loanContract) external returns (bool);
+
+
+    function xRexProcessRewards(
+        address[] calldata gauges,
+        address[][] calldata tokens,
+        bytes calldata tradeData
+    ) external;
 }
 
 
