@@ -105,14 +105,15 @@ contract EtherexDeploy is Script {
         );
 
         // Register XRexFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](7);
-        loanSelectors[0] = 0x6b298621; // xRexRequestLoan(address,uint256,uint8,uint256,address,bool)
+        bytes4[] memory loanSelectors = new bytes4[](8);
+        loanSelectors[0] = 0x6d3daeb9; // xRexRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
         loanSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        loanSelectors[2] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
-        loanSelectors[3] = 0x410f6461; // xRexVote(address)
-        loanSelectors[4] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
-        loanSelectors[5] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        loanSelectors[6] = 0x06adc4a1; // xRexProcessRewards(address[],address[][],bytes,uint256)
+        loanSelectors[2] = 0x60be0290; // xRexIncreaseCollateral(address,uint256)
+        loanSelectors[3] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
+        loanSelectors[4] = 0x410f6461; // xRexVote(address)
+        loanSelectors[5] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
+        loanSelectors[6] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
+        loanSelectors[7] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
 
         // Get the FacetRegistry from the PortfolioFactory
         facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
@@ -123,26 +124,6 @@ contract EtherexDeploy is Script {
         );
         loan.setPortfolioFactory(address(portfolioFactory));
         return (loan, vault, swapper, accountConfigStorage);
-    }
-}
-
-contract DeployNft is Script {
-    function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
-        deploy();
-    }
-
-    function deploy() public returns (address) {
-        XRexFacet nft = XRexFacet(0xA5235102bC50141b260ca77f16361c0018861a9e);
-        nft.xRexRequestLoan(
-            0xCca5628DF6e5B16a1610d62467df34E07317A891,
-            0,
-            IXLoan.ZeroBalanceOption.PayToOwner,
-            10,
-            address(0),
-            false
-        );
-        return address(nft);
     }
 }
 
@@ -172,14 +153,15 @@ contract EtherexUpgrade is Script {
         _loan.upgradeToAndCall(address(loanImplementation), new bytes(0));
 
         // All selectors for the new XRexFacet (including the new xRexProcessRewards function)
-        bytes4[] memory newSelectors = new bytes4[](7);
-        newSelectors[0] = 0x6b298621; // xRexRequestLoan(address,uint256,uint8,uint256,address,bool)
+        bytes4[] memory newSelectors = new bytes4[](8);
+        newSelectors[0] = 0x6d3daeb9; // xRexRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
         newSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        newSelectors[2] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
-        newSelectors[3] = 0x410f6461; // xRexVote(address)
-        newSelectors[4] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
-        newSelectors[5] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        newSelectors[6] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
+        newSelectors[2] = 0x60be0290; // xRexIncreaseCollateral(address,uint256)
+        newSelectors[3] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
+        newSelectors[4] = 0x410f6461; // xRexVote(address)
+        newSelectors[5] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
+        newSelectors[6] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
+        newSelectors[7] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
 
         // Replace the old facet with the new one (this handles removal and registration in one call)
         _facetRegistry.replaceFacet(

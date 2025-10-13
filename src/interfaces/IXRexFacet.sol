@@ -23,7 +23,15 @@ interface IXRexFacet {
     function xRexIncreaseLoan(address loanContract, uint256 amount) external;
 
     /**
+     * @dev Increase collateral using xREX tokens
+     * @param loanContract The loan contract address
+     * @param amount The amount of xREX tokens to add as collateral
+     */
+    function xRexIncreaseCollateral(address loanContract, uint256 amount) external;
+
+    /**
      * @dev Request a loan using xREX as collateral
+     * @param collateralAmount The amount of collateral to use
      * @param loanContract The loan contract address
      * @param loanAmount The amount to borrow
      * @param zeroBalanceOption Option for handling zero balance
@@ -32,6 +40,7 @@ interface IXRexFacet {
      * @param topUp Whether to top up the position
      */
     function xRexRequestLoan(
+        uint256 collateralAmount,
         address loanContract,
         uint256 loanAmount,
         IXLoan.ZeroBalanceOption zeroBalanceOption,
