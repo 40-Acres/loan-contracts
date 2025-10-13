@@ -25,6 +25,7 @@ import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
+import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 
 contract MockOdosRouterRL {
     address public testContract;
@@ -101,6 +102,7 @@ contract AerodromeTest is Test {
 
     // Account Factory system
     PortfolioFactory public portfolioFactory;
+    AccountConfigStorage public accountConfigStorage;
 
     function setUp() public {
         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
@@ -136,8 +138,11 @@ contract AerodromeTest is Test {
         
         vm.stopPrank();
 
+        // Deploy AccountConfigStorage
+        accountConfigStorage = new AccountConfigStorage();
+        accountConfigStorage.setApprovedContract(address(loan), true);
         // Deploy the AerodromeFacet
-        loanFacet = new AerodromeFacet(address(portfolioFactory));
+        loanFacet = new AerodromeFacet(address(portfolioFactory), address(accountConfigStorage));
 
         // Register AerodromeFacet in the FacetRegistry
         bytes4[] memory loanSelectors = new bytes4[](6);

@@ -14,8 +14,6 @@ import {ProtocolTimeLibrary} from "../libraries/ProtocolTimeLibrary.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {RateStorage} from "../RateStorage.sol";
 import {LoanStorage} from "../LoanStorage.sol";
-import {IAerodromeRouter} from "../interfaces/IAerodromeRouter.sol";
-import {IRouter} from "../interfaces/IRouter.sol";
 import {ISwapper} from "../interfaces/ISwapper.sol";
 import {LoanUtils} from "../LoanUtils.sol";
 import { IMarketViewFacet } from "../interfaces/IMarketViewFacet.sol";
@@ -24,6 +22,7 @@ import {IFlashLoanReceiver} from "../interfaces/IFlashLoanReceiver.sol";
 import { PortfolioFactory } from "../accounts/PortfolioFactory.sol";
 import {IVoteModule} from "../interfaces/IVoteModule.sol";
 import {IXRex} from "../interfaces/IXRex.sol";
+import {IXRexFacet} from "../interfaces/IXRexFacet.sol";
 
 contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
@@ -472,10 +471,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
             return 0;
         }
 
-        // if any of tokens or loan.preferres token has a balance, return to owner
-        _rescueTokens(tokens, loan.preferredToken == address(0) ? address(_vaultAsset) : loan.preferredToken);
-
-        _processRewards(fees, tokens, msg.sender, tradeData);
+        IXRexFacet(address(msg.sender)).xRexProcessRewards(fees, tokens, tradeData);
         uint256 rewardsAmount = _vaultAsset.balanceOf(address(this));
         address rewardToken = address(_vaultAsset);
         // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
@@ -515,41 +511,6 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         _claimRebase(loan);
         
         return allocations[0];
-    }
-
-    function _processRewards(
-        address[] calldata gauges,
-        address[][] calldata tokens,
-        address borrower,
-        bytes calldata tradeData
-    ) virtual internal {
-        _voter.claimIncentives(borrower, gauges, tokens);
-        
-        ISwapper swapper = ISwapper(getSwapper());
-        address[] memory flattenedTokens = swapper.flattenToken(tokens);
-
-        if (tradeData.length == 0) {
-            revert(); // No trade data provided, cannot proceed with claiming rewards
-        }
-        // get balance before claiming rewards
-        // loop through flattened tokens and set allowances
-        for (uint256 i = 0; i < flattenedTokens.length; i++) {
-            IERC20 token = IERC20(flattenedTokens[i]);
-            if (token.allowance(address(this), odosRouter()) < type(uint256).max) {
-                token.approve(odosRouter(), type(uint256).max);
-            }
-        }
-
-        (bool success,) = odosRouter().call{value: 0}(tradeData);
-        require(success);
-
-
-        for (uint256 i = 0; i < flattenedTokens.length; i++) {
-            IERC20 token = IERC20(flattenedTokens[i]);
-            if (token.allowance(address(this), odosRouter()) != 0) {
-                token.approve(odosRouter(), 0);
-            }
-        }
     }
 
     /**
@@ -966,6 +927,18 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         loan.preferredToken = preferredToken;
     }
 
+    /**
+     * @notice Retrieves the preferred token for a specific loan.
+     * @dev This function returns the preferred token for the loan.
+     * @param borrower The address of the borrower.
+     * @return The preferred token for the loan.
+     */
+    function getPreferredToken(
+        address borrower
+    ) public view returns (address) {
+        LoanInfo storage loan = _loanDetails[borrower];
+        return loan.preferredToken;
+    }
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.
