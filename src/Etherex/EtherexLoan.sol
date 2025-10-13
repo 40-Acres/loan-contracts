@@ -642,7 +642,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         // ensure the loan balance is below the max loan the amount of collateral can borrow
         require(loan.balance <= maxLoanIgnoreSupply);
 
-        if(IXRex(address(_lockedAsset)).balanceOf(address(this)) == 0) {
+        if(_getLockedAmount(msg.sender) == 0) {
             require(loan.balance == 0);
             emit CollateralWithdrawn(msg.sender);
             delete _loanDetails[msg.sender];

@@ -27,6 +27,7 @@ import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
+import {IVoteModule} from "../src/interfaces/IVoteModule.sol";
 
 
 contract MockOdosRouterRL {
@@ -596,7 +597,7 @@ contract EtherexTest is Test {
         loan.pay(userAccount, 0);
 
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 2);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount)));
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
@@ -657,16 +658,23 @@ contract EtherexTest is Test {
         assertEq(usdc.balanceOf(address(vault)), 99e6);
 
         // try to claim collateral which should fail
-        vm.expectRevert();
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 2);
-
-        // Test payoff through the facet
         vm.startPrank(user);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 100);
+
+
+        uint256 xRexBalance = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount));
+        vm.expectRevert();
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance);
+
+
+        vm.expectRevert();
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance - 1);
+
         usdc.approve(address(loan), 5e6);
         loan.pay(userAccount, 0);
 
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 2);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1).balanceOf(address(userAccount)));
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);

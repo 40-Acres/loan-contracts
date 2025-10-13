@@ -36,7 +36,9 @@ contract XRexFacet {
         IERC20(_rex).transfer(msg.sender, exitAmount);
         IXLoan(loanContract).confirmClaimCollateral();
 
-        if(IXRex(_xrex).balanceOf(address(this)) == 0) {
+
+        if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
+            address asset = address(IXLoan(loanContract)._lockedAsset());
             CollateralStorage.removeTotalCollateral(asset);
         }
     }
