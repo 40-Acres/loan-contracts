@@ -40,7 +40,7 @@ contract AerodromeFacet {
     }
 
     function aerodromeClaim(address loanContract, uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)) || _accountConfigStorage.isAuthorizedCaller(msg.sender));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)) || _accountConfigStorage.isAuthorizedCaller(msg.sender));
         IERC721(_ve).setApprovalForAll(address(loanContract), true);
         uint256 result = ILoan(loanContract).claim(tokenId, fees, tokens, tradeData, allocations);
         IERC721(_ve).setApprovalForAll(address(loanContract), false);
@@ -87,22 +87,22 @@ contract AerodromeFacet {
 
 
     function aerodromeSetIncreasePercentage(address loanContract, uint256 tokenId, uint256 increasePercentage) external {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         ILoan(loanContract).setIncreasePercentage(tokenId, increasePercentage);
     }
 
     function aerodromeSetPreferredToken(address loanContract, uint256 tokenId, address preferredToken) external {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         ILoan(loanContract).setPreferredToken(tokenId, preferredToken);
     }
 
     function aerodromeSetTopUp(address loanContract, uint256 tokenId, bool topUp) external {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         ILoan(loanContract).setTopUp(tokenId, topUp);
     }
 
     function aerodromeSetZeroBalanceOption(address loanContract, uint256 tokenId, ILoan.ZeroBalanceOption zeroBalanceOption) external {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         ILoan(loanContract).setZeroBalanceOption(tokenId, zeroBalanceOption);
     }
 

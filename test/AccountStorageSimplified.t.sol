@@ -27,9 +27,8 @@ contract AccountStorageSimplifiedTest is Test {
         address createdAccount = portfolioFactory.createAccount(user);
         
         // Check account exists
-        assertTrue(portfolioFactory.isUserAccount(createdAccount));
-        assertEq(portfolioFactory.getAccountOwner(createdAccount), user);
-        assertEq(portfolioFactory.getUserAccount(user), createdAccount);
+        assertEq(portfolioFactory.ownerOf(createdAccount), user);
+        assertEq(portfolioFactory.ownerOf(user), createdAccount);
     }
 
     function testAccountAlreadyExists() public {
@@ -49,25 +48,24 @@ contract AccountStorageSimplifiedTest is Test {
         address createdAccount = portfolioFactory.createAccount(user);
         
         // Verify account was created successfully
-        assertTrue(portfolioFactory.isUserAccount(createdAccount));
-        assertEq(portfolioFactory.getAccountOwner(createdAccount), user);
+        assertEq(portfolioFactory.ownerOf(createdAccount), user);
     }
 
     function testAccountDoesNotExist() public {
         // Try to get owner of non-existent account
         vm.expectRevert();
-        portfolioFactory.getAccountOwner(account);
+        portfolioFactory.ownerOf(account);
     }
 
     function testisUserAccount() public {
         // Account doesn't exist initially
-        assertFalse(portfolioFactory.isUserAccount(account));
+        assertFalse(portfolioFactory.ownerOf(account) == address(0));
         
         // Create account
         vm.prank(factory);
         address createdAccount = portfolioFactory.createAccount(user);
         
         // Account now exists
-        assertTrue(portfolioFactory.isUserAccount(createdAccount));
+        assertTrue(portfolioFactory.ownerOf(createdAccount) != address(0));
     }
 }

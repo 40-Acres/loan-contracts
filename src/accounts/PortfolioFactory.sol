@@ -14,16 +14,15 @@ contract PortfolioFactory {
 
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    mapping(address => address) public portfolios; // user => portfolio
-    mapping(address => address) public portfolioOwners; // portfolio => owner
-    mapping(address => bool) public portfolioExists;
+    mapping(address => address) public portfolios; // owner => portfolio
+    mapping(address => address) public owners; // portfolio => owner
     EnumerableSet.AddressSet private portfolioAddresses;
 
-    event AccountCreated(address indexed portfolio, address indexed owner, address indexed portfolioContract);
+    event AccountCreated(address indexed user, address indexed portfolio);
 
     
-    error AccountAlreadyExists(address portfolio);
-    error AccountCreationFailed(address portfolio);
+    error AccountAlreadyExists(address user);
+    error AccountCreationFailed(address user);
     
     /**
      * @dev Constructor - uses centralized facet registry
@@ -39,16 +38,12 @@ contract PortfolioFactory {
     /**
      * @dev Creates a new FortyAcresPortfolioAccount using centralized facet registry
      * @param portfolio The address for which to create an portfolio
-     * @return portfolioContract The address of the deployed FortyAcresPortfolioAccount contract
+     * @return portfolio The address of the deployed FortyAcresPortfolioAccount contract
      */
-    function createAccount(address portfolio) external returns (address portfolioContract) {
-        // Check if portfolio already exists
-        if (portfolioExists[portfolio]) {
-            revert AccountAlreadyExists(portfolio);
-        }
-        
+    function createAccount(address user) external returns (address portfolio) {
+        require(portfolios[user] == address(0), AccountAlreadyExists(user));
         // Generate salt from portfolio address
-        bytes32 salt = keccak256(abi.encodePacked(portfolio));
+        bytes32 salt = keccak256(abi.encodePacked(user));
         
         // Encode constructor parameters for FortyAcresPortfolioAccount
         bytes memory bytecode = abi.encodePacked(
@@ -57,22 +52,21 @@ contract PortfolioFactory {
         );
         
         assembly {
-            portfolioContract := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
+            portfolio := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
         }
         
-        if (portfolioContract == address(0)) {
-            revert AccountCreationFailed(portfolio);
+        if (portfolio == address(0)) {
+            revert AccountCreationFailed(user);
         }
         
-        portfolios[portfolio] = portfolioContract;
-        portfolioOwners[portfolioContract] = portfolio;
-        portfolioExists[portfolio] = true;
-        portfolioAddresses.add(portfolioContract);
+        portfolios[user] = portfolio;
+        owners[portfolio] = user;
+        portfolioAddresses.add(portfolio);
         
         
-        emit AccountCreated(portfolio, portfolio, portfolioContract);
+        emit AccountCreated(user, portfolio);
         
-        return portfolioContract;
+        return portfolio;
     }
     
     /**
@@ -83,37 +77,19 @@ contract PortfolioFactory {
         return facetRegistry.getVersion();
     }
 
-    
-    /**
-     * @dev Get portfolio for a user
-     * @param user The user address
-     * @return The portfolio address
-     */
-    function getAccount(address user) external view returns (address) {
-        return portfolios[user];
+    function ownerOf(address portfolio) external view returns (address) {
+        return owners[portfolio];
     }
-    
-    /**
-     * @dev Check if portfolio exists
-     * @param portfolio The portfolio address
-     * @return True if portfolio exists
-     */
-    function isAccount(address portfolio) external view returns (bool) {
-        return portfolioExists[portfolio];
-    }
-    
-    /**
-     * @dev Gets the portfolio for a user
-     */
-    function getUserAccount(address _user) external view returns (address) {
-        return portfolios[_user];
+
+    function portfolioOf(address owner) external view returns (address) {
+        return portfolios[owner];
     }
 
     /**
      * @dev Checks if portfolio exists (check if owner exists)
      */
-    function isUserAccount(address _portfolio) external view virtual returns (bool) {
-        return portfolioOwners[_portfolio] != address(0);
+    function isPortfolio(address _portfolio) external view virtual returns (bool) {
+        return owners[_portfolio] != address(0);
     }
     
     function getAllPortfolios() external view returns (address[] memory) {

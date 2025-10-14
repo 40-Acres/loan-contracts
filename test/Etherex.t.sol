@@ -188,11 +188,11 @@ contract EtherexTest is Test {
         vm.stopPrank();
         vm.startPrank(user);
 
-        userAccount = portfolioFactory.getUserAccount(user);
+        userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -314,11 +314,11 @@ contract EtherexTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -366,11 +366,11 @@ contract EtherexTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -427,10 +427,10 @@ contract EtherexTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
             vm.stopPrank();
             vm.startPrank(user);
         }
@@ -487,10 +487,10 @@ contract EtherexTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
             vm.stopPrank();
             vm.startPrank(user);
         }
@@ -565,11 +565,11 @@ contract EtherexTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -632,11 +632,11 @@ contract EtherexTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -697,10 +697,9 @@ contract EtherexTest is Test {
         // create a new account
         address _user = address(0x123);
         portfolioFactory.createAccount(_user);
-        address newAccount = portfolioFactory.getAccount(_user);
-        assertTrue(portfolioFactory.isUserAccount(newAccount), "New account should be a user account");
-        assertEq(portfolioFactory.getAccountOwner(newAccount), _user, "New account owner should be the user");
-        assertEq(portfolioFactory.getUserAccount(_user), newAccount, "New account should be the user account");
+        address newAccount = portfolioFactory.portfolioOf(_user);
+        assertEq(portfolioFactory.ownerOf(newAccount), _user, "New account owner should be the user");
+        assertEq(portfolioFactory.portfolioOf(_user), newAccount, "Portfolio of user should be the new account");
         assertEq(portfolioFactory.getAllPortfolios().length, 2, "There should be 2 account");
         assertEq(portfolioFactory.getPortfoliosLength(), 2, "There should be 2 account");
         assertEq(portfolioFactory.getPortfolio(0), userAccount, "New account should be the first account");
@@ -918,7 +917,7 @@ contract EtherexTest is Test {
     }
 
     function testXRexClaimWithSpecificData() public {
-        // Set up the fork to the specific block
+                // Set up the fork to the specific block
         uint256 fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(24382375);

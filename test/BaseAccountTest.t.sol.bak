@@ -181,7 +181,7 @@ contract BaseAccountTest is Test {
         assertEq(PortfolioFactory.accounts(user), userAccount, "Account address should match");
         
         // Verify account properties through AccountStorage
-        address accountOwner = PortfolioFactory.getAccountOwner(userAccount);
+        address accountOwner = PortfolioFactory.ownerOf(userAccount);
         assertEq(accountOwner, user, "Account owner should be user");
         
         // Check what facets the account factory has

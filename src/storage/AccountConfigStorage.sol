@@ -36,7 +36,7 @@ contract AccountConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpg
     /**
      * @dev Get token storage data from named storage slot
      */
-    function _getAccountConfigStorage() internal pure returns (AccountConfigStorageData storage collateralStorage) {
+    function _portfolioOfConfigStorage() internal pure returns (AccountConfigStorageData storage collateralStorage) {
         bytes32 position = ACCOUNT_STORAGE_POSITION;
         assembly {
             collateralStorage.slot := position
@@ -44,22 +44,22 @@ contract AccountConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpg
     }
 
     function setApprovedContract(address addr, bool approved) public onlyOwner {
-        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        AccountConfigStorageData storage collateralStorage = _portfolioOfConfigStorage();
         collateralStorage.approvedContracts[addr] = approved;
     }
 
     function isApprovedContract(address addr) public view returns (bool) {
-        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        AccountConfigStorageData storage collateralStorage = _portfolioOfConfigStorage();
         return collateralStorage.approvedContracts[addr];
     }
 
     function setAuthorizedCaller(address addr, bool authorized) public onlyOwner {
-        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        AccountConfigStorageData storage collateralStorage = _portfolioOfConfigStorage();
         collateralStorage.authorizedCallers[addr] = authorized;
     }
 
     function isAuthorizedCaller(address addr) public view returns (bool) {
-        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        AccountConfigStorageData storage collateralStorage = _portfolioOfConfigStorage();
         return collateralStorage.authorizedCallers[addr];
     }
 }

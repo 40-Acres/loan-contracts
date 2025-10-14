@@ -222,11 +222,11 @@ contract AerodromeTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -302,11 +302,11 @@ contract AerodromeTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -357,11 +357,11 @@ contract AerodromeTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -419,10 +419,10 @@ contract AerodromeTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
             vm.stopPrank();
             vm.startPrank(user);
         }
@@ -480,10 +480,10 @@ contract AerodromeTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
             vm.stopPrank();
             vm.startPrank(user);
         }
@@ -561,11 +561,11 @@ contract AerodromeTest is Test {
         // user deposits the NFT to their account
         vm.startPrank(user);
         // approve AssetFacet to transfer the NFT
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         // create the user account if it doesn't exist
         if (userAccount == address(0)) {
             portfolioFactory.createAccount(user);
-            userAccount = portfolioFactory.getAccount(user);
+            userAccount = portfolioFactory.portfolioOf(user);
 
             // Authorize the user account to call CollateralStorage
             vm.stopPrank(); // Stop current prank
@@ -615,7 +615,7 @@ contract AerodromeTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         if (userAccount == address(0)) {
             userAccount = portfolioFactory.createAccount(user);
         }
@@ -713,7 +713,7 @@ contract AerodromeTest is Test {
 
         // user deposits the NFT to their account
         vm.startPrank(user);
-        address userAccount = portfolioFactory.getUserAccount(user);
+        address userAccount = portfolioFactory.portfolioOf(user);
         if (userAccount == address(0)) {
             userAccount = portfolioFactory.createAccount(user);
         }

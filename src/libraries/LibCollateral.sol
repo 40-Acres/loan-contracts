@@ -54,7 +54,7 @@ library LibCollateral {
      */
     function enforceIsPortfolioAccount() internal view {
         CollateralStorageData storage collateralStorageData = collateralStorage();
-        require(collateralStorageData.portfolioFactory.isAccount(msg.sender), "LibCollateral: Not a portfolio account");
+        require(collateralStorageData.portfolioFactory.ownerOf(msg.sender) != address(0), "LibCollateral: Not a portfolio account");
     }
 
     /**
