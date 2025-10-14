@@ -183,13 +183,13 @@ contract PharaohLoanV2 is Loan {
     function migrateNft(uint256 tokenId, address xPharaohLoan, address portfolioFactory) public onlyOwner {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower != address(0));
-        address portfolio = PortfolioFactory(portfolioFactory).getUserAccount(loan.borrower);
+        address portfolio = PortfolioFactory(portfolioFactory).portfolioOf(loan.borrower);
         (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
         _voter.reset(tokenId);
         IERC721(address(_ve)).approve(xPharaohLoan, tokenId);
         IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, tokenId, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption));
         // Get the portfolio address again after migration (it might have been created)
-        portfolio = PortfolioFactory(portfolioFactory).getUserAccount(loan.borrower);
+        portfolio = PortfolioFactory(portfolioFactory).portfolioOf(loan.borrower);
         (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
         require(previousBalance + loan.balance == postBalance);
         delete _loanDetails[tokenId];

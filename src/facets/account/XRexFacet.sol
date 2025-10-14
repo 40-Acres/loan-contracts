@@ -31,7 +31,7 @@ contract XRexFacet {
     }
 
     function xRexClaimCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
         IERC20(lockedAsset).approve(_voteModule, amount);
@@ -46,19 +46,19 @@ contract XRexFacet {
     }
 
     function xRexIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).increaseLoan(amount);
         address asset = address(IXLoan(loanContract)._vaultAsset());
         IERC20(asset).transfer(msg.sender, amount);
     }
 
     function xRexIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
     function xRexRequestLoan(uint256 collateralAmount, address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
 
         address asset = address(IXLoan(loanContract)._vaultAsset());
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
@@ -82,14 +82,14 @@ contract XRexFacet {
     }
 
     function xRexUserVote(address loanContract, address[] calldata pools, uint256[] calldata weights) external onlyApprovedContract(loanContract) {
-        require(msg.sender == _portfolioFactory.getAccountOwner(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).userVote(pools, weights);
         IVoteModule(_voteModule).delegate(address(0));
     }
     
     function xRexClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
-        address portfolioOwner = _portfolioFactory.getAccountOwner(address(this));
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         require(msg.sender == portfolioOwner || _accountConfigStorage.isAuthorizedCaller(msg.sender));
 
         // get beginning balance of preferred token and vault asset

@@ -239,7 +239,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
 
 
         // transfer the token to the contract if not a user account
-        require(isUserAccount(msg.sender));
+        require(isPortfolio(msg.sender));
 
         require(increasePercentage <= 10000);
         if(preferredToken != address(0)) {
@@ -268,7 +268,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         uint256 amount
     ) public  {
         require(amount > .01e6);
-        require(isUserAccount(msg.sender));
+        require(isPortfolio(msg.sender));
         
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[msg.sender];
@@ -458,7 +458,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      * @return totalRewards The total amount usdc claimed after fees.
      */
     function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
-        require(isUserAccount(msg.sender));
+        require(isPortfolio(msg.sender));
         LoanInfo storage loan = _loanDetails[msg.sender];
 
         // If the loan has no borrower or the token is not locked in the contract, exit early.
@@ -1069,13 +1069,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         return 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
     }
     
-    function isUserAccount(address owner) public view returns (bool) {
+    function isPortfolio(address portfolio) public view returns (bool) {
         address portfolioFactory = getPortfolioFactory();
-        if(portfolioFactory != address(0)) {
-            try PortfolioFactory(portfolioFactory).isUserAccount(owner) returns (bool exists) {
-                return exists;
-            } catch {}
-        }
-        return false;
+        return PortfolioFactory(portfolioFactory).ownerOf(portfolio) != address(0);
     }
 }

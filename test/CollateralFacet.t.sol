@@ -78,11 +78,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testAddNonfungibleCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add nonfungible collateral
@@ -95,11 +95,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testAddFungibleCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add fungible collateral
@@ -112,11 +112,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testAddTotalCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add total collateral
@@ -129,11 +129,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testRemoveNonfungibleCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add nonfungible collateral first
@@ -150,11 +150,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testRemoveFungibleCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add fungible collateral first
@@ -171,11 +171,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testRemoveTotalCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add total collateral first
@@ -192,11 +192,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testOnlyPortfolioAccountCanAddCollateral() public {
-        // Mock the portfolio factory to return false for isAccount
+        // Mock the portfolio factory to return false for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(false)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(0))
         );
         
         // Try to add collateral from non-portfolio account
@@ -206,11 +206,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testCannotAddDuplicateNonfungibleCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Add nonfungible collateral
@@ -224,11 +224,11 @@ contract CollateralFacetTest is Test {
     }
     
     function testCannotRemoveNonExistentCollateral() public {
-        // Mock the portfolio factory to return true for isAccount
+        // Mock the portfolio factory to return true for ownerOf
         vm.mockCall(
             address(portfolioFactory),
-            abi.encodeWithSelector(PortfolioFactory.isAccount.selector, testAccount),
-            abi.encode(true)
+            abi.encodeWithSelector(PortfolioFactory.ownerOf.selector, testAccount),
+            abi.encode(address(1))
         );
         
         // Try to remove non-existent collateral

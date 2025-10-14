@@ -167,11 +167,10 @@ contract BaseAccountTest is Test {
         console.log("FortyAcresPortfolioAccount (diamond) address:", userAccount);
         
         // Verify account creation
-        assertTrue(portfolioFactory.portfolioExists(user), "Account should exist");
         assertEq(portfolioFactory.portfolios(user), userAccount, "Account address should match");
         
         // Verify account properties through AccountStorage
-        address accountOwner = portfolioFactory.getAccountOwner(userAccount);
+        address accountOwner = portfolioFactory.ownerOf(userAccount);
         assertEq(accountOwner, user, "Account owner should be user");
         
         // Check what facets the account factory has
@@ -349,8 +348,6 @@ contract BaseAccountTest is Test {
         vm.stopPrank();
         
         // Verify both accounts exist
-        assertTrue(portfolioFactory.portfolioExists(user), "First account should exist");
-        assertTrue(portfolioFactory.portfolioExists(user2), "Second account should exist");
         assertEq(portfolioFactory.portfolios(user), userAccount1, "First account address should match");
         assertEq(portfolioFactory.portfolios(user2), userAccount2, "Second account address should match");
         

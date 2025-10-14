@@ -35,8 +35,8 @@ contract PortfolioFactoryCleanTest is Test {
         
         // Check account was created
         assertTrue(factory.isAccount(account));
-        assertEq(factory.getAccount(user), account);
-        assertEq(factory.getAccountCount(), 1);
+        assertEq(factory.portfolioOf(user), account);
+        assertEq(factory.portfolioOfCount(), 1);
     }
 
     function testAccountAlreadyExists() public {
@@ -63,6 +63,6 @@ contract PortfolioFactoryCleanTest is Test {
         address account2 = factory.createAccount(user2);
         
         // Check account count
-        assertEq(factory.getAccountCount(), 2);
+        assertEq(factory.portfolioOfCount(), 2);
     }
 }

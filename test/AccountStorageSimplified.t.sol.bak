@@ -29,8 +29,8 @@ contract AccountStorageSimplifiedTest is Test {
         
         // Check account exists
         assertTrue(PortfolioFactory.isUserAccount(account));
-        assertEq(PortfolioFactory.getAccountOwner(account), user);
-        assertEq(PortfolioFactory.getUserAccount(user), account);
+        assertEq(PortfolioFactory.ownerOf(account), user);
+        assertEq(PortfolioFactory.ownerOf(user), account);
     }
 
     function testAccountAlreadyExists() public {
@@ -54,7 +54,7 @@ contract AccountStorageSimplifiedTest is Test {
     function testAccountDoesNotExist() public {
         // Try to get owner of non-existent account
         vm.expectRevert();
-        PortfolioFactory.getAccountOwner(account);
+        PortfolioFactory.ownerOf(account);
     }
 
     function testisUserAccount() public {

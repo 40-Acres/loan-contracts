@@ -330,12 +330,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         bool isAccount = false;
         PortfolioFactory portfolioFactory = PortfolioFactory(getPortfolioFactory());
         if (address(portfolioFactory) != address(0)) {
-            try portfolioFactory.isUserAccount(msg.sender) returns (bool exists) {
-                isAccount = exists;
-            } catch {
-                // If the call fails, assume it's not a user account
-                isAccount = false;
-            }
+            isAccount = portfolioFactory.portfolioOf(msg.sender) != address(0);
         }
             
         require(_ve.ownerOf(tokenId) == address(this) || isAccount);
@@ -369,7 +364,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _outstandingCapital += amount;
 
         PortfolioFactory portfolioFactory = PortfolioFactory(getPortfolioFactory());
-        address userAccount = portfolioFactory.getAccountOwner(msg.sender);
+        address userAccount = portfolioFactory.portfolioOf(msg.sender);
         address borrower = userAccount == address(0) ? loan.borrower : userAccount;
         _asset.transferFrom(_vault, borrower, amount);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
@@ -567,7 +562,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         IERC20 asset = loan.preferredToken == address(0) ? _asset : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
-        address userAccount = PortfolioFactory(getPortfolioFactory()).getAccountOwner(msg.sender);
+        address userAccount = PortfolioFactory(getPortfolioFactory()).portfolioOf(msg.sender);
         address borrower = userAccount == address(0) ? loan.borrower : userAccount;
         require(asset.transfer(borrower, remaining));
     }
@@ -1507,11 +1502,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     
     function isUserAccount(address owner) public view returns (bool) {
         address portfolioFactory = getPortfolioFactory();
-        if(portfolioFactory != address(0)) {
-            try PortfolioFactory(portfolioFactory).isUserAccount(owner) returns (bool exists) {
-                return exists;
-            } catch {}
-        }
-        return false;
+        return PortfolioFactory(portfolioFactory).portfolioOf(owner) != address(0);
     }
 }
