@@ -113,8 +113,6 @@ contract AerodromeTest is Test {
         BaseDeploy deployer = new BaseDeploy();
         (loan, vault) = deployer.deployLoan();
 
-        // Deploy Account Factory system
-        _deployPortfolioFactory();
 
         vm.startPrank(address(deployer));
         loan.setMultiplier(100000000000);
@@ -174,17 +172,6 @@ contract AerodromeTest is Test {
         MockOdosRouterRL(ODOS).initMock(address(this));
         vm.prank(0x7269de76188E6597444D0859C4e5c336D3c39dDb);
         IERC20(aero).transfer(address(this), 10000e18);
-    }
-
-    function _deployPortfolioFactory() internal {
-        // Deploy FacetRegistry
-        FacetRegistry facetRegistry = new FacetRegistry();
-
-        // Deploy PortfolioFactory
-        portfolioFactory = new PortfolioFactory(
-            address(facetRegistry)
-        );
-
     }
 
     // helper for mock to mint USDC to a recipient

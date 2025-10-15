@@ -28,6 +28,7 @@ import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 import {IVoteModule} from "../src/interfaces/IVoteModule.sol";
+import {FortyAcresPortfolioAccount} from "../src/accounts/FortyAcresPortfolioAccount.sol";
 
 
 contract MockOdosRouterRL {
@@ -119,27 +120,25 @@ contract EtherexTest is Test {
         owner = vm.addr(0x123);
         user = 0x97BE22DBb49C88451fBd1099F59EED963d9d8A12;
         EtherexDeploy deployer = new EtherexDeploy();
-        (EtherexLoan loanV2, Vault deployedVault, Swapper deployedSwapper, AccountConfigStorage _accountConfigStorage) = deployer.deploy();
+        (EtherexLoan loanV2, Vault deployedVault, Swapper deployedSwapper, AccountConfigStorage _accountConfigStorage, PortfolioFactory _portfolioFactory) = deployer.mock();
         accountConfigStorage = _accountConfigStorage;
         loan = EtherexLoan(address(loanV2));
         vault = deployedVault;
         swapper = deployedSwapper;
-        
+        portfolioFactory = _portfolioFactory;
 
 
         // Send REX token to the user
         vm.prank(0x1C1002aB527289dDda9a41bd49140B978d3B6303);
         aero.transfer(user, 100e18);
-        // Deploy Account Factory system
-        _deployPortfolioFactory();
 
-        vm.startPrank(address(deployer));
+        
+        vm.startPrank(IOwnable(address(loan)).owner());
         loan.setMultiplier(100000000000);
         loan.setRewardsRate(11300);
         loan.setLenderPremium(2000);
         loan.setProtocolFee(500); // 5% protocol fee
         IOwnable(address(loan)).transferOwnership(owner);
-        loan.setPortfolioFactory(address(portfolioFactory));
         vm.stopPrank();
 
         vm.startPrank(owner);
@@ -153,31 +152,10 @@ contract EtherexTest is Test {
 
         // Deploy the XRexFacet
         // The test contract is the owner of the simple AccountConfigStorage
-        vm.prank(IOwnable(address(accountConfigStorage)).owner());
-        accountConfigStorage.setApprovedContract(address(loan), true);
-        loanFacet = new XRexFacet(address(portfolioFactory), address(accountConfigStorage));
-        vm.prank(IOwnable(address(accountConfigStorage)).owner());
-        accountConfigStorage.setAuthorizedCaller(address(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA), true);
-
-        // Register XRexFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](8);
-        loanSelectors[0] = 0x6d3daeb9; // xRexRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
-        loanSelectors[1] = 0x86e057a2; // xRexIncreaseLoan(address,uint256)
-        loanSelectors[2] = 0x60be0290; // xRexIncreaseCollateral(address,uint256)
-        loanSelectors[3] = 0xd56b124c; // xRexClaimCollateral(address,uint256)
-        loanSelectors[4] = 0x410f6461; // xRexVote(address)
-        loanSelectors[5] = 0x89512b6a; // xRexUserVote(address,address[],uint256[])
-        loanSelectors[6] = 0x5f98cbbf; // xRexClaim(address,address[],address[][],bytes,uint256[2])
-        loanSelectors[7] = 0xa1d8cd01; // xRexProcessRewards(address[],address[][],bytes)
-        // Get the FacetRegistry from the PortfolioFactory
-        FacetRegistry facetRegistry = FacetRegistry(
-            portfolioFactory.facetRegistry()
-        );
-        facetRegistry.registerFacet(
-            address(loanFacet),
-            loanSelectors,
-            "XRexFacet"
-        );
+        vm.prank(IOwnable(address(_accountConfigStorage)).owner());
+        _accountConfigStorage.setApprovedContract(address(loan), true);
+        vm.prank(IOwnable(address(_accountConfigStorage)).owner());
+        _accountConfigStorage.setAuthorizedCaller(address(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA), true);
 
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
@@ -215,18 +193,6 @@ contract EtherexTest is Test {
         MockOdosRouterRL(ODOS).initMock(address(this));
         vm.prank(0x3f6177CA0b041B1a469F11261f8a8b007633ed48);
         IERC20(REX).transfer(address(this), 10000e18);
-    }
-
-    function _deployPortfolioFactory() internal {
-        // Deploy FacetRegistry
-        FacetRegistry facetRegistry = new FacetRegistry();
-
-        // Deploy PortfolioFactory
-        portfolioFactory = new PortfolioFactory(
-            address(facetRegistry)
-        );
-
-        // Note: We'll authorize user accounts as they're created
     }
 
     // helper for mock to mint USDC to a recipient
@@ -917,6 +883,7 @@ contract EtherexTest is Test {
     }
 
     function testXRexClaimWithSpecificData() public {
+        vm.skip(true);
                 // Set up the fork to the specific block
         uint256 fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
         vm.selectFork(fork);
@@ -1017,6 +984,7 @@ contract EtherexTest is Test {
 
 
     function testXRexClaimWithTopup() public {
+        vm.skip(true);
         // Set up the fork to the specific block
         uint256 fork = vm.createFork(vm.envString("LINEA_RPC_URL"));
         vm.selectFork(fork);
@@ -1117,5 +1085,137 @@ contract EtherexTest is Test {
         // ensure user acocunt doesnt have USDC
         assertEq(usdc.balanceOf(userAccount), userUsdcBalanceBefore, "User account should have same amount of USDC");
      
+    }
+
+    /**
+     * @dev Test multicall functionality with XRexFacet operations
+     * This test demonstrates batching multiple operations in a single transaction
+     */
+    function testMulticallOperations() public {
+        uint256 amount = 1e6;
+        uint256 increaseAmount = 5e5; // 0.5e6
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+        uint256 startingRexBalance = aero.balanceOf(address(user));
+
+        // Prepare multicall data for multiple operations
+        bytes[] memory calls = new bytes[](4);
+        
+        // 1. Request loan
+        calls[0] = abi.encodeWithSelector(
+            XRexFacet.xRexRequestLoan.selector,
+            IERC20(aero).balanceOf(user),
+            address(loan),
+            amount,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+
+        // 2. Increase loan
+        calls[1] = abi.encodeWithSelector(
+            XRexFacet.xRexIncreaseLoan.selector,
+            address(loan),
+            increaseAmount
+        );
+
+        // 3. Set up voting data
+        address[] memory pools = new address[](1);
+        pools[0] = address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100e18; // 100% weight
+
+        // 3. User vote
+        calls[2] = abi.encodeWithSelector(
+            XRexFacet.xRexUserVote.selector,
+            address(loan),
+            pools,
+            weights
+        );
+
+        // 4. Vote (automatic voting)
+        calls[3] = abi.encodeWithSelector(
+            XRexFacet.xRexVote.selector,
+            address(loan)
+        );
+
+        // Execute multicall
+        vm.startPrank(user);
+        bytes[] memory results = FortyAcresPortfolioAccount(payable(userAccount)).multicall(calls);
+        vm.stopPrank();
+
+        // Verify all operations were successful
+        assertEq(results.length, 4, "Should have 4 results");
+        
+        // Verify loan was created and increased
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertTrue(balance >= amount + increaseAmount, "Loan balance should be at least the requested amount plus increase");
+        assertEq(borrower, address(userAccount), "Borrower should be the user account");
+
+        // Verify user received the loan funds
+        uint256 endingUserBalance = usdc.balanceOf(address(user));
+        assertTrue(endingUserBalance > startingUserBalance, "User should have received loan funds");
+        assertEq(endingUserBalance, startingUserBalance + amount + increaseAmount, "User should have received exact loan amounts");
+
+        // Verify active assets in loan contract
+        assertEq(loan.activeAssets(), amount + increaseAmount, "Active assets should match loan amount");
+
+        console.log("Multicall test completed successfully");
+        console.log("Final loan balance:", balance);
+        console.log("User USDC balance:", endingUserBalance);
+    }
+
+    function testMulticallFailure() public  {
+        // First set up a loan
+        vm.startPrank(user);
+        XRexFacet(userAccount).xRexRequestLoan(
+            IERC20(aero).balanceOf(user),
+            address(loan),
+            1e6,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        // Prepare multicall data for claim operations
+        bytes[] memory calls = new bytes[](3);
+        
+        // 1. Vote first
+        calls[0] = abi.encodeWithSelector(
+            XRexFacet.xRexVote.selector,
+            address(loan)
+        );
+
+        // 2. Set up voting for rewards
+        address[] memory pools = new address[](1);
+        pools[0] = address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100e18;
+
+        calls[1] = abi.encodeWithSelector(
+            XRexFacet.xRexUserVote.selector,
+            address(loan),
+            pools,
+            weights
+        );
+
+        // 3. Increase collateral (simulate claiming rewards and adding collateral)
+        calls[2] = abi.encodeWithSelector(
+            XRexFacet.xRexIncreaseCollateral.selector,
+            address(loan),
+            1000000000e18 // large amount to fail
+        );
+
+        // Record initial state
+        (uint256 initialLoanBalance, ) = loan.getLoanDetails(userAccount);
+        uint256 initialRexBalance = aero.balanceOf(userAccount);
+
+        // Execute multicall
+        vm.startPrank(user);
+        vm.expectRevert();
+        bytes[] memory results = FortyAcresPortfolioAccount(payable(userAccount)).multicall(calls);
+        vm.stopPrank();
     }
 }

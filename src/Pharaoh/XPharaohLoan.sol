@@ -26,8 +26,7 @@ import {IVoteModule} from "../interfaces/IVoteModule.sol";
 import {IXRex} from "../interfaces/IXRex.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 import {IXPharFacet} from "../interfaces/IXPharFacet.sol";
-
-
+import {PharaohLoanV2} from "./PharaohLoanV2.sol";
 
 contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
@@ -258,7 +257,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             increaseLoan(amount);
         }
 
-        // vote(msg.sender);
+        vote(msg.sender);
     }
 
     /**
@@ -831,9 +830,8 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      */
     function setApprovedPools(address[] calldata pools, bool enable) public virtual onlyOwner {
         for (uint256 i = 0; i < pools.length; i++) {
-            // confirm pool is a valid gauge
             address gauge = _voter.gaugeForPool(pools[i]);
-            if (enable) require(_voter.isAlive(gauge));
+            // if (enable) require(_voter.isAlive(gauge)); // pools are not alive
             _approvedPools[pools[i]] = enable;
         }
     }
@@ -1061,7 +1059,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @dev 40 Acres voting window is two hours prior to voting end
      */
     function _withinVotingWindow() internal view returns (bool) {
-        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 1 hours;
+        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 6 hours;
     }
 
     function currentEpochStart() internal view returns (uint256) {
@@ -1087,7 +1085,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @param increasePercentage The increase percentage of the NFT.
      * @param topUp The top-up option of the NFT.
      */
-    function migrateNft(address user, uint256 tokenId, uint256 balance, uint256 outstandingCapital, address preferredToken, uint256 increasePercentage, bool topUp, uint8 zeroBalanceOption) public {
+    function migrateNft(address user, uint256 tokenId, uint256 balance, uint256 outstandingCapital, address preferredToken, uint256 increasePercentage, bool topUp, uint8 zeroBalanceOption, uint256 unpaidFees) public {
         require(msg.sender == 0xf6A044c3b2a3373eF2909E2474f3229f23279B5F); // PHAR -> USDC Contract
         address portfolioFactory = getPortfolioFactory();
         address userAccount = PortfolioFactory(portfolioFactory).portfolioOf(user);
@@ -1096,10 +1094,12 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         }
         userAccount = PortfolioFactory(portfolioFactory).portfolioOf(user);
         require(userAccount != address(0));
+        _outstandingCapital += outstandingCapital;
         LoanInfo storage loan = _loanDetails[userAccount];
         if(loan.borrower != address(0)) {
             loan.balance += balance;
-            loan.outstandingCapital += balance;
+            loan.outstandingCapital += outstandingCapital;
+            loan.unpaidFees += unpaidFees;
             if(preferredToken != address(0) && loan.preferredToken == address(0)) {
                 loan.preferredToken = preferredToken;
             }
@@ -1117,6 +1117,10 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             }
             return;
         }
+        (uint256 loanOutstandingCapital, uint256 loanUnpaidFees, uint256 loanBalance) = PharaohLoanV2(msg.sender).getOutstandingCapital(tokenId);
+        require(outstandingCapital == loanOutstandingCapital);
+        require(unpaidFees == loanUnpaidFees);
+        require(balance == loanBalance);
         _loanDetails[userAccount] = LoanInfo({
             balance: balance,
             borrower: userAccount,
@@ -1124,12 +1128,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             outstandingCapital: outstandingCapital,
             zeroBalanceOption: XPharaohLoan.ZeroBalanceOption(uint8(zeroBalanceOption)),
             voteTimestamp: 0,
-            unpaidFees: 0,
+            unpaidFees: unpaidFees,
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
             topUp: topUp
         });
-        _outstandingCapital += outstandingCapital;
         IERC721(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F).transferFrom(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, userAccount, tokenId);
         IXPharFacet(userAccount).migratePharaohToXPharaoh(tokenId);
     }

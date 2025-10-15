@@ -23,13 +23,21 @@ contract EtherexDeploy is Script {
     address _asset = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
 
     function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         deploy();
+    }
+
+    function mock() public
+        returns (Loan, Vault, Swapper, AccountConfigStorage, PortfolioFactory) {
+        vm.startPrank(0x40FecA5f7156030b78200450852792ea93f7c6cd);
+        (Loan loan, Vault vault, Swapper swapper, AccountConfigStorage accountConfigStorage, PortfolioFactory portfolioFactory) = deploy();
+        vm.stopPrank();
+        return (loan, vault, swapper, accountConfigStorage, portfolioFactory);
     }
 
     function deploy()
         public
-        returns (Loan, Vault, Swapper, AccountConfigStorage)
+        returns (Loan, Vault, Swapper, AccountConfigStorage, PortfolioFactory)
     {
         AccountConfigStorage _accountConfigStorage = new AccountConfigStorage();
         ERC1967Proxy accountConfigStorageProxy = new ERC1967Proxy(
@@ -81,11 +89,12 @@ contract EtherexDeploy is Script {
         FacetRegistry facetRegistry = new FacetRegistry();
 
         // Deploy PortfolioFactory
-        PortfolioFactory portfolioFactory = new PortfolioFactory{salt: keccak256("portfolioFactory")}(
+
+        PortfolioFactory portfolioFactory = new PortfolioFactory(
             address(facetRegistry)
         );
 
-        console.log("PortfolioFactory:", address(portfolioFactory));
+        console.log("UniversalPortfolioFactory:", address(portfolioFactory));
 
         // Deploy swapper with Avalanche factory and router addresses
         swapper = new Swapper(
@@ -124,8 +133,7 @@ contract EtherexDeploy is Script {
             loanSelectors,
             "XRexFacet"
         );
-        loan.setPortfolioFactory(address(portfolioFactory));
-        return (loan, vault, swapper, accountConfigStorage);
+        return (loan, vault, swapper, accountConfigStorage, portfolioFactory);
     }
 }
 
@@ -143,10 +151,13 @@ contract EtherexUpgrade is Script {
         upgrade();
     }
 
+    function mock() public {
+        vm.startPrank(0x40FecA5f7156030b78200450852792ea93f7c6cd);
+        upgrade();
+        vm.stopPrank();
+    }
+
     function upgrade() public {
-        // AccountConfigStorage accountConfigStorageImpl = new AccountConfigStorage();
-        // AccountConfigStorage(address(_accountConfigStorage)).upgradeToAndCall(address(accountConfigStorageImpl), new bytes(0));
-        // _accountConfigStorage.setAuthorizedCaller(address(0xf161e7c79e0c0A3FD8D75A05A53A04E05B2034d3), true);
         XRexFacet xRexFacet = new XRexFacet(address(_portfolioFactory), address(_accountConfigStorage));
         FacetRegistry facetRegistry = FacetRegistry(address(_facetRegistry));
         Loan loanImplementation = new Loan();

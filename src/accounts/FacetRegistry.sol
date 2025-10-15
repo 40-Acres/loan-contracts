@@ -2,14 +2,14 @@
 pragma solidity ^0.8.28;
 
 import {IDiamondCut} from "../interfaces/IDiamondCut.sol";
-import {LibDiamond} from "../libraries/LibDiamond.sol";
-
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /**
  * @title FacetRegistry
  * @dev Central registry for managing facets across all accounts
  * This allows all accounts to share the same facet configuration
  */
-contract FacetRegistry {
+contract FacetRegistry is Ownable2Step {
     // Events
     event FacetAdded(address indexed facet, bytes4[] selectors);
     event FacetRemoved(address indexed facet);
@@ -28,28 +28,14 @@ contract FacetRegistry {
     mapping(address => bytes4[]) public facetSelectors;
     mapping(address => string) public facetNames;
     
-    // Modifiers
-    modifier onlyOwner() {
-        LibDiamond.enforceIsContractOwner();
-        _;
-    }
     
     modifier onlyRegisteredFacet(address facet) {
         require(registeredFacets[facet], "FacetRegistry: Facet not registered");
         _;
     }
 
-    constructor() {
-        LibDiamond.setContractOwner(msg.sender);
+    constructor() Ownable(tx.origin) {
         version = 1;
-    }
-
-    /**
-     * @dev Get the current owner
-     * @return The current owner address
-     */
-    function owner() external view returns (address) {
-        return LibDiamond.contractOwner();
     }
 
     /**

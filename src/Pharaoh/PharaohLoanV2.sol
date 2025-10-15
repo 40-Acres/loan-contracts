@@ -172,7 +172,15 @@ contract PharaohLoanV2 is Loan {
         _rewardsPerEpoch[currentEpochStart()] += amount;
         emit RewardsReceived(currentEpochStart(), amount, msg.sender, type(uint256).max);
     }
+    
 
+    function getOutstandingCapital(uint256 tokenId) public view returns (uint256, uint256, uint256) {
+        return (
+            _loanDetails[tokenId].outstandingCapital,
+            _loanDetails[tokenId].unpaidFees,
+            _loanDetails[tokenId].balance
+        );
+    }
 
     /**
      * @notice Migrates an NFT from Pharaoh Loan to XPharaoh Loan.
@@ -187,7 +195,7 @@ contract PharaohLoanV2 is Loan {
         (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
         _voter.reset(tokenId);
         IERC721(address(_ve)).approve(xPharaohLoan, tokenId);
-        IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, tokenId, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption));
+        IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, tokenId, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption), loan.unpaidFees);
         // Get the portfolio address again after migration (it might have been created)
         portfolio = PortfolioFactory(portfolioFactory).portfolioOf(loan.borrower);
         (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);

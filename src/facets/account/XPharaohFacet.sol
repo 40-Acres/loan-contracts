@@ -39,18 +39,18 @@ contract XPharaohFacet {
     }
 
     function xPharClaimCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        // require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         
-        address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
-        IERC20(lockedAsset).approve(_voteModule, amount);
-        IXRex(_xrex).approve(address(_rex33), amount);
-        IVoteModule(_voteModule).withdraw(amount);
-        IXLoan(loanContract).confirmClaimCollateral();
+        // address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
+        // IERC20(lockedAsset).approve(_voteModule, amount);
+        // IXRex(_xrex).approve(address(_rex33), amount);
+        // IVoteModule(_voteModule).withdraw(amount);
+        // IXLoan(loanContract).confirmClaimCollateral();
 
-        if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
-            address asset = address(IXLoan(loanContract)._lockedAsset());
-            CollateralStorage.removeTotalCollateral(asset);
-        }
+        // if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
+        //     address asset = address(IXLoan(loanContract)._lockedAsset());
+        //     CollateralStorage.removeTotalCollateral(asset);
+        // }
     }
 
     function xPharIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -98,7 +98,7 @@ contract XPharaohFacet {
     
     function xPharClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        require(msg.sender == portfolioOwner || _accountConfigStorage.isAuthorizedCaller(msg.sender));
+        require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
 
         // get beginning balance of preferred token and vault asset
         address vaultAsset = address(IXLoan(loanContract)._vaultAsset());
@@ -206,6 +206,12 @@ contract XPharaohFacet {
         uint256 assetsReceived = _rex33.redeem(amount, address(this), address(this));
     }
 
+
+    modifier onlyApprovedContract(address destination) {
+        require(_accountConfigStorage.isApprovedContract(destination));
+        _;
+    }
+    
     function xPharSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).setIncreasePercentage(increasePercentage);
@@ -232,12 +238,10 @@ contract XPharaohFacet {
         require(IERC721(_vePhar).ownerOf(tokenId) == address(this));
         IERC721(_vePhar).approve(0x2E1Ad4f8055D39442c86B1F40599293388277669, tokenId);
         PharaohMigrator(0x2E1Ad4f8055D39442c86B1F40599293388277669).migrateVe(tokenId);
-    }
-
-
-    modifier onlyApprovedContract(address destination) {
-        require(_accountConfigStorage.isApprovedContract(destination));
-        _;
+        IERC20 lockedAsset = IERC20(address(IXLoan(msg.sender)._lockedAsset()));
+        if(!CollateralStorage.getTotalCollateral(address(lockedAsset))) {
+            CollateralStorage.addTotalCollateral(address(lockedAsset));
+        }
     }
 
 }

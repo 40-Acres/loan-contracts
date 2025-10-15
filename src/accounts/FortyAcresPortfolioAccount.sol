@@ -44,7 +44,7 @@ contract FortyAcresPortfolioAccount {
         
         return results;
     }
-
+    
     /**
      * @dev Get facet for a function selector from centralized registry
      */

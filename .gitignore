@@ -17,3 +17,5 @@ docs/
 broadcast/
 
 temp/
+
+script/*.sh

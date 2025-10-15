@@ -15,49 +15,51 @@ import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
+
 contract XPharaohDeploy is Script {
     Swapper public swapper;
     address[] public supportedTokens;
     uint256 fork;
     address _rex = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     address _asset = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+    address _owner = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
+    Vault vault = Vault(0x124D00b1ce4453Ffc5a5F65cE83aF13A7709baC7);
 
     function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
+        console.log("Deploying XPharaohLoan from address:", msg.sender);
         deploy();
+        vm.stopBroadcast();
+    }
+
+    function mock() public
+        returns (Loan, Vault, Swapper, AccountConfigStorage, PortfolioFactory) {
+        vm.startPrank(0x40FecA5f7156030b78200450852792ea93f7c6cd);
+        (Loan loan, Vault vault, Swapper swapper, AccountConfigStorage accountConfigStorage, PortfolioFactory portfolioFactory) = deploy();
+        vm.stopPrank();
+        return (loan, vault, swapper, accountConfigStorage, portfolioFactory);
     }
 
     function deploy()
         public
-        returns (Loan, Vault, Swapper, AccountConfigStorage)
+        returns (Loan, Vault, Swapper, AccountConfigStorage, PortfolioFactory)
     {
         AccountConfigStorage _accountConfigStorage = new AccountConfigStorage();
         ERC1967Proxy accountConfigStorageProxy = new ERC1967Proxy(
             address(_accountConfigStorage),
             ""
         );
+        console.log("Deploying AccountConfigStorage address:", address(accountConfigStorageProxy));
         AccountConfigStorage accountConfigStorage = AccountConfigStorage(
             address(accountConfigStorageProxy)
         );
         accountConfigStorage.initialize();
         Loan loanImplementation = new Loan();
         ERC1967Proxy _loan = new ERC1967Proxy(address(loanImplementation), "");
-        VaultV2 vaultImplementation = new VaultV2();
-        ERC1967Proxy _vault = new ERC1967Proxy(
-            address(vaultImplementation),
-            ""
-        );
-
-        Vault vault = Vault(payable(_vault));
-        VaultV2(address(vault)).initialize(
-            address(_asset),
-            address(_loan),
-            "40ETHEREX-USDC-VAULT",
-            "40ETHEREX-USDC-VAULT"
-        );
+        console.log("Deploying Loan address:", address(_loan));
 
         Loan loan = Loan(payable(_loan));
-        Loan(address(loan)).initialize(address(_vault), _asset);
+        Loan(address(loan)).initialize(address(vault), _asset);
         loan.setProtocolFee(500);
         loan.setLenderPremium(2000);
         loan.setZeroBalanceFee(100);
@@ -77,14 +79,16 @@ contract XPharaohDeploy is Script {
         _supportedTokens[0] = _rex;
         _supportedTokens[1] = _asset;
         supportedTokens = _supportedTokens;
-
         FacetRegistry facetRegistry = new FacetRegistry();
 
         // Deploy PortfolioFactory
-        PortfolioFactory portfolioFactory = new PortfolioFactory{salt: "1"}(
+
+        PortfolioFactory portfolioFactory = new PortfolioFactory(
             address(facetRegistry)
         );
 
+
+        console.log("FacetRegistry:", address(facetRegistry));
         console.log("PortfolioFactory:", address(portfolioFactory));
         // Deploy swapper with Avalanche factory and router addresses
         swapper = new Swapper(
@@ -95,10 +99,6 @@ contract XPharaohDeploy is Script {
         loan.setSwapper(address(swapper));
 
         loan.setPortfolioFactory(address(portfolioFactory));
-        loan.transferOwnership(
-            address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0)
-        );
-
         accountConfigStorage.setApprovedContract(address(loan), true);
         XPharaohFacet loanFacet = new XPharaohFacet(
             address(portfolioFactory),
@@ -106,7 +106,7 @@ contract XPharaohDeploy is Script {
         );
 
         // Register XPharaohFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](8);
+        bytes4[] memory loanSelectors = new bytes4[](9);
         loanSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
         loanSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
         loanSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
@@ -115,6 +115,7 @@ contract XPharaohDeploy is Script {
         loanSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
         loanSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
         loanSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
+        loanSelectors[8] = 0x61622de4; // migratePharaohToXPharaoh(uint256)
 
         // Get the FacetRegistry from the PortfolioFactory
         facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
@@ -124,7 +125,16 @@ contract XPharaohDeploy is Script {
             "XPharaohFacet"
         );
         loan.setPortfolioFactory(address(portfolioFactory));
-        return (loan, vault, swapper, accountConfigStorage);
+
+        loan.transferOwnership(
+            address(_owner)
+        );
+        accountConfigStorage.transferOwnership(address(_owner));
+        facetRegistry.transferOwnership(address(_owner));
+    
+        accountConfigStorage.setApprovedContract(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, true);
+
+        return (loan, vault, swapper, accountConfigStorage, portfolioFactory);
     }
 }
 
@@ -140,6 +150,12 @@ contract XPharaohUpgrade is Script {
     function run() external  {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         upgrade();
+    }
+
+    function mock() public {
+        vm.startPrank(0x40FecA5f7156030b78200450852792ea93f7c6cd);
+        upgrade();
+        vm.stopPrank();
     }
 
     function upgrade() public {
@@ -176,6 +192,6 @@ contract XPharaohUpgrade is Script {
 
 }
 
-// forge script script/XPharaohDeploy.s.sol:XPharaohDeploy  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
-// forge script script/XPharaohDeploy.s.sol:XPharaohDepositNft  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
-// forge script script/XPharaohDeploy.s.sol:XPharaohUpgrade  --chain-id 59144 --rpc-url $LINEA_RPC_URL --etherscan-api-key $LINEASCAN_API_KEY --broadcast --verify --via-ir --evm-version london
+// forge script script/XPharaohDeploy.s.sol:XPharaohDeploy  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
+// forge script script/XPharaohDeploy.s.sol:XPharaohDepositNft  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
+// forge script script/XPharaohDeploy.s.sol:XPharaohUpgrade  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
