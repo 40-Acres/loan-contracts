@@ -190,7 +190,7 @@ contract PharaohLoanV2 is Loan {
      */
     function migrateNft(uint256 tokenId, address xPharaohLoan, address portfolioFactory) public onlyOwner {
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower != address(0));
+        require(loan.borrower != address(0), "no borrower");
         address portfolio = PortfolioFactory(portfolioFactory).portfolioOf(loan.borrower);
         (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
         _voter.reset(tokenId);

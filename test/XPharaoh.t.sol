@@ -16,9 +16,8 @@ import {ProtocolTimeLibrary} from "src/libraries/ProtocolTimeLibrary.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
-import {XPharaohDeploy} from "../script/XPharaohDeploy.s.sol";
+import {XPharaohDeploy, XPharaohUpgrade} from "../script/XPharaohDeploy.s.sol";
 import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
-import {XPharaohUpgrade} from "../script/XPharaohDeploy.s.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import {Swapper} from "../src/Swapper.sol";
@@ -35,6 +34,7 @@ import {ILoan} from "../src/interfaces/ILoan.sol";
 import { Loan as Loanv2 } from "../src/LoanV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
+import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 
 contract MockOdosRouterRL {
     address public testContract;
@@ -910,3 +910,49 @@ contract XPharaohTest is Test {
     }
 }
 
+contract XPharaohProdTest is Test {
+    XPharaohFacet xphar = XPharaohFacet(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
+
+
+    function testVoting() public {
+        uint256 fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
+        vm.selectFork(fork);
+
+
+        XPharaohUpgrade deployer = new XPharaohUpgrade();
+        deployer.upgrade();
+        address user = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
+
+        address impl = address(new PharaohLoanV2());
+        vm.prank(IOwnable(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).owner());
+        PharaohLoanV2(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).upgradeToAndCall(impl, "");
+
+
+        XPharaohLoan xPharaohLoan = new XPharaohLoan();
+        vm.prank(IOwnable(address(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C)).owner());
+        PharaohLoanV2(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C).upgradeToAndCall(address(xPharaohLoan), "");
+
+        address owner = IOwnable(address(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C)).owner();
+
+        address[] memory pools = new address[](1);
+        pools[0] = address(0xf01449C0bA930B6e2CaCA3DEF3CCBd7a3E589534);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100e18; // 100% weight
+
+
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
+        vm.prank(owner);
+        PharaohLoanV2(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).migrateNft(6794, 0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C, 0x52d43C377e498980135C8F2E858f120A18Ea96C2);
+        vm.startPrank(0x168E8D263634ef25Ef84a643d231ae39CEB75909);
+        // console.log(user);
+        // address userPortfolio = PortfolioFactory(0x52d43C377e498980135C8F2E858f120A18Ea96C2).portfolioOf(0x168E8D263634ef25Ef84a643d231ae39CEB75909);
+
+        // XPharaohFacet(userPortfolio).xPharUserVote(
+        //     address(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C),
+        //     pools,
+        //     weights
+        // );
+    }
+
+}

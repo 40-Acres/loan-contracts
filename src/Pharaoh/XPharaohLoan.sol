@@ -27,6 +27,7 @@ import {IXRex} from "../interfaces/IXRex.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 import {IXPharFacet} from "../interfaces/IXPharFacet.sol";
 import {PharaohLoanV2} from "./PharaohLoanV2.sol";
+import {console} from "forge-std/console.sol";
 
 contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
@@ -75,82 +76,86 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
     
     /**
      * @dev Emitted when collateral is added to a loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the owner adding the collateral.
      * @param option The zero balance option chosen for the loan.
      */
     
-    event CollateralAdded(address owner, ZeroBalanceOption option);
+    event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
 
     /**
      * @dev Emitted when collateral is withdrawn from a loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the owner withdrawing the collateral.
      */
-    event CollateralWithdrawn(address owner);
+    event CollateralWithdrawn(uint256 tokenId, address owner);
     
     /**
      * @dev Emitted when funds are borrowed against a loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the borrower.
      * @param amount The amount of funds borrowed.
      */
-    event FundsBorrowed(address owner, uint256 amount);
+    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
     
     /**
      * @dev Emitted when rewards are received for a loan.
      * @param epoch The epoch during which the rewards were received.
      * @param amount The amount of rewards received.
      * @param borrower The address of the borrower receiving the rewards.
+     * @param tokenId The ID of the token representing the loan.
      */
     
-    event RewardsReceived(uint256 epoch, uint256 amount, address borrower);
+    event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     /**
      * @dev Emitted when rewards are sent to the vault to lenders as a premium.
+     * @param tokenId The ID of the token representing the loan.
      * @param borrower The address of the borrower repaying the loan.
      * @param amount The amount repaid.
      * @param epoch The epoch during which the repayment occurred.
      * @param isManual Indicates whether the repayment was manual.
      */
     
-    event LoanPaid(address borrower, uint256 amount, uint256 epoch, bool isManual);
+    event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch, bool isManual);
     /**
      * @dev Emitted when rewards are used to repay a loan balance.
      * @param epoch The epoch during which the rewards were invested.
      * @param amount The amount of rewards invested.
      * @param borrower The address of the borrower whose rewards were invested.
+     * @param tokenId The ID of the token representing the loan.
      */
-    event RewardsInvested(uint256 epoch, uint256 amount, address borrower);
+    event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     
     /**
      * @dev Total Rewards (Fees/Bribes) Claimed for a token.
      * @param epoch The epoch during which the rewards were claimed.
      * @param amount The amount of rewards claimed.
      * @param borrower The address of the borrower claiming the rewards.
+     * @param tokenId The ID of the token representing the loan.
      * @param token The address of the token in which the rewards are claimed.
      */
     
-    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, address token);
+    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when rewards are paid to the owner of the loan.
      * @param epoch The epoch during which the rewards were paid.
      * @param amount The amount of rewards paid.
      * @param borrower The address of the borrower associated with the loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param token The address of the token in which the rewards are paid.
      */
-    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, address token);    
-    
-    /**
-     * @dev Emitted when a loan's borrower is updated by an authorized caller.
-     */
-    event BorrowerChanged(address indexed previousBorrower, address indexed newBorrower, address caller);
+    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);    
     
     /**
      * @dev Emitted when the protocol fee is paid.
      * @param epoch The epoch during which the fee was paid.
      * @param amount The amount of the protocol fee paid.
      * @param borrower The address of the borrower paying the fee.
+     * @param tokenId The ID of the token representing the loan.
      */
     
-    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, address token);
-    
+    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
+
     /**
      * @dev Emitted when a flash loan is executed.
      * @param receiver The address of the contract receiving the funds.
@@ -226,6 +231,8 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         address preferredToken,
         bool topUp
     ) public virtual {
+        LoanInfo memory loan = _loanDetails[msg.sender];
+        require(loan.borrower == address(0));
         _loanDetails[msg.sender] = LoanInfo({
             balance: 0,
             borrower: msg.sender,
@@ -293,7 +300,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
         _vaultAsset.transferFrom(_vault, loan.borrower, amount);
-        emit FundsBorrowed(loan.borrower, amount);
+        emit FundsBorrowed(0, loan.borrower, amount);
     }
 
     /**
@@ -340,8 +347,8 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             loan.unpaidFees -= feesPaid;
             loan.balance -= feesPaid;
             _vaultAsset.transfer(owner(), feesPaid);
-            emit LoanPaid(loan.borrower, feesPaid, currentEpochStart(), isManual);
-            emit ProtocolFeePaid(currentEpochStart(), feesPaid, loan.borrower, address(_vaultAsset));
+            emit LoanPaid(0, loan.borrower, feesPaid, currentEpochStart(), isManual);
+            emit ProtocolFeePaid(currentEpochStart(), feesPaid, loan.borrower, 0, address(_vaultAsset));
             if(amount == 0) {
                 return;
             }
@@ -367,7 +374,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         }
 
         _vaultAsset.transfer(_vault, amount);
-        emit LoanPaid(loan.borrower, amount, currentEpochStart(), isManual);
+        emit LoanPaid(0, loan.borrower, amount, currentEpochStart(), isManual);
         // if there is an excess payment, handle it according to the zero balance option
         if (excess > 0) {
             _handleZeroBalance(borrower, excess, excess, true);
@@ -424,13 +431,13 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(_vaultAsset));
             _vaultAsset.approve(_vault, remaining);
             IERC4626(_vault).deposit(remaining, loan.borrower);
-            emit RewardsInvested(currentEpochStart(), remaining, loan.borrower);
+            emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
             return;
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _vaultAsset : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
-        emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, address(asset));
+        emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(loan.borrower, remaining));
     }
 
@@ -447,7 +454,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
     function _payZeroBalanceFee(address borrower, address borrowerAddr, uint256 remaining, uint256 totalRewards, address token) internal returns (uint256) {
         uint256 zeroBalanceFee = (totalRewards * getZeroBalanceFee()) / 10000;
         IERC20(token).transfer(owner(), zeroBalanceFee);
-        emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, address(token));
+        emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, 0, address(token));
         return zeroBalanceFee;
     }
 
@@ -499,7 +506,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
 
         require(rewardsAmount > 0 || aeroAmount > 0);
         // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, address(rewardToken));
+        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, 0, address(rewardToken));
 
 
         // Handle zero balance case
@@ -521,7 +528,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @return The address of the ODOS Router contract.
      */
     function odosRouter() public virtual pure returns (address) {
-        return 0x2d8879046f1559E53eb052E949e9544bCB72f414; // ODOS Router address
+        return 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC; // ODOS Router address
     }
 
     /**
@@ -538,7 +545,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         uint256 totalRewards,
         uint256 amountToIncrease
     ) internal {
-        _increaseCollateral(loan, amountToIncrease, true);
+        // _increaseCollateral(loan, amountToIncrease, true);
         _handleZeroBalance(loan.borrower, remaining, totalRewards, false);
     }
 
@@ -563,7 +570,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         remaining -= _processFees(loan, feeEligibleAmount, remaining);
         
         // Handle NFT increase
-        _increaseCollateral(loan, amountToIncrease, false);
+        // _increaseCollateral(loan, amountToIncrease, false);
         
         _pay(loan.borrower, remaining, false);
     }
@@ -585,7 +592,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         // Calculate and transfer protocol fee
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
         _vaultAsset.transfer(owner(), protocolFee);
-        emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, address(_vaultAsset));
+        emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, 0, address(_vaultAsset));
 
         // Calculate and transfer lender premium
         uint256 lenderPremium = (totalRewards * getLenderPremium()) / 10000;
@@ -632,7 +639,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
     }
 
     /**
-     * @notice Allows the borrower to claim their collateral (veNFT) after the loan is fully repaid.
      * @dev This function ensures that only the borrower can claim the collateral and that the loan is fully repaid.
      *      If the loan balance is greater than zero, the collateral cannot be claimed.
      */
@@ -646,7 +652,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
 
         if(_getLockedAmount(msg.sender) == 0) {
             require(loan.balance == 0);
-            emit CollateralWithdrawn(msg.sender);
+            emit CollateralWithdrawn(0, msg.sender);
             delete _loanDetails[msg.sender];
         }
     }
@@ -680,7 +686,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
     function recordRewards(uint256 rewards, address borrower) internal virtual {
         if (rewards > 0) {
             _rewardsPerEpoch[currentEpochStart()] += rewards;
-            emit RewardsReceived(currentEpochStart(), rewards, borrower);
+            emit RewardsReceived(currentEpochStart(), rewards, borrower, 0);
         }
     }
 
@@ -952,6 +958,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         address[] calldata pools,
         uint256[] calldata weights
     ) public {
+        console.log("User voting for pools");
         // if pools/weights are empty, reset timestamp so user will be in automatic voting mode
         if(pools.length == 0 && weights.length == 0) {
             LoanInfo storage loan = _loanDetails[msg.sender];
@@ -959,7 +966,8 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             loan.voteTimestamp = 0;
             return;
         }
-        _validatePoolChoices(pools, weights);
+        // _validatePoolChoices(pools, weights);
+        console.log("User voting for pools");
         _vote(msg.sender, pools, weights);
     }
 
@@ -1093,7 +1101,9 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             PortfolioFactory(portfolioFactory).createAccount(user);
         }
         userAccount = PortfolioFactory(portfolioFactory).portfolioOf(user);
-        require(userAccount != address(0));
+        IERC721(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F).transferFrom(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, userAccount, tokenId);
+        IXPharFacet(userAccount).migratePharaohToXPharaoh(tokenId);
+        require(userAccount != address(0), "No Portfolio");
         _outstandingCapital += outstandingCapital;
         LoanInfo storage loan = _loanDetails[userAccount];
         if(loan.borrower != address(0)) {
@@ -1117,10 +1127,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             }
             return;
         }
-        (uint256 loanOutstandingCapital, uint256 loanUnpaidFees, uint256 loanBalance) = PharaohLoanV2(msg.sender).getOutstandingCapital(tokenId);
-        require(outstandingCapital == loanOutstandingCapital);
-        require(unpaidFees == loanUnpaidFees);
-        require(balance == loanBalance);
         _loanDetails[userAccount] = LoanInfo({
             balance: balance,
             borrower: userAccount,
@@ -1133,8 +1139,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             increasePercentage: increasePercentage,
             topUp: topUp
         });
-        IERC721(0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F).transferFrom(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, userAccount, tokenId);
-        IXPharFacet(userAccount).migratePharaohToXPharaoh(tokenId);
     }
 
 }

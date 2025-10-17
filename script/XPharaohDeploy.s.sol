@@ -15,6 +15,12 @@ import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
+import {PharaohLoanV2} from "../src/Pharaoh/PharaohLoanV2.sol";
+import {Vault as PharaohVault} from "../src/Pharaoh/PharaohVault.sol";
+interface IOwnable {
+    function owner() external view returns (address);
+}
+
 
 contract XPharaohDeploy is Script {
     Swapper public swapper;
@@ -28,7 +34,7 @@ contract XPharaohDeploy is Script {
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         console.log("Deploying XPharaohLoan from address:", msg.sender);
-        deploy();
+        new PharaohLoanV2();
         vm.stopBroadcast();
     }
 
@@ -119,18 +125,24 @@ contract XPharaohDeploy is Script {
 
         // Get the FacetRegistry from the PortfolioFactory
         facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
+        address owner = IOwnable(address(facetRegistry)).owner();
+        console.log("FacetRegistry owner:", owner);
+        vm.stopPrank();
+        vm.startPrank(owner);
         facetRegistry.registerFacet(
             address(loanFacet),
             loanSelectors,
             "XPharaohFacet"
         );
+        facetRegistry.transferOwnership(address(_owner));
+        vm.stopPrank();
+        vm.startPrank(0x40FecA5f7156030b78200450852792ea93f7c6cd);
         loan.setPortfolioFactory(address(portfolioFactory));
 
         loan.transferOwnership(
             address(_owner)
         );
         accountConfigStorage.transferOwnership(address(_owner));
-        facetRegistry.transferOwnership(address(_owner));
     
         accountConfigStorage.setApprovedContract(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, true);
 
@@ -138,17 +150,16 @@ contract XPharaohDeploy is Script {
     }
 }
 
-
 contract XPharaohUpgrade is Script {
     address[] public supportedTokens;
     uint256 fork;
-    AccountConfigStorage _accountConfigStorage = AccountConfigStorage(0x65EC3E4E01bD6DF8806106374c0Aa40FF2C5a6c3);
-    FacetRegistry _facetRegistry = FacetRegistry(0x1A37F063D6423f4158AB8cD2D172378678F87093);
-    PortfolioFactory _portfolioFactory = PortfolioFactory(0x2155F306d2806d745427A3E04721e8Cf6F8327dd);
-    Loan _loan = Loan(0xCca5628DF6e5B16a1610d62467df34E07317A891);
+    AccountConfigStorage _accountConfigStorage = AccountConfigStorage(0x17cd3c65daf5b2F806d053D948Ad7d59191fd397);
+    FacetRegistry _facetRegistry = FacetRegistry(0x9bCa68D9c613Dc9B07B2727c28b5ce46204943de);
+    PortfolioFactory _portfolioFactory = PortfolioFactory(0x52d43C377e498980135C8F2E858f120A18Ea96C2);
+    Loan _loan = Loan(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C);
 
     function run() external  {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         upgrade();
     }
 
@@ -159,36 +170,38 @@ contract XPharaohUpgrade is Script {
     }
 
     function upgrade() public {
-        // AccountConfigStorage accountConfigStorageImpl = new AccountConfigStorage();
-        // AccountConfigStorage(address(_accountConfigStorage)).upgradeToAndCall(address(accountConfigStorageImpl), new bytes(0));
-        // _accountConfigStorage.setAuthorizedCaller(address(0xf161e7c79e0c0A3FD8D75A05A53A04E05B2034d3), true);
         XPharaohFacet xPharaohFacet = new XPharaohFacet(address(_portfolioFactory), address(_accountConfigStorage));
-        FacetRegistry facetRegistry = FacetRegistry(address(_facetRegistry));
-        Loan loanImplementation = new Loan();
+// 
+        // new XPharaohFacet();
 
-        vm.startPrank(0x97BE22DBb49C88451fBd1099F59EED963d9d8A12);
-        _loan.upgradeToAndCall(address(loanImplementation), new bytes(0));
 
-        // All selectors for the new XPharaohFacet (including the new xPharProcessRewards function)
-        bytes4[] memory newSelectors = new bytes4[](8);
-        newSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
-        newSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
-        newSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
-        newSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
-        newSelectors[4] = 0x31f84426; // xPharVote(address)
-        newSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
-        newSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
-        newSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
+        // // PharaohVault vaultImpl = new PharaohVault();
+        // console.log("PharaohVault:", address(vaultImpl));
+        // vm.startPrank(IOwnable(address(_loan)).owner());
+        // FacetRegistry facetRegistry = FacetRegistry(address(_facetRegistry));
 
-        // Replace the old facet with the new one (this handles removal and registration in one call)
-        _facetRegistry.replaceFacet(
-            0x7aF55307660d3e42088a8cAE0e36Fe6d001d00aa, // old facet address
-            address(xPharaohFacet), // new facet address
-            newSelectors,
-            "XPharaohFacet"
-        );
+        // // All selectors for the new XPharoFacet" (including the new xRexProcessRewards function)
+        // bytes4[] memory newSelectors = new bytes4[](9);
+        // newSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
+        // newSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
+        // newSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
+        // newSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
+        // newSelectors[4] = 0x31f84426; // xPharVote(address)
+        // newSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
+        // newSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
+        // newSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
+        // newSelectors[8] = 0x61622de4; // migratePharaohToXPharaoh(uint256)
+
+        // // Replace the old facet with the new one (this handles removal and registration in one call)
+        // _facetRegistry.replaceFacet(
+        //     0x150c52c1E8707C2E4372974e352BBf20baFAF08D, // old facet address
+        //     address(xPharaohFacet), // new facet address
+        //     newSelectors,
+        //     "XPharaohFacet"
+        // );
 
     }
+
 
 }
 

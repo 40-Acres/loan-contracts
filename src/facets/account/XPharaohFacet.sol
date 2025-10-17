@@ -145,7 +145,7 @@ contract XPharaohFacet {
         address[] calldata gauges,
         address[][] calldata tokens,
         bytes calldata tradeData
-    ) virtual public {
+    ) virtual public onlyApprovedContract(msg.sender)  {
         address vaultAsset = address(IXLoan(msg.sender)._vaultAsset());
         uint256 beginningAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
         uint256 beginningPreferredTokenBalance;
@@ -239,6 +239,9 @@ contract XPharaohFacet {
         IERC721(_vePhar).approve(0x2E1Ad4f8055D39442c86B1F40599293388277669, tokenId);
         PharaohMigrator(0x2E1Ad4f8055D39442c86B1F40599293388277669).migrateVe(tokenId);
         IERC20 lockedAsset = IERC20(address(IXLoan(msg.sender)._lockedAsset()));
+        IERC20(lockedAsset).approve(_voteModule, type(uint256).max);
+        IVoteModule(_voteModule).depositAll();
+        IERC20(lockedAsset).approve(_voteModule, 0);
         if(!CollateralStorage.getTotalCollateral(address(lockedAsset))) {
             CollateralStorage.addTotalCollateral(address(lockedAsset));
         }
