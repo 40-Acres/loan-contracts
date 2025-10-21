@@ -39,18 +39,18 @@ contract XPharaohFacet {
     }
 
     function xPharClaimCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
-        // require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         
-        // address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
-        // IERC20(lockedAsset).approve(_voteModule, amount);
-        // IXRex(_xrex).approve(address(_rex33), amount);
-        // IVoteModule(_voteModule).withdraw(amount);
-        // IXLoan(loanContract).confirmClaimCollateral();
+        address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
+        IERC20(lockedAsset).approve(_voteModule, amount);
+        IXRex(_xrex).approve(address(_rex33), amount);
+        IVoteModule(_voteModule).withdraw(amount);
+        IXLoan(loanContract).confirmClaimCollateral();
 
-        // if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
-        //     address asset = address(IXLoan(loanContract)._lockedAsset());
-        //     CollateralStorage.removeTotalCollateral(asset);
-        // }
+        if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
+            address asset = address(IXLoan(loanContract)._lockedAsset());
+            CollateralStorage.removeTotalCollateral(asset);
+        }
     }
 
     function xPharIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -62,6 +62,7 @@ contract XPharaohFacet {
 
     function xPharIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        _rex33.transferFrom(msg.sender, address(this), amount);
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
@@ -204,6 +205,8 @@ contract XPharaohFacet {
     function _increaseCollateral(uint256 amount, address lockedAsset) internal {
         _rex33.approve(_voteModule, amount);
         uint256 assetsReceived = _rex33.redeem(amount, address(this), address(this));
+        IERC20(lockedAsset).approve(_voteModule, assetsReceived);
+        IVoteModule(_voteModule).deposit(assetsReceived);
     }
 
 

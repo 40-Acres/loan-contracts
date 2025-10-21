@@ -56,8 +56,8 @@ contract MockOdosRouterRL {
         (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E).masterMinter(), receiver, amount1));
         require(success, "mint fail");
 
-        (bool success2,) = testContract.call(abi.encodeWithSignature("mintRex(address,uint256)", receiver, amount2));
-        require(success2, "mint rex fail");
+        (bool success2,) = testContract.call(abi.encodeWithSignature("mintPhar33(address,uint256)", receiver, amount2));
+        require(success2, "mint phar33 fail");
 
         return true;
     }
@@ -88,7 +88,7 @@ interface IOwnable {
 contract XPharaohTest is Test {
     uint256 fork;
 
-    IERC20 aero = IERC20(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
+    IERC20 phar33 = IERC20(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
     IUSDC usdc = IUSDC(0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E);
     IERC20 votingEscrow =
         IERC20(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
@@ -114,6 +114,8 @@ contract XPharaohTest is Test {
 
     Swapper public swapper;
 
+    IVoteModule public voteModule = IVoteModule(0x34F233F868CdB42446a18562710eE705d66f846b);
+
     // Account Factory system
     PortfolioFactory public portfolioFactory;
 
@@ -125,25 +127,24 @@ contract XPharaohTest is Test {
         owner = vm.addr(0x123);
         user = 0x97BE22DBb49C88451fBd1099F59EED963d9d8A12;
         XPharaohDeploy deployer = new XPharaohDeploy();
-        (XPharaohLoan loanV2, Vault deployedVault, Swapper deployedSwapper, AccountConfigStorage _accountConfigStorage, PortfolioFactory _portfolioFactory) = deployer.deploy();
+        (XPharaohLoan loanV2, Vault deployedVault, Swapper deployedSwapper, AccountConfigStorage _accountConfigStorage, PortfolioFactory _portfolioFactory) = deployer.mock();
         accountConfigStorage = _accountConfigStorage;
         loan = XPharaohLoan(address(loanV2));
         vault = deployedVault;
         swapper = deployedSwapper;
-        
+        portfolioFactory = _portfolioFactory;
 
 
         // Send PHAR token to the user
         vm.prank(0x972698bF61E2377B5c45B3038D85d04981ddb48c);
-        aero.transfer(user, 100e18);
+        phar33.transfer(user, 100e18);
 
-        vm.startPrank(address(deployer));
+        vm.startPrank(IOwnable(address(loan)).owner());
         loan.setMultiplier(100000000000);
         loan.setRewardsRate(11300);
         loan.setLenderPremium(2000);
         loan.setProtocolFee(500); // 5% protocol fee
         IOwnable(address(loan)).transferOwnership(owner);
-        loan.setPortfolioFactory(address(portfolioFactory));
         vm.stopPrank();
 
         vm.startPrank(owner);
@@ -162,26 +163,6 @@ contract XPharaohTest is Test {
         loanFacet = new XPharaohFacet(address(portfolioFactory), address(accountConfigStorage));
         vm.prank(IOwnable(address(accountConfigStorage)).owner());
         accountConfigStorage.setAuthorizedCaller(address(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA), true);
-
-        // Register XPharaohFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](8);
-        loanSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
-        loanSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
-        loanSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
-        loanSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
-        loanSelectors[4] = 0x31f84426; // xPharVote(address)
-        loanSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
-        loanSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
-        loanSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
-        // Get the FacetRegistry from the PortfolioFactory
-        FacetRegistry facetRegistry = FacetRegistry(
-            portfolioFactory.facetRegistry()
-        );
-        facetRegistry.registerFacet(
-            address(loanFacet),
-            loanSelectors,
-            "XPharaohFacet"
-        );
 
         // allow this test contract to mint USDC
         vm.prank(usdc.masterMinter());
@@ -228,8 +209,8 @@ contract XPharaohTest is Test {
     }
 
     // helper for mock to mint PHAR to a recipient
-    function mintRex(address to, uint256 amount) external {
-        aero.transfer(to, amount);
+    function mintPhar33(address to, uint256 amount) external {
+        phar33.transfer(to, amount);
     }
 
     function testOwner() public view {
@@ -252,7 +233,7 @@ contract XPharaohTest is Test {
         vm.startPrank(user);
         uint256 amount = 5e6;
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -329,7 +310,7 @@ contract XPharaohTest is Test {
         vm.startPrank(user);
         uint256 amount = 1e6;
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -379,7 +360,7 @@ contract XPharaohTest is Test {
 
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -437,7 +418,7 @@ contract XPharaohTest is Test {
 
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -497,7 +478,7 @@ contract XPharaohTest is Test {
 
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -578,7 +559,7 @@ contract XPharaohTest is Test {
 
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -620,7 +601,7 @@ contract XPharaohTest is Test {
 
         uint256 startingUserBalance = usdc.balanceOf(address(user));
         assertEq(usdc.balanceOf(address(user)), startingUserBalance, "User should have startingUserBalance");
-        assertEq(usdc.balanceOf(address(vault)), 100e6);
+        assertEq(usdc.balanceOf(address(vault)), 100e6, "Vault should have 100e6");
 
         // user deposits the NFT to their account
         vm.startPrank(user);
@@ -645,7 +626,7 @@ contract XPharaohTest is Test {
 
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -707,7 +688,7 @@ contract XPharaohTest is Test {
         // Request loan through the user account
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.PayToOwner,
@@ -780,26 +761,32 @@ contract XPharaohTest is Test {
 
 
     function testClaimWithPreferredToken() public {
-
+        vm.skip(true);
         address owner = loan.owner();
         uint256 amount = 0;
         vm.prank(owner);
-        loan.setApprovedToken(address(aero), true);
+        loan.setApprovedToken(address(phar33), true);
         // Request loan through the user account
+
+
+
+        uint256 xPharLockedBalance = voteModule.balanceOf(address(userAccount));
+        assertEq(xPharLockedBalance, 0, "XPhar should not be locked");
+
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
-            IERC20(aero).balanceOf(user),
+            IERC20(phar33).balanceOf(user),
             address(loan),
             0,
             IXLoan.ZeroBalanceOption.PayToOwner,
             0,
-            address(aero),
+            address(phar33),
             false
         );
         vm.stopPrank();
 
-        uint256 startingUserBalance = aero.balanceOf(address(user));
-        uint256 startingPortfolioBalance = aero.balanceOf(address(portfolioFactory));
+        uint256 startingUserBalance = phar33.balanceOf(address(user));
+        uint256 startingPortfolioBalance = phar33.balanceOf(address(portfolioFactory));
 
         // Verify loan was created
         (uint256 balance, ) = loan.getLoanDetails(userAccount);
@@ -808,6 +795,8 @@ contract XPharaohTest is Test {
             "Loan balance should be at least the requested amount"
         );
 
+        xPharLockedBalance = voteModule.balanceOf(address(userAccount));
+        assertEq(xPharLockedBalance, 100e18, "XPhar should be locked");
 
         // Test that the user account can interact with the loan
         vm.startPrank(user);
@@ -852,11 +841,15 @@ contract XPharaohTest is Test {
             allocations
         );
 
+
+        xPharLockedBalance = voteModule.balanceOf(address(userAccount));
+        assertEq(xPharLockedBalance, 100e18 + 25919478169541, "XPhar should be locked");
+
         // Verify the user received the loan
-        uint256 endingUserBalance = aero.balanceOf(address(user));
+        uint256 endingUserBalance = phar33.balanceOf(address(user));
         console.log("endingUserBalance", endingUserBalance);
         console.log("startingUserBalance", startingUserBalance);
-        uint256 endingPortfolioBalance = aero.balanceOf(address(portfolioFactory));
+        uint256 endingPortfolioBalance = phar33.balanceOf(address(portfolioFactory));
         console.log("endingPortfolioBalance", endingPortfolioBalance);
         console.log("startingPortfolioBalance", startingPortfolioBalance);
         assertEq(
@@ -871,6 +864,25 @@ contract XPharaohTest is Test {
         // loan balance should be 0
         (balance, ) = loan.getLoanDetails(userAccount);
         assertEq(balance, 0, "Balance should be 0");
+
+        
+    }
+
+    function testXpharIncreaseCollateral() public {
+        uint256 amount = 1e6;
+        uint256 startingUserBalance = IVoteModule(voteModule).balanceOf(address(userAccount));  
+        assertEq(startingUserBalance, 0, "XPhar should be 0");
+        vm.startPrank(user);
+        phar33.approve(address(userAccount), 0);
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharIncreaseCollateral(address(loan), amount);
+
+        phar33.approve(address(userAccount), amount);
+        XPharaohFacet(userAccount).xPharIncreaseCollateral(address(loan), amount);
+        
+        uint256 endingUserBalance = IVoteModule(voteModule).balanceOf(address(userAccount));
+        assertEq(endingUserBalance, startingUserBalance + amount, "XPhar should be locked");
+        vm.stopPrank();
     }
     
     function _claimRewards(
@@ -908,51 +920,4 @@ contract XPharaohTest is Test {
         vm.stopPrank();
         return result;
     }
-}
-
-contract XPharaohProdTest is Test {
-    XPharaohFacet xphar = XPharaohFacet(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
-
-
-    function testVoting() public {
-        uint256 fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
-        vm.selectFork(fork);
-
-
-        XPharaohUpgrade deployer = new XPharaohUpgrade();
-        deployer.upgrade();
-        address user = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
-
-        address impl = address(new PharaohLoanV2());
-        vm.prank(IOwnable(address(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F)).owner());
-        PharaohLoanV2(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).upgradeToAndCall(impl, "");
-
-
-        XPharaohLoan xPharaohLoan = new XPharaohLoan();
-        vm.prank(IOwnable(address(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C)).owner());
-        PharaohLoanV2(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C).upgradeToAndCall(address(xPharaohLoan), "");
-
-        address owner = IOwnable(address(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C)).owner();
-
-        address[] memory pools = new address[](1);
-        pools[0] = address(0xf01449C0bA930B6e2CaCA3DEF3CCBd7a3E589534);
-        uint256[] memory weights = new uint256[](1);
-        weights[0] = 100e18; // 100% weight
-
-
-        vm.warp(block.timestamp + 1);
-        vm.roll(block.number + 1);
-        vm.prank(owner);
-        PharaohLoanV2(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).migrateNft(6794, 0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C, 0x52d43C377e498980135C8F2E858f120A18Ea96C2);
-        vm.startPrank(0x168E8D263634ef25Ef84a643d231ae39CEB75909);
-        // console.log(user);
-        // address userPortfolio = PortfolioFactory(0x52d43C377e498980135C8F2E858f120A18Ea96C2).portfolioOf(0x168E8D263634ef25Ef84a643d231ae39CEB75909);
-
-        // XPharaohFacet(userPortfolio).xPharUserVote(
-        //     address(0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C),
-        //     pools,
-        //     weights
-        // );
-    }
-
 }

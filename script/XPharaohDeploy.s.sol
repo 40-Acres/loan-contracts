@@ -29,7 +29,6 @@ contract XPharaohDeploy is Script {
     address _rex = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     address _asset = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
     address _owner = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
-    Vault vault = Vault(0x124D00b1ce4453Ffc5a5F65cE83aF13A7709baC7);
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -63,6 +62,11 @@ contract XPharaohDeploy is Script {
         Loan loanImplementation = new Loan();
         ERC1967Proxy _loan = new ERC1967Proxy(address(loanImplementation), "");
         console.log("Deploying Loan address:", address(_loan));
+        
+        PharaohVault vaultImplementation = new PharaohVault();
+        ERC1967Proxy _vault = new ERC1967Proxy(address(vaultImplementation), "");
+        PharaohVault vault = PharaohVault(payable(_vault));
+        vault.initialize(address(_asset), address(_loan), "40xpharaoh-USDC-VAULT", "40xpharaoh-USDC-VAULT");
 
         Loan loan = Loan(payable(_loan));
         Loan(address(loan)).initialize(address(vault), _asset);
@@ -146,7 +150,7 @@ contract XPharaohDeploy is Script {
     
         accountConfigStorage.setApprovedContract(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F, true);
 
-        return (loan, vault, swapper, accountConfigStorage, portfolioFactory);
+        return (loan, Vault(address(vault)), swapper, accountConfigStorage, portfolioFactory);
     }
 }
 
