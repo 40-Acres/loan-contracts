@@ -693,4 +693,30 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
         if (sender != IOwnable(loanContract).owner()) revert NotAuthorized();
         ILoan(authorized).setIncreasePercentage(tokenId, _increasePercentage);
     }
+
+    /**
+     * @notice Allows the owner to claim the collateral (veNFT) for the managed NFT
+     * @dev This function can only be called by the owner of the loan contract
+     *      The loan must be fully paid off (balance == 0) before collateral can be claimed
+     *      After claiming, the veNFT will be transferred to this contract, and the tokenId is reset
+     * @custom:throws NotAuthorized if caller is not the owner of the loan contract
+     */
+    function claimManagedNftCollateral() external {
+        address sender = _msgSender();
+        if (sender != IOwnable(loanContract).owner()) revert NotAuthorized();
+        
+        // Claim the collateral from the loan contract
+        // This will transfer the veNFT from the loan contract to the owner
+        ILoan(loanContract).claimCollateral(tokenId);
+
+        // Transfer the veNFT from this contract to the owner
+        _ve.transferFrom(address(this), IOwnable(loanContract).owner(), tokenId);
+
+        uint256 balanceOfUsdc = IERC20(usdc).balanceOf(address(this));
+        if (balanceOfUsdc > 0) {
+            IERC20(usdc).transfer(IOwnable(loanContract).owner(), balanceOfUsdc);
+        }
+    }
+
+    
 }
