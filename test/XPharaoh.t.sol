@@ -760,44 +760,36 @@ contract XPharaohTest is Test {
     }
 
 
-    function testClaimWithPreferredToken() public {
-        vm.skip(true);
-        address owner = loan.owner();
+    function testClaimPayToOwner() public {
         uint256 amount = 0;
-        vm.prank(owner);
-        loan.setApprovedToken(address(phar33), true);
+        uint256 startingUserBalance = usdc.balanceOf(address(user));
+
+
         // Request loan through the user account
-
-
-
-        uint256 xPharLockedBalance = voteModule.balanceOf(address(userAccount));
-        assertEq(xPharLockedBalance, 0, "XPhar should not be locked");
-
         vm.startPrank(user);
         XPharaohFacet(userAccount).xPharRequestLoan(
             IERC20(phar33).balanceOf(user),
             address(loan),
-            0,
+            amount,
             IXLoan.ZeroBalanceOption.PayToOwner,
             0,
-            address(phar33),
+            address(0),
             false
         );
         vm.stopPrank();
 
-        uint256 startingUserBalance = phar33.balanceOf(address(user));
-        uint256 startingPortfolioBalance = phar33.balanceOf(address(portfolioFactory));
-
+        // Verify the user received the loan
+        uint256 endingUserBalance = usdc.balanceOf(address(user));
+        assertTrue(
+            endingUserBalance == startingUserBalance,
+            "User should no have received usdc"
+        );
         // Verify loan was created
         (uint256 balance, ) = loan.getLoanDetails(userAccount);
         assertTrue(
             balance >= amount,
             "Loan balance should be at least the requested amount"
         );
-
-        xPharLockedBalance = voteModule.balanceOf(address(userAccount));
-        assertEq(xPharLockedBalance, 100e18, "XPhar should be locked");
-
         // Test that the user account can interact with the loan
         vm.startPrank(user);
 
@@ -823,13 +815,13 @@ contract XPharaohTest is Test {
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(userAccount));
         bytes memory tradeData = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwapMultiOutput.selector,
-            1,
-            25919478169541, // send less to account for slippage
+            10e6,
+            21919478169540, // send less to account for slippage
             address(userAccount)
         );
 
         uint256[2] memory allocations = [
-            uint256(25919478169541),
+            uint256(41349),
             uint256(21919478169541)
         ];
         address[] memory bribes = new address[](1);
@@ -840,33 +832,19 @@ contract XPharaohTest is Test {
             tradeData,
             allocations
         );
-
-
-        xPharLockedBalance = voteModule.balanceOf(address(userAccount));
-        assertEq(xPharLockedBalance, 100e18 + 25919478169541, "XPhar should be locked");
-
-        // Verify the user received the loan
-        uint256 endingUserBalance = phar33.balanceOf(address(user));
-        console.log("endingUserBalance", endingUserBalance);
-        console.log("startingUserBalance", startingUserBalance);
-        uint256 endingPortfolioBalance = phar33.balanceOf(address(portfolioFactory));
-        console.log("endingPortfolioBalance", endingPortfolioBalance);
-        console.log("startingPortfolioBalance", startingPortfolioBalance);
-        assertEq(
-            endingPortfolioBalance,startingPortfolioBalance,
-            "Portfolio should not have received loan funds"
-        );
-        assertTrue(
-            endingUserBalance > startingUserBalance,
-            "User should have received loan funds"
-        );
-
         // loan balance should be 0
         (balance, ) = loan.getLoanDetails(userAccount);
         assertEq(balance, 0, "Balance should be 0");
 
-        
+        // Verify the user received the loan
+        endingUserBalance = usdc.balanceOf(address(user));
+        assertTrue(
+            endingUserBalance > startingUserBalance,
+            "User should have received usdc"
+        );
+
     }
+
 
     function testXpharIncreaseCollateral() public {
         uint256 amount = 1e6;

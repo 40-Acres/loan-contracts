@@ -424,13 +424,14 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      */
     function _handleZeroBalance(address borrower, uint256 remaining, uint256 totalRewards, bool wasActiveLoan) internal {
         LoanInfo storage loan = _loanDetails[borrower];
+        address portfolioOwner = PortfolioFactory(getPortfolioFactory()).ownerOf(borrower);
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
             remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(_vaultAsset));
             _vaultAsset.approve(_vault, remaining);
-            IERC4626(_vault).deposit(remaining, loan.borrower);
+            IERC4626(_vault).deposit(remaining, portfolioOwner);
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
             return;
         }
@@ -438,7 +439,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         IERC20 asset = loan.preferredToken == address(0) ? _vaultAsset : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
-        require(asset.transfer(loan.borrower, remaining));
+        require(asset.transfer(portfolioOwner, remaining));
     }
 
 

@@ -104,6 +104,9 @@ contract XPharaohFacet {
         // get beginning balance of preferred token and vault asset
         address vaultAsset = address(IXLoan(loanContract)._vaultAsset());
         uint256 beginningAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
+
+        address vaultToken = IXLoan(loanContract)._vault();
+        uint256 beginningVaultTokenBalance = IERC20(vaultToken).balanceOf(address(this));
         uint256 beginningPreferredTokenBalance;
         uint256 beginningUnderlyingAssetBalance = _rex33.balanceOf(address(this));
         address preferredToken = IXLoan(loanContract).getPreferredToken(address(this));
@@ -124,20 +127,18 @@ contract XPharaohFacet {
             _increaseCollateral(rexAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
-        // remove any approvals for the assets
-        if(preferredToken != address(0)) {
-            uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
-            IERC20(preferredToken).approve(address(msg.sender), 0);
-        }
         IERC20(address(IXLoan(loanContract)._vaultAsset())).approve(address(msg.sender), 0);
     
         // return any assets that were gained from the claim to the owner
-        if(preferredToken != address(0)) {
+        if(preferredToken != address(0) && IERC20(preferredToken).balanceOf(address(this)) > beginningPreferredTokenBalance) {
             uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
             IERC20(preferredToken).transfer(address(portfolioOwner), preferredTokenBalance - beginningPreferredTokenBalance);
         }
         if(IERC20(vaultAsset).balanceOf(address(this)) > beginningAssetBalance) {
             IERC20(vaultAsset).transfer(address(portfolioOwner), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
+        }
+        if(IERC20(vaultToken).balanceOf(address(this)) > beginningVaultTokenBalance) {
+            IERC20(vaultToken).transfer(address(portfolioOwner), IERC20(vaultToken).balanceOf(address(this)) - beginningVaultTokenBalance);
         }
         return result;
     }
