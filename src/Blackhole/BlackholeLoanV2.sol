@@ -11,6 +11,7 @@ import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import { IGaugeManager } from "./interfaces/IGaugeManager.sol";
 import { IRewardsDistributor } from "../interfaces/IRewardsDistributor.sol";
 import { ISwapper } from "../interfaces/ISwapper.sol";
+import { IVoter } from "../interfaces/IVoter.sol";
 
 contract BlackholeLoanV2 is Loan {
     // Blackhole-specific state variables
@@ -70,6 +71,51 @@ contract BlackholeLoanV2 is Loan {
     }
 
 
+
+    /**
+     * @dev Internal function to increase the
+      NFT-related value for a loan.
+     * @param loan The LoanInfo struct containing details of the loan.
+     * @param allocation The amount  to be allocated for increasing the veNFT balance.
+     * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
+     */
+    function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal override returns (uint256 spent) {
+        if(loan.increasePercentage > 0 && allocation == 0) {
+            revert(); // Should be an allocation if increasePercentage is set
+        }
+        if(allocation == 0) {
+            return 0;
+        }
+        _aero.approve(address(_ve), allocation);
+        uint256 managedNft = getManagedNft();
+        uint256 tokenToIncrease = loan.tokenId;
+        IVotingEscrow(address(_ve)).increase_amount(tokenToIncrease, allocation);
+        emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
+        addTotalWeight(allocation);
+        loan.weight += allocation;
+        return allocation;
+    }
+
+
+    /**
+     * @notice Increases the locked amount of a veNFT token.
+     * @dev This function locks tokens into the veNFT associated with the given token ID.
+     * @param tokenId The ID of the veNFT whose amount is to be increased.
+     * @param amount The amount of tokens to be added to the veNFT.
+     */
+
+    function increaseAmount(uint256 tokenId, uint256 amount) override public {
+        require(_ve.ownerOf(tokenId) == address(this));
+        require(amount > 0);
+        require(_aero.transferFrom(msg.sender, address(this), amount));
+        _aero.approve(address(_ve), amount);
+        IVotingEscrow(address(_ve)).increase_amount(tokenId, amount);
+        emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
+        addTotalWeight(amount);
+        LoanInfo storage loan = _loanDetails[tokenId];
+        loan.weight += amount;
+    }
+
     /**
      * @dev Internal function to get the locked amount for a specific loan.
      * @param tokenId The ID of the loan (NFT) for which the locked amount is being retrieved.
@@ -100,11 +146,11 @@ contract BlackholeLoanV2 is Loan {
      * @param tokenId The ID of the loan (NFT) for which the vote is being reset.
      */
     function reset(uint256 tokenId) public  {
-        // reset the vote timestamp so the user can claim collateral
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
         require(loan.balance == 0);
         loan.voteTimestamp = 0;
+        IVoter(address(_voter)).reset(tokenId);
     }
 
     /**

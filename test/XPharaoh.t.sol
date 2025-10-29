@@ -224,8 +224,9 @@ contract XPharaohTest is Test {
      */
     function testGetMaxLoan() public {
         // Test initial max loan through the facet
-        (uint256 maxLoan, ) = loan.getMaxLoan(user);
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = loan.getMaxLoan(user);
         assertEq(maxLoan, 0);
+        assertEq(maxLoanIgnoreSupply, 0);
 
 
         // log users _asset balance
@@ -252,8 +253,17 @@ contract XPharaohTest is Test {
         // assertEq(votingEscrow.balanceOf(address(userAccount)), tokenId, "Voting escrow balance should be amount");
 
         // Test max loan after requesting a loan through the facet
-        (maxLoan, ) = loan.getMaxLoan(userAccount);
+        (maxLoan, maxLoanIgnoreSupply) = loan.getMaxLoan(userAccount);
         assertEq(maxLoan, 75e6);
+        assertEq(maxLoanIgnoreSupply, 113000000000000000);
+
+
+        //claim collateral
+        // if take our half collateral should be able to borrow 50% of the max loan we use to have
+        XPharaohFacet(userAccount).xPharClaimCollateral(address(loan), 50e18);
+        (maxLoan, maxLoanIgnoreSupply) = loan.getMaxLoan(userAccount);
+        assertEq(maxLoan, 75e6);
+        assertEq(maxLoanIgnoreSupply, 56500000000000000);
 
         // Test max loan after increasing loan through the direct contract
         XPharaohFacet(userAccount).xPharIncreaseLoan(address(loan), 70e6);
@@ -274,7 +284,16 @@ contract XPharaohTest is Test {
         );
         (maxLoan, ) = loan.getMaxLoan(user);
         assertEq(maxLoan, 0);
+
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharClaimCollateral(address(loan), 50e18);
+        XPharaohFacet(userAccount).xPharClaimCollateral(address(loan), 1e18);
         vm.stopPrank();
+
+
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharClaimCollateral(address(loan), 1e18);
+
     }
 
     /**
@@ -862,6 +881,8 @@ contract XPharaohTest is Test {
         assertEq(endingUserBalance, startingUserBalance + amount, "XPhar should be locked");
         vm.stopPrank();
     }
+
+    
     
     function _claimRewards(
         Loan _loan,

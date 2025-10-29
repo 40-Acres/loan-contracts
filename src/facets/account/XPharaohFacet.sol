@@ -26,8 +26,8 @@ interface PharaohMigrator {
 contract XPharaohFacet {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
-    IERC4626 public immutable _rex33 = IERC4626(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
-    address public immutable _xrex = 0xE8164Ea89665DAb7a553e667F81F30CfDA736B9A;
+    IERC4626 public immutable _phar33 = IERC4626(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
+    address public immutable _xphar = 0xE8164Ea89665DAb7a553e667F81F30CfDA736B9A;
     address public immutable _voteModule = 0x34F233F868CdB42446a18562710eE705d66f846b;
     address public immutable _voter = 0x922b9Ca8e2207bfB850B6FF647c054d4b58a2Aa7;
     address public immutable _vePhar = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
@@ -43,14 +43,16 @@ contract XPharaohFacet {
         
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
         IERC20(lockedAsset).approve(_voteModule, amount);
-        IXRex(_xrex).approve(address(_rex33), amount);
+        IXRex(_xphar).approve(address(_phar33), amount);
         IVoteModule(_voteModule).withdraw(amount);
-        IXLoan(loanContract).confirmClaimCollateral();
+        IXLoan(loanContract).confirmClaimCollateral(_xphar);
 
         if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
             address asset = address(IXLoan(loanContract)._lockedAsset());
             CollateralStorage.removeTotalCollateral(asset);
         }
+
+        uint256 assets = _phar33.redeem(amount, msg.sender, address(this));
     }
 
     function xPharIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -62,7 +64,7 @@ contract XPharaohFacet {
 
     function xPharIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        _rex33.transferFrom(msg.sender, address(this), amount);
+        _phar33.transferFrom(msg.sender, address(this), amount);
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
@@ -72,13 +74,13 @@ contract XPharaohFacet {
         address asset = address(IXLoan(loanContract)._vaultAsset());
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
 
-        _rex33.transferFrom(msg.sender, address(this), collateralAmount);
+        _phar33.transferFrom(msg.sender, address(this), collateralAmount);
         uint256 beginningAssetBalance = IERC20(asset).balanceOf(address(this));
 
-        _rex33.approve(_voteModule, collateralAmount);
-        _rex33.redeem(collateralAmount, address(this), address(this));
-        IERC20(lockedAsset).approve(_voteModule, collateralAmount);
-        IVoteModule(_voteModule).deposit(collateralAmount);
+        _phar33.approve(_voteModule, collateralAmount);
+        uint256 assets = _phar33.redeem(collateralAmount, address(this), address(this));
+        IERC20(lockedAsset).approve(_voteModule, assets);
+        IVoteModule(_voteModule).deposit(assets);
         IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).requestLoan(loanAmount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
         IVoteModule(_voteModule).delegate(address(0));
@@ -101,18 +103,7 @@ contract XPharaohFacet {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
 
-        // get beginning balance of preferred token and vault asset
-        address vaultAsset = address(IXLoan(loanContract)._vaultAsset());
-        uint256 beginningAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
-
-        address vaultToken = IXLoan(loanContract)._vault();
-        uint256 beginningVaultTokenBalance = IERC20(vaultToken).balanceOf(address(this));
-        uint256 beginningPreferredTokenBalance;
-        uint256 beginningUnderlyingAssetBalance = _rex33.balanceOf(address(this));
-        address preferredToken = IXLoan(loanContract).getPreferredToken(address(this));
-        if(preferredToken != address(0)) {
-            beginningPreferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
-        }
+        uint256 beginningUnderlyingAssetBalance = _phar33.balanceOf(address(this));
 
         // claim the rewards
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
@@ -120,26 +111,14 @@ contract XPharaohFacet {
         // increase the collateral if necessary
         if(allocations[1] > 0) {
             // max amount we can increase is the difference between the beginning and ending locked asset balance
-            uint256 rexAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
-            if(allocations[1] < rexAmount) {
-                rexAmount = allocations[1];
+            uint256 pharaohAmount = _phar33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
+            if(allocations[1] < pharaohAmount) {
+                pharaohAmount = allocations[1];
             }
-            _increaseCollateral(rexAmount, address(IXLoan(loanContract)._lockedAsset()));
+            _increaseCollateral(pharaohAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
         IERC20(address(IXLoan(loanContract)._vaultAsset())).approve(address(msg.sender), 0);
-    
-        // return any assets that were gained from the claim to the owner
-        if(preferredToken != address(0) && IERC20(preferredToken).balanceOf(address(this)) > beginningPreferredTokenBalance) {
-            uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
-            IERC20(preferredToken).transfer(address(portfolioOwner), preferredTokenBalance - beginningPreferredTokenBalance);
-        }
-        if(IERC20(vaultAsset).balanceOf(address(this)) > beginningAssetBalance) {
-            IERC20(vaultAsset).transfer(address(portfolioOwner), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
-        }
-        if(IERC20(vaultToken).balanceOf(address(this)) > beginningVaultTokenBalance) {
-            IERC20(vaultToken).transfer(address(portfolioOwner), IERC20(vaultToken).balanceOf(address(this)) - beginningVaultTokenBalance);
-        }
         return result;
     }
 
@@ -204,8 +183,8 @@ contract XPharaohFacet {
     }
 
     function _increaseCollateral(uint256 amount, address lockedAsset) internal {
-        _rex33.approve(_voteModule, amount);
-        uint256 assetsReceived = _rex33.redeem(amount, address(this), address(this));
+        _phar33.approve(_voteModule, amount);
+        uint256 assetsReceived = _phar33.redeem(amount, address(this), address(this));
         IERC20(lockedAsset).approve(_voteModule, assetsReceived);
         IVoteModule(_voteModule).deposit(assetsReceived);
     }

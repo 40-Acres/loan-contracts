@@ -740,7 +740,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param allocation The amount  to be allocated for increasing the veNFT balance.
      * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
      */
-    function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
+    function _increaseNft(LoanInfo storage loan, uint256 allocation, bool takeFees) internal virtual returns (uint256 spent) {
         if(loan.increasePercentage > 0 && allocation == 0) {
             revert(); // Should be an allocation if increasePercentage is set
         }
@@ -765,7 +765,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param amount The amount of tokens to be added to the veNFT.
      */
 
-    function increaseAmount(uint256 tokenId, uint256 amount) public {
+    function increaseAmount(uint256 tokenId, uint256 amount) virtual public {
         require(_ve.ownerOf(tokenId) == address(this));
         require(amount > 0);
         require(_aero.transferFrom(msg.sender, address(this), amount));

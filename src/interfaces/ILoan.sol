@@ -15,7 +15,7 @@ interface ILoan {
     function claimCollateral(uint256 tokenId) external;
     function getRewardsRate() external view returns (uint256);
     function owner() external view returns (address);
-    function _asset() external view returns (address);
+function _asset() external view returns (address);
     function _ve() external view returns (address);
     function getLoanDetails(uint256 tokenId) external view returns (uint256 balance, address borrower);
     function getLoanWeight(uint256 tokenId) external view returns (uint256 weight);

@@ -254,12 +254,47 @@ contract BlackholeTest is Test {
         vm.expectRevert();
         loan.claimCollateral(tokenId);
         loan.pay(tokenId, 0);
+        loan.userVote(tokenIds, manualPools, manualWeights);
         loan.reset(tokenId);
         loan.claimCollateral(tokenId);
 
         vm.stopPrank();
 
+
         assertEq(votingEscrow.ownerOf(tokenId), address(user), "User should own token");
+    }
+
+
+
+
+    function testIncreaseAmount() public {
+        uint256 _tokenId = 989;
+        usdc.mint(address(vault), 10000e6);
+        uint256 amount = 1e6;
+        address _user = votingEscrow.ownerOf(_tokenId);
+
+        address[] memory manualPools = new address[](1);
+        manualPools[0] = address(0x4A930a63B13e6683a204Cb10Ef20F68310231459);
+        uint256[] memory manualWeights = new uint256[](1);
+        manualWeights[0] = 100e18;
+
+        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
+        loan.setApprovedPools(manualPools, true);
+        vm.stopPrank();
+
+        vm.startPrank(_user);
+        votingEscrow.approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, amount, Loanv2.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        vm.stopPrank();
+
+        vm.prank(0xAcA50A3A37D6F2ba49A9f9E3BE949C342AC4b8a7);
+        IERC20(aero).transfer(address(user), 0);
+        vm.stopPrank();
+
+        vm.startPrank(address(user));
+        IERC20(aero).approve(address(loan), 5e18);
+        loan.increaseAmount(_tokenId, 5e18);
     }
 
     /**

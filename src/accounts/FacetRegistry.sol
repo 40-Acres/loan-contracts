@@ -34,7 +34,7 @@ contract FacetRegistry is Ownable2Step {
         _;
     }
 
-    constructor() Ownable(tx.origin) {
+    constructor() Ownable(msg.sender) {
         version = 1;
     }
 

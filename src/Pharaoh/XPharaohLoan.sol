@@ -27,7 +27,6 @@ import {IXRex} from "../interfaces/IXRex.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 import {IXPharFacet} from "../interfaces/IXPharFacet.sol";
 import {PharaohLoanV2} from "./PharaohLoanV2.sol";
-import {console} from "forge-std/console.sol";
 
 contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
@@ -435,8 +434,12 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
             return;
         }
-        // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
-        IERC20 asset = loan.preferredToken == address(0) ? _vaultAsset : IERC20(loan.preferredToken);
+        IERC20 asset = _vaultAsset;
+        if(loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken)) {
+            asset = IERC20(loan.preferredToken);
+        }
+
+
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(portfolioOwner, remaining));
@@ -643,9 +646,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @dev This function ensures that only the borrower can claim the collateral and that the loan is fully repaid.
      *      If the loan balance is greater than zero, the collateral cannot be claimed.
      */
-    function confirmClaimCollateral() public virtual {
+    function confirmClaimCollateral(address lockedAsset) public virtual {
         LoanInfo storage loan = _loanDetails[msg.sender];
         require(loan.borrower == msg.sender);
+        // ensure the locked asset is the same as the locked asset in the loan
+        require(lockedAsset == address(_lockedAsset));
 
         (,uint256 maxLoanIgnoreSupply) = getMaxLoan(msg.sender);
         // ensure the loan balance is below the max loan the amount of collateral can borrow
@@ -959,7 +964,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         address[] calldata pools,
         uint256[] calldata weights
     ) public {
-        console.log("User voting for pools");
         // if pools/weights are empty, reset timestamp so user will be in automatic voting mode
         if(pools.length == 0 && weights.length == 0) {
             LoanInfo storage loan = _loanDetails[msg.sender];
@@ -967,8 +971,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             loan.voteTimestamp = 0;
             return;
         }
-        // _validatePoolChoices(pools, weights);
-        console.log("User voting for pools");
+        _validatePoolChoices(pools, weights);
         _vote(msg.sender, pools, weights);
     }
 

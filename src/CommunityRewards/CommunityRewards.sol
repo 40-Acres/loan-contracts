@@ -693,4 +693,23 @@ contract CommunityRewards is Initializable, UUPSUpgradeable, ERC20Upgradeable, R
         if (sender != IOwnable(loanContract).owner()) revert NotAuthorized();
         ILoan(authorized).setIncreasePercentage(tokenId, _increasePercentage);
     }
+
+    function claimManagedNftCollateral(address _votingEscrow, address _usdc) external {
+        address sender = _msgSender();
+        if (sender != IOwnable(loanContract).owner()) revert NotAuthorized();
+        
+        IERC20 usdc = IERC20(_usdc);
+        IVotingEscrow _ve = IVotingEscrow(_votingEscrow);
+        // Claim the collateral from the loan contract
+        // This will transfer the veNFT from the loan contract to the owner
+        ILoan(loanContract).claimCollateral(tokenId);
+
+        // Transfer the veNFT from this contract to the owner
+        _ve.transferFrom(address(this), IOwnable(loanContract).owner(), tokenId);
+
+        uint256 balanceOfUsdc = usdc.balanceOf(address(this));
+        if (balanceOfUsdc > 0) {
+            usdc.transfer(IOwnable(loanContract).owner(), balanceOfUsdc);
+        }
+    }
 }

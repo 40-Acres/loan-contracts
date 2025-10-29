@@ -37,7 +37,7 @@ contract XRexFacet {
         IERC20(lockedAsset).approve(_voteModule, amount);
         IXRex(_xrex).approve(address(_rex33), amount);
         IVoteModule(_voteModule).withdraw(amount);
-        IXLoan(loanContract).confirmClaimCollateral();
+        IXLoan(loanContract).confirmClaimCollateral(_xrex);
 
         if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
             address asset = address(IXLoan(loanContract)._lockedAsset());
