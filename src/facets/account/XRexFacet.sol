@@ -43,6 +43,10 @@ contract XRexFacet {
             address asset = address(IXLoan(loanContract)._lockedAsset());
             CollateralStorage.removeTotalCollateral(asset);
         }
+
+        IERC20(lockedAsset).approve(address(_rex33), amount);
+        uint256 assets = _rex33.deposit(amount, address(this));
+        _rex33.transfer(msg.sender, assets);
     }
 
     function xRexIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -54,6 +58,7 @@ contract XRexFacet {
 
     function xRexIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        _rex33.transferFrom(msg.sender, address(this), amount);
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
@@ -67,9 +72,9 @@ contract XRexFacet {
         uint256 beginningAssetBalance = IERC20(asset).balanceOf(address(this));
 
         _rex33.approve(_voteModule, collateralAmount);
-        _rex33.redeem(collateralAmount, address(this), address(this));
-        IERC20(lockedAsset).approve(_voteModule, collateralAmount);
-        IVoteModule(_voteModule).deposit(collateralAmount);
+        uint256 assets = _rex33.redeem(collateralAmount, address(this), address(this));
+        IERC20(lockedAsset).approve(_voteModule, assets);
+        IVoteModule(_voteModule).deposit(assets);
         IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).requestLoan(loanAmount, zeroBalanceOption, increasePercentage, preferredToken, topUp);
         IVoteModule(_voteModule).delegate(address(0));
@@ -89,18 +94,9 @@ contract XRexFacet {
     }
     
     function xRexClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        require(msg.sender == portfolioOwner || _accountConfigStorage.isAuthorizedCaller(msg.sender));
+        require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
 
-        // get beginning balance of preferred token and vault asset
-        address vaultAsset = address(IXLoan(loanContract)._vaultAsset());
-        uint256 beginningAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
-        uint256 beginningPreferredTokenBalance;
         uint256 beginningUnderlyingAssetBalance = _rex33.balanceOf(address(this));
-        address preferredToken = IXLoan(loanContract).getPreferredToken(address(this));
-        if(preferredToken != address(0)) {
-            beginningPreferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
-        }
 
         // claim the rewards
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
@@ -108,27 +104,13 @@ contract XRexFacet {
         // increase the collateral if necessary
         if(allocations[1] > 0) {
             // max amount we can increase is the difference between the beginning and ending locked asset balance
-            uint256 rexAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
-            if(allocations[1] < rexAmount) {
-                rexAmount = allocations[1];
+            uint256 rexaohAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
+            if(allocations[1] < rexaohAmount) {
+                rexaohAmount = allocations[1];
             }
-            _increaseCollateral(rexAmount, address(IXLoan(loanContract)._lockedAsset()));
+            _increaseCollateral(rexaohAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
-        // remove any approvals for the assets
-        if(preferredToken != address(0)) {
-            IERC20(preferredToken).approve(address(msg.sender), 0);
-        }
-        IERC20(address(IXLoan(loanContract)._vaultAsset())).approve(address(msg.sender), 0);
-    
-        // return any assets that were gained from the claim to the owner
-        if(preferredToken != address(0)) {
-            uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
-            IERC20(preferredToken).transfer(address(portfolioOwner), preferredTokenBalance - beginningPreferredTokenBalance);
-        }
-        if(IERC20(vaultAsset).balanceOf(address(this)) > beginningAssetBalance) {
-            IERC20(vaultAsset).transfer(address(portfolioOwner), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
-        }
         return result;
     }
 
@@ -136,7 +118,7 @@ contract XRexFacet {
         address[] calldata gauges,
         address[][] calldata tokens,
         bytes calldata tradeData
-    ) virtual public {
+    ) virtual public onlyApprovedContract(msg.sender)  {
         address vaultAsset = address(IXLoan(msg.sender)._vaultAsset());
         uint256 beginningAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
         uint256 beginningPreferredTokenBalance;
@@ -195,6 +177,8 @@ contract XRexFacet {
     function _increaseCollateral(uint256 amount, address lockedAsset) internal {
         _rex33.approve(_voteModule, amount);
         uint256 assetsReceived = _rex33.redeem(amount, address(this), address(this));
+        IERC20(lockedAsset).approve(_voteModule, assetsReceived);
+        IVoteModule(_voteModule).deposit(assetsReceived);
     }
 
 
@@ -203,4 +187,23 @@ contract XRexFacet {
         _;
     }
     
+    function xRexSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        IXLoan(loanContract).setIncreasePercentage(increasePercentage);
+    }
+
+    function xRexSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        IXLoan(loanContract).setPreferredToken(preferredToken);
+    }
+
+    function xRexSetTopUp(address loanContract, bool topUp) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        IXLoan(loanContract).setTopUp(topUp);
+    }
+
+    function xRexSetZeroBalanceOption(address loanContract, IXLoan.ZeroBalanceOption zeroBalanceOption) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        IXLoan(loanContract).setZeroBalanceOption(zeroBalanceOption);
+    }
 }

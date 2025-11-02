@@ -52,7 +52,9 @@ contract XPharaohFacet {
             CollateralStorage.removeTotalCollateral(asset);
         }
 
-        uint256 assets = _phar33.redeem(amount, msg.sender, address(this));
+        IERC20(lockedAsset).approve(address(_phar33), amount);
+        uint256 assets = _phar33.deposit(amount, address(this));
+        _phar33.transfer(msg.sender, assets);
     }
 
     function xPharIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -100,7 +102,6 @@ contract XPharaohFacet {
     }
     
     function xPharClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
 
         uint256 beginningUnderlyingAssetBalance = _phar33.balanceOf(address(this));
@@ -118,7 +119,6 @@ contract XPharaohFacet {
             _increaseCollateral(pharaohAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
-        IERC20(address(IXLoan(loanContract)._vaultAsset())).approve(address(msg.sender), 0);
         return result;
     }
 

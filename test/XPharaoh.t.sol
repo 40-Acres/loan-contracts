@@ -717,6 +717,7 @@ contract XPharaohTest is Test {
         );
         vm.stopPrank();
 
+        uint256 beginningPortfolioBalance = usdc.balanceOf(address(portfolioFactory));
         // Verify loan was created
         (uint256 balance, ) = loan.getLoanDetails(userAccount);
         assertTrue(
@@ -918,5 +919,65 @@ contract XPharaohTest is Test {
         );
         vm.stopPrank();
         return result;
+    }
+
+    function testCurrentBlockClaim() public {
+        uint256 fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
+
+        vm.selectFork(fork);
+        console.log("\n=== Testing Current Block Claim with Provided Parameters ===");
+        
+        // Set up the parameters from the provided JSON
+        address loanContract = 0x6Bf2Fe80D245b06f6900848ec52544FBdE6c8d2C;
+        
+        XPharaohLoan x = new XPharaohLoan();
+        vm.startPrank(XPharaohLoan(address(loanContract)).owner());
+        XPharaohLoan(address(loanContract)).upgradeToAndCall(address(x), new bytes(0));
+
+        address[] memory fees = new address[](4);
+        fees[0] = 0x8dD18390f4F872F27D11a6851Dc3104091102D3f;
+        fees[1] = 0x9E5D1F550A8BD3ECeFa11499548E535ddbE09f1b;
+        fees[2] = 0xBa140c587348785bB44C00EE98D70c94D58f0482;
+        fees[3] = 0xB9Ac36505a0537CaF30217Ee0b65362AED95367A;
+        
+        address[][] memory tokens = new address[][](4);
+        tokens[0] = new address[](3);
+        tokens[0][0] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+        tokens[0][1] = 0x13A466998Ce03Db73aBc2d4DF3bBD845Ed1f28E7;
+        tokens[0][2] = 0x152b9d0FdC40C096757F570A51E494bd4b943E50;
+        
+        tokens[1] = new address[](2);
+        tokens[1][0] = 0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB;
+        tokens[1][1] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+        
+        tokens[2] = new address[](2);
+        tokens[2][0] = 0x152b9d0FdC40C096757F570A51E494bd4b943E50;
+        tokens[2][1] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+        
+        tokens[3] = new address[](2);
+        tokens[3][0] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+        tokens[3][1] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+        
+        bytes memory tradeData = hex"84a7f3dd040100013f0f8a28ac15b95e7d9d3b6e9422d3d0ae64197f073744a797146a50000113a466998ce03db73abc2d4df3bbd845ed1f28e70854cdf4aa4d4b776300000001152b9d0fdc40c096757f570a51e494bd4b943e5002167a0000000149d5c2bdffac6ce2bfdb6640f4f80f226bc10bab0701e03a715175e600000001b31f66aa3c1e785363f0875a1b74e27b85fd66c70804dfa399d301e71000000001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b8e556d00016f1a78918683a443331228cca00922f061ef97d1366dca0f0802050a060004042b03010102030000020b0400040501000b0400060701082b03010809030000ff000000000000000000000000000000000000000000000000006c15bb9c4b526f8314b0d65571dcf75ec652491249d5c2bdffac6ce2bfdb6640f4f80f226bc10babb97ef9ef8734c71904d8002f8b6bc66dd9c48a6eb8bb4ffb0ba5cbfd217b41f51162a469b1c45b83152b9d0fdc40c096757f570a51e494bd4b943e50062d76834f188b9e88c46381d327a7613250240c13a466998ce03db73abc2d4df3bbd845ed1f28e706d2563cb18ca6a0546bf4dc215d37cc3ee9717fb31f66aa3c1e785363f0875a1b74e27b85fd66c7000000000000000000000000";
+        
+        uint256[2] memory allocations = [uint256(20126622), uint256(0)];
+        
+        
+        // Execute the claim with provided parameters
+        vm.startPrank(0x8b896A0b60fF19bC870673256Ef079d69B92EE98);
+        try XPharaohFacet(0x6F1a78918683A443331228CCa00922f061eF97d1).xPharClaim(
+            loanContract,
+            fees,
+            tokens,
+            tradeData,
+            allocations
+        ) returns (uint256 rewards) {
+            console.log("Claim successful! Rewards:", rewards);
+            
+        }
+        catch {
+            console.log("Claim failed!");
+        }
+        vm.stopPrank();
     }
 }

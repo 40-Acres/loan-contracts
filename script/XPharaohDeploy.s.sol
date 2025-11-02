@@ -174,10 +174,11 @@ contract XPharaohUpgrade is Script {
     }
 
     function upgrade() public {
-        XPharaohFacet xPharaohFacet = new XPharaohFacet(address(_portfolioFactory), address(_accountConfigStorage));
+        // XPharaohFacet xPharaohFacet = new XPharaohFacet(address(_portfolioFactory), address(_accountConfigStorage));
 // 
         // new XPharaohFacet();
 
+        new Loan();
 
         // // PharaohVault vaultImpl = new PharaohVault();
         // console.log("PharaohVault:", address(vaultImpl));

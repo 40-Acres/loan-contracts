@@ -27,6 +27,7 @@ import {IXRex} from "../interfaces/IXRex.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 import {IXPharFacet} from "../interfaces/IXPharFacet.sol";
 import {PharaohLoanV2} from "./PharaohLoanV2.sol";
+import {console} from "forge-std/console.sol";
 
 contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
@@ -423,10 +424,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      */
     function _handleZeroBalance(address borrower, uint256 remaining, uint256 totalRewards, bool wasActiveLoan) internal {
         LoanInfo storage loan = _loanDetails[borrower];
-        address portfolioOwner = PortfolioFactory(getPortfolioFactory()).ownerOf(borrower);
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
+        address portfolioOwner = PortfolioFactory(getPortfolioFactory()).ownerOf(borrower);
+        require(portfolioOwner != address(0));
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
             remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(_vaultAsset));
             _vaultAsset.approve(_vault, remaining);
@@ -434,12 +436,8 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
             return;
         }
-        IERC20 asset = _vaultAsset;
-        if(loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken)) {
-            asset = IERC20(loan.preferredToken);
-        }
-
-
+        // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
+        IERC20 asset = loan.preferredToken == address(0) ? _vaultAsset : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(portfolioOwner, remaining));
@@ -646,11 +644,12 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @dev This function ensures that only the borrower can claim the collateral and that the loan is fully repaid.
      *      If the loan balance is greater than zero, the collateral cannot be claimed.
      */
-    function confirmClaimCollateral(address lockedAsset) public virtual {
+    function confirmClaimCollateral(address collateral) public virtual {
+        // confirm the collateral being claimed is the correct one
+        require(collateral == address(_lockedAsset));
+
         LoanInfo storage loan = _loanDetails[msg.sender];
         require(loan.borrower == msg.sender);
-        // ensure the locked asset is the same as the locked asset in the loan
-        require(lockedAsset == address(_lockedAsset));
 
         (,uint256 maxLoanIgnoreSupply) = getMaxLoan(msg.sender);
         // ensure the loan balance is below the max loan the amount of collateral can borrow
@@ -1071,7 +1070,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @dev 40 Acres voting window is two hours prior to voting end
      */
     function _withinVotingWindow() internal view returns (bool) {
-        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 6 hours;
+        return block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 1 hours;
     }
 
     function currentEpochStart() internal view returns (uint256) {

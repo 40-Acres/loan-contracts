@@ -48,7 +48,7 @@ contract XPharaohVote is Script {
         for (uint256 i; i < portfolios.length; i++) {
             address owner = _portfolioFactory.ownerOf(portfolios[i]);
             console.log(",", portfolios[i]);
-            // XPharaohFacet(payable(portfolios[i])).xPharVote(address(_loan));
+            XPharaohFacet(payable(portfolios[i])).xPharVote(address(_loan));
         }
     }
 

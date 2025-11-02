@@ -550,8 +550,10 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
+
+        uint256 zbalance = IERC20(aero).balanceOf(user);
         XRexFacet(userAccount).xRexRequestLoan(
-            IERC20(aero).balanceOf(user),
+            zbalance,
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -570,12 +572,21 @@ contract EtherexTest is Test {
         loan.pay(userAccount, 0);
 
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 100e18);
+
+
+        uint256 votingBalance = IVoteModule(address(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1)).balanceOf(address(userAccount));
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), votingBalance);
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
         assertEq(balance, 0, "Balance should be 0");
+
         assertEq(borrower, address(0), "Borrower should be 0");
+
+
+        uint256 endingVotingBalance = IVoteModule(address(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1)).balanceOf(address(userAccount));
+        assertEq(endingVotingBalance, 0, "endingVotingBalance should be 0");
+
         vm.stopPrank();
     }
 
@@ -617,8 +628,9 @@ contract EtherexTest is Test {
         vm.stopPrank();
 
         vm.startPrank(user);
+        uint256 startingBalance = IERC20(aero).balanceOf(user);
         XRexFacet(userAccount).xRexRequestLoan(
-            IERC20(aero).balanceOf(user),
+            startingBalance,
             address(loan),
             amount,
             IXLoan.ZeroBalanceOption.DoNothing,
@@ -636,7 +648,7 @@ contract EtherexTest is Test {
         XRexFacet(userAccount).xRexClaimCollateral(address(loan), 1e18);
 
 
-        uint256 xRexBalance = 100e18;
+        uint256 xRexBalance = IVoteModule(address(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1)).balanceOf(address(userAccount));
         vm.expectRevert();
         XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance);
 
@@ -648,15 +660,23 @@ contract EtherexTest is Test {
         usdc.approve(address(loan), 5e6);
         loan.pay(userAccount, 0);
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 5e18);
+        xRexBalance = IVoteModule(address(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1)).balanceOf(address(userAccount));
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance/2);
+        xRexBalance = IVoteModule(address(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1)).balanceOf(address(userAccount));
 
-        XRexFacet(userAccount).xRexClaimCollateral(address(loan), 89e18);
+        XRexFacet(userAccount).xRexClaimCollateral(address(loan), xRexBalance);
 
         // loan details should be 0
         (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
         assertEq(balance, 0, "Balance should be 0");
         assertEq(borrower, address(0), "Borrower should be 0");
         vm.stopPrank();
+
+        assertEq(
+            IERC20(aero).balanceOf(user)+1, // add one to account for rounding
+            startingBalance,
+            "User should have starting balance"
+        );
     }
 
     function testPortfolioFactory() public {

@@ -70,84 +70,90 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     uint256[50] private _gap;
 
     
+
+    
     /**
      * @dev Emitted when collateral is added to a loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the owner adding the collateral.
      * @param option The zero balance option chosen for the loan.
      */
     
-    event CollateralAdded(address owner, ZeroBalanceOption option);
+    event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
 
     /**
      * @dev Emitted when collateral is withdrawn from a loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the owner withdrawing the collateral.
      */
-    event CollateralWithdrawn(address owner);
+    event CollateralWithdrawn(uint256 tokenId, address owner);
     
     /**
      * @dev Emitted when funds are borrowed against a loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param owner The address of the borrower.
      * @param amount The amount of funds borrowed.
      */
-    event FundsBorrowed(address owner, uint256 amount);
+    event FundsBorrowed(uint256 tokenId, address owner, uint256 amount);
     
     /**
      * @dev Emitted when rewards are received for a loan.
      * @param epoch The epoch during which the rewards were received.
      * @param amount The amount of rewards received.
      * @param borrower The address of the borrower receiving the rewards.
+     * @param tokenId The ID of the token representing the loan.
      */
     
-    event RewardsReceived(uint256 epoch, uint256 amount, address borrower);
+    event RewardsReceived(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     /**
      * @dev Emitted when rewards are sent to the vault to lenders as a premium.
+     * @param tokenId The ID of the token representing the loan.
      * @param borrower The address of the borrower repaying the loan.
      * @param amount The amount repaid.
      * @param epoch The epoch during which the repayment occurred.
      * @param isManual Indicates whether the repayment was manual.
      */
     
-    event LoanPaid(address borrower, uint256 amount, uint256 epoch, bool isManual);
+    event LoanPaid(uint256 tokenId, address borrower, uint256 amount, uint256 epoch, bool isManual);
     /**
      * @dev Emitted when rewards are used to repay a loan balance.
      * @param epoch The epoch during which the rewards were invested.
      * @param amount The amount of rewards invested.
      * @param borrower The address of the borrower whose rewards were invested.
+     * @param tokenId The ID of the token representing the loan.
      */
-    event RewardsInvested(uint256 epoch, uint256 amount, address borrower);
+    event RewardsInvested(uint256 epoch, uint256 amount, address borrower, uint256 tokenId);
     
     /**
      * @dev Total Rewards (Fees/Bribes) Claimed for a token.
      * @param epoch The epoch during which the rewards were claimed.
      * @param amount The amount of rewards claimed.
      * @param borrower The address of the borrower claiming the rewards.
+     * @param tokenId The ID of the token representing the loan.
      * @param token The address of the token in which the rewards are claimed.
      */
     
-    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, address token);
+    event RewardsClaimed(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
     /**
      * @dev Emitted when rewards are paid to the owner of the loan.
      * @param epoch The epoch during which the rewards were paid.
      * @param amount The amount of rewards paid.
      * @param borrower The address of the borrower associated with the loan.
+     * @param tokenId The ID of the token representing the loan.
      * @param token The address of the token in which the rewards are paid.
      */
-    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, address token);    
-    
-    /**
-     * @dev Emitted when a loan's borrower is updated by an authorized caller.
-     */
-    event BorrowerChanged(address indexed previousBorrower, address indexed newBorrower, address caller);
+    event RewardsPaidtoOwner(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);    
     
     /**
      * @dev Emitted when the protocol fee is paid.
      * @param epoch The epoch during which the fee was paid.
      * @param amount The amount of the protocol fee paid.
      * @param borrower The address of the borrower paying the fee.
+     * @param tokenId The ID of the token representing the loan.
      */
     
-    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, address token);
-    
+    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, uint256 tokenId, address token);
+
     /**
      * @dev Emitted when a flash loan is executed.
      * @param receiver The address of the contract receiving the funds.
@@ -174,7 +180,6 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     error InsufficientAllowance(uint256 required, uint256 available);
     error MarketNotConfigured();
     error ZeroAddress();
-
     constructor() {
         _disableInitializers();
     }
@@ -198,7 +203,6 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         _multiplier = 12;
         _voteModule = IVoteModule(0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1);
     }
-
     
     /**
      * @dev This function is used to authorize upgrades to the contract.
@@ -224,6 +228,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         address preferredToken,
         bool topUp
     ) public virtual {
+        LoanInfo memory loan = _loanDetails[msg.sender];
+        require(loan.borrower == address(0));
         _loanDetails[msg.sender] = LoanInfo({
             balance: 0,
             borrower: msg.sender,
@@ -291,7 +297,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
         _vaultAsset.transferFrom(_vault, loan.borrower, amount);
-        emit FundsBorrowed(loan.borrower, amount);
+        emit FundsBorrowed(0, loan.borrower, amount);
     }
 
     /**
@@ -338,8 +344,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
             loan.unpaidFees -= feesPaid;
             loan.balance -= feesPaid;
             _vaultAsset.transfer(owner(), feesPaid);
-            emit LoanPaid(loan.borrower, feesPaid, currentEpochStart(), isManual);
-            emit ProtocolFeePaid(currentEpochStart(), feesPaid, loan.borrower, address(_vaultAsset));
+            emit LoanPaid(0, loan.borrower, feesPaid, currentEpochStart(), isManual);
+            emit ProtocolFeePaid(currentEpochStart(), feesPaid, loan.borrower, 0, address(_vaultAsset));
             if(amount == 0) {
                 return;
             }
@@ -365,7 +371,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         }
 
         _vaultAsset.transfer(_vault, amount);
-        emit LoanPaid(loan.borrower, amount, currentEpochStart(), isManual);
+        emit LoanPaid(0, loan.borrower, amount, currentEpochStart(), isManual);
         // if there is an excess payment, handle it according to the zero balance option
         if (excess > 0) {
             _handleZeroBalance(borrower, excess, excess, true);
@@ -418,18 +424,20 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
+        address portfolioOwner = PortfolioFactory(getPortfolioFactory()).ownerOf(borrower);
+        require(portfolioOwner != address(0));
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
             remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(_vaultAsset));
             _vaultAsset.approve(_vault, remaining);
-            IERC4626(_vault).deposit(remaining, loan.borrower);
-            emit RewardsInvested(currentEpochStart(), remaining, loan.borrower);
+            IERC4626(_vault).deposit(remaining, portfolioOwner);
+            emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
             return;
         }
         // If PayToOwner or DoNothing, send tokens to the borrower and pay applicable fees
         IERC20 asset = loan.preferredToken == address(0) ? _vaultAsset : IERC20(loan.preferredToken);
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
-        emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, address(asset));
-        require(asset.transfer(loan.borrower, remaining));
+        emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
+        require(asset.transfer(portfolioOwner, remaining));
     }
 
 
@@ -445,7 +453,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     function _payZeroBalanceFee(address borrower, address borrowerAddr, uint256 remaining, uint256 totalRewards, address token) internal returns (uint256) {
         uint256 zeroBalanceFee = (totalRewards * getZeroBalanceFee()) / 10000;
         IERC20(token).transfer(owner(), zeroBalanceFee);
-        emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, address(token));
+        emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, 0, address(token));
         return zeroBalanceFee;
     }
 
@@ -497,7 +505,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
 
         require(rewardsAmount > 0 || aeroAmount > 0);
         // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, address(rewardToken));
+        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, 0, address(rewardToken));
 
 
         // Handle zero balance case
@@ -536,7 +544,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         uint256 totalRewards,
         uint256 amountToIncrease
     ) internal {
-        _increaseCollateral(loan, amountToIncrease, true);
+        // _increaseCollateral(loan, amountToIncrease, true);
         _handleZeroBalance(loan.borrower, remaining, totalRewards, false);
     }
 
@@ -561,7 +569,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         remaining -= _processFees(loan, feeEligibleAmount, remaining);
         
         // Handle NFT increase
-        _increaseCollateral(loan, amountToIncrease, false);
+        // _increaseCollateral(loan, amountToIncrease, false);
         
         _pay(loan.borrower, remaining, false);
     }
@@ -583,7 +591,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         // Calculate and transfer protocol fee
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;
         _vaultAsset.transfer(owner(), protocolFee);
-        emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, address(_vaultAsset));
+        emit ProtocolFeePaid(currentEpochStart(), protocolFee, loan.borrower, 0, address(_vaultAsset));
 
         // Calculate and transfer lender premium
         uint256 lenderPremium = (totalRewards * getLenderPremium()) / 10000;
@@ -630,11 +638,13 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     }
 
     /**
-     * @notice Allows the borrower to claim their collateral (veNFT) after the loan is fully repaid.
      * @dev This function ensures that only the borrower can claim the collateral and that the loan is fully repaid.
      *      If the loan balance is greater than zero, the collateral cannot be claimed.
      */
-    function confirmClaimCollateral() public virtual {
+    function confirmClaimCollateral(address collateral) public virtual {
+        // confirm the collateral being claimed is the correct one
+        require(collateral == address(_lockedAsset));
+
         LoanInfo storage loan = _loanDetails[msg.sender];
         require(loan.borrower == msg.sender);
 
@@ -644,7 +654,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
 
         if(_getLockedAmount(msg.sender) == 0) {
             require(loan.balance == 0);
-            emit CollateralWithdrawn(msg.sender);
+            emit CollateralWithdrawn(0, msg.sender);
             delete _loanDetails[msg.sender];
         }
     }
@@ -678,7 +688,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     function recordRewards(uint256 rewards, address borrower) internal virtual {
         if (rewards > 0) {
             _rewardsPerEpoch[currentEpochStart()] += rewards;
-            emit RewardsReceived(currentEpochStart(), rewards, borrower);
+            emit RewardsReceived(currentEpochStart(), rewards, borrower, 0);
         }
     }
 
@@ -828,9 +838,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      */
     function setApprovedPools(address[] calldata pools, bool enable) public virtual onlyOwner {
         for (uint256 i = 0; i < pools.length; i++) {
-            // confirm pool is a valid gauge
             address gauge = _voter.gaugeForPool(pools[i]);
-            if (enable) require(_voter.isAlive(gauge));
+            // if (enable) require(_voter.isAlive(gauge)); // pools are not alive
             _approvedPools[pools[i]] = enable;
         }
     }
