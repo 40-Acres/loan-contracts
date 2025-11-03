@@ -4,6 +4,13 @@ pragma solidity ^0.8.20;
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 
+// Active balance options for loans with outstanding balance
+enum ActiveBalanceOption {
+    IncreaseNft,                    // Default: increase NFT with all rewards
+    IncreaseNftCommunityLaunch,     // Increase NFT + receive CL tokens when voting on CL pools
+    PayToOwner,                     // Receive up to 25% rewards to wallet in preferred token
+    PayToOwnerCommunityLaunch       // Receive 25% to wallet + CL tokens when voting on CL pools
+}
 
 abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @custom:storage-location erc7201:storage:LoanStorage
@@ -17,6 +24,9 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(uint256 => uint256) _totalWeightPerEpoch;
         mapping(address => bool) _increaseManagedToken; // if user wants to increase community token
         uint256 _minimumLocked; // minimum a token must have locked to be used as collateral
+        // Community launch related storage
+        mapping(uint256 => address[]) _communityLaunchPools; // epoch => approved pools
+        mapping(address => uint256) _poolApprovedEpoch;       // pool => epoch when approved
     }
 
 
@@ -132,5 +142,25 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function getMinimumLocked() public view returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._minimumLocked;
+    }
+
+    // Community Launch Pool Management Functions
+
+    function setCommunityLaunchPools(uint256 epoch, address[] calldata pools) external onlyOwner {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._communityLaunchPools[epoch] = pools;
+        for (uint256 i = 0; i < pools.length; i++) {
+            $._poolApprovedEpoch[pools[i]] = epoch;
+        }
+    }
+
+    function getCommunityLaunchPools(uint256 epoch) public view returns (address[] memory) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._communityLaunchPools[epoch];
+    }
+
+    function isCommunityLaunchPool(address pool) public view returns (bool) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._poolApprovedEpoch[pool] == ProtocolTimeLibrary.epochStart(block.timestamp);
     }
 }

@@ -22,6 +22,9 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 
+// Import ActiveBalanceOption enum from LoanStorage
+import {ActiveBalanceOption} from "./LoanStorage.sol";
+
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -71,6 +74,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
         bool    optInCommunityRewards; // opt in to community rewards
+        ActiveBalanceOption activeBalanceOption; // New: how to handle rewards when balance > 0
+        bool votedOnCommunityLaunch;              // New: track community launch voting this epoch
     }
 
     // Pools each token votes on for this epoch
@@ -88,7 +93,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param option The zero balance option chosen for the loan.
      */
     
-    event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option);
+    event CollateralAdded(uint256 tokenId, address owner, ZeroBalanceOption option, ActiveBalanceOption activeBalanceOption);
 
     /**
      * @dev Emitted when collateral is withdrawn from a loan.
@@ -172,6 +177,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     event VeNftIncreased(uint256 epoch, address indexed user, uint256 indexed tokenId, uint256 amount, uint256 indexed fromToken);
     
+    /**
+     * @dev Emitted when community launch tokens are claimed for a loan.
+     * @param epoch The epoch during which the CL tokens were claimed.
+     * @param borrower The address of the borrower claiming the CL tokens.
+     * @param tokenId The ID of the token representing the loan.
+     * @param totalAmount The total amount of CL tokens claimed.
+     * @param userAmount The amount sent to the user (25% after fees).
+     * @param token The address of the token in which the rewards are claimed.
+     */
+    event CommunityLaunchTokensClaimed(uint256 epoch, address indexed borrower, uint256 indexed tokenId, uint256 totalAmount, uint256 userAmount, address token);
+    
     /** ERROR CODES */
     // error TokenNotLocked();
     // error TokenLockExpired(uint256 tokenId);
@@ -207,6 +223,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 tokenId,
         uint256 amount,
         ZeroBalanceOption zeroBalanceOption,
+        ActiveBalanceOption activeBalanceOption,
         uint256 increasePercentage,
         address preferredToken,
         bool topUp,
@@ -216,6 +233,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(_ve.ownerOf(tokenId) == msg.sender);
 
         _lock(tokenId);
+
+        // Check if NFT has already voted on community launch pools this epoch
+        bool hasVotedOnCommunityLaunch = _checkExistingCommunityLaunchVotes(tokenId);
+
+        // If NFT has already voted on CL pools, they cannot borrow against it
+        // They can still deposit collateral (amount == 0) but cannot take a loan
+        if (hasVotedOnCommunityLaunch) {
+            require(amount == 0);
+            // require the active balance option to handle
+        }
 
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
@@ -232,14 +259,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             preferredToken: preferredToken,
             increasePercentage: increasePercentage,
             topUp: topUp,
-            optInCommunityRewards: optInCommunityRewards
+            optInCommunityRewards: optInCommunityRewards,
+            activeBalanceOption: activeBalanceOption,
+            votedOnCommunityLaunch: hasVotedOnCommunityLaunch
         });
 
 
         // transfer the token to the contract
         _ve.transferFrom(msg.sender, address(this), tokenId);
         require(_ve.ownerOf(tokenId) == address(this));
-        emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
+        emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption, activeBalanceOption);
 
 
         require(increasePercentage <= 10000);
@@ -280,6 +309,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
 
         require(loan.borrower == msg.sender);
+
+        // Prevent increasing loan if this loan voted on community launch this epoch
+        require(!_isCommunityLaunchActive(loan));
+
         _increaseLoan(loan, tokenId, amount);
 
        // set a default payoff token if not set
@@ -526,12 +559,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @notice Claims rewards for a specific loan and handles the distribution of rewards.
      * @dev This function retrieves rewards for the given token ID, calculates protocol fees,
      *      lender premiums, and handles zero balance scenarios based on the loan's configuration.
+     *      Can also handle Community Launch token claims when bribes/clTokens are provided.
      * @param tokenId The ID of the loan (NFT) for which rewards are being claimed.
-     * @param fees An array of addresses representing the fee tokens to be claimed.
-     * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset.
+     * @param fees An array of addresses representing the fee tokens to be claimed (or bribes for CL claims).
+     * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset (or CL tokens for CL claims).
+     * @param tradeData ODOS swap data for swapping tokens.
+     * @param allocations [0] = total rewards claimed, [1] = amount for user/NFT increase.
+     * @param isCommunityLaunchClaim If true, this is a CL token claim (uses claimBribes instead of claimFees).
      * @return totalRewards The total amount usdc claimed after fees.
      */
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations, bool isCommunityLaunchClaim) public virtual returns (uint256) {
         require(msg.sender == _entryPoint());
         LoanInfo storage loan = _loanDetails[tokenId];
 
@@ -548,7 +585,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // if any of tokens or loan.preferres token has a balance, return to owner
         _rescueTokens(tokens, loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken);
 
-        _processRewards(fees, tokens, tokenId, tradeData);
+        if (isCommunityLaunchClaim) {
+            require(_isCommunityLaunchActive(loan));
+            // Note: activeBalanceOption is auto-upgraded when voting on CL pools, so no need to check
+        }
+
+        // Process rewards: use claimBribes for CL claims, claimFees for regular claims
+        _processRewards(fees, tokens, tokenId, tradeData, isCommunityLaunchClaim);
+        
         uint256 rewardsAmount = _asset.balanceOf(address(this));
         address rewardToken = address(_asset);
         // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
@@ -573,16 +617,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         require(rewardsAmount > 0 || aeroAmount > 0);
-        // Emit an event indicating that rewards have been claimed.
         emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId, address(rewardToken));
-
-
-        // Handle zero balance case
-        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
-            _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
+        if (isCommunityLaunchClaim) {
+            _handleCommunityLaunchClaim(loan, tokenId, allocations, rewardsAmount, aeroAmount);
         } else {
-            // Handle active loan case
-            _handleActiveLoanClaim(loan, tokenId, allocations[0], aeroAmount, rewardsAmount);
+            if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+                _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
+            } else {
+                _handleActiveLoanClaim(loan, tokenId, allocations[0], aeroAmount, rewardsAmount);
+            }
         }
 
         _claimRebase(loan);
@@ -595,9 +638,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         address[] calldata fees,
         address[][] calldata tokens,
         uint256 tokenId,
-        bytes calldata tradeData
+        bytes calldata tradeData,
+        bool isCommunityLaunchClaim
     ) internal {
-        _voter.claimFees(fees, tokens, tokenId);
+        // Use claimBribes for CL claims, claimFees for regular claims
+        if (isCommunityLaunchClaim) {
+            _voter.claimBribes(fees, tokens, tokenId);
+        } else {
+            _voter.claimFees(fees, tokens, tokenId);
+        }
+        
         ISwapper swapper = ISwapper(getSwapper());
         address[] memory flattenedTokens = swapper.flattenToken(tokens);
 
@@ -658,28 +708,144 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param loan The storage reference to the loan information
      * @param tokenId The ID of the token associated with the loan
      * @param totalRewards The total rewards being claimed
-     * @param amountToIncrease The amount by which to increase the NFT value
+     * @param allocationsParam allocations[1] - repurposed with new activeBalanceOptions: aero amount for NFT increase OR user wallet amount for PayToOwner
      * @param remaining The remaining amount after initial calculations, which gets updated throughout the function
      */
     function _handleActiveLoanClaim(
         LoanInfo storage loan,
-        uint256 tokenId, 
+        uint256 tokenId,
         uint256 totalRewards,
-        uint256 amountToIncrease,
+        uint256 allocationsParam,
         uint256 remaining
     ) internal {
-        // Calculate fee eligible amount
-        uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, totalRewards);
-        
-        // Process fees
+        uint256 userAmount;
+        uint256 amountToIncrease;
+
+        if (loan.activeBalanceOption == ActiveBalanceOption.PayToOwner ||
+            loan.activeBalanceOption == ActiveBalanceOption.PayToOwnerCommunityLaunch) {
+            // For PayToOwner options: allocations[1] = amount to send directly to user (up to 25%)
+            userAmount = allocationsParam;
+            // Cap userAmount to remaining balance
+            if (userAmount > remaining) {
+                userAmount = remaining;
+            }
+            amountToIncrease = 0; // No NFT increase for PayToOwner options
+        } else {
+            // For IncreaseNft options: allocations[1] = aero amount for NFT increase
+            userAmount = 0;
+            amountToIncrease = allocationsParam;
+        }
+
+        // Apply active balance option logic (only for community launch differentiation)
+        (uint256 additionalUserAmount, uint256 remainingAfterSplit) = _applyActiveBalanceOption(loan, totalRewards, remaining);
+        userAmount += additionalUserAmount; // Add any additional amount from community launch logic
+        remaining = remainingAfterSplit;
+
+        // Process user amount (to wallet if applicable)
+        if (userAmount > 0) {
+            // Subtract userAmount from remaining before processing fees
+            if (userAmount > remaining) {
+                userAmount = remaining;
+            }
+            _sendToUser(loan, userAmount);
+            remaining -= userAmount;
+        }
+
+        // Calculate fee eligible amount from remaining rewards (after user amount deducted)
+        uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, remaining);
+
+        // Process fees on remaining amount
         remaining -= _processFees(loan, tokenId, feeEligibleAmount, remaining);
-        
-        // Handle NFT increase
+
+        // Handle NFT increase with allocated amount
         _increaseNft(loan, amountToIncrease, false);
-        // Handle payoff token and payment
+
+        // Handle payoff token and payment with remaining amount
         remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
         _pay(tokenId, remaining, false);
     }
+
+    /**
+     * @dev Applies active balance option logic for community launch differentiation
+     * @param loan The loan information storage struct
+     * @param totalRewards The total rewards amount being processed
+     * @param remaining The current remaining amount
+     * @return additionalUserAmount Additional amount to send to user (for community launch edge cases)
+     * @return remainingAfterSplit The remaining amount after any special processing
+     */
+    function _applyActiveBalanceOption(
+        LoanInfo storage loan,
+        uint256 totalRewards,
+        uint256 remaining
+    ) internal returns (uint256 additionalUserAmount, uint256 remainingAfterSplit) {
+        bool isCommunityLaunch = _isCommunityLaunchActive(loan);
+
+        // Main splitting logic now handled via allocations[1] repurposing in _handleActiveLoanClaim
+        // This function now only handles community launch differentiation
+        if (isCommunityLaunch &&
+            loan.activeBalanceOption == ActiveBalanceOption.PayToOwnerCommunityLaunch) {
+            // Community launch: CL tokens handled separately in claimCommunityLaunchTokens
+            // USDC rewards processed normally (no additional user amount from this function)
+            additionalUserAmount = 0;
+            remainingAfterSplit = remaining;
+        } else {
+            // No special processing needed - allocations[1] already set userAmount appropriately
+            additionalUserAmount = 0;
+            remainingAfterSplit = remaining;
+        }
+    }
+
+    /**
+     * @dev Sends specified amount to user's wallet in their preferred token
+     * @param loan The loan information storage struct
+     * @param amount The amount to send to user
+     */
+    function _sendToUser(LoanInfo storage loan, uint256 amount) internal {
+        IERC20 asset = loan.preferredToken == address(0) ? _asset : IERC20(loan.preferredToken);
+        require(asset.transfer(loan.borrower, amount));
+        emit RewardsPaidtoOwner(currentEpochStart(), amount, loan.borrower, loan.tokenId, address(asset));
+    }
+
+    /**
+     * @dev Checks if community launch is active for this loan
+     * @param loan The loan information storage struct
+     * @return True if loan voted on community launch pools this epoch
+     */
+    function _isCommunityLaunchActive(LoanInfo storage loan) internal view returns (bool) {
+        return loan.votedOnCommunityLaunch;
+    }
+
+    /**
+     * @dev Checks if an NFT has already voted on community launch pools before being deposited
+     * @param tokenId The NFT token ID to check
+     * @return True if the NFT has voted on community launch pools this epoch
+     */
+    function _checkExistingCommunityLaunchVotes(uint256 tokenId) internal view returns (bool) {
+        // First check if NFT has voted this epoch at all
+        if (!_ve.voted(tokenId)) {
+            return false;
+        }
+
+        // Get CL pools for the epoch when NFT voted (not current epoch)
+        // This handles edge case where NFT voted in previous epoch but check happens in new epoch
+        uint256 voteTimestamp = _loanDetails[tokenId].voteTimestamp;
+        if (voteTimestamp == 0) {
+            // No vote timestamp, check current epoch
+            voteTimestamp = block.timestamp;
+        }
+        uint256 voteEpoch = ProtocolTimeLibrary.epochStart(voteTimestamp);
+        address[] memory clPools = getCommunityLaunchPools(voteEpoch);
+
+        // Check if NFT voted on any community launch pools in that epoch
+        for (uint256 i = 0; i < clPools.length; i++) {
+            if (_voter.votes(tokenId, clPools[i]) > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 
     /**
      * @notice Process and distribute fees from loan rewards
@@ -1116,8 +1282,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     /**
      * @notice Sets the preferred token for a specific loan.
      * @dev This function can only be called by the borrower of the loan.
+     *      Token must be approved if not address(0).
      * @param tokenId The ID of the loan (NFT).
-     * @param preferredToken The address of the preferred token to set.
+     * @param preferredToken The address of the preferred token (address(0) for default asset).
      */
     function setPreferredToken(
         uint256 tokenId,
@@ -1125,7 +1292,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
-        require(isApprovedToken(preferredToken));
+        
+        if(preferredToken != address(0)) {
+            require(isApprovedToken(preferredToken));
+        }
+        
         loan.preferredToken = preferredToken;
     }
     
@@ -1138,6 +1309,26 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             require(loan.borrower == msg.sender);
             loan.optInCommunityRewards = optIn;
         }
+    }
+
+    /**
+     * @notice Sets the active balance option for a specific loan.
+     * @dev This function can only be called by the borrower of the loan.
+     *      Cannot change option after voting on community launch pools this epoch.
+     * @param tokenId The ID of the loan (NFT).
+     * @param option The active balance option to set.
+     */
+    function setActiveBalanceOption(
+        uint256 tokenId,
+        ActiveBalanceOption option
+    ) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+
+        // Prevent changing option after voting on community launch this epoch
+        require(!_isCommunityLaunchActive(loan));
+
+        loan.activeBalanceOption = option;
     }
 
 
@@ -1192,18 +1383,48 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _vote(uint256 tokenId, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
+            // Check if any voted pools are community launch pools
+            bool votedOnCommunityLaunch = false;
+            for (uint256 i = 0; i < pools.length; i++) {
+                if (isCommunityLaunchPool(pools[i])) {
+                    votedOnCommunityLaunch = true;
+                    break;
+                }
+            }
+
+            // Track community launch voting - auto-upgrade to CL-compatible option if needed
+            if (votedOnCommunityLaunch) {
+                // Auto-upgrade non-CL options to CL-compatible options (never revert)
+                if (loan.activeBalanceOption == ActiveBalanceOption.IncreaseNft) {
+                    // Upgrade IncreaseNft → IncreaseNftCommunityLaunch
+                    loan.activeBalanceOption = ActiveBalanceOption.IncreaseNftCommunityLaunch;
+                } else if (loan.activeBalanceOption == ActiveBalanceOption.PayToOwner) {
+                    // Upgrade PayToOwner → PayToOwnerCommunityLaunch
+                    loan.activeBalanceOption = ActiveBalanceOption.PayToOwnerCommunityLaunch;
+                } else if (loan.activeBalanceOption != ActiveBalanceOption.IncreaseNftCommunityLaunch &&
+                           loan.activeBalanceOption != ActiveBalanceOption.PayToOwnerCommunityLaunch) {
+                    // Default to IncreaseNftCommunityLaunch if option is unrecognized or invalid
+                    loan.activeBalanceOption = ActiveBalanceOption.IncreaseNftCommunityLaunch;
+                }
+                loan.votedOnCommunityLaunch = true;
+            } else if (loan.votedOnCommunityLaunch) {
+                // User changed vote away from CL pools - reset flag
+                // This handles edge case where user votes on CL pools then changes to non-CL pools
+                loan.votedOnCommunityLaunch = false;
+            }
+
             // not within try catch because we want to revert if the transaction fails so the user can try again
-            _voter.vote(tokenId, pools, weights); 
+            _voter.vote(tokenId, pools, weights);
             loan.voteTimestamp = block.timestamp;
             return true; // if the user has manually voted, we don't want to override their vote
         }
-        
+
         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
         if(!isActive && _withinVotingWindow()) {
             try _voter.vote(tokenId, _defaultPools, _defaultWeights) {
                 return true;
             } catch { }
-        } 
+        }
         return false;
     }
     
@@ -1262,6 +1483,109 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _setUserPayoffTokenOption(loan.borrower, enable);
         if(enable) {
            _setUserPayoffToken(loan.borrower, tokenId);
+        }
+    }
+
+    /**
+     * @dev Handles Community Launch token claims with 25%/75% split
+     * @param loan The loan information storage struct
+     * @param tokenId The ID of the loan
+     * @param allocations [0] = total CL tokens claimed, [1] = amount for user/NFT increase
+     * @param rewardsAmount The asset balance after swap
+     * @param aeroAmount The aero balance after swap
+     */
+    function _handleCommunityLaunchClaim(
+        LoanInfo storage loan,
+        uint256 tokenId,
+        uint256[2] calldata allocations,
+        uint256 rewardsAmount,
+        uint256 aeroAmount
+    ) internal {
+        // Backend swaps: 25% → preferred token/aero (fee-free), 75% → asset (with fees)
+        // Get balances after swap - backend handles the split correctly
+        address userToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
+        uint256 userPortionBalance = IERC20(userToken).balanceOf(address(this));
+        uint256 normalFlowBalance = _asset.balanceOf(address(this));
+        
+        require(allocations[0] > 0 || userPortionBalance > 0 || normalFlowBalance > 0 || aeroAmount > 0);
+
+        uint256 userAmount = 0;
+        uint256 amountToIncrease = 0;
+
+        if (loan.activeBalanceOption == ActiveBalanceOption.PayToOwnerCommunityLaunch) {
+            // PayToOwnerCommunityLaunch: 25% fee-free to user, 75% to normal flow (with fees)
+            // Backend swaps 25% CL tokens → userToken, 75% CL tokens → asset
+            userAmount = allocations[1] > 0 ? allocations[1] : userPortionBalance;
+            
+            // Cap userAmount to available balance (already swapped by backend)
+            if (userAmount > userPortionBalance) {
+                userAmount = userPortionBalance;
+            }
+
+            if (userAmount > 0) {
+                _sendToUser(loan, userAmount);
+            }
+
+            // Process fees on normal flow portion (75% in asset)
+            if (normalFlowBalance > 0) {
+                uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, normalFlowBalance);
+                normalFlowBalance -= _processFees(loan, tokenId, feeEligibleAmount, normalFlowBalance);
+                
+                // Remaining goes to loan repayment
+                normalFlowBalance -= _handlePayoffToken(loan.borrower, tokenId, normalFlowBalance);
+                _pay(tokenId, normalFlowBalance, false);
+            }
+
+            emit CommunityLaunchTokensClaimed(currentEpochStart(), loan.borrower, tokenId, allocations[0], userAmount, userToken);
+
+        } else {
+            // IncreaseNftCommunityLaunch: 25% fee-free for NFT increase, 75% to normal flow (with fees)
+            // Backend swaps: 25% CL tokens → aero (for NFT increase, fee-free), 75% CL tokens → asset (with fees)
+            amountToIncrease = allocations[1] > 0 ? allocations[1] : aeroAmount;
+            
+            // Cap amountToIncrease to available balance (already swapped by backend)
+            if (amountToIncrease > aeroAmount) {
+                amountToIncrease = aeroAmount;
+            }
+            
+            // Handle NFT increase with fee-free portion (25%)
+            if (amountToIncrease > 0) {
+                _increaseNft(loan, amountToIncrease, false);
+            }
+
+            // Process fees on normal flow portion (75% in asset)
+            if (normalFlowBalance > 0) {
+                uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, normalFlowBalance);
+                normalFlowBalance -= _processFees(loan, tokenId, feeEligibleAmount, normalFlowBalance);
+                
+                // Remaining goes to loan repayment
+                normalFlowBalance -= _handlePayoffToken(loan.borrower, tokenId, normalFlowBalance);
+                _pay(tokenId, normalFlowBalance, false);
+            }
+
+            emit CommunityLaunchTokensClaimed(currentEpochStart(), loan.borrower, tokenId, allocations[0], 0, address(_aero));
+        }
+        
+        // Flag reset handled manually by entry point after all CL claims are complete
+        // This allows multiple CL pools to be claimed separately if needed
+    }
+
+    /**
+     * @notice Resets community launch flags for loans after all CL token claims are complete
+     * @dev Called by entry point after finishing script for CL claims
+     *      Operator is responsible for passing only tokenIds that voted in the specified epoch
+     * @param tokenIds Array of token IDs to reset flags for
+     * @param epoch The epoch for which CL claims are complete (for operator reference, not validated)
+     */
+    function resetCommunityLaunchFlags(uint256[] calldata tokenIds, uint256 epoch) external {
+        require(msg.sender == _entryPoint());
+        require(tokenIds.length > 0);
+        
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            LoanInfo storage loan = _loanDetails[tokenIds[i]];
+            if (loan.votedOnCommunityLaunch) {
+                loan.votedOnCommunityLaunch = false;
+            }
         }
     }
 
