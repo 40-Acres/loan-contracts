@@ -76,7 +76,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         bool    optInCommunityRewards; // opt in to community rewards
         ActiveBalanceOption activeBalanceOption; // New: how to handle rewards when balance > 0
         bool votedOnCommunityLaunch;              // New: track community launch voting this epoch
-        address clPreferredToken;                 // Preferred token for community launch rewards (per epoch)
     }
 
     // Pools each token votes on for this epoch
@@ -262,8 +261,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             topUp: topUp,
             optInCommunityRewards: optInCommunityRewards,
             activeBalanceOption: activeBalanceOption,
-            votedOnCommunityLaunch: hasVotedOnCommunityLaunch,
-            clPreferredToken: address(0)
+            votedOnCommunityLaunch: hasVotedOnCommunityLaunch
         });
 
 
@@ -1302,29 +1300,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.preferredToken = preferredToken;
     }
     
-    /**
-     * @notice Sets the preferred token for community launch rewards for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     *      Token must be approved if not address(0).
-     *      This allows users to set a different preferred token for CL rewards vs normal rewards.
-     *      Users can set this per epoch without affecting their main preferredToken setting.
-     * @param tokenId The ID of the loan (NFT).
-     * @param clPreferredToken The address of the preferred token for CL rewards (address(0) to use preferredToken).
-     */
-    function setClPreferredToken(
-        uint256 tokenId,
-        address clPreferredToken
-    ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        
-        if(clPreferredToken != address(0)) {
-            require(isApprovedToken(clPreferredToken));
-        }
-        
-        loan.clPreferredToken = clPreferredToken;
-    }
-    
     function setOptInCommunityRewards(
         uint256[] calldata tokenIds,
         bool optIn
@@ -1417,7 +1392,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 }
             }
 
-            // Track community launch voting - auto-upgrade/downgrade option based on CL pool voting
+            // Track community launch voting - auto-upgrade to CL-compatible option if needed
             if (votedOnCommunityLaunch) {
                 // Auto-upgrade non-CL options to CL-compatible options (never revert)
                 if (loan.activeBalanceOption == ActiveBalanceOption.IncreaseNft) {
@@ -1433,15 +1408,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                 }
                 loan.votedOnCommunityLaunch = true;
             } else if (loan.votedOnCommunityLaunch) {
-                // User changed vote away from CL pools - auto-downgrade CL options back to non-CL versions
-                // This streamlines the user experience by automatically resetting to appropriate option
-                if (loan.activeBalanceOption == ActiveBalanceOption.IncreaseNftCommunityLaunch) {
-                    // Downgrade IncreaseNftCommunityLaunch → IncreaseNft
-                    loan.activeBalanceOption = ActiveBalanceOption.IncreaseNft;
-                } else if (loan.activeBalanceOption == ActiveBalanceOption.PayToOwnerCommunityLaunch) {
-                    // Downgrade PayToOwnerCommunityLaunch → PayToOwner
-                    loan.activeBalanceOption = ActiveBalanceOption.PayToOwner;
-                }
+                // User changed vote away from CL pools - reset flag
+                // This handles edge case where user votes on CL pools then changes to non-CL pools
                 loan.votedOnCommunityLaunch = false;
             }
 
@@ -1535,10 +1503,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     ) internal {
         // Backend swaps: 25% → preferred token/aero (fee-free), 75% → asset (with fees)
         // Get balances after swap - backend handles the split correctly
-        // Use CL preferred token if set, otherwise fallback to regular preferredToken
-        address userToken = loan.clPreferredToken != address(0) 
-            ? loan.clPreferredToken 
-            : (loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken);
+        address userToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
         uint256 userPortionBalance = IERC20(userToken).balanceOf(address(this));
         uint256 normalFlowBalance = _asset.balanceOf(address(this));
         
