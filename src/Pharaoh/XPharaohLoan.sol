@@ -437,7 +437,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             return;
         }
         // asset is the user's preferred token if set and approved, otherwise use vault asset
-        IERC20 asset = loan.preferredToken != address(0) && isApprovedToken(IERC20(loan.preferredToken)) ? IERC20(loan.preferredToken) : _vaultAsset;
+        IERC20 asset = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? IERC20(loan.preferredToken) : _vaultAsset;
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(portfolioOwner, remaining));
@@ -491,7 +491,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         if (loan.balance == 0 && 
             (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0) && 
             loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
-            rewardToken = loan.preferredToken != address(0) && isApprovedToken(IERC20(loan.preferredToken)) ? IERC20(loan.preferredToken) : _vaultAsset;
+            rewardToken = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? loan.preferredToken : address(_vaultAsset);
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
 
@@ -985,28 +985,30 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         return _vote(user, pools, weights);
     }
 
+
     /**
      * @dev Internal function to handle voting for a specific loan.
      * @param borrower The address of the borrower for which the vote is being cast.
      * @param pools An array of addresses representing the pools to vote on.
      * @param weights An array of uint256 values representing the weights of the pools.
-     * @return bool indicating whether the vote was successfully cast.
      */
-    function _vote(address borrower, address[] memory pools, uint256[] memory weights) internal virtual returns (bool) {
+    function _vote(address borrower, address[] memory pools, uint256[] memory weights) internal returns (bool) {
         LoanInfo storage loan = _loanDetails[borrower];
-        IXVoter voter = _voter;
-        if(loan.borrower == msg.sender && pools.length > 0 ) {
-            voter.vote(borrower, pools, weights);
+        require(loan.borrower != address(0));
+        if(loan.borrower == msg.sender && pools.length > 0) {
+            // not within try catch because we want to revert if the transaction fails so the user can try again
+            _voter.vote(borrower, pools, weights); 
             loan.voteTimestamp = block.timestamp;
-            return true; // if the user has manually voted, we don't want to override their vote
+            return true;
         }
-        
-        bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
-        if(!isActive && _withinVotingWindow()) {
-            try voter.vote(borrower, _defaultPools, _defaultWeights) {
+        // must vote each epoch, user are able to change their vote so we vote once per epoch if the user has not voted
+        bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) == ProtocolTimeLibrary.epochStart(block.timestamp);
+        if(!isActive) {
+            try _voter.vote(borrower, _defaultPools, _defaultWeights) {
+                loan.voteTimestamp = block.timestamp;
                 return true;
             } catch { }
-        } 
+        }
         return false;
     }
     

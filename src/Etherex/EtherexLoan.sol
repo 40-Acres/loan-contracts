@@ -434,7 +434,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
             return;
         }
         // asset is the user's preferred token if set and approved, otherwise use vault asset
-        IERC20 asset = loan.preferredToken != address(0) && isApprovedToken(IERC20(loan.preferredToken)) ? IERC20(loan.preferredToken) : _vaultAsset;
+        IERC20 asset = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? IERC20(loan.preferredToken) : _vaultAsset;
         remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(portfolioOwner, remaining));
@@ -488,7 +488,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         if (loan.balance == 0 && 
             (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0) && 
             loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
-            rewardToken = loan.preferredToken != address(0) && isApprovedToken(IERC20(loan.preferredToken)) ? IERC20(loan.preferredToken) : _vaultAsset;
+            rewardToken = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? loan.preferredToken : address(_vaultAsset);
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
 

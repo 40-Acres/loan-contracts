@@ -388,7 +388,7 @@ contract XPharaohTest is Test {
             false
         );
         vm.roll(block.number + 1);
-        loan.vote(user);
+        XPharaohFacet(userAccount).xPharUserVote(address(loan), new address[](0), new uint256[](0));
         vm.stopPrank();
 
         assertTrue(usdc.balanceOf(address(user)) >= 1e6, "User should have more than loan");
