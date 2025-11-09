@@ -103,12 +103,9 @@ contract XRexFacet {
 
         // increase the collateral if necessary
         if(allocations[1] > 0) {
-            // max amount we can increase is the difference between the beginning and ending locked asset balance
-            uint256 rexaohAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
-            if(allocations[1] < rexaohAmount) {
-                rexaohAmount = allocations[1];
-            }
-            _increaseCollateral(rexaohAmount, address(IXLoan(loanContract)._lockedAsset()));
+            // amount we can increase is the difference between the beginning and ending locked asset balance
+            uint256 rexAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
+            _increaseCollateral(rexAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
         return result;
