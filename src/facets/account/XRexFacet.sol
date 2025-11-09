@@ -52,8 +52,6 @@ contract XRexFacet {
     function xRexIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).increaseLoan(amount);
-        address asset = address(IXLoan(loanContract)._vaultAsset());
-        IERC20(asset).transfer(msg.sender, amount);
     }
 
     function xRexIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {

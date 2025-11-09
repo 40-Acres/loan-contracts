@@ -23,6 +23,7 @@ import { PortfolioFactory } from "../accounts/PortfolioFactory.sol";
 import {IVoteModule} from "../interfaces/IVoteModule.sol";
 import {IXRex} from "../interfaces/IXRex.sol";
 import {IXRexFacet} from "../interfaces/IXRexFacet.sol";
+import {IUSDC} from "../interfaces/IUSDC.sol";
 
 contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     IXVoter internal _voter;
@@ -276,7 +277,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         require(amount > .01e6);
         require(isPortfolio(msg.sender));
         
-        require(confirmUsdcPrice());
+        require(confirmUsdcLoan(msg.sender));
         LoanInfo storage loan = _loanDetails[msg.sender];
 
         _increaseLoan(loan, amount);
@@ -377,7 +378,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
             _handleZeroBalance(borrower, excess, excess, true);
         }
 
-        if(!isManual && loan.topUp && confirmUsdcPrice()) {
+        if(!isManual && loan.topUp && confirmUsdcLoan(borrower)) {
             (uint256 maxLoan, ) = getMaxLoan(borrower);
             if(maxLoan > .01e6) {
                 _increaseLoan(loan, maxLoan);
@@ -1043,11 +1044,16 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     /** ORACLE */
     
     /**
-     * @notice Confirms the price of USDC is $1.
+     * @notice Confirms the price of USDC is $1 and if is not in the blacklist.
      * @dev This function checks the latest round data from the Chainlink price feed for USDC.
      * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
      */
-    function confirmUsdcPrice() virtual internal view returns (bool) {
+    function confirmUsdcLoan(address user) virtual internal view returns (bool) {
+        bool isBlacklisted = IUSDC(address(_vaultAsset)).isBlacklisted(user);
+        if(isBlacklisted) {
+            return false;
+        }
+
         (
             /* uint80 roundID */,
             int answer ,
