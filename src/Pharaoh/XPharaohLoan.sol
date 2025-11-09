@@ -551,6 +551,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         _handleZeroBalance(loan.borrower, remaining, totalRewards, false);
     }
 
+
     /**
      * @notice Handles claiming rewards for an active loan
      * @dev Processes fee deductions, increases NFT value, and handles payoff tokens
@@ -586,7 +587,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @param remaining The remaining amount after previous deductions (unused in current implementation)
      * @return The sum of the protocol fee and lender premium
      */
-    function _processFees(
+function _processFees(
         LoanInfo storage loan,
         uint256 totalRewards,
         uint256 remaining
@@ -1043,6 +1044,18 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         require(loan.borrower == msg.sender);
         require(increasePercentage <= 10000);
         loan.increasePercentage = increasePercentage;
+    }
+
+
+    /**
+     * @notice Sets the approved token for the contract.
+     * @dev This function can only be called by the owner of the contract.
+     * @param token The address of the token to approve or disapprove.
+     * @param approved A boolean indicating whether to approve or disapprove the token.
+     */
+    function setApprovedToken(address token, bool approved) public override onlyOwner {
+        require(token != address(_liquidAsset));
+        super.setApprovedToken(token, approved);
     }
 
     /** ORACLE */

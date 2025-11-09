@@ -1040,6 +1040,17 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         loan.increasePercentage = increasePercentage;
     }
 
+    /**
+     * @notice Sets the approved token for the contract.
+     * @dev This function can only be called by the owner of the contract.
+     * @param token The address of the token to approve or disapprove.
+     * @param approved A boolean indicating whether to approve or disapprove the token.
+     */
+    function setApprovedToken(address token, bool approved) public override onlyOwner {
+        require(token != address(_liquidAsset));
+        super.setApprovedToken(token, approved);
+    }
+    
     /** ORACLE */
     
     /**
