@@ -111,11 +111,8 @@ contract XPharaohFacet {
 
         // increase the collateral if necessary
         if(allocations[1] > 0) {
-            // max amount we can increase is the difference between the beginning and ending locked asset balance
+            // amount we can increase is the difference between the beginning and ending locked asset balance
             uint256 pharaohAmount = _phar33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
-            if(allocations[1] < pharaohAmount) {
-                pharaohAmount = allocations[1];
-            }
             _increaseCollateral(pharaohAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
