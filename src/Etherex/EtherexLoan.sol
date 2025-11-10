@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
@@ -333,7 +334,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         if(loan.unpaidFees > 0) {
             uint256 feesPaid = loan.unpaidFees;
             // set maxFees to 25% of the amount being paid
-            uint256 maxFees = (amount * 25) / 100; // 25% of the amount being paid
+            uint256 maxFees = Math.ceilDiv(amount * 25, 100); // 25% of the amount being paid
             if(feesPaid > maxFees) {
                 feesPaid = maxFees; // cap the fees paid to 25% of the amount being paid
             }
