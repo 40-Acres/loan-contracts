@@ -31,6 +31,7 @@ contract XPharaohFacet {
     address public immutable _voteModule = 0x34F233F868CdB42446a18562710eE705d66f846b;
     address public immutable _voter = 0x922b9Ca8e2207bfB850B6FF647c054d4b58a2Aa7;
     address public immutable _vePhar = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
+    address public constant _odosRouter = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC;
 
     constructor(address portfolioFactory, address accountConfigStorage) {
         require(portfolioFactory != address(0));
@@ -136,7 +137,7 @@ contract XPharaohFacet {
             for (uint256 j = 0; j < tokens[i].length; j++) {
                 IERC20 token = IERC20(tokens[i][j]);
                 tokenBalances[i][j] = token.balanceOf(address(this));
-                token.approve(0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC, type(uint256).max);
+                token.approve(_odosRouter, type(uint256).max);
             }
         }
 
@@ -145,7 +146,7 @@ contract XPharaohFacet {
             revert(); // No trade data provided, cannot proceed with claiming rewards
         }
 
-        (bool success,) = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC.call{value: 0}(tradeData);
+        (bool success,) = _odosRouter.call{value: 0}(tradeData);
         require(success);
 
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -153,8 +154,8 @@ contract XPharaohFacet {
             IERC20 token = IERC20(tokens[i][j]);
             uint256 tokenBalance = token.balanceOf(address(this));
             require(tokenBalance >= tokenBalances[i][j]);
-            if (token.allowance(address(this), 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC) != 0) {
-                    token.approve(0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC, 0);
+            if (token.allowance(address(this), _odosRouter) != 0) {
+                    token.approve(_odosRouter, 0);
                 }
             }
         }

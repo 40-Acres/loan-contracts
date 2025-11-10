@@ -23,6 +23,7 @@ contract XRexFacet {
     address public immutable _xrex = 0xc93B315971A4f260875103F5DA84cB1E30f366Cc;
     address public immutable _voteModule = 0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1;
     address public immutable _voter = 0x942117Ec0458a8AA08669E94B52001Bd43F889C1;
+    address public constant _odosRouter = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
 
     constructor(address portfolioFactory, address accountConfigStorage) {
         require(portfolioFactory != address(0));
@@ -128,7 +129,7 @@ contract XRexFacet {
             for (uint256 j = 0; j < tokens[i].length; j++) {
                 IERC20 token = IERC20(tokens[i][j]);
                 tokenBalances[i][j] = token.balanceOf(address(this));
-                token.approve(0x2d8879046f1559E53eb052E949e9544bCB72f414, type(uint256).max);
+                token.approve(_odosRouter, type(uint256).max);
             }
         }
 
@@ -137,7 +138,7 @@ contract XRexFacet {
             revert(); // No trade data provided, cannot proceed with claiming rewards
         }
 
-        (bool success,) = 0x2d8879046f1559E53eb052E949e9544bCB72f414.call{value: 0}(tradeData);
+        (bool success,) = _odosRouter.call{value: 0}(tradeData);
         require(success);
 
         for (uint256 i = 0; i < tokens.length; i++) {
@@ -145,8 +146,8 @@ contract XRexFacet {
             IERC20 token = IERC20(tokens[i][j]);
             uint256 tokenBalance = token.balanceOf(address(this));
             require(tokenBalance >= tokenBalances[i][j]);
-            if (token.allowance(address(this), 0x2d8879046f1559E53eb052E949e9544bCB72f414) != 0) {
-                    token.approve(0x2d8879046f1559E53eb052E949e9544bCB72f414, 0);
+            if (token.allowance(address(this), _odosRouter) != 0) {
+                    token.approve(_odosRouter, 0);
                 }
             }
         }
