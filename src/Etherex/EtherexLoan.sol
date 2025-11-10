@@ -609,8 +609,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     function _calculateFeeEligibleAmount(LoanInfo storage loan, uint256 amount) internal view returns (uint256) {
         uint256 feeEligibleAmount = amount;
         uint256 payoffTokenLoanBalance = 0;
-        if (amount > loan.balance + payoffTokenLoanBalance) {
-            feeEligibleAmount = loan.balance + payoffTokenLoanBalance;
+        if (amount > loan.outstandingCapital + payoffTokenLoanBalance) {
+            feeEligibleAmount = loan.outstandingCapital + payoffTokenLoanBalance;
         }
         
         return feeEligibleAmount;
