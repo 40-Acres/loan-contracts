@@ -347,16 +347,11 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
                 return;
             }
         }
-
-        uint256 payoffToken = getUserPayoffToken(loan.borrower);
         // process the payment
         uint256 excess = 0;
         if (amount >= loan.balance) {
             excess = amount - loan.balance;
             amount = loan.balance;
-            if(payoffToken == 0) {
-                _setUserPayoffToken(loan.borrower, 0); // reset the payoff token if the loan is fully paid
-            }
         }
         loan.balance -= amount;
         if (amount > loan.outstandingCapital) {
@@ -381,11 +376,6 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
             }
         }
 
-
-        // set default payoff token if none set
-       if(payoffToken == 0 && loan.balance > 0) {
-           _setUserPayoffToken(loan.borrower, 0);
-       }
     }
 
     function _claimRebase(LoanInfo storage loan) internal {
@@ -424,7 +414,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         address portfolioOwner = PortfolioFactory(getPortfolioFactory()).ownerOf(borrower);
         require(portfolioOwner != address(0));
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
-            remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(_vaultAsset));
+            remaining -= _payZeroBalanceFee(loan.borrower, remaining, totalRewards, address(_vaultAsset));
             _vaultAsset.approve(_vault, remaining);
             IERC4626(_vault).deposit(remaining, portfolioOwner);
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
@@ -432,7 +422,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         }
         // asset is the user's preferred token if set and approved, otherwise use vault asset
         IERC20 asset = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? IERC20(loan.preferredToken) : _vaultAsset;
-        remaining -= _payZeroBalanceFee(loan.borrower, borrower, remaining, totalRewards, address(asset));
+        remaining -= _payZeroBalanceFee(loan.borrower, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(portfolioOwner, remaining));
     }
@@ -441,13 +431,12 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     /**
      * @dev Handles the payment of zero balance fees for a given loan.
      * @param borrower The address of the borrower.
-     * @param borrowerAddr The address of the borrower.
      * @param remaining The token balance available for payment.
      * @param totalRewards The total amount of rewards claimed for the loan.
      * @param token The address of the token being used for payment.
      * @return fee The amount of the zero balance fee paid.
      */
-    function _payZeroBalanceFee(address borrower, address borrowerAddr, uint256 remaining, uint256 totalRewards, address token) internal returns (uint256) {
+    function _payZeroBalanceFee(address borrower, uint256 remaining, uint256 totalRewards, address token) internal returns (uint256) {
         uint256 zeroBalanceFee = (totalRewards * getZeroBalanceFee()) / 10000;
         IERC20(token).transfer(owner(), zeroBalanceFee);
         emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, 0, address(token));
@@ -479,11 +468,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         IXRexFacet(address(msg.sender)).xRexProcessRewards(fees, tokens, tradeData);
         uint256 rewardsAmount = _vaultAsset.balanceOf(address(this));
         address rewardToken = address(_vaultAsset);
-        // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
-        // then it means the loan is fully paid off.
         // If the zero balance option is set to PayToOwner, we will pay the rewards to the owner in the desired token.
         if (loan.balance == 0 && 
-            (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0) && 
             loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
             rewardToken = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? loan.preferredToken : address(_vaultAsset);
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
@@ -506,7 +492,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
 
 
         // Handle zero balance case
-        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+        if (loan.balance == 0) {
             _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
         } else {
             // Handle active loan case
@@ -541,13 +527,12 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         uint256 totalRewards,
         uint256 amountToIncrease
     ) internal {
-        // _increaseCollateral(loan, amountToIncrease, true);
         _handleZeroBalance(loan.borrower, remaining, totalRewards, false);
     }
 
     /**
      * @notice Handles claiming rewards for an active loan
-     * @dev Processes fee deductions, increases NFT value, and handles payoff tokens
+     * @dev Processes fee deductions, increases NFT value
      * @param loan The storage reference to the loan information
      * @param totalRewards The total rewards being claimed
      * @param amountToIncrease The amount by which to increase the NFT value
@@ -564,9 +549,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
         
         // Process fees
         remaining -= _processFees(loan, feeEligibleAmount, remaining);
-        
-        // Handle NFT increase
-        // _increaseCollateral(loan, amountToIncrease, false);
+
         
         _pay(loan.borrower, remaining, false);
     }
@@ -599,39 +582,17 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
 
     /**
      * @notice Calculates the portion of an amount that is eligible for fees
-     * @dev If the borrower is using a payoff token different from the current loan's token,
-     *      the fee eligible amount is capped at the sum of the current loan balance and the payoff token loan balance.
-     *      Otherwise, the entire amount is eligible for fees.
      * @param loan The loan information stored in the contract
      * @param amount The total amount being processed
      * @return feeEligibleAmount The portion of the amount that is eligible for fees
      */
     function _calculateFeeEligibleAmount(LoanInfo storage loan, uint256 amount) internal view returns (uint256) {
         uint256 feeEligibleAmount = amount;
-        uint256 payoffTokenLoanBalance = 0;
-        if (amount > loan.outstandingCapital + payoffTokenLoanBalance) {
-            feeEligibleAmount = loan.outstandingCapital + payoffTokenLoanBalance;
+        if (amount > loan.outstandingCapital) {
+            feeEligibleAmount = loan.outstandingCapital;
         }
         
         return feeEligibleAmount;
-    }
-
-    /**
-     * @dev Internal function to increase the
-      NFT-related value for a loan.
-     * @param loan The LoanInfo struct containing details of the loan.
-     * @param allocation The amount  to be allocated for increasing the veNFT balance.
-     * @return spent The amount spent to increase the veNFT balance, or 0 if no increase is made.
-     */
-    function _increaseCollateral(LoanInfo storage loan, uint256 allocation, bool takeFees) internal  returns (uint256 spent) {
-        if(loan.increasePercentage > 0 && allocation == 0) {
-            revert(); // Should be an allocation if increasePercentage is set
-        }
-        if(allocation == 0) {
-            return 0;
-        }
-        _liquidAsset.transfer(loan.borrower, allocation);
-        return allocation;
     }
 
     /**
