@@ -24,9 +24,7 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         mapping(uint256 => uint256) _totalWeightPerEpoch;
         mapping(address => bool) _increaseManagedToken; // if user wants to increase community token
         uint256 _minimumLocked; // minimum a token must have locked to be used as collateral
-        // Community launch related storage
-        mapping(uint256 => address[]) _communityLaunchPools; // epoch => approved pools
-        mapping(address => uint256) _poolApprovedEpoch;       // pool => epoch when approved
+        mapping(uint256 => address) _epochToCommunityLaunchPool; // epoch => approved CL pool (assume 1 per epoch for now)
     }
 
 
@@ -146,21 +144,13 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
 
     // Community Launch Pool Management Functions
 
-    function setCommunityLaunchPools(uint256 epoch, address[] calldata pools) external onlyOwner {
+    function setCommunityLaunchPool(uint256 epoch, address pool) external onlyOwner {
         LoanStorageStruct storage $ = _getLoanStorage();
-        $._communityLaunchPools[epoch] = pools;
-        for (uint256 i = 0; i < pools.length; i++) {
-            $._poolApprovedEpoch[pools[i]] = epoch;
-        }
+        $._epochToCommunityLaunchPool[epoch] = pool;
     }
 
-    function getCommunityLaunchPools(uint256 epoch) public view returns (address[] memory) {
+    function getCommunityLaunchPool(uint256 epoch) public view returns (address) {
         LoanStorageStruct storage $ = _getLoanStorage();
-        return $._communityLaunchPools[epoch];
-    }
-
-    function isCommunityLaunchPool(address pool) public view returns (bool) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._poolApprovedEpoch[pool] == ProtocolTimeLibrary.epochStart(block.timestamp);
+        return $._epochToCommunityLaunchPool[epoch];
     }
 }

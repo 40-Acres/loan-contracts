@@ -74,8 +74,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 increasePercentage; // Percentage of the rewards to increase each lock
         bool    topUp; // automatically tops up loan balance after rewards are claimed
         bool    optInCommunityRewards; // opt in to community rewards
-        ActiveBalanceOption activeBalanceOption; // New: how to handle rewards when balance > 0
-        bool votedOnCommunityLaunch;              // New: track community launch voting this epoch
+        ActiveBalanceOption activeBalanceOption; // how to handle rewards when balance > 0
+        mapping(uint256 epoch => address communityLaunchPoolVoted) epochToCommunityLaunchPoolVoted; // mapping to store the epoch when user votes for the current community launch pool
     }
 
     // Pools each token votes on for this epoch
@@ -234,16 +234,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         _lock(tokenId);
 
-        // Check if NFT has already voted on community launch pools this epoch
-        bool hasVotedOnCommunityLaunch = _checkExistingCommunityLaunchVotes(tokenId);
-
-        // If NFT has already voted on CL pools, they cannot borrow against it
-        // They can still deposit collateral (amount == 0) but cannot take a loan
-        if (hasVotedOnCommunityLaunch) {
-            require(amount == 0);
-            // require the active balance option to handle
-        }
-
         _loanDetails[tokenId] = LoanInfo({
             balance: 0,
             borrower: msg.sender,
@@ -260,8 +250,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             increasePercentage: increasePercentage,
             topUp: topUp,
             optInCommunityRewards: optInCommunityRewards,
-            activeBalanceOption: activeBalanceOption,
-            votedOnCommunityLaunch: hasVotedOnCommunityLaunch
+            activeBalanceOption: activeBalanceOption
+            // epochToCommunityLaunchPoolVoted defaults to empty mapping (this is set during voting)
         });
 
 
@@ -294,7 +284,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /**
      * @dev Increases the loan amount for a given tokenId by a specified amount.
-     *      The function checks if the token is locked, if the amount is valid,
+     *      The function checks if the token is locked, if the amount is valid, 
+     *      if the token has voted on community launch pool this epoch,
      *      and if the borrower is the one requesting the increase.
      * @param tokenId The ID of the loan for which the amount is being increased.
      * @param amount The amount to increase the loan by. Must be greater than .01 USDC.
@@ -310,8 +301,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         require(loan.borrower == msg.sender);
 
-        // Prevent increasing loan if this loan voted on community launch this epoch
-        require(!_isCommunityLaunchActive(loan));
+        // Prevent increasing loan if this loan has voted on community launch pool this epoch
+        require(!_hasVotedOnCommunityLaunchPoolThisEpoch(tokenId));
+
 
         _increaseLoan(loan, tokenId, amount);
 
@@ -582,12 +574,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
 
-        // if any of tokens or loan.preferres token has a balance, return to owner
+        // if any of tokens or loan.preferred token has a balance, return to owner
         _rescueTokens(tokens, loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken);
 
         if (isCommunityLaunchClaim) {
-            require(_isCommunityLaunchActive(loan));
-            // Note: activeBalanceOption is auto-upgraded when voting on CL pools, so no need to check
+            require(_hasVotedOnCommunityLaunchPoolThisEpoch(tokenId));
         }
 
         // Process rewards: use claimBribes for CL claims, claimFees for regular claims
@@ -807,43 +798,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     /**
-     * @dev Checks if community launch is active for this loan
-     * @param loan The loan information storage struct
-     * @return True if loan voted on community launch pools this epoch
-     */
-    function _isCommunityLaunchActive(LoanInfo storage loan) internal view returns (bool) {
-        return loan.votedOnCommunityLaunch;
-    }
-
-    /**
-     * @dev Checks if an NFT has already voted on community launch pools before being deposited
+     * @dev Checks if an NFT has already voted on community launch pool this epoch
      * @param tokenId The NFT token ID to check
-     * @return True if the NFT has voted on community launch pools this epoch
+     * @return True if the NFT has voted on community launch pool this epoch
      */
-    function _checkExistingCommunityLaunchVotes(uint256 tokenId) internal view returns (bool) {
-        // First check if NFT has voted this epoch at all
-        if (!_ve.voted(tokenId)) {
-            return false;
-        }
-
-        // Get CL pools for the epoch when NFT voted (not current epoch)
-        // This handles edge case where NFT voted in previous epoch but check happens in new epoch
-        uint256 voteTimestamp = _loanDetails[tokenId].voteTimestamp;
-        if (voteTimestamp == 0) {
-            // No vote timestamp, check current epoch
-            voteTimestamp = block.timestamp;
-        }
-        uint256 voteEpoch = ProtocolTimeLibrary.epochStart(voteTimestamp);
-        address[] memory clPools = getCommunityLaunchPools(voteEpoch);
-
-        // Check if NFT voted on any community launch pools in that epoch
-        for (uint256 i = 0; i < clPools.length; i++) {
-            if (_voter.votes(tokenId, clPools[i]) > 0) {
-                return true;
-            }
-        }
-
-        return false;
+    function _hasVotedOnCommunityLaunchPoolThisEpoch(uint256 tokenId) internal view returns (bool) {
+        return _loanDetails[tokenId].epochToCommunityLaunchPoolVoted[currentEpochStart()] != address(0);
     }
 
 
@@ -1263,6 +1223,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.zeroBalanceOption = option;
     }
 
+    /**
+     * @notice Sets the active balance option for a specific loan.
+     * @dev This function can only be called by the borrower of the loan.
+     * @param tokenId The ID of the loan (NFT).
+     * @param option The active balance option to set.
+     */
+    function setActiveBalanceOption(
+        uint256 tokenId,
+        ActiveBalanceOption option
+    ) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        loan.activeBalanceOption = option;
+    }
+
+
 
     /**
      * @notice Sets the top-up option for a specific loan.
@@ -1310,27 +1286,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             loan.optInCommunityRewards = optIn;
         }
     }
-
-    /**
-     * @notice Sets the active balance option for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     *      Cannot change option after voting on community launch pools this epoch.
-     * @param tokenId The ID of the loan (NFT).
-     * @param option The active balance option to set.
-     */
-    function setActiveBalanceOption(
-        uint256 tokenId,
-        ActiveBalanceOption option
-    ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-
-        // Prevent changing option after voting on community launch this epoch
-        require(!_isCommunityLaunchActive(loan));
-
-        loan.activeBalanceOption = option;
-    }
-
 
     /**
      * @notice Allows the borrower to vote on pools for their loan.
@@ -1384,33 +1339,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         if(loan.borrower == msg.sender && pools.length > 0) {
             // Check if any voted pools are community launch pools
-            bool votedOnCommunityLaunch = false;
+            bool voteContainsCommunityLaunchPool = false;
+            uint256 currentEpoch = currentEpochStart();
+
             for (uint256 i = 0; i < pools.length; i++) {
-                if (isCommunityLaunchPool(pools[i])) {
-                    votedOnCommunityLaunch = true;
+                if (pools[i] == getCommunityLaunchPool(currentEpoch)) {
+                    voteContainsCommunityLaunchPool = true;
                     break;
                 }
             }
 
-            // Track community launch voting - auto-upgrade to CL-compatible option if needed
-            if (votedOnCommunityLaunch) {
-                // Auto-upgrade non-CL options to CL-compatible options (never revert)
-                if (loan.activeBalanceOption == ActiveBalanceOption.IncreaseNft) {
-                    // Upgrade IncreaseNft → IncreaseNftCommunityLaunch
-                    loan.activeBalanceOption = ActiveBalanceOption.IncreaseNftCommunityLaunch;
-                } else if (loan.activeBalanceOption == ActiveBalanceOption.PayToOwner) {
-                    // Upgrade PayToOwner → PayToOwnerCommunityLaunch
-                    loan.activeBalanceOption = ActiveBalanceOption.PayToOwnerCommunityLaunch;
-                } else if (loan.activeBalanceOption != ActiveBalanceOption.IncreaseNftCommunityLaunch &&
-                           loan.activeBalanceOption != ActiveBalanceOption.PayToOwnerCommunityLaunch) {
-                    // Default to IncreaseNftCommunityLaunch if option is unrecognized or invalid
-                    loan.activeBalanceOption = ActiveBalanceOption.IncreaseNftCommunityLaunch;
-                }
-                loan.votedOnCommunityLaunch = true;
-            } else if (loan.votedOnCommunityLaunch) {
-                // User changed vote away from CL pools - reset flag
-                // This handles edge case where user votes on CL pools then changes to non-CL pools
-                loan.votedOnCommunityLaunch = false;
+            //  reset the epochToCommunityLaunchPoolVoted if the vote does not contain a community launch pool
+            if (!voteContainsCommunityLaunchPool) {
+                loan.epochToCommunityLaunchPoolVoted[currentEpoch] = address(0);
             }
 
             // not within try catch because we want to revert if the transaction fails so the user can try again
@@ -1568,25 +1509,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         // Flag reset handled manually by entry point after all CL claims are complete
         // This allows multiple CL pools to be claimed separately if needed
-    }
-
-    /**
-     * @notice Resets community launch flags for loans after all CL token claims are complete
-     * @dev Called by entry point after finishing script for CL claims
-     *      Operator is responsible for passing only tokenIds that voted in the specified epoch
-     * @param tokenIds Array of token IDs to reset flags for
-     * @param epoch The epoch for which CL claims are complete (for operator reference, not validated)
-     */
-    function resetCommunityLaunchFlags(uint256[] calldata tokenIds, uint256 epoch) external {
-        require(msg.sender == _entryPoint());
-        require(tokenIds.length > 0);
-        
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            LoanInfo storage loan = _loanDetails[tokenIds[i]];
-            if (loan.votedOnCommunityLaunch) {
-                loan.votedOnCommunityLaunch = false;
-            }
-        }
     }
 
     /** ORACLE */
