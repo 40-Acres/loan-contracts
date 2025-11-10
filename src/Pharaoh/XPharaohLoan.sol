@@ -6,6 +6,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import {IXVoter} from "../interfaces/IXVoter.sol";
 import {IRewardsDistributor} from "../interfaces/IRewardsDistributor.sol";
@@ -338,7 +339,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         if(loan.unpaidFees > 0) {
             uint256 feesPaid = loan.unpaidFees;
             // set maxFees to 25% of the amount being paid
-            uint256 maxFees = (amount * 25) / 100; // 25% of the amount being paid
+            uint256 maxFees = Math.ceilDiv(amount * 25, 100); // 25% of the amount being paid (rounded up)
             if(feesPaid > maxFees) {
                 feesPaid = maxFees; // cap the fees paid to 25% of the amount being paid
             }
