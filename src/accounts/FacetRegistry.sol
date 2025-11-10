@@ -128,6 +128,7 @@ contract FacetRegistry is Ownable2Step {
         
         // Map new selectors
         for (uint256 i = 0; i < newSelectors.length; i++) {
+            require(selectorToFacet[newSelectors[i]] == address(0));
             selectorToFacet[newSelectors[i]] = newFacet;
         }
         
