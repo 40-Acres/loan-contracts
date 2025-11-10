@@ -24,8 +24,9 @@ import {IVoteModule} from "../interfaces/IVoteModule.sol";
 import {IXRex} from "../interfaces/IXRex.sol";
 import {IXRexFacet} from "../interfaces/IXRexFacet.sol";
 import {IUSDC} from "../interfaces/IUSDC.sol";
+import {IXLoan} from "../interfaces/IXLoan.sol";
 
-contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
+contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage, IXLoan {
     IXVoter internal _voter;
     IRewardsDistributor internal _rewardsDistributor;
     IERC20 public _vaultAsset;
@@ -40,12 +41,6 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
     mapping(address => bool) public _approvedPools;
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
-    // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
-    enum ZeroBalanceOption {
-        DoNothing, // do nothing when the balance is zero
-        InvestToVault, // invest the balance to the vault
-        PayToOwner // pay the balance to the owner
-    }
 
     // LoanInfo struct to store details about each loan
     struct LoanInfo {
@@ -306,6 +301,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      * @dev If the `amount` parameter is set to 0, the entire remaining loan balance will be paid.
      *      The function transfers the specified `amount` of USDC from the caller to the contract
      *      and then processes the payment.
+     * @param borrower The address of the borrower.
      * @param amount The amount of USDC to pay. If set to 0, the full loan balance will be paid.
      */
     function pay(address borrower, uint256 amount) public {
@@ -711,7 +707,7 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      * @dev This function checks the rewards rate stored in the RateStorage contract.
     * @return The rewards rate with 6 decimal precision.
      */
-    function getRewardsRate() public view override returns (uint256) {
+    function getRewardsRate() public view override(IXLoan, RateStorage) returns (uint256) {
         uint256 rewardsRate = RateStorage.getRewardsRate();
         return rewardsRate;
     }
