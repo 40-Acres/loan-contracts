@@ -192,7 +192,7 @@ contract XPharaohFacet {
     
     function xPharSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        IXLoan(loanContract).setIncreasePercentage(increasePercentage);
+        IXLoan(loanContract).setIncreasePercentage(address(this), increasePercentage);
     }
 
     function xPharSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {
