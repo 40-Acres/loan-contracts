@@ -7,9 +7,7 @@ import {ProtocolTimeLibrary} from "./libraries/ProtocolTimeLibrary.sol";
 // Active balance options for loans with outstanding balance
 enum ActiveBalanceOption {
     IncreaseNft,                    // Default: increase NFT with all rewards
-    IncreaseNftCommunityLaunch,     // Increase NFT + receive CL tokens when voting on CL pools
-    PayToOwner,                     // Receive up to 25% rewards to wallet in preferred token
-    PayToOwnerCommunityLaunch       // Receive 25% to wallet + CL tokens when voting on CL pools
+    PayToOwner                      // Receive up to 25% rewards to wallet in preferred token
 }
 
 abstract contract LoanStorage is Ownable2StepUpgradeable {
