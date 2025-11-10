@@ -1000,7 +1000,7 @@ function _processFees(
         // add staleness check, data updates every 24 hours
         require(timestamp > block.timestamp - 25 hours);
         // confirm price of usdc is $1
-        return answer >= 99900000;
+        return answer <= 100100000;
     }
 
     /**
