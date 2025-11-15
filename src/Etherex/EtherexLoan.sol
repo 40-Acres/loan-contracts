@@ -1017,7 +1017,8 @@ contract EtherexLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable,
      * @dev This function checks the latest round data from the Chainlink price feed for USDC.
      * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
      */
-    function confirmUsdcLoan(address user) virtual internal view returns (bool) {
+    function confirmUsdcLoan(address portfolioAccount) virtual internal view returns (bool) {
+        address user = PortfolioFactory(getPortfolioFactory()).ownerOf(portfolioAccount);
         bool isBlacklisted = IUSDC(address(_vaultAsset)).isBlacklisted(user);
         if(isBlacklisted) {
             return false;
