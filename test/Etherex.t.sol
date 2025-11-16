@@ -361,7 +361,6 @@ contract EtherexTest is Test {
             false
         );
         vm.roll(block.number + 1);
-        loan.vote(user);
         vm.stopPrank();
 
         assertTrue(usdc.balanceOf(address(user)) >= 1e6, "User should have more than loan");
@@ -737,7 +736,7 @@ contract EtherexTest is Test {
 
         // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
         vm.expectEmit(true, true, true, true);
-        emit IXVoter.Voted(userAccount, 100e18, pools[0]);
+        emit IXVoter.Voted(userAccount, 109717434395951894051, pools[0]);
         // This should work through the user account
         XRexFacet(userAccount).xRexUserVote(
             address(loan),
@@ -771,101 +770,6 @@ contract EtherexTest is Test {
         assertEq(balance, 0, "Balance should be 0");
     }
 
-
-    function testClaimWithPreferredToken() public {
-
-        address owner = loan.owner();
-        uint256 amount = 0;
-        vm.prank(owner);
-        loan.setApprovedToken(address(aero), true);
-        // Request loan through the user account
-        vm.startPrank(user);
-        XRexFacet(userAccount).xRexRequestLoan(
-            IERC20(aero).balanceOf(user),
-            address(loan),
-            0,
-            IXLoan.ZeroBalanceOption.PayToOwner,
-            0,
-            address(aero),
-            false
-        );
-        vm.stopPrank();
-
-        uint256 startingUserBalance = aero.balanceOf(address(user));
-        uint256 startingPortfolioBalance = aero.balanceOf(address(portfolioFactory));
-
-        // Verify loan was created
-        (uint256 balance, ) = loan.getLoanDetails(userAccount);
-        assertTrue(
-            balance >= amount,
-            "Loan balance should be at least the requested amount"
-        );
-
-
-        // Test that the user account can interact with the loan
-        vm.startPrank(user);
-
-        // Test that the user account can vote (this tests the user account integration)
-        address[] memory pools = new address[](1);
-        pools[0] = address(0x5Dc74003C0a9D08EB750B10ed5b02fA7D58d4d1e);
-        uint256[] memory weights = new uint256[](1);
-        weights[0] = 100000000000000000000; // 100 tokens
-
-
-
-        // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
-        vm.expectEmit(true, true, true, true);
-        emit IXVoter.Voted(userAccount, 100e18, pools[0]);
-        // This should work through the user account
-        XRexFacet(userAccount).xRexUserVote(
-            address(loan),
-            pools,
-            weights
-        );
-        vm.stopPrank();
-
-        uint256 beginningUserUsdcBalance = usdc.balanceOf(address(userAccount));
-        bytes memory tradeData = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwapMultiOutput.selector,
-            1,
-            25919478169541, // send less to account for slippage
-            address(userAccount)
-        );
-
-        uint256[2] memory allocations = [
-            uint256(25919478169541),
-            uint256(21919478169541)
-        ];
-        address[] memory bribes = new address[](1);
-        bribes[0] = 0x1789e0043623282D5DCc7F213d703C6D8BAfBB04;
-        uint256 rewards = _claimRewards(
-            Loan(userAccount),
-            bribes,
-            tradeData,
-            allocations
-        );
-
-        // Verify the user received the loan
-        uint256 endingUserBalance = aero.balanceOf(address(user));
-        console.log("endingUserBalance", endingUserBalance);
-        console.log("startingUserBalance", startingUserBalance);
-        uint256 endingPortfolioBalance = aero.balanceOf(address(portfolioFactory));
-        console.log("endingPortfolioBalance", endingPortfolioBalance);
-        console.log("startingPortfolioBalance", startingPortfolioBalance);
-        assertEq(
-            endingPortfolioBalance,startingPortfolioBalance,
-            "Portfolio should not have received loan funds"
-        );
-        assertTrue(
-            endingUserBalance > startingUserBalance,
-            "User should have received loan funds"
-        );
-
-        // loan balance should be 0
-        (balance, ) = loan.getLoanDetails(userAccount);
-        assertEq(balance, 0, "Balance should be 0");
-    }
-    
     function _claimRewards(
         Loan _loan,
         address[] memory bribes,

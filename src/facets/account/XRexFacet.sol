@@ -22,6 +22,7 @@ contract XRexFacet {
     IERC4626 public immutable _rex33 = IERC4626(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4);
     address public immutable _xrex = 0xc93B315971A4f260875103F5DA84cB1E30f366Cc;
     address public immutable _voteModule = 0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1;
+    
     address public immutable _voter = 0x942117Ec0458a8AA08669E94B52001Bd43F889C1;
     address public constant _odosRouter = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
 
@@ -64,11 +65,9 @@ contract XRexFacet {
     function xRexRequestLoan(uint256 collateralAmount, address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
 
-        address asset = address(IXLoan(loanContract)._vaultAsset());
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
 
         _rex33.transferFrom(msg.sender, address(this), collateralAmount);
-        uint256 beginningAssetBalance = IERC20(asset).balanceOf(address(this));
 
         _rex33.approve(_voteModule, collateralAmount);
         uint256 assets = _rex33.redeem(collateralAmount, address(this), address(this));
@@ -79,9 +78,6 @@ contract XRexFacet {
         IVoteModule(_voteModule).delegate(address(0));
 
         CollateralStorage.addTotalCollateral(lockedAsset);
-
-        uint256 assetBalance = IERC20(asset).balanceOf(address(this));
-        IERC20(asset).transfer(msg.sender, assetBalance - beginningAssetBalance);
 
     }
 
@@ -98,7 +94,7 @@ contract XRexFacet {
         uint256 beginningUnderlyingAssetBalance = _rex33.balanceOf(address(this));
 
         // claim the rewards
-        uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
+        uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations[0]);
 
         // increase the collateral if necessary
         if(allocations[1] > 0) {

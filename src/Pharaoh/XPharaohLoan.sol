@@ -183,7 +183,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         _disableInitializers();
     }
     
-    function initialize(address vault, address asset) initializer public {
+    function initialize(address vault, address asset) initializer virtual public {
         __Ownable_init(msg.sender); 
         __UUPSUpgradeable_init();
         address[] memory pools = new address[](1);
@@ -384,11 +384,6 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         }
     }
 
-    function _claimRebase(LoanInfo storage loan) internal {
-        // Since tokenId was removed, we can't claim rebase rewards
-        // This function is now a no-op
-    }
-
     /**
      * @notice Transfers a specified amount of USDC from the caller to the vault and records the rewards.
      * @dev This function requires the caller to have approved the contract to transfer the specified amount of USDC.
@@ -455,9 +450,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      *      lender premiums, and handles zero balance scenarios based on the loan's configuration.
      * @param fees An array of addresses representing the fee tokens to be claimed.
      * @param tokens A two-dimensional array of addresses representing the tokens to be swapped to the asset.
+     * @param tradeData Encoded trade data
+     * @param totalRewards The total amount of rewards to be claimed.
      * @return totalRewards The total amount usdc claimed after fees.
      */
-    function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public virtual returns (uint256) {
+    function claim(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256 totalRewards) public virtual returns (uint256) {
         require(isPortfolio(msg.sender));
         LoanInfo storage loan = _loanDetails[msg.sender];
 
@@ -471,7 +468,8 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             return 0;
         }
 
-        IXPharFacet(address(msg.sender)).xPharProcessRewards(fees, tokens, tradeData);
+        
+        _processRewards(fees, tokens, tradeData);
         uint256 rewardsAmount = _vaultAsset.balanceOf(address(this));
         address rewardToken = address(_vaultAsset);
         // If the zero balance option is set to PayToOwner, we will pay the rewards to the owner in the desired token.
@@ -481,33 +479,33 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
 
-       // if allocations[1] is lower than aero amount, set aero amount to allocations[1]
-        uint256 aeroAmount = _liquidAsset.balanceOf(address(this));
-        if (allocations[1] < aeroAmount) {
-            aeroAmount = allocations[1];
-        }
-
-        // if rewards token is the same as aero, subtract aero amount from rewards amount
-        if(rewardToken == address(_liquidAsset)) {
-            rewardsAmount -= aeroAmount; 
-        }
-
-        require(rewardsAmount > 0 || aeroAmount > 0);
+        require(rewardsAmount > 0);
         // Emit an event indicating that rewards have been claimed.
-        emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, 0, address(rewardToken));
+        emit RewardsClaimed(currentEpochStart(), totalRewards, loan.borrower, 0, address(rewardToken));
 
 
         // Handle zero balance case
         if (loan.balance == 0) {
-            _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
+            _handleZeroBalanceClaim(loan, rewardsAmount, totalRewards);
         } else {
             // Handle active loan case
-            _handleActiveLoanClaim(loan, allocations[0], aeroAmount, rewardsAmount);
+            _handleActiveLoanClaim(loan, totalRewards, rewardsAmount);
         }
-
-        _claimRebase(loan);
         
-        return allocations[0];
+        return totalRewards;
+    }
+
+
+
+    /**
+     * @notice Processes the rewards for the loan
+     * @dev Processes the rewards for the loan
+     * @param fees The fees to be claimed
+     * @param tokens The tokens to be swapped
+     * @param tradeData The trade data
+     */
+    function _processRewards(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData) internal virtual {
+        IXPharFacet(address(msg.sender)).xPharProcessRewards(fees, tokens, tradeData);
     }
 
     /**
@@ -516,13 +514,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @param loan The loan information storage struct
      * @param remaining The remaining token amount after processing
      * @param totalRewards The total rewards accumulated
-     * @param amountToIncrease The amount to increase the NFT by
      */
     function _handleZeroBalanceClaim(
         LoanInfo storage loan, 
         uint256 remaining,
-        uint256 totalRewards,
-        uint256 amountToIncrease
+        uint256 totalRewards
     ) internal {
         _handleZeroBalance(loan.borrower, remaining, totalRewards, false);
     }
@@ -533,20 +529,18 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      * @dev Processes fee deductions, increases NFT value
      * @param loan The storage reference to the loan information
      * @param totalRewards The total rewards being claimed
-     * @param amountToIncrease The amount by which to increase the NFT value
      * @param remaining The remaining amount after initial calculations, which gets updated throughout the function
      */
     function _handleActiveLoanClaim(
         LoanInfo storage loan,
         uint256 totalRewards,
-        uint256 amountToIncrease,
         uint256 remaining
     ) internal {
         // Calculate fee eligible amount
         uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, totalRewards);
         
         // Process fees
-        remaining -= _processFees(loan, feeEligibleAmount, remaining);
+        remaining -= _processFees(loan, feeEligibleAmount);
 
         _pay(loan.borrower, remaining, false);
     }
@@ -557,13 +551,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      *      and records the lender premium rewards
      * @param loan The loan information storage struct
      * @param totalRewards The total rewards amount to process fees from
-     * @param remaining The remaining amount after previous deductions (unused in current implementation)
      * @return The sum of the protocol fee and lender premium
      */
 function _processFees(
         LoanInfo storage loan,
-        uint256 totalRewards,
-        uint256 remaining
+        uint256 totalRewards
     ) internal returns (uint256) {
         // Calculate and transfer protocol fee
         uint256 protocolFee = (totalRewards * getProtocolFee()) / 10000;

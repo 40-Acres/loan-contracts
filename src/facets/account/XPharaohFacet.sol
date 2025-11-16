@@ -43,8 +43,6 @@ contract XPharaohFacet {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
-        IERC20(lockedAsset).approve(_voteModule, amount);
-        IXRex(_xphar).approve(address(_phar33), amount);
         IVoteModule(_voteModule).withdraw(amount);
         IXLoan(loanContract).confirmClaimCollateral(_xphar);
 
@@ -72,11 +70,9 @@ contract XPharaohFacet {
     function xPharRequestLoan(uint256 collateralAmount, address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
 
-        address asset = address(IXLoan(loanContract)._vaultAsset());
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
 
         _phar33.transferFrom(msg.sender, address(this), collateralAmount);
-        uint256 beginningAssetBalance = IERC20(asset).balanceOf(address(this));
 
         _phar33.approve(_voteModule, collateralAmount);
         uint256 assets = _phar33.redeem(collateralAmount, address(this), address(this));
@@ -87,9 +83,6 @@ contract XPharaohFacet {
         IVoteModule(_voteModule).delegate(address(0));
 
         CollateralStorage.addTotalCollateral(lockedAsset);
-
-        uint256 assetBalance = IERC20(asset).balanceOf(address(this));
-        IERC20(asset).transfer(msg.sender, assetBalance - beginningAssetBalance);
 
     }
 
@@ -106,7 +99,7 @@ contract XPharaohFacet {
         uint256 beginningUnderlyingAssetBalance = _phar33.balanceOf(address(this));
 
         // claim the rewards
-        uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations);
+        uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations[0]);
 
         // increase the collateral if necessary
         if(allocations[1] > 0) {
