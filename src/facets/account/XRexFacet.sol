@@ -36,8 +36,6 @@ contract XRexFacet {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
-        IERC20(lockedAsset).approve(_voteModule, amount);
-        IXRex(_xrex).approve(address(_rex33), amount);
         IVoteModule(_voteModule).withdraw(amount);
         IXLoan(loanContract).confirmClaimCollateral(_xrex);
 

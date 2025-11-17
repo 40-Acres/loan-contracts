@@ -973,8 +973,8 @@ function _processFees(
     
     /**
      * @notice Confirms the price of USDC is $1 and if is not in the blacklist.
-     * @dev This function checks the latest round data from the Chainlink price feed for USDC.
-     * @return bool indicating whether the price of USDC is greater than or equal to $0.999.
+     * @dev This function checks if the user is eligible for the loan and if the price of USDC is $1.
+     * @return bool indicating whether the asset is eligible for the loan.
      */
     function confirmUsdcLoan(address portfolioAccount) virtual internal view returns (bool) {
         address user = PortfolioFactory(getPortfolioFactory()).ownerOf(portfolioAccount);
