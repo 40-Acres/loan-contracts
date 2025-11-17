@@ -179,7 +179,7 @@ contract XRexFacet {
     
     function xRexSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        IXLoan(loanContract).setIncreasePercentage(address(this), increasePercentage);
+        IXLoan(loanContract).setIncreasePercentage(increasePercentage);
     }
 
     function xRexSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {

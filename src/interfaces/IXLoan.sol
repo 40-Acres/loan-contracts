@@ -13,7 +13,7 @@ interface IXLoan {
     function activeAssets() external view returns (uint256);
     function lastEpochReward() external view returns (uint256);
     function requestLoan(uint256 amount,ZeroBalanceOption zeroBalanceOption,uint256 increasePercentage,address preferredToken,bool topUp) external;
-    function setIncreasePercentage(address borrower, uint256 increasePercentage) external;
+    function setIncreasePercentage(uint256 increasePercentage) external;
     function getRewardsRate() external view returns (uint256);
     function _vaultAsset() external view returns (IERC20);
     function _lockedAsset() external view returns (IERC20);

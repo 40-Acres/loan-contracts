@@ -415,7 +415,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         address portfolioOwner = PortfolioFactory(getPortfolioFactory()).ownerOf(borrower);
         require(portfolioOwner != address(0));
         if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
-            remaining -= _payZeroBalanceFee(loan.borrower, remaining, totalRewards, address(_vaultAsset));
+            remaining -= _payZeroBalanceFee(loan.borrower, totalRewards, address(_vaultAsset));
             _vaultAsset.approve(_vault, remaining);
             IERC4626(_vault).deposit(remaining, portfolioOwner);
             emit RewardsInvested(currentEpochStart(), remaining, loan.borrower, 0);
@@ -423,7 +423,7 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         }
         // asset is the user's preferred token if set and approved, otherwise use vault asset
         IERC20 asset = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken) ? IERC20(loan.preferredToken) : _vaultAsset;
-        remaining -= _payZeroBalanceFee(loan.borrower, remaining, totalRewards, address(asset));
+        remaining -= _payZeroBalanceFee(loan.borrower, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, 0, address(asset));
         require(asset.transfer(portfolioOwner, remaining));
     }
@@ -432,12 +432,11 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
     /**
      * @dev Handles the payment of zero balance fees for a given loan.
      * @param borrower The address of the borrower.
-     * @param remaining The token balance available for payment.
      * @param totalRewards The total amount of rewards claimed for the loan.
      * @param token The address of the token being used for payment.
      * @return fee The amount of the zero balance fee paid.
      */
-    function _payZeroBalanceFee(address borrower, uint256 remaining, uint256 totalRewards, address token) internal returns (uint256) {
+    function _payZeroBalanceFee(address borrower, uint256 totalRewards, address token) internal returns (uint256) {
         uint256 zeroBalanceFee = (totalRewards * getZeroBalanceFee()) / 10000;
         IERC20(token).transfer(owner(), zeroBalanceFee);
         emit ProtocolFeePaid(currentEpochStart(), zeroBalanceFee, borrower, 0, address(token));
@@ -944,14 +943,12 @@ function _processFees(
      * @notice Sets the increase percentage for a specific loan.
      * @dev This function allows the borrower to set the increase percentage for their loan.
      *      The increase percentage must not exceed 100% (represented as 10000).
-     * @param borrower The address of the borrower.
      * @param increasePercentage The new increase percentage to be set, in basis points (1% = 100).
      */
     function setIncreasePercentage(
-        address borrower,
         uint256 increasePercentage
     ) public {
-        LoanInfo storage loan = _loanDetails[borrower];
+        LoanInfo storage loan = _loanDetails[msg.sender];
         require(loan.borrower == msg.sender);
         require(increasePercentage <= 10000);
         loan.increasePercentage = increasePercentage;
