@@ -786,7 +786,6 @@ function _processFees(
     function setApprovedPools(address[] calldata pools, bool enable) public virtual onlyOwner {
         for (uint256 i = 0; i < pools.length; i++) {
             address gauge = _voter.gaugeForPool(pools[i]);
-            // if (enable) require(_voter.isAlive(gauge)); // pools are not alive
             _approvedPools[pools[i]] = enable;
         }
     }
