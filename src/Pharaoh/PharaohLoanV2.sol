@@ -118,9 +118,9 @@ contract PharaohLoanV2 is Loan {
      * @param tokens An array of arrays of addresses representing the tokens to claim.
      * @return totalRewards The total amount of rewards claimed.
      */
-    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public override returns (uint256 totalRewards) {
+    function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) public returns (uint256 totalRewards) {
         vote(tokenId);
-        return super.claim(tokenId, fees, tokens, tradeData, allocations);
+        return super.claim(tokenId, fees, tokens, tradeData, allocations, false);
     }
 
     /**

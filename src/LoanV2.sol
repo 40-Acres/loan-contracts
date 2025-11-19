@@ -225,25 +225,25 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         _lock(tokenId);
 
-        _loanDetails[tokenId] = LoanInfo({
-            balance: 0,
-            borrower: msg.sender,
-            timestamp: block.timestamp,
-            outstandingCapital: 0,
-            tokenId: tokenId,
-            zeroBalanceOption: zeroBalanceOption,
-            pools: new address[](0),
-            voteTimestamp: 0,
-            claimTimestamp: 0,
-            weight: 0,
-            unpaidFees: 0,
-            preferredToken: preferredToken,
-            increasePercentage: increasePercentage,
-            topUp: topUp,
-            optInCommunityRewards: optInCommunityRewards,
-            activeBalanceOption: activeBalanceOption
-            // epochToCommunityLaunchPoolVoted defaults to empty mapping (this is set during voting)
-        });
+        // Initialize loan details
+        LoanInfo storage loan = _loanDetails[tokenId];
+        loan.tokenId = tokenId;
+        loan.balance = 0;
+        loan.borrower = msg.sender;
+        loan.timestamp = block.timestamp;
+        loan.outstandingCapital = 0;
+        loan.zeroBalanceOption = zeroBalanceOption;
+        loan.voteTimestamp = 0;
+        loan.claimTimestamp = 0;
+        loan.weight = 0;
+        loan.unpaidFees = 0;
+        loan.preferredToken = preferredToken;
+        loan.increasePercentage = increasePercentage;
+        loan.topUp = topUp;
+        loan.optInCommunityRewards = optInCommunityRewards;
+        loan.activeBalanceOption = activeBalanceOption;
+        // epochToCommunityLaunchOptIn and epochToCommunityLaunchPoolVoted mappings are automatically initialized to default values
+
 
 
         // transfer the token to the contract
