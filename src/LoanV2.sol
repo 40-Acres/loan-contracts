@@ -75,8 +75,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         bool    topUp; // automatically tops up loan balance after rewards are claimed
         bool    optInCommunityRewards; // opt in to community rewards
         ActiveBalanceOption activeBalanceOption; // persistent active-balance option (IncreaseNft | PayToOwner)
-        mapping(uint256 => bool) epochToCommunityLaunchOptIn; // epoch => user opted to receive CL token
         mapping(uint256 epoch => address communityLaunchPoolVoted) epochToCommunityLaunchPoolVoted; // mapping to store the epoch when user votes for the current community launch pool
+        mapping(uint256 epoch => bool wantsCommunityLaunchToken) epochToCommunityLaunchOptToReceiveToken; // epoch => user opted to receive CL token
     }
 
     // Pools each token votes on for this epoch
@@ -242,7 +242,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         loan.topUp = topUp;
         loan.optInCommunityRewards = optInCommunityRewards;
         loan.activeBalanceOption = activeBalanceOption;
-        // epochToCommunityLaunchOptIn and epochToCommunityLaunchPoolVoted mappings are automatically initialized to default values
+        // epochToCommunityLaunchOptToReceiveToken and epochToCommunityLaunchPoolVoted mappings are automatically initialized to default values
 
 
 
@@ -602,7 +602,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit RewardsClaimed(currentEpochStart(), allocations[0], loan.borrower, tokenId, address(rewardToken));
 
         // If user opted in to receive CL token for this epoch, send residual CL token pre-fees (applies to zero/active paths)
-        if (isCommunityLaunchClaim && loan.epochToCommunityLaunchOptIn[currentEpochStart()] && fees.length > 0) {
+        if (isCommunityLaunchClaim && loan.epochToCommunityLaunchOptToReceiveToken[currentEpochStart()] && fees.length > 0) {
             // CL opt-in: send residual CL token (fees[0]) to borrower pre-fees
             address clToken = fees[0];
             if (clToken != address(0)) {
@@ -1272,7 +1272,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /**
     * @notice Allows borrower to vote and set CL token opt-in for this epoch in one call
-    * @dev Sets epochToCommunityLaunchOptIn for current epoch, then proceeds to vote
+    * @dev Sets epochToCommunityLaunchOptToReceiveToken for current epoch, then proceeds to vote
      * @param tokenIds Loan token IDs to configure and vote
      * @param pools Pools to vote on
      * @param weights Weights for each pool
@@ -1289,7 +1289,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         for (uint256 i = 0; i < tokenIds.length; i++) {
             LoanInfo storage loan = _loanDetails[tokenIds[i]];
             require(loan.borrower == msg.sender);
-            loan.epochToCommunityLaunchOptIn[epoch] = optIn;
+            loan.epochToCommunityLaunchOptToReceiveToken[epoch] = optIn;
             _vote(tokenIds[i], pools, weights);
         }
     }
@@ -1331,7 +1331,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             if (!voteContainsCommunityLaunchPool) {
                 loan.epochToCommunityLaunchPoolVoted[currentEpoch] = address(0);
                 // also clear CL opt-in for this epoch if not voting CL
-                loan.epochToCommunityLaunchOptIn[currentEpoch] = false;
+                loan.epochToCommunityLaunchOptToReceiveToken[currentEpoch] = false;
             }
 
             // not within try catch because we want to revert if the transaction fails so the user can try again
@@ -1406,8 +1406,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
            _setUserPayoffToken(loan.borrower, tokenId);
         }
     }
-
-    // Community Launch specialized handler removed; logic merged into claim for size and simplicity
 
     /** ORACLE */
     
