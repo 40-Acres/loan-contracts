@@ -577,12 +577,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _processRewards(fees, tokens, tokenId, tradeData);
         uint256 rewardsAmount = _asset.balanceOf(address(this));
         address rewardToken = address(_asset);
-        // If the loan balance is zero and the user does not use a payoff token or the payoff token is zero, 
-        // then it means the loan is fully paid off.
-        // If the zero balance option is set to PayToOwner, we will pay the rewards to the owner in the desired token.
-        if (loan.balance == 0 && 
+        
+        // Determine reward token based on PayToOwner preference
+        // For zero balance PayToOwner OR active balance PayToOwner, use preferred token if set
+        // Exception: If user opted for CL token, use USDC instead (CL token replaces preferred token)
+        bool isZeroBalancePayToOwner = loan.balance == 0 && 
             (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0) && 
-            loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
+            loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner;
+        bool isActiveBalancePayToOwner = loan.balance > 0 && 
+            loan.activeBalanceOption == ActiveBalanceOption.PayToOwner;
+        bool userOptedForCLToken = isCommunityLaunchClaim && loan.epochToCommunityLaunchOptToReceiveToken[currentEpochStart()];
+            
+        if ((isZeroBalancePayToOwner || isActiveBalancePayToOwner) && !userOptedForCLToken) {
+            // Use preferred token only if user didn't opt for CL token
             rewardToken = loan.preferredToken == address(0) ? address(_asset) : loan.preferredToken;
             rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
         }
@@ -619,7 +626,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
         } else {
             // Active loan flows
-            _handleActiveLoanClaim(loan, tokenId, allocations[0], aeroAmount, rewardsAmount);
+            // For active loans, fees and payments always use USDC, so pass USDC balance separately
+            // Optimize: if rewardToken is USDC, we already have the balance in rewardsAmount
+            uint256 usdcAmount = rewardToken == address(_asset) ? rewardsAmount : _asset.balanceOf(address(this));
+            _handleActiveLoanClaim(loan, tokenId, allocations[0], aeroAmount, rewardsAmount, rewardToken, usdcAmount);
         }
 
         _claimRebase(loan);
@@ -698,56 +708,74 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * @param tokenId The ID of the token associated with the loan
      * @param totalRewards The total rewards being claimed
      * @param allocationsParam allocations[1] - repurposed with new activeBalanceOptions: aero amount for NFT increase OR user wallet amount for PayToOwner
-     * @param remaining The remaining amount after initial calculations, which gets updated throughout the function
+     * @param rewardTokenAmount The amount of rewardToken available (for PayToOwner user transfer)
+     * @param rewardToken The address of the token the user portion is in (USDC or preferred token for PayToOwner)
+     * @param usdcAmount The amount of USDC available for fees and loan payment
      */
     function _handleActiveLoanClaim(
         LoanInfo storage loan,
         uint256 tokenId,
         uint256 totalRewards,
         uint256 allocationsParam,
-        uint256 remaining
+        uint256 rewardTokenAmount,
+        address rewardToken,
+        uint256 usdcAmount
     ) internal {
         uint256 userAmount;
         uint256 amountToIncrease;
+        uint256 remaining = usdcAmount; // Track USDC balance for fees and payment
 
         if (loan.activeBalanceOption == ActiveBalanceOption.PayToOwner) {
-            // PayToOwner: allocations[1] sent to user (preferred token) before fees
+            // PayToOwner: allocations[1] sent to user (preferred token or USDC) before fees
             userAmount = allocationsParam;
-            // Cap userAmount to remaining balance
-            if (userAmount > remaining) {
-                userAmount = remaining;
+            // Cap userAmount to available rewardToken balance
+            if (userAmount > rewardTokenAmount) {
+                userAmount = rewardTokenAmount;
             }
             amountToIncrease = 0; // No NFT increase for PayToOwner options
         } else {
-            // PayToOwnerCommunityLaunch: CL portion already transferred in claim() pre-fee
             // For IncreaseNft options: allocations[1] = aero amount for NFT increase
             userAmount = 0;
             amountToIncrease = allocationsParam;
         }
 
         // Process user amount (to wallet if applicable)
+        // In the rare event a user may be blacklisted from USDC, we pay down the balance for the borrower to avoid any issues.
         if (userAmount > 0) {
-            // Subtract userAmount from remaining before processing fees (user portion fee-free)
-            if (userAmount > remaining) {
-                userAmount = remaining;
+            IERC20 rewardAsset = IERC20(rewardToken);
+            
+            // For USDC: use try-catch to handle blacklist (pay down loan if transfer fails)
+            // For other tokens: require transfer to succeed (blacklist not applicable)
+            if (rewardToken == address(_asset)) {
+                // USDC case: try-catch for blacklist protection
+                try rewardAsset.transfer(loan.borrower, userAmount) returns (bool success) {
+                    if (success) {
+                        emit RewardsPaidtoOwner(currentEpochStart(), userAmount, loan.borrower, loan.tokenId, rewardToken);
+                        // Subtract from USDC remaining since user got paid
+                        remaining -= userAmount;
+                    }
+                    // If transfer returned false, leave remaining as-is (will be paid to loan at end)
+                } catch {
+                    // Transfer reverted (likely blacklisted), leave remaining as-is (will be paid to loan at end)
+                }
+            } else {
+                // Preferred token case: no blacklist concerns, require transfer to succeed
+                // Note: Preferred token transfer doesn't affect USDC remaining
+                require(rewardAsset.transfer(loan.borrower, userAmount));
+                emit RewardsPaidtoOwner(currentEpochStart(), userAmount, loan.borrower, loan.tokenId, rewardToken);
             }
-            // Mirror zero-balance PayToOwner behavior: direct transfer in preferred token
-            IERC20 assetForUser = loan.preferredToken == address(0) ? _asset : IERC20(loan.preferredToken);
-            require(assetForUser.transfer(loan.borrower, userAmount));
-            emit RewardsPaidtoOwner(currentEpochStart(), userAmount, loan.borrower, loan.tokenId, address(assetForUser));
-            remaining -= userAmount;
         }
 
-        // Calculate and process fees on remaining amount
+        // Calculate and process fees on remaining USDC amount
         uint256 feeEligibleAmount = _calculateFeeEligibleAmount(loan, remaining);
 
-        // Process fees on remaining amount
+        // Process fees on remaining USDC amount
         remaining -= _processFees(loan, tokenId, feeEligibleAmount, remaining);
 
         // Handle NFT increase with allocated amount (AERO already swapped by backend when needed)
         _increaseNft(loan, amountToIncrease, false);
 
-        // Handle payoff token and payment with remaining amount
+        // Handle payoff token and payment with remaining USDC amount
         remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
         _pay(tokenId, remaining, false);
     }
