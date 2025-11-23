@@ -560,4 +560,68 @@ contract BlackholeTest is Test {
         vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
         return _loan.claim(_tokenId, fees, tokens, tradeData, allocations);
     }
+
+
+    /**
+     * @dev Test blackhole venft with different increase percentages
+     */
+    function testSetToManualVoting() public {
+        uint256 fork3 = vm.createFork(vm.envString("AVAX_RPC_URL"));
+        vm.selectFork(fork3);
+        vm.rollFork(72429705);
+
+        address loanContract = address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558);
+
+        Loan loanImpl = new Loan();
+        address owner = Loan(loanContract).owner();
+        vm.startPrank(owner);
+        Loan(loanContract).upgradeToAndCall(address(loanImpl), new bytes(0));
+        vm.stopPrank();
+
+        uint256 _tokenId = 19615;
+        (,,address _user,,,,uint256 voteTimestamp,,,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        assertNotEq(voteTimestamp, 0, "Vote timestamp should not be 0");
+
+        vm.startPrank(_user);
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = _tokenId; 
+        // set to automatic voting
+        address[] memory pools = new address[](0);
+        uint256[] memory weights = new uint256[](0);
+        Loan(loanContract).userVote(tokenIds, pools, weights);
+        (,,,,,,uint256 voteTimestampAfterAuto,,,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        assertEq(voteTimestampAfterAuto, 0, "Vote timestamp should be 0");
+
+        // set to manual voting
+        address[] memory manualPools = new address[](1);
+        manualPools[0] = address(0);
+        uint256[] memory manualWeights = new uint256[](1);
+        manualWeights[0] = 100e18;
+        Loan(loanContract).userVote(tokenIds, manualPools, manualWeights);
+        (,,,,,,uint256 updatedVoteTimestamp,,,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        assertNotEq(updatedVoteTimestamp, 0, "Vote timestamp should not be 0");
+
+        vm.warp(1764196188);
+        bool successfulVote = Loan(loanContract).vote(_tokenId);
+        (,,,,,,uint256 voteAfterAutomaticVoteTx,,,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        assertEq(voteAfterAutomaticVoteTx, updatedVoteTimestamp, "Vote timestamp should be the same as the updated vote timestamp");
+        assertFalse(successfulVote, "Vote should be unsuccessful");
+
+
+        // set back to automatic voting
+        address[] memory automaticPools = new address[](0);
+        uint256[] memory automaticWeights = new uint256[](0);
+        Loan(loanContract).userVote(tokenIds, automaticPools, automaticWeights);
+        (,,,,,,uint256 automaticVoteTimestamp,,,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        assertEq(automaticVoteTimestamp, 0, "Vote timestamp should be 0");
+
+        successfulVote = Loan(loanContract).vote(_tokenId);
+        (,,,,,,automaticVoteTimestamp,,,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        assertNotEq(automaticVoteTimestamp, updatedVoteTimestamp, "Vote timestamp should be the same as the updated vote timestamp");
+        assertTrue(successfulVote, "Vote should be successful");
+
+
+        vm.stopPrank();
+    }
+
 }

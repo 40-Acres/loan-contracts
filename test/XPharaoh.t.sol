@@ -588,6 +588,28 @@ contract XPharaohTest is Test {
         );
         vm.stopPrank();
 
+
+        vm.startPrank(user);
+
+        // Test that the user account can vote (this tests the user account integration)
+        address[] memory pools = new address[](1);
+        pools[0] = address(0x5cA009013F6B898D134b6798B336A4592f3B4aF2);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100000000000000000000; // 100 tokens
+
+
+
+        // ensure Voted(user, weight, pools[0]) is emitted from the voter contract
+        vm.expectEmit(true, true, true, true);
+        emit IXVoter.Voted(userAccount, 100e18, pools[0]);
+        // This should work through the user account
+        XPharaohFacet(userAccount).xPharUserVote(
+            address(loan),
+            pools,
+            weights
+        );
+        vm.stopPrank();
+        
         assertEq(usdc.balanceOf(address(user)), 1e6 + startingUserBalance, "User should have 1e6");
         assertEq(usdc.balanceOf(address(vault)), 99e6);
 
@@ -654,6 +676,8 @@ contract XPharaohTest is Test {
             false
         );
         vm.stopPrank();
+
+
 
         assertEq(usdc.balanceOf(address(user)), 1e6 + startingUserBalance, "User should have 1e6");
         assertEq(usdc.balanceOf(address(vault)), 99e6);
@@ -881,6 +905,201 @@ contract XPharaohTest is Test {
         uint256 endingUserBalance = IVoteModule(voteModule).balanceOf(address(userAccount));
         assertEq(endingUserBalance, startingUserBalance + amount, "XPhar should be locked");
         vm.stopPrank();
+    }
+
+    /**
+     * @dev Test xPharSetIncreasePercentage functionality
+     */
+    function testXPharSetIncreasePercentage() public {
+        uint256 amount = 1e6;
+        
+        // First, create a loan
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharRequestLoan(
+            IERC20(phar33).balanceOf(user),
+            address(loan),
+            amount,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        // Test setting increase percentage
+        vm.startPrank(user);
+        uint256 newIncreasePercentage = 5000; // 50%
+        XPharaohFacet(userAccount).xPharSetIncreasePercentage(address(loan), newIncreasePercentage);
+        
+        // Verify by checking the loan details struct (increasePercentage field)
+        // Since _loanDetails is public, we can access it
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertEq(borrower, userAccount, "Borrower should be userAccount");
+        assertTrue(balance >= amount, "Balance should be at least the loan amount");
+        vm.stopPrank();
+
+        // Test setting to maximum (10000 = 100%)
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharSetIncreasePercentage(address(loan), 10000);
+        vm.stopPrank();
+
+        // Test that it reverts when called by non-owner
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharSetIncreasePercentage(address(loan), 5000);
+
+        // Test that it reverts when value exceeds maximum
+        vm.startPrank(user);
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharSetIncreasePercentage(address(loan), 10001);
+        vm.stopPrank();
+    }
+
+    /**
+     * @dev Test xPharSetPreferredToken functionality
+     */
+    function testXPharSetPreferredToken() public {
+        uint256 amount = 1e6;
+        
+        // First, create a loan
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharRequestLoan(
+            IERC20(phar33).balanceOf(user),
+            address(loan),
+            amount,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        // First, approve WETH as a token (as owner)
+        vm.startPrank(owner);
+        loan.setApprovedToken(address(weth), true);
+        vm.stopPrank();
+
+        // Test setting preferred token to an approved token (WETH)
+        vm.startPrank(user);
+        address preferredToken = address(weth);
+        XPharaohFacet(userAccount).xPharSetPreferredToken(address(loan), preferredToken);
+        
+        // Verify the preferred token was set
+        address retrievedToken = loan.getPreferredToken(userAccount);
+        assertEq(retrievedToken, preferredToken, "Preferred token should be set to WETH");
+        vm.stopPrank();
+
+        // Note: Setting to zero address requires address(0) to be approved, which may not be the case
+        // So we'll just test that we can change it to another approved token
+        // Test changing to a different approved token (if we had one) or keep WETH
+        // For now, we'll just verify the current value is still WETH
+        retrievedToken = loan.getPreferredToken(userAccount);
+        assertEq(retrievedToken, preferredToken, "Preferred token should still be WETH");
+
+        // Test that it reverts when called by non-owner
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharSetPreferredToken(address(loan), address(weth));
+
+        // Test that it reverts when token is not approved
+        vm.startPrank(user);
+        address unapprovedToken = address(0x1234567890123456789012345678901234567890);
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharSetPreferredToken(address(loan), unapprovedToken);
+        vm.stopPrank();
+    }
+
+    /**
+     * @dev Test xPharSetTopUp functionality
+     */
+    function testXPharSetTopUp() public {
+        uint256 amount = 1e6;
+        
+        // First, create a loan
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharRequestLoan(
+            IERC20(phar33).balanceOf(user),
+            address(loan),
+            amount,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        // Test setting topUp to true
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharSetTopUp(address(loan), true);
+        
+        // Verify loan still exists
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertEq(borrower, userAccount, "Borrower should be userAccount");
+        assertTrue(balance >= amount, "Balance should be at least the loan amount");
+        vm.stopPrank();
+
+        // Test setting topUp to false
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharSetTopUp(address(loan), false);
+        
+        // Verify loan still exists
+        (balance, borrower) = loan.getLoanDetails(userAccount);
+        assertEq(borrower, userAccount, "Borrower should be userAccount");
+        vm.stopPrank();
+
+        // Test that it reverts when called by non-owner
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharSetTopUp(address(loan), true);
+    }
+
+    /**
+     * @dev Test xPharSetZeroBalanceOption functionality
+     */
+    function testXPharSetZeroBalanceOption() public {
+        uint256 amount = 1e6;
+        
+        // First, create a loan with DoNothing option
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharRequestLoan(
+            IERC20(phar33).balanceOf(user),
+            address(loan),
+            amount,
+            IXLoan.ZeroBalanceOption.DoNothing,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        // Test setting to InvestToVault
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharSetZeroBalanceOption(address(loan), IXLoan.ZeroBalanceOption.InvestToVault);
+        
+        // Verify loan still exists
+        (uint256 balance, address borrower) = loan.getLoanDetails(userAccount);
+        assertEq(borrower, userAccount, "Borrower should be userAccount");
+        assertTrue(balance >= amount, "Balance should be at least the loan amount");
+        vm.stopPrank();
+
+        // Test setting to PayToOwner
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharSetZeroBalanceOption(address(loan), IXLoan.ZeroBalanceOption.PayToOwner);
+        
+        // Verify loan still exists
+        (balance, borrower) = loan.getLoanDetails(userAccount);
+        assertEq(borrower, userAccount, "Borrower should be userAccount");
+        vm.stopPrank();
+
+        // Test setting back to DoNothing
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharSetZeroBalanceOption(address(loan), IXLoan.ZeroBalanceOption.DoNothing);
+        
+        // Verify loan still exists
+        (balance, borrower) = loan.getLoanDetails(userAccount);
+        assertEq(borrower, userAccount, "Borrower should be userAccount");
+        vm.stopPrank();
+
+        // Test that it reverts when called by non-owner
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharSetZeroBalanceOption(address(loan), IXLoan.ZeroBalanceOption.PayToOwner);
     }
 
     

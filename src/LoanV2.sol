@@ -1138,9 +1138,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // if pools/weights are empty, reset timestamp so user will be in automatic voting mode
         if(pools.length == 0 && weights.length == 0) {
             for (uint256 i = 0; i < tokenIds.length; i++) {
-            LoanInfo storage loan = _loanDetails[tokenIds[i]];
+                LoanInfo storage loan = _loanDetails[tokenIds[i]];
                 require(loan.borrower == msg.sender);
                 loan.voteTimestamp = 0;
+            }
+            return;
+        }
+        // if pools has one element and is the zero address, set to manual voting mode
+        // if the last voted timestamp is greater than the timestamp of the loan, set the vote timestamp to the last voted timestamp
+        if(pools.length == 1 && pools[0] == address(0)) {
+            for (uint256 i = 0; i < tokenIds.length; i++) {
+                uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenIds[i]);
+                LoanInfo storage loan = _loanDetails[tokenIds[i]];
+                if(lastVoted > loan.timestamp) {
+                    require(loan.borrower == msg.sender);
+                    loan.voteTimestamp = lastVoted;
+                }
             }
             return;
         }

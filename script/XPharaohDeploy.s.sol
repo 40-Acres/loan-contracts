@@ -116,7 +116,7 @@ contract XPharaohDeploy is Script {
         );
 
         // Register XPharaohFacet in the FacetRegistry
-        bytes4[] memory loanSelectors = new bytes4[](9);
+        bytes4[] memory loanSelectors = new bytes4[](13);
         loanSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
         loanSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
         loanSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
@@ -126,6 +126,10 @@ contract XPharaohDeploy is Script {
         loanSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
         loanSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
         loanSelectors[8] = 0x61622de4; // migratePharaohToXPharaoh(uint256)
+        loanSelectors[9] = 0xdb797521; // xPharSetIncreasePercentage(address,uint256)
+        loanSelectors[10] = 0xca54acf6; // xPharSetPreferredToken(address,address)
+        loanSelectors[11] = 0xcc729a8b; // xPharSetTopUp(address,bool)
+        loanSelectors[12] = 0x3b07f874; // xPharSetZeroBalanceOption(address,IXLoan.ZeroBalanceOption)
 
         // Get the FacetRegistry from the PortfolioFactory
         facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
@@ -174,7 +178,7 @@ contract XPharaohUpgrade is Script {
     }
 
     function upgrade() public {
-        // XPharaohFacet xPharaohFacet = new XPharaohFacet(address(_portfolioFactory), address(_accountConfigStorage));
+        XPharaohFacet xPharaohFacet = new XPharaohFacet(address(_portfolioFactory), address(_accountConfigStorage));
 // 
         // new XPharaohFacet();
 
@@ -185,17 +189,21 @@ contract XPharaohUpgrade is Script {
         // vm.startPrank(IOwnable(address(_loan)).owner());
         // FacetRegistry facetRegistry = FacetRegistry(address(_facetRegistry));
 
-        // // All selectors for the new XPharoFacet" (including the new xRexProcessRewards function)
-        // bytes4[] memory newSelectors = new bytes4[](9);
-        // newSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
-        // newSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
-        // newSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
-        // newSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
-        // newSelectors[4] = 0x31f84426; // xPharVote(address)
-        // newSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
-        // newSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
-        // newSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
-        // newSelectors[8] = 0x61622de4; // migratePharaohToXPharaoh(uint256)
+        // All selectors for the new XPharoFacet" (including the new xRexProcessRewards function)
+        bytes4[] memory newSelectors = new bytes4[](13);
+        newSelectors[0] = 0xdbbe2f11; // xPharRequestLoan(uint256,address,uint256,uint8,uint256,address,bool)
+        newSelectors[1] = 0x6514a9ff; // xPharIncreaseLoan(address,uint256)
+        newSelectors[2] = 0x100228bb; // xPharIncreaseCollateral(address,uint256)
+        newSelectors[3] = 0x7d9b5dc7; // xPharClaimCollateral(address,uint256)
+        newSelectors[4] = 0x31f84426; // xPharVote(address)
+        newSelectors[5] = 0xafe53449; // xPharUserVote(address,address[],uint256[])
+        newSelectors[6] = 0x574b41f0; // xPharClaim(address,address[],address[][],bytes,uint256[2])
+        newSelectors[7] = 0x73aa54b2; // xPharProcessRewards(address[],address[][],bytes)
+        newSelectors[8] = 0x61622de4; // migratePharaohToXPharaoh(uint256)
+        newSelectors[9] = 0xdb797521; // xPharSetIncreasePercentage(address,uint256)
+        newSelectors[10] = 0xca54acf6; // xPharSetPreferredToken(address,address)
+        newSelectors[11] = 0xcc729a8b; // xPharSetTopUp(address,bool)
+        newSelectors[12] = 0x3b07f874; // xPharSetZeroBalanceOption(address,IXLoan.ZeroBalanceOption)
 
         // // Replace the old facet with the new one (this handles removal and registration in one call)
         // _facetRegistry.replaceFacet(
@@ -206,8 +214,6 @@ contract XPharaohUpgrade is Script {
         // );
 
     }
-
-
 }
 
 // forge script script/XPharaohDeploy.s.sol:XPharaohDeploy  --chain-id 43114 --rpc-url $AVAX_RPC_URL --etherscan-api-key $AVAXSCAN_API_KEY --broadcast --verify --via-ir
