@@ -620,6 +620,14 @@ contract BlackholeTest is Test {
         assertNotEq(automaticVoteTimestamp, updatedVoteTimestamp, "Vote timestamp should be the same as the updated vote timestamp");
         assertTrue(successfulVote, "Vote should be successful");
 
+        // if not voted over 14 days, should revert
+        vm.warp(1764874993);
+
+        // set to manual voting
+        vm.expectRevert();
+        Loan(loanContract).userVote(tokenIds, manualPools, manualWeights);
+
+
 
         vm.stopPrank();
     }

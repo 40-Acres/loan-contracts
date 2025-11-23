@@ -1154,6 +1154,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
                     require(loan.borrower == msg.sender);
                     loan.voteTimestamp = lastVoted;
                 }
+                bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
+                require(isActive);
             }
             return;
         }
