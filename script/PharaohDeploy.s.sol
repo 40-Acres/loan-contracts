@@ -146,6 +146,7 @@ contract PharaohUpgradeNative is Script {
         LoanV2Native loanV2 = new LoanV2Native();
         Loan(address(0xd3E726b681C9a1E2a620cef9fE0EcE49822B11d4)).upgradeToAndCall(address(loanV2), new bytes(0));
     }
+
 }
 
 

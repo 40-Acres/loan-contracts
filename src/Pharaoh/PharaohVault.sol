@@ -6,15 +6,13 @@ import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC2
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { Vault as VaultV2 } from "../VaultV2.sol";
-import "../interfaces/ILoan.sol";
+import {ILoan} from "../interfaces/ILoan.sol";
 
-
-interface PharaohLoan {
-    function nextEpochReward() external view returns (uint256);
-}
 
 contract Vault is VaultV2 {
-    function totalAssets() public view override returns (uint256) {
-        return _asset.balanceOf(address(this)) + _loanContract.activeAssets() - epochRewardsLocked() - PharaohLoan(address(_loanContract)).nextEpochReward();
+    function setLoanContract(address newLoanContract) public onlyOwner {
+        ERC20(address(_asset)).approve(address(_loanContract), 0);
+        _loanContract = ILoan(newLoanContract);
+        ERC20(address(_asset)).approve(newLoanContract, type(uint256).max);
     }
 }
