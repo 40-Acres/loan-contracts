@@ -21,6 +21,7 @@ import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
+import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -1258,6 +1259,28 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(enable) {
            _setUserPayoffToken(loan.borrower, tokenId);
         }
+    }
+
+    /**
+     * @notice Migrates a loan to be controlled by the user's portfolio account.
+     * @dev Transfers loan ownership from user's EOA to their portfolio account.
+     *      Creates a portfolio if the user doesn't have one.
+     * @param tokenId The ID of the loan to migrate.
+     */
+    function migrateToPortfolio(uint256 tokenId) external {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        
+        address factory = getPortfolioFactory();
+        require(factory != address(0));
+        
+        address portfolio = PortfolioFactory(factory).portfolioOf(msg.sender);
+        if(portfolio == address(0)) {
+            portfolio = PortfolioFactory(factory).createAccount(msg.sender);
+        }
+        
+        loan.borrower = portfolio;
+        emit CollateralAdded(tokenId, portfolio, loan.zeroBalanceOption);
     }
 
     /** ORACLE */
