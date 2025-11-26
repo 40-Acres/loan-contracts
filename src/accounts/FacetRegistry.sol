@@ -34,7 +34,8 @@ contract FacetRegistry is Ownable2Step {
         _;
     }
 
-    constructor() Ownable(msg.sender) {
+    constructor(address owner) Ownable(owner) {
+        require(owner != address(0), "FacetRegistry: Owner cannot be 0");
         version = 1;
     }
 

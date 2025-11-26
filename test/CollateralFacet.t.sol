@@ -38,7 +38,7 @@ contract CollateralFacetTest is Test {
         collateralFacet = new CollateralFacet();
         
         // Deploy portfolio factory
-        FacetRegistry facetRegistry = new FacetRegistry();
+        FacetRegistry facetRegistry = new FacetRegistry(address(this));
         portfolioFactory = new PortfolioFactory(address(facetRegistry));
         
         // Deploy diamond

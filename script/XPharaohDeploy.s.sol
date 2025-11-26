@@ -29,7 +29,7 @@ contract XPharaohDeploy is Script {
     address _rex = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     address _asset = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
     address _owner = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
-
+    address _deployer = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         console.log("Deploying XPharaohLoan from address:", msg.sender);
@@ -89,7 +89,7 @@ contract XPharaohDeploy is Script {
         _supportedTokens[0] = _rex;
         _supportedTokens[1] = _asset;
         supportedTokens = _supportedTokens;
-        FacetRegistry facetRegistry = new FacetRegistry();
+        FacetRegistry facetRegistry = new FacetRegistry(_deployer);
 
         // Deploy PortfolioFactory
 

@@ -87,7 +87,7 @@ contract BaseAccountTest is Test {
         console.log("\n=== Deploying Unified Storage ===");
         
         // Deploy PortfolioFactory
-        FacetRegistry facetRegistry = new FacetRegistry();
+        FacetRegistry facetRegistry = new FacetRegistry(address(this));
         portfolioFactory = new PortfolioFactory(address(facetRegistry));
         console.log("PortfolioFactory:", address(portfolioFactory));
         
@@ -98,7 +98,7 @@ contract BaseAccountTest is Test {
         console.log("\n=== Deploying Account Factory System ===");
         
         // Deploy FacetRegistry
-        FacetRegistry facetRegistry = new FacetRegistry();
+        FacetRegistry facetRegistry = new FacetRegistry(address(this));
         
         // Deploy PortfolioFactory with diamond pattern
         portfolioFactory = new PortfolioFactory(

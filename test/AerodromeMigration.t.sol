@@ -51,7 +51,6 @@ contract AerodromeMigrationTest is Test {
     // Test token - an actual loan on Base
     uint256 tokenId;
     address borrower;
-
     function setUp() public {
         // Fork Base mainnet
         uint256 fork = vm.createFork("https://mainnet.base.org");
@@ -83,7 +82,7 @@ contract AerodromeMigrationTest is Test {
         upgradeCanonicalLoan();
 
         // Deploy Portfolio infrastructure
-        facetRegistry = new FacetRegistry();
+        facetRegistry = new FacetRegistry(address(this));
         portfolioFactory = new PortfolioFactory(address(facetRegistry));
 
         // Deploy AccountConfigStorage behind proxy

@@ -14,7 +14,7 @@ contract AccountStorageSimplifiedTest is Test {
 
     function setUp() public {
         vm.prank(owner);
-        FacetRegistry facetRegistry = new FacetRegistry();
+        FacetRegistry facetRegistry = new FacetRegistry(address(this));
         portfolioFactory = new PortfolioFactory(address(facetRegistry));
         
         // Note: Current PortfolioFactory doesn't have authorization
