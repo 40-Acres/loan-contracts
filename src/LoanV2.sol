@@ -250,7 +250,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         _loanDetails[tokenId].weight = _getLockedAmount(tokenId);
         require(_loanDetails[tokenId].weight >= getMinimumLocked());
-        addTotalWeight(_loanDetails[tokenId].weight);
 
         // if user selects topup option, increase to the max loan amount
         if(topUp) {
@@ -453,8 +452,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 claimable = _rewardsDistributor.claimable(loan.tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(loan.tokenId) {
-                addTotalWeight(claimable);
-                _recordDepositOnManagedNft(loan.tokenId, claimable, loan.borrower);
                 loan.weight += claimable;
             } catch {
             }
@@ -501,11 +498,18 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(asset));
         emit RewardsPaidtoOwner(currentEpochStart(), remaining, loan.borrower, tokenId, address(asset));
         require(asset.transfer(loan.borrower, remaining));
-        if(tokenId == getManagedNft() && remaining > 0) {
-            ICommunityRewards(loan.borrower).notifyRewardAmount(address(asset), remaining);
-        }
     }
 
+    function handleRewards(uint256 tokenId, uint256 rewardsAmount) public {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        emit RewardsClaimed(currentEpochStart(), rewardsAmount, loan.borrower, tokenId, address(_asset));
+        if(loan.balance == 0) {
+            _handleZeroBalance(loan.tokenId, rewardsAmount, rewardsAmount, false);
+        } else {
+            _handleActiveLoanClaim(loan, tokenId, rewardsAmount, 0, rewardsAmount);
+        }
+        _claimRebase(loan);
+    }
 
     /**
      * @dev Handles the payment of zero balance fees for a given loan.
@@ -591,6 +595,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         return allocations[0];
     }
+
 
     function _processRewards(
         address[] calldata fees,
@@ -749,13 +754,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             return 0;
         }
         _aero.approve(address(_ve), allocation);
-        uint256 managedNft = getManagedNft();
         uint256 tokenToIncrease = loan.tokenId;
         _ve.increaseAmount(tokenToIncrease, allocation);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
-        addTotalWeight(allocation);
         loan.weight += allocation;
-        _recordDepositOnManagedNft(tokenToIncrease, allocation, loan.borrower);
         return allocation;
     }
 
@@ -773,26 +775,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _aero.approve(address(_ve), amount);
         _ve.increaseAmount(tokenId, amount);
         emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
-        addTotalWeight(amount);
         LoanInfo storage loan = _loanDetails[tokenId];
         loan.weight += amount;
-        _recordDepositOnManagedNft(tokenId, amount, msg.sender);
     }
 
-
-    /**
-     * @dev Records a deposit on the managed NFT for community rewards.
-     * @param tokenId The ID of the token being deposited.
-     * @param amount The amount being deposited.
-     * @param owner The address of the owner of the token.
-     */
-    function _recordDepositOnManagedNft(uint256 tokenId, uint256 amount, address owner) internal {
-        uint256 managedNft = getManagedNft();
-        (, address managedNftAddress) = getLoanDetails(managedNft);
-        if(managedNftAddress != address(0)) {
-            ICommunityRewards(managedNftAddress).deposit(tokenId, amount, owner);
-        }
-    }
 
     /**
      * @notice Allows the borrower to claim their collateral (veNFT) after the loan is fully repaid.
@@ -811,7 +797,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         _ve.transferFrom(address(this), loan.borrower, tokenId);
         emit CollateralWithdrawn(tokenId, msg.sender);
-        subTotalWeight(loan.weight);
         delete _loanDetails[tokenId];
     }
 
@@ -943,25 +928,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 beginningBalance = _getLockedAmount(to);
         _ve.merge(from, to);
         uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
-        addTotalWeight(weightIncrease);
         loan.weight += weightIncrease;
     }
     
-
-    /**
-     * @notice Sets the managed NFT for the contract
-     * @dev Transfers the NFT from the sender to the contract, updates the managed NFT state
-     *    The managed NFT is used to represent the community owned veNFT, the owner of the managed NFT will be the managedNFT contract itself.
-     *    The only special case a managedNFT has within this contract is the ability to merge unowned venfts into it
-     * @param tokenId The ID of the NFT to be managed by the contract.
-     */
-    function setManagedNft(uint256 tokenId) public onlyOwner override {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower != address(0));
-        require(getManagedNft() == 0);
-        super.setManagedNft(tokenId);
-    }
-
     /**
      * @notice Allows the owner to set the default pools and their respective weights.
      * @dev The pools must have valid gauges, and the weights must sum up to 100e18 (100%).
@@ -1147,19 +1116,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
         // if pools has one element and is the zero address, set to manual voting mode
         // if the last voted timestamp is greater than the timestamp of the loan, set the vote timestamp to the last voted timestamp
-        if(pools.length == 1 && pools[0] == address(0)) {
-            for (uint256 i = 0; i < tokenIds.length; i++) {
-                uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenIds[i]);
-                LoanInfo storage loan = _loanDetails[tokenIds[i]];
-                if(lastVoted > loan.timestamp) {
-                    require(loan.borrower == msg.sender);
-                    loan.voteTimestamp = lastVoted;
-                }
-                bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
-                require(isActive);
-            }
-            return;
-        }
+        // if(pools.length == 1 && pools[0] == address(0)) {
+        //     for (uint256 i = 0; i < tokenIds.length; i++) {
+        //         uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenIds[i]);
+        //         LoanInfo storage loan = _loanDetails[tokenIds[i]];
+        //         if(lastVoted > loan.timestamp) {
+        //             require(loan.borrower == msg.sender);
+        //             loan.voteTimestamp = lastVoted;
+        //         }
+        //         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
+        //         require(isActive);
+        //     }
+        //     return;
+        // }
         _validatePoolChoices(pools, weights);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             _vote(tokenIds[i], pools, weights);

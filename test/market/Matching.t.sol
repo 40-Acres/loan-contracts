@@ -53,7 +53,7 @@ contract MatchingTest is DiamondMarketTestBase {
 
         // Approve market diamond in loan (owner is deployer by default)
         vm.prank(address(deployer));
-        loan.setMarketDiamond(diamond);
+        // loan.setMarketDiamond(diamond);
 
         // Move token into Loan custody for loan listing path
         vm.startPrank(user);

@@ -34,33 +34,12 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
 
     /* Rate Methods */
 
-    /// @dev Get the total weight for the loan contract
-    function getTotalWeight() public view virtual returns (uint256) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._totalWeights;
-
-    }
-
-    /// @dev Add total weight for the loan contract
-    function addTotalWeight(uint256 weights) internal  {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._totalWeights += weights;
-        $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
-    }
-
     /// @dev Subtract total weight for the loan contract
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights -= weights;
         $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
     }
-
-    /// @dev DEPRECATED - kept for Loan.sol compatibility  
-    function setManagedNft(uint256) onlyOwner public virtual {}
-    function getManagedNft() public view virtual returns (uint256) { return 0; }
-    function setIncreaseManagedToken(bool) public {}
-    function setOptInCommunityRewards(uint256[] calldata, bool) public virtual {}
-    function mergeIntoManagedNft(uint256) public virtual {}
 
     /// @dev Check if the token is approved for the loan contract
     function isApprovedToken(address token) public view virtual returns (bool) {
@@ -106,11 +85,6 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
         return $._userPayoffTokenOption[user];
     }
 
-    function _getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._totalWeightPerEpoch[epoch];
-    }
-
     function setMinimumLocked(uint256 minimumLocked) public onlyOwner {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._minimumLocked = minimumLocked;
@@ -119,37 +93,6 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function getMinimumLocked() public view returns (uint256) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._minimumLocked;
-    }
-    
-    /** Market Diamond getter/setter (upgrade-safe via ERC-7201 storage) */
-    function setMarketDiamond(address marketDiamond) external onlyOwner {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._marketDiamond = marketDiamond;
-    }
-
-    function getMarketDiamond() public view returns (address) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._marketDiamond;
-    }
-
-    function setFlashLoanFee(uint256 fee) external onlyOwner {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._flashLoanFee = fee;
-    }
-
-    function getFlashLoanFee() public view returns (uint256) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._flashLoanFee;
-    }
-
-    function setFlashLoanPaused(bool paused) external onlyOwner {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        $._FlashLoanPaused = paused;
-    }
-
-    function getFlashLoanPaused() public view returns (bool) {
-        LoanStorageStruct storage $ = _getLoanStorage();
-        return $._FlashLoanPaused;
     }
     
     function setPortfolioFactory(address _newAccountStorage) external onlyOwner {

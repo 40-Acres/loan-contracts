@@ -46,7 +46,7 @@ contract OffersTest is DiamondMarketTestBase {
         IMarketConfigFacet(diamond).setAllowedPaymentToken(address(usdc), true);
         // Approve market contract in loan
         vm.prank(address(deployer));
-        loan.setMarketDiamond(diamond);
+        // loan.setMarketDiamond(diamond);
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
         usdc.mint(buyer, 10_000e6);

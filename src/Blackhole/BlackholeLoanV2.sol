@@ -54,7 +54,6 @@ contract BlackholeLoanV2 is Loan {
         _ve.transferFrom(msg.sender, address(this), from);
         _ve.merge(from, to);
         uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
-        addTotalWeight(weightIncrease);
         loan.weight += weightIncrease;
     }
 
@@ -87,11 +86,9 @@ contract BlackholeLoanV2 is Loan {
             return 0;
         }
         _aero.approve(address(_ve), allocation);
-        uint256 managedNft = getManagedNft();
         uint256 tokenToIncrease = loan.tokenId;
         IVotingEscrow(address(_ve)).increase_amount(tokenToIncrease, allocation);
         emit VeNftIncreased(currentEpochStart(), loan.borrower, tokenToIncrease, allocation, loan.tokenId);
-        addTotalWeight(allocation);
         loan.weight += allocation;
         return allocation;
     }
@@ -111,7 +108,6 @@ contract BlackholeLoanV2 is Loan {
         _aero.approve(address(_ve), amount);
         IVotingEscrow(address(_ve)).increase_amount(tokenId, amount);
         emit VeNftIncreased(currentEpochStart(), msg.sender, tokenId, amount, tokenId);
-        addTotalWeight(amount);
         LoanInfo storage loan = _loanDetails[tokenId];
         loan.weight += amount;
     }
