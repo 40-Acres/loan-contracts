@@ -29,14 +29,14 @@ library CollateralManager {
         }
     }
 
-    function addLockedColleratal(uint256 tokenId, uint256 amount) external {
+    function addLockedColleratal(uint256 tokenId, address ve) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
         // if the token is already accounted for, return early
         if(previousLockedColleratal != 0) {
             return;
         }
-        int128 newLockedColleratalInt = IVotingEscrow(address(this)).locked(tokenId).amount;
+        int128 newLockedColleratalInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
         uint256 newLockedColleratal = uint256(uint128(newLockedColleratalInt));
 
         collateralManagerData.lockedCollaterals[tokenId] = newLockedColleratal;
@@ -88,12 +88,13 @@ library CollateralManager {
         return collateralManagerData.debt;
     }
 
-    function increaseTotalDebt(uint256 amount) internal {
+    function increaseTotalDebt(address accountConfigStorage, uint256 amount) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         collateralManagerData.debt += amount;
+        enforceCollateral(accountConfigStorage);
     }
 
-    function decreaseTotalDebt(uint256 amount) internal {
+    function decreaseTotalDebt(uint256 amount) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         collateralManagerData.debt -= amount;
     }

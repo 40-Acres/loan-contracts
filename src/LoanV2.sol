@@ -22,6 +22,7 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
+import { IMigrationFacet } from "./facets/account/migration/IMigrationFacet.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -1254,9 +1255,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(portfolio == address(0)) {
             portfolio = PortfolioFactory(factory).createAccount(msg.sender);
         }
-        
-        loan.borrower = portfolio;
-        emit CollateralAdded(tokenId, portfolio, loan.zeroBalanceOption);
+
+        IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
+        IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
     }
 
     /** ORACLE */
