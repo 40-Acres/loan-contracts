@@ -32,6 +32,14 @@ contract ClaimingFacet {
     }
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) external {
+        // do not claim launchpad token in this method
+        for(uint256 i = 0; i < tokens.length; i++) {
+            for(uint256 j = 0; j < tokens[i].length; j++) {
+                if(tokens[i][j] == address(0x0000000000000000000000000000000000000000)) {
+                    return;
+                }
+            }
+        }
         _voter.claimFees(fees, tokens, tokenId);
 
         claimRebase(tokenId);
@@ -47,8 +55,9 @@ contract ClaimingFacet {
         CollateralManager.updateLockedColleratal(tokenId);
     }
 
-    function claimLaunchpadToken() external {
-        // TODO: Check for user set LAUNCHPAD TOKEN, if so send directly to the portoflio owner
+    function claimLaunchpadToken(address tradeContract, bytes tradeData) external {
+        require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
+        // TODO: Check for user set LAUNCHPAD TOKEN, if so, send directly to the portoflio owner
     }
 
     function processRewards(uint256 rewardsAmount) external {
