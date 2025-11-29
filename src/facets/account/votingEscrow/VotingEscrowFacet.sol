@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
-import {AccountConfigStorage} from "../../storage/AccountConfigStorage.sol";
-import {IVoter} from "../../interfaces/IVoter.sol";
-import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
-
+import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
+import {IVoter} from "../../../interfaces/IVoter.sol";
+import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
+import {CollateralManager} from "../collateral/CollateralManager.sol";
 /**
  * @title VotingEscrowFacet
  * @dev Facet that interfaces with voting escrow NFTs
@@ -25,16 +27,10 @@ contract VotingEscrowFacet {
         _voter = IVoter(voter);
     }
 
-    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) external {
-        _voter.claimFees(fees, tokens, tokenId);
-    }
-
-    function claimRebases(uint256 tokenId) external {
-        // TODO: Implement
-    }
-
-    function processRewards(uint256 tokenId, uint256 rewardsAmount) external {
-        // TODO: Implement
+    function increaseLock(uint256 tokenId, uint256 amount) external {
+        IERC20(_votingEscrow.token()).transferFrom(msg.sender, address(this), amount);
+        _votingEscrow.increaseAmount(tokenId, amount);
+        CollateralManager.updateLockedColleratal(tokenId);
     }
 }
 

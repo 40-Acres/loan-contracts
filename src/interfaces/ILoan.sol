@@ -14,6 +14,7 @@ interface ILoan {
     function setIncreasePercentage(uint256 tokenId,uint256 increasePercentage) external;
     function claimCollateral(uint256 tokenId) external;
     function getRewardsRate() external view returns (uint256);
+    function getMultiplier() external view returns (uint256);
     function owner() external view returns (address);
 function _asset() external view returns (address);
     function _ve() external view returns (address);

@@ -875,6 +875,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return protocolFee;
     }
 
+    /**
+     * @notice Retrieves the multiplier value for the contract.
+     * @return The multiplier value.
+     */
+    function getMultiplier() public view returns (uint256) {
+        return _multiplier;
+    }
 
     /* VIEW FUNCTIONS */
 

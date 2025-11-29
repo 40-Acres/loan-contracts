@@ -28,6 +28,7 @@ contract AccountConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpg
     struct AccountConfigStorageData {
         mapping(address => bool) approvedContracts;
         mapping(address => bool) authorizedCallers;
+        address loanContract;
     }
 
     // Named storage slot for account data
@@ -61,5 +62,15 @@ contract AccountConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpg
     function isAuthorizedCaller(address addr) public view returns (bool) {
         AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
         return collateralStorage.authorizedCallers[addr];
+    }
+
+    function setLoanContract(address addr) public onlyOwner {
+        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        collateralStorage.loanContract = addr;
+    }
+
+    function getLoanContract() public view returns (address) {
+        AccountConfigStorageData storage collateralStorage = _getAccountConfigStorage();
+        return collateralStorage.loanContract;
     }
 }
