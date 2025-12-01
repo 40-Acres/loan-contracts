@@ -7,7 +7,7 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
-import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
+import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";  
 
 
@@ -15,61 +15,25 @@ import {CollateralManager} from "../collateral/CollateralManager.sol";
 /**
  * @title LoanFacet
  */
-contract LoanFacet {
+contract LendingFacet {
     PortfolioFactory public immutable _portfolioFactory;
-    AccountConfigStorage public immutable _accountConfigStorage;
+    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     address public immutable _loanContract;
 
+    error NotOwnerOfToken();
 
-    constructor(address portfolioFactory, address accountConfigStorage, address loanContract) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address loanContract) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
+        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _loanContract = loanContract;
     }
 
-    function claimCollateral(uint256 tokenId, uint256 amount) external onlyToLoanContract {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(_loanContract).claimCollateral(tokenId);
-        CollateralManager.removeLockedColleratal(tokenId, address(_accountConfigStorage));
+    function borrow(uint256 amount) public {
+        CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);   
     }
 
-    function increaseLoan(uint256 tokenId, uint256 amount) external onlyToLoanContract {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(_loanContract).increaseLoan(tokenId, amount);
-
-        CollateralManager.enforceCollateral(address(_accountConfigStorage));
-    }
-
-    
-    function requestLoan(uint256 tokenId, uint256 amount, ILoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyToLoanContract {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        // TODO: Implement
-
-        CollateralManager.enforceCollateral(address(_accountConfigStorage));
-    }
-
-    function setIncreasePercentage(uint256 tokenId, uint256 increasePercentage) external onlyToLoanContract {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(_loanContract).setIncreasePercentage(tokenId, increasePercentage);
-    }
-
-    function setPreferredToken(uint256 tokenId, address preferredToken) external onlyToLoanContract {
-        ILoan(_loanContract).setPreferredToken(tokenId, preferredToken);
-    }
-
-    function setTopUp(uint256 tokenId, bool topUp) external onlyToLoanContract {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(_loanContract).setTopUp(tokenId, topUp);
-    }
-
-    function setZeroBalanceOption(uint256 tokenId, ILoan.ZeroBalanceOption zeroBalanceOption) external onlyToLoanContract {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(_loanContract).setZeroBalanceOption(tokenId, zeroBalanceOption);
-    }
-
-    modifier onlyToLoanContract {
-        require(msg.sender == _loanContract);
-        _;
+    function pay(uint256 amount) public {
+        CollateralManager.decreaseTotalDebt(amount);
     }
 }

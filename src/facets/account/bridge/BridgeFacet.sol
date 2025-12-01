@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
+import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {BridgeConfigStorage} from "./BridgeConfigStorage.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -13,22 +13,22 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  */
 contract BridgeFacet {
     PortfolioFactory public immutable _portfolioFactory;
-    AccountConfigStorage public immutable _accountConfigStorage;
+    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     BridgeConfigStorage public immutable _bridgeConfigStorage;
     IERC20 public immutable _usdc;
 
     error NotApprovedBridge(address bridgeContract);
     
-    constructor(address portfolioFactory, address accountConfigStorage, address usdc) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address usdc) {
         require(portfolioFactory != address(0));
-        require(accountConfigStorage != address(0));
+        require(portfolioAccountConfig != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
+        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _usdc = IERC20(usdc);
     }
 
     function bridge(address bridgeContract, bytes calldata data) external {
-        require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
+        require(_portfolioAccountConfig.isAuthorizedCaller(msg.sender));
         require(_bridgeConfigStorage.isApprovedBridge(bridgeContract), NotApprovedBridge(bridgeContract));
         _usdc.approve(address(bridgeContract),  _usdc.balanceOf(address(this)));
         (bool success, ) = bridgeContract.call(data);

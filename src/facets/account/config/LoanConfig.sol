@@ -13,8 +13,8 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         _disableInitializers();
     }
     
-    function initialize() initializer public {
-        __Ownable_init(msg.sender); 
+    function initialize(address owner) initializer public {
+        __Ownable_init(owner); 
     }
     
     /**
@@ -30,6 +30,7 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         uint256 lenderPremium;
         uint256 treasuryFee;
         uint256 zeroBalanceFee;
+        uint256 multiplier;
     }
 
     // Named storage slot for account data
@@ -47,7 +48,7 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function getActiveRates() public view returns (uint256 lenderPremium, uint256 treasuryFee) {
         LoanConfigData storage collateralStorage = _getLoanConfig();
-        return (collateralStorage.lenderPremium, collateralStorage.treasuryFee)
+        return (collateralStorage.lenderPremium, collateralStorage.treasuryFee);
     }
 
     function setRewardsRate(uint256 rewardsRate) public onlyOwner {
@@ -58,6 +59,16 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     function getRewardsRate() public view returns (uint256) {
         LoanConfigData storage collateralStorage = _getLoanConfig();
         return collateralStorage.rewardsRate;
+    }
+
+    function setMultiplier(uint256 multiplier) public onlyOwner {
+        LoanConfigData storage collateralStorage = _getLoanConfig();
+        collateralStorage.multiplier = multiplier;
+    }
+
+    function getMultiplier() public view returns (uint256) {
+        LoanConfigData storage collateralStorage = _getLoanConfig();
+        return collateralStorage.multiplier;
     }
 
     function setLenderPremium(uint256 lenderPremium) public onlyOwner {

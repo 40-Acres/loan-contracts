@@ -6,9 +6,9 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 /**
- * @title VotingConfigStorage
+ * @title VotingConfig
  */
-contract VotingConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     constructor() {
         _disableInitializers();
     }
@@ -27,18 +27,17 @@ contract VotingConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpgr
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
     
     // Token storage data using named storage slot
-    struct VotingConfigStorageData {
+    struct VotingConfigData {
         mapping(address => bool) approvedPools;
-
     }
 
     // Named storage slot for account data
-    bytes32 private constant ACCOUNT_STORAGE_POSITION = keccak256("storage.VotingConfigStorage");
+    bytes32 private constant ACCOUNT_STORAGE_POSITION = keccak256("storage.VotingConfig");
 
     /**
      * @dev Get token storage data from named storage slot
      */
-    function _getVotingConfigStorage() internal pure returns (VotingConfigStorageData storage votingStorage) {
+    function _getVotingConfig() internal pure returns (VotingConfigData storage votingStorage) {
         bytes32 position = ACCOUNT_STORAGE_POSITION;
         assembly {
             votingStorage.slot := position
@@ -46,13 +45,13 @@ contract VotingConfigStorage is Initializable, Ownable2StepUpgradeable, UUPSUpgr
     }
 
     function setApprovedPool(address pool, bool approved) public onlyOwner {
-        VotingConfigStorageData storage votingStorage = _getVotingConfigStorage();
+        VotingConfigData storage votingStorage = _getVotingConfig();
         votingStorage.approvedPools[pool] = approved;
         emit ApprovedPool(pool, approved);
     }
 
     function isApprovedPool(address pool) public view returns (bool) {
-        VotingConfigStorageData storage votingStorage = _getVotingConfigStorage();
+        VotingConfigData storage votingStorage = _getVotingConfig();
         return votingStorage.approvedPools[pool];
     }
 }

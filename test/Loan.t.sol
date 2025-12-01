@@ -20,7 +20,6 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import {MockPortfolioFactory} from "./mocks/MockAccountStorage.sol";
 import { Swapper } from "../src/Swapper.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
 
 interface IUSDC {
