@@ -18,7 +18,6 @@ contract RewardsProcessingFacet {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
 
-
     constructor(address portfolioFactory, address portfolioAccountConfig) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));

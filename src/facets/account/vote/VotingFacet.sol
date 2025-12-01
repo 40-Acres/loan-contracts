@@ -7,6 +7,7 @@ import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IVotingFacet} from "./interfaces/IVotingFacet.sol";
 import {VotingConfig} from "../config/VotingConfig.sol";
+import {UserClaimingConfig} from "../claim/UserClaimingConfig.sol";
 
 /**
  * @title VotingFacet

@@ -224,16 +224,6 @@ contract DeployLendingFacet is AccountFacetsDeploy {
         return selectors;
     }
 }
-
-function DeployVotingFacet is AccountFacetsDeploy {
-    function run() external {
-        address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
-        address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
-        address VOTER = vm.envAddress("VOTER");
-    }
-}
-
 // Usage examples:
 // forge script script/portfolio_account/DeployAllFacets.s.sol:DeployAllFacets --rpc-url $RPC_URL --broadcast
 // forge script script/portfolio_account/DeployAllFacets.s.sol:DeployAerodromeFacet --rpc-url $RPC_URL --broadcast
