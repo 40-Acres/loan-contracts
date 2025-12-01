@@ -47,7 +47,7 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function getActiveRates() public view returns (uint256 lenderPremium, uint256 treasuryFee) {
         LoanConfigData storage collateralStorage = _getLoanConfig();
-        return (collateralStorage.lenderPremium, collateralStorage.treasuryFee)
+        return (collateralStorage.lenderPremium, collateralStorage.treasuryFee);
     }
 
     function setRewardsRate(uint256 rewardsRate) public onlyOwner {

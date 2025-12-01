@@ -12,8 +12,15 @@ import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
+import {IPortfolioMarketplaceFacet} from "../../interfaces/IPortfolioMarketplaceFacet.sol";
 import {Errors} from "../../libraries/Errors.sol";
 
+/**
+ * @title MarketOfferFacet
+ * @dev Handles marketplace offers for veNFTs
+ * Supports offers that can be accepted by portfolio owners or wallet holders
+ */
 contract MarketOfferFacet is IMarketOfferFacet {
     using SafeERC20 for IERC20;
 
@@ -124,22 +131,39 @@ contract MarketOfferFacet is IMarketOfferFacet {
         }
     }
 
-    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInLoanV2) external nonReentrant onlyWhenNotPaused {
+    /**
+     * @notice Accept an offer for a veNFT
+     * @param tokenId The veNFT token ID
+     * @param offerId The offer ID to accept
+     * @param isInPortfolio True if the veNFT is held by a portfolio, false if in wallet
+     */
+    function acceptOffer(uint256 tokenId, uint256 offerId, bool isInPortfolio) external nonReentrant onlyWhenNotPaused {
         MarketStorage.Offer storage offer = MarketStorage.orderbookLayout().offers[offerId];
         require(offer.creator != address(0), Errors.OfferNotFound());
         require(MarketLogicLib.isOfferActive(offerId), Errors.OfferExpired());
 
-        address tokenOwner = MarketLogicLib.getTokenOwnerOrBorrower(tokenId);
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        
+        // Get the veNFT owner (portfolio or wallet)
+        address tokenOwner = IVotingEscrow(cfg.votingEscrow).ownerOf(tokenId);
+        
+        if (isInPortfolio) {
+            // Verify the veNFT is held by a portfolio
+            PortfolioFactory factory = PortfolioFactory(cfg.portfolioFactory);
+            require(factory.isPortfolio(tokenOwner), Errors.BadCustody());
+        }
+        
+        // Authorization: uses centralized canOperate which handles portfolios
         require(MarketLogicLib.canOperate(tokenOwner, msg.sender), Errors.NotAuthorized());
 
-        _validateOfferCriteria(tokenId, offer, isInLoanV2);
+        _validateOfferCriteria(tokenId, offer, isInPortfolio);
 
         // Get loan balance to calculate total amount buyer must provide
         uint256 loanBalance = 0;
-        if (isInLoanV2) {
-            (loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        if (isInPortfolio) {
+            (loanBalance,) = ILoan(cfg.loan).getLoanDetails(tokenId);
             if (loanBalance > 0) {
-                address loanAsset = MarketStorage.configLayout().loanAsset;
+                address loanAsset = cfg.loanAsset;
                 // Ensure payment token matches loan asset (enforced at offer creation)
                 require(offer.paymentToken == loanAsset, Errors.InvalidPaymentToken());
             }
@@ -151,10 +175,9 @@ contract MarketOfferFacet is IMarketOfferFacet {
         
         // Pay off loan debt separately if it exists
         if (loanBalance > 0) {
-            address loanContract = MarketStorage.configLayout().loan;
-            IERC20(offer.paymentToken).forceApprove(loanContract, loanBalance);
-            ILoan(loanContract).pay(tokenId, loanBalance);
-            IERC20(offer.paymentToken).forceApprove(loanContract, 0);
+            IERC20(offer.paymentToken).forceApprove(cfg.loan, loanBalance);
+            ILoan(cfg.loan).pay(tokenId, loanBalance);
+            IERC20(offer.paymentToken).forceApprove(cfg.loan, 0);
         }
         
         // Seller receives full offer price minus protocol fee (debt paid separately)
@@ -166,25 +189,33 @@ contract MarketOfferFacet is IMarketOfferFacet {
         }
         IERC20(offer.paymentToken).safeTransfer(tokenOwner, sellerAmount);
 
-        if (isInLoanV2) {
-            ILoan(MarketStorage.configLayout().loan).finalizeOfferPurchase(tokenId, offer.creator, tokenOwner, offerId);
+        if (isInPortfolio) {
+            // Finalize through the portfolio's MarketplaceFacet
+            IPortfolioMarketplaceFacet(tokenOwner).finalizeOfferPurchase(tokenId, offer.creator, tokenOwner, offerId);
         } else {
-            IVotingEscrow(MarketStorage.configLayout().votingEscrow).transferFrom(tokenOwner, offer.creator, tokenId);
+            // Direct wallet transfer
+            IVotingEscrow(cfg.votingEscrow).transferFrom(tokenOwner, offer.creator, tokenId);
         }
 
         delete MarketStorage.orderbookLayout().offers[offerId];
         emit OfferAccepted(offerId, tokenId, tokenOwner, offer.price, fee);
     }
 
-    function _validateOfferCriteria(uint256 tokenId, MarketStorage.Offer storage offer, bool isInLoanV2) internal view {
-        uint256 weight = isInLoanV2
-            ? ILoan(MarketStorage.configLayout().loan).getLoanWeight(tokenId)
-            : MarketLogicLib.getVeNFTWeight(tokenId);
+    function _validateOfferCriteria(uint256 tokenId, MarketStorage.Offer storage offer, bool isInPortfolio) internal view {
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        
+        uint256 weight;
+        if (isInPortfolio) {
+            weight = ILoan(cfg.loan).getLoanWeight(tokenId);
+        } else {
+            weight = MarketLogicLib.getVeNFTWeight(tokenId);
+        }
         require(weight >= offer.minWeight, Errors.InsufficientWeight());
-        (uint256 loanBalance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        
+        (uint256 loanBalance,) = ILoan(cfg.loan).getLoanDetails(tokenId);
         require(loanBalance <= offer.debtTolerance, Errors.InsufficientDebtTolerance());
-        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(MarketStorage.configLayout().votingEscrow).locked(tokenId);
+        
+        // Verify the lock is valid
+        IVotingEscrow.LockedBalance memory lockedBalance = IVotingEscrow(cfg.votingEscrow).locked(tokenId);
     }
 }
-
-

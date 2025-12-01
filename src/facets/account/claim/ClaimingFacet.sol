@@ -20,7 +20,7 @@ contract ClaimingFacet {
     IRewardsDistributor public immutable _rewardsDistributor;
     LoanConfig public immutable _loanConfig;
 
-    constructor(address portfolioFactory, address accountConfigStorage, address votingEscrow, address voter, address rewardsDistributor) {
+    constructor(address portfolioFactory, address accountConfigStorage, address votingEscrow, address voter, address rewardsDistributor, address loanConfig) {
         require(portfolioFactory != address(0));
         require(accountConfigStorage != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
@@ -42,10 +42,14 @@ contract ClaimingFacet {
         }
         _voter.claimFees(fees, tokens, tokenId);
 
-        claimRebase(tokenId);
+        _claimRebase(tokenId);
     }
 
     function claimRebase(uint256 tokenId) external {
+        _claimRebase(tokenId);
+    }
+
+    function _claimRebase(uint256 tokenId) internal {
         uint256 claimable = _rewardsDistributor.claimable(tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {
@@ -55,7 +59,7 @@ contract ClaimingFacet {
         CollateralManager.updateLockedColleratal(tokenId);
     }
 
-    function claimLaunchpadToken(address tradeContract, bytes tradeData) external {
+    function claimLaunchpadToken(address tradeContract, bytes calldata tradeData) external {
         require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
         // TODO: Check for user set LAUNCHPAD TOKEN, if so, send directly to the portoflio owner
     }
@@ -93,4 +97,3 @@ contract ClaimingFacet {
     }
 
 }
-
