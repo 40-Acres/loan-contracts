@@ -13,3 +13,7 @@ Claiming Flow
    3. Tokens will be sent to the user from the Loan contract
 
 These can be done in one call from designated wallets using `multicall`, or done in multiple transactions
+
+
+USERS MUST HAVE A MINIMUM WETH TO VOTE ON OP
+AUTO top up WETH

@@ -21,7 +21,6 @@ import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import {Swapper} from "../src/Swapper.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";

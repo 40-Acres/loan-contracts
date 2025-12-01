@@ -3,9 +3,10 @@ pragma solidity ^0.8.28;
 
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import { LoanUtils } from "../../../LoanUtils.sol";
-import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
-import {ILoan} from "../../../interfaces/ILoan.sol";
+import {LoanConfig} from "../config/LoanConfig.sol";
 
+import {ILoan} from "../../../interfaces/ILoan.sol";
+import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 /**
  * @title CollateralManager
  * @dev Diamond facet for managing collateral storage
@@ -44,7 +45,7 @@ library CollateralManager {
     }
 
 
-    function removeLockedColleratal(uint256 tokenId, address accountConfigStorage) external {
+    function removeLockedColleratal(uint256 tokenId, address portfolioAccountConfig) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
         // if the token is not accounted for, return early
@@ -53,7 +54,7 @@ library CollateralManager {
         }
         collateralManagerData.totalLockedColleratal -= previousLockedColleratal;
         collateralManagerData.lockedCollaterals[tokenId] = 0;
-        enforceCollateral(accountConfigStorage);
+        enforceCollateral(portfolioAccountConfig);
     }
 
     function updateLockedColleratal(uint256 tokenId) external {
@@ -88,10 +89,10 @@ library CollateralManager {
         return collateralManagerData.debt;
     }
 
-    function increaseTotalDebt(address accountConfigStorage, uint256 amount) external {
+    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         collateralManagerData.debt += amount;
-        enforceCollateral(accountConfigStorage);
+        enforceCollateral(portfolioAccountConfig);
     }
 
     function decreaseTotalDebt(uint256 amount) external {
@@ -99,19 +100,20 @@ library CollateralManager {
         collateralManagerData.debt -= amount;
     }
 
-    function enforceCollateral(address accountConfigStorage) internal view {
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(accountConfigStorage);
+    function enforceCollateral(address portfolioAccountConfig) internal view {
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         uint256 totalDebt = getTotalDebt();
+        // TODO: if voted on but not claimed, then do not allow withdrawals
         if(totalDebt > maxLoanIgnoreSupply) {
             revert InsufficientCollateral();
         }
     }
 
-    function getMaxLoan(address accountConfigStorage) internal view returns (uint256, uint256) {
+    function getMaxLoan(address portfolioAccountConfig) internal view returns (uint256, uint256) {
         uint256 totalLockedColleratal = getTotalLockedColleratal();
-        address loanContract = AccountConfigStorage(accountConfigStorage).getLoanContract();
-        uint256 rewardsRate = ILoan(loanContract).getRewardsRate();
-        uint256 multiplier = ILoan(loanContract).getMultiplier();
+        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        uint256 rewardsRate = loanConfig.getRewardsRate();
+        uint256 multiplier = loanConfig.getMultiplier();
         return LoanUtils.getMaxLoanByRewardsRate(totalLockedColleratal, rewardsRate, multiplier, 0, 0, 0);
     }
 }

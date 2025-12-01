@@ -17,7 +17,6 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 // import { PharaohSwapper as Swapper } from "../src/Pharaoh/PharaohSwapper.sol";
 import { PharaohSwapper as Swapper } from "../src/Pharaoh/PharaohSwapper.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
 
 import {PharaohLoanV2 as Loan} from "../src/Pharaoh/PharaohLoanV2.sol";
