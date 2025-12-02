@@ -14,12 +14,11 @@ import {IVexyAdapterFacet} from "../../interfaces/IVexyAdapterFacet.sol";
 import {RevertHelper} from "../../libraries/RevertHelper.sol";
 import {Errors} from "../../libraries/Errors.sol";
 
-import {IFlashLoanReceiver} from "../../interfaces/IFlashLoanReceiver.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IFlashLoanProvider} from "../../interfaces/IFlashLoanProvider.sol";
 import {Permit2Lib} from "../../libraries/Permit2Lib.sol";
 
-contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
+contract MarketRouterFacet is IMarketRouterFacet {
     using SafeERC20 for IERC20;
     struct purchaseOrder {
         RouteLib.BuyRoute route;
@@ -198,17 +197,8 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
             maxLoan // Pass the original max loan amount
         );
         
-        // Get loan contract and vault asset (USDC)
-        address loanContract = MarketStorage.configLayout().loan;
-        address vaultAsset = MarketStorage.configLayout().loanAsset;
-        
         // Call flash loan - this will trigger onFlashLoan callback
-        IFlashLoanProvider(loanContract).flashLoan(
-            IFlashLoanReceiver(address(this)),
-            vaultAsset,
-            flashLoanAmount,
-            flashLoanData
-        );
+        IFlashLoanProvider(MarketStorage.configLayout().loan).flashLoan(flashLoanAmount, flashLoanData);
     }
 
     // Decodes purchaseOrder from bytes in a way that is resilient to enum decoding and avoids stack-too-deep by returning a struct
@@ -241,7 +231,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         uint256 amount,
         uint256 fee,
         bytes calldata data
-    ) external override returns (bytes32) {
+    ) external returns (bool) {
         // Verify caller is the loan contract
         if (msg.sender != MarketStorage.configLayout().loan) revert Errors.InvalidFlashLoanCaller();
         
@@ -374,7 +364,7 @@ contract MarketRouterFacet is IMarketRouterFacet, IFlashLoanReceiver {
         // Transfer borrower ownership to the buyer and add financed fee to loan balance
         ILoan(loanContract).finalizeLBOPurchase(purchase.tokenId, buyer);
         
-        return keccak256("ERC3156FlashBorrower.onFlashLoan");
+        return true;
     }
 
     // internal functions for internal routes

@@ -24,6 +24,10 @@ import { LoanUtils } from "./LoanUtils.sol";
 import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 import { IMigrationFacet } from "./facets/account/migration/IMigrationFacet.sol";
 
+interface IInternalFlashLoanReceiver {
+    function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data) external returns (bool);
+}
+
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -47,6 +51,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
+
 
     
     // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
@@ -1276,6 +1281,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
         IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
+    }
+
+    function flashLoan(uint256 amount, bytes calldata data) external nonReentrant {
+        _asset.transferFrom(_vault, msg.sender, amount);
+        IInternalFlashLoanReceiver(msg.sender).onFlashLoan(PortfolioFactory(getPortfolioFactory()).ownerOf(msg.sender), address(_asset), amount, 0, data);
+        _asset.transferFrom(msg.sender, _vault, amount);
     }
 
     /** ORACLE */
