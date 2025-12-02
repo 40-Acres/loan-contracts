@@ -1253,6 +1253,8 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function flashLoan(uint256 amount, bytes calldata data) external nonReentrant {
+        // require statement to gate this function to only being called via portfolio account
+        require(PortfolioFactory(getPortfolioFactory()).ownerOf(msg.sender) != address(0));
         _asset.transferFrom(_vault, msg.sender, amount);
         IInternalFlashLoanReceiver(msg.sender).onFlashLoan(PortfolioFactory(getPortfolioFactory()).ownerOf(msg.sender), address(_asset), amount, 0, data);
         _asset.transferFrom(msg.sender, _vault, amount);
