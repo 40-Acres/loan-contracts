@@ -332,17 +332,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _pay(tokenId, amount, true);
     }
 
-    /**
-     * @dev Allows the borrower to pay off their loan in multiple transactions.
-     *      This function iterates through an array of token IDs and calls the pay function for each one.
-     * 
-     * @param tokenIds An array of token IDs representing the loans to be paid off.
-     */
-    function payMultiple(uint256[] memory tokenIds) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            pay(tokenIds[i], 0);
-        }
-    }
+    // /**
+    //  * @dev Allows the borrower to pay off their loan in multiple transactions.
+    //  *      This function iterates through an array of token IDs and calls the pay function for each one.
+    //  * 
+    //  * @param tokenIds An array of token IDs representing the loans to be paid off.
+    //  */
+    // function payMultiple(uint256[] memory tokenIds) public {
+    //     for (uint256 i = 0; i < tokenIds.length; i++) {
+    //         pay(tokenIds[i], 0);
+    //     }
+    // }
 
 
     /**
@@ -1067,51 +1067,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-    /* USER METHODS */
-    /**
-     * @notice Sets the zero balance option for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     * @param tokenId The ID of the loan (NFT).
-     * @param option The zero balance option to set.
-     */
-    function setZeroBalanceOption(
-        uint256 tokenId,
-        ZeroBalanceOption option
-    ) public {
+    function setLoanOptions(uint256 tokenId, ZeroBalanceOption zeroBalanceOption, bool topUp, address preferredToken) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
-        loan.zeroBalanceOption = option;
-    }
-
-
-    /**
-     * @notice Sets the top-up option for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     * @param tokenId The ID of the loan (NFT).
-     * @param enable A boolean indicating whether to enable or disable the top-up option.
-     */
-    function setTopUp(
-        uint256 tokenId,
-        bool enable
-    ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        loan.topUp = enable;
-    }
-
-    /**
-     * @notice Sets the preferred token for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     * @param tokenId The ID of the loan (NFT).
-     * @param preferredToken The address of the preferred token to set.
-     */
-    function setPreferredToken(
-        uint256 tokenId,
-        address preferredToken
-    ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        require(isApprovedToken(preferredToken));
+        if(preferredToken != address(0)) require(isApprovedToken(preferredToken));
+        loan.zeroBalanceOption = zeroBalanceOption;
+        loan.topUp = topUp;
         loan.preferredToken = preferredToken;
     }
 

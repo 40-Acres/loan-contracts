@@ -23,8 +23,7 @@ function _asset() external view returns (address);
     function pay(uint256 tokenId, uint256 amount) external;
     function setBorrower(uint256 tokenId, address borrower) external;
     function increaseLoan(uint256 tokenId, uint256 amount) external;    
-    function setPreferredToken(uint256 tokenId, address preferredToken) external;
-    function setTopUp(uint256 tokenId, bool topUp) external;
+    function setTopUpAndPreferredToken(uint256 tokenId, bool topUp, address preferredToken) external;
     function setZeroBalanceOption(uint256 tokenId, ZeroBalanceOption zeroBalanceOption) external;
 
     /**
