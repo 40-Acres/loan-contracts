@@ -1067,6 +1067,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
+    /**
+     * @notice Allows the borrower to set the loan options for their loan.
+     * @dev This function can only be called by the borrower of the loan.
+     * @param tokenId The ID of the loan (NFT) for which the options are being set.
+     * @param zeroBalanceOption The zero balance option to set.
+     * @param topUp The top up option to set.
+     * @param preferredToken The preferred token to set.
+     */
     function setLoanOptions(uint256 tokenId, ZeroBalanceOption zeroBalanceOption, bool topUp, address preferredToken) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
