@@ -4,9 +4,14 @@ pragma solidity ^0.8.28;
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {IMarketViewFacet} from "../../../interfaces/IMarketViewFacet.sol";
+import {IMarketRouterFacet} from "../../../interfaces/IMarketRouterFacet.sol";
+import {IFlashLoanProvider} from "../../../interfaces/IFlashLoanProvider.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {RouteLib} from "../../../libraries/RouteLib.sol";
 
 /**
  * @title MarketplaceFacet
@@ -17,6 +22,8 @@ import {CollateralManager} from "../collateral/CollateralManager.sol";
  * transfers, and update collateral tracking when veNFTs change hands.
  */
 contract MarketplaceFacet {
+    using SafeERC20 for IERC20;
+
     // ============ Errors ============
     error NotAuthorized();
     error ZeroAddress();
@@ -26,10 +33,15 @@ contract MarketplaceFacet {
     error Unauthorized();
     error NotPortfolioOwner();
     error VeNFTNotInPortfolio();
+    error InvalidFlashLoanCaller();
+    error LBOFailed();
+    error InsufficientFunds();
 
     // ============ Events ============
     event VeNFTSold(uint256 indexed tokenId, address indexed seller, address indexed buyer);
     event CollateralRemoved(uint256 indexed tokenId);
+    event LBOExecuted(uint256 indexed tokenId, address indexed buyer, uint256 loanAmount);
+    event CollateralAdded(uint256 indexed tokenId, uint256 debtAmount);
 
     // ============ Immutables ============
     PortfolioFactory public immutable _portfolioFactory;
@@ -214,6 +226,183 @@ contract MarketplaceFacet {
         (uint256 balance,) = ILoan(_loanContract).getLoanDetails(tokenId);
         if (balance > 0) {
             CollateralManager.increaseTotalDebt(address(_accountConfigStorage), balance);
+        }
+    }
+
+    // ============ LBO Functions ============
+
+    /**
+     * @notice Execute a Leveraged Buyout to purchase a veNFT using flash loan
+     * @dev Portfolio owner calls this to buy a veNFT with leverage
+     * @param tokenId The veNFT to purchase
+     * @param route Purchase route (InternalWallet, InternalLoan, ExternalAdapter)
+     * @param adapterKey Adapter key for external routes
+     * @param inputAsset Asset for purchase (address(0) for ETH)
+     * @param maxPaymentTotal Max total payment in purchase asset
+     * @param userPaymentAsset Asset provided by user (can differ from inputAsset if swap needed)
+     * @param userPaymentAmount Amount user is contributing
+     * @param purchaseTradeData ODOS data for purchase swap (if inputAsset != listing currency)
+     * @param lboTradeData ODOS data for LBO swap (user asset + flash loan -> purchase asset)
+     * @param marketData Adapter-specific data
+     */
+    function executeLBO(
+        uint256 tokenId,
+        RouteLib.BuyRoute route,
+        bytes32 adapterKey,
+        address inputAsset,
+        uint256 maxPaymentTotal,
+        address userPaymentAsset,
+        uint256 userPaymentAmount,
+        bytes calldata purchaseTradeData,
+        bytes calldata lboTradeData,
+        bytes calldata marketData
+    ) external payable onlyPortfolioOwner {
+        // Collect user payment
+        if (userPaymentAsset == address(0)) {
+            // ETH payment
+            if (msg.value != userPaymentAmount) revert InsufficientFunds();
+        } else if (userPaymentAmount > 0) {
+            // ERC20 payment - pull from user
+            IERC20(userPaymentAsset).safeTransferFrom(msg.sender, address(this), userPaymentAmount);
+        }
+
+        // Get max loan amount for this token
+        (uint256 maxLoan,) = ILoan(_loanContract).getMaxLoan(tokenId);
+        
+        // Encode callback data
+        bytes memory callbackData = abi.encode(
+            tokenId,
+            route,
+            adapterKey,
+            inputAsset,
+            maxPaymentTotal,
+            userPaymentAsset,
+            userPaymentAmount,
+            maxLoan,
+            purchaseTradeData,
+            lboTradeData,
+            marketData
+        );
+
+        // Execute flash loan - callback will handle purchase and loan request
+        IFlashLoanProvider(_loanContract).flashLoan(maxLoan, callbackData);
+    }
+
+    /**
+     * @notice Flash loan callback for LBO execution
+     * @dev Called by LoanV2 during flash loan - handles purchase and loan creation
+     * @param initiator The portfolio owner who initiated the LBO
+     * @param token The flash loaned token (USDC)
+     * @param amount The flash loan amount
+     * @param fee The flash loan fee (0 for internal)
+     * @param data Encoded LBO parameters
+     * @return success True if callback succeeded
+     */
+    function onFlashLoan(
+        address initiator,
+        address token,
+        uint256 amount,
+        uint256 fee,
+        bytes calldata data
+    ) external returns (bool) {
+        // Verify caller is the loan contract
+        if (msg.sender != _loanContract) revert InvalidFlashLoanCaller();
+
+        // Decode callback data
+        (
+            uint256 tokenId,
+            RouteLib.BuyRoute route,
+            bytes32 adapterKey,
+            address inputAsset,
+            uint256 maxPaymentTotal,
+            address userPaymentAsset,
+            uint256 userPaymentAmount,
+            uint256 maxLoan,
+            bytes memory purchaseTradeData,
+            bytes memory lboTradeData,
+            bytes memory marketData
+        ) = abi.decode(data, (uint256, RouteLib.BuyRoute, bytes32, address, uint256, address, uint256, uint256, bytes, bytes, bytes));
+
+        // Step 1: Swap user payment + flash loan to purchase asset if needed
+        if (lboTradeData.length > 0) {
+            _executeOdosSwap(token, amount, userPaymentAsset, userPaymentAmount, lboTradeData);
+        }
+
+        // Step 2: Approve and execute purchase via MarketDiamond
+        IERC20(inputAsset).forceApprove(_marketDiamond, maxPaymentTotal);
+        
+        IMarketRouterFacet(_marketDiamond).buyToken(
+            route,
+            adapterKey,
+            tokenId,
+            inputAsset,
+            maxPaymentTotal,
+            maxPaymentTotal, // maxInputAmount
+            purchaseTradeData,
+            marketData,
+            bytes("") // no permit2 needed, we already have funds
+        );
+
+        // Step 3: Verify we received the NFT
+        if (_ve.ownerOf(tokenId) != address(this)) revert VeNFTNotInPortfolio();
+
+        // Step 4: Request loan against the purchased NFT
+        _ve.approve(_loanContract, tokenId);
+        
+        ILoan(_loanContract).requestLoan(
+            tokenId,
+            maxLoan,
+            ILoan.ZeroBalanceOption.DoNothing,
+            0,              // increasePercentage
+            address(0),     // preferredToken
+            false,          // topUp
+            false           // optInCommunityRewards
+        );
+
+        // Step 5: Track collateral and debt in CollateralManager
+        CollateralManager.addLockedColleratal(tokenId, address(_ve));
+        CollateralManager.increaseTotalDebt(address(_accountConfigStorage), maxLoan);
+
+        // Step 6: Approve flash loan repayment
+        IERC20(token).forceApprove(msg.sender, amount + fee);
+
+        emit LBOExecuted(tokenId, initiator, maxLoan);
+        emit CollateralAdded(tokenId, maxLoan);
+
+        return true;
+    }
+
+    /**
+     * @dev Execute ODOS swap for LBO
+     */
+    function _executeOdosSwap(
+        address flashLoanToken,
+        uint256 flashLoanAmount,
+        address userPaymentAsset,
+        uint256 userPaymentAmount,
+        bytes memory tradeData
+    ) internal {
+        address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
+
+        // Approve flash loan token for ODOS
+        IERC20(flashLoanToken).forceApprove(odos, flashLoanAmount);
+
+        // Approve user payment asset for ODOS (if ERC20)
+        uint256 ethValue = 0;
+        if (userPaymentAsset == address(0)) {
+            ethValue = userPaymentAmount;
+        } else if (userPaymentAmount > 0) {
+            IERC20(userPaymentAsset).forceApprove(odos, userPaymentAmount);
+        }
+
+        // Execute swap
+        (bool success,) = odos.call{value: ethValue}(tradeData);
+        if (!success) revert LBOFailed();
+
+        // Reset approvals
+        IERC20(flashLoanToken).forceApprove(odos, 0);
+        if (userPaymentAsset != address(0) && userPaymentAmount > 0) {
+            IERC20(userPaymentAsset).forceApprove(odos, 0);
         }
     }
 
