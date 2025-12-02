@@ -35,7 +35,6 @@ import {IMarketOfferFacet} from "src/interfaces/IMarketOfferFacet.sol";
 import {IMarketMatchingFacet} from "src/interfaces/IMarketMatchingFacet.sol";
 import {IMarketOperatorFacet} from "src/interfaces/IMarketOperatorFacet.sol";
 import {IMarketRouterFacet} from "src/interfaces/IMarketRouterFacet.sol";
-import {IFlashLoanReceiver} from "src/interfaces/IFlashLoanReceiver.sol";
 
 // Minimal Ownable view for on-chain proxy via implementation ABI
 interface IOwnableLike { function owner() external view returns (address); }
@@ -177,12 +176,10 @@ abstract contract DiamondMarketTestBase is Test {
         bytes4[] memory operatorSelectors = new bytes4[](1);
         operatorSelectors[0] = IMarketOperatorFacet.setOperatorApproval.selector;
 
-        // Router selectors
-        bytes4[] memory routerSelectors = new bytes4[](4);
+        // Router selectors (buyTokenWithLBO deprecated - LBO now via portfolio accounts)
+        bytes4[] memory routerSelectors = new bytes4[](2);
         routerSelectors[0] = IMarketRouterFacet.quoteToken.selector;
         routerSelectors[1] = IMarketRouterFacet.buyToken.selector;
-        routerSelectors[2] = IMarketRouterFacet.buyTokenWithLBO.selector;
-        routerSelectors[3] = IFlashLoanReceiver.onFlashLoan.selector;
 
         IDiamondCut.FacetCut[] memory cut = new IDiamondCut.FacetCut[](9);
         cut[0] = _cutAdd(address(diamondLoupeFacet), loupeSelectors);

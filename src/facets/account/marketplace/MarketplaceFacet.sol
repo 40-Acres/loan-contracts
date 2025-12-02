@@ -42,6 +42,7 @@ contract MarketplaceFacet {
     event CollateralRemoved(uint256 indexed tokenId);
     event LBOExecuted(uint256 indexed tokenId, address indexed buyer, uint256 loanAmount);
     event CollateralAdded(uint256 indexed tokenId, uint256 debtAmount);
+    event LBOProtocolFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 feeAmount, address feeRecipient);
 
     // ============ Immutables ============
     PortfolioFactory public immutable _portfolioFactory;
@@ -346,7 +347,27 @@ contract MarketplaceFacet {
         // Step 3: Verify we received the NFT
         if (_ve.ownerOf(tokenId) != address(this)) revert VeNFTNotInPortfolio();
 
-        // Step 4: Request loan against the purchased NFT
+        // Step 4: Calculate and pay upfront LBO protocol fee
+        uint256 lboProtocolFeeBps = IMarketViewFacet(_marketDiamond).getLBOProtocolFeeBps();
+        if (lboProtocolFeeBps > 0) {
+            // Calculate fee based on listing price (maxPaymentTotal approximates this)
+            // For external routes, back out the route fee to get base listing price
+            uint256 listingPriceForFee = maxPaymentTotal;
+            // if (route == RouteLib.BuyRoute.ExternalAdapter) {
+            //     // External routes include their fee in maxPaymentTotal
+            //     // total = price + (price * bps / 10000) => price = total * 10000 / (10000 + bps)
+            //     // We approximate by using maxPaymentTotal as-is since we don't have route fee bps here
+            // }
+            
+            uint256 upfrontLBOFee = (listingPriceForFee * lboProtocolFeeBps) / 10000;
+            if (upfrontLBOFee > 0) {
+                address feeRecipient = IMarketViewFacet(_marketDiamond).feeRecipient();
+                IERC20(inputAsset).safeTransfer(feeRecipient, upfrontLBOFee);
+                emit LBOProtocolFeePaid(tokenId, initiator, upfrontLBOFee, feeRecipient);
+            }
+        }
+
+        // Step 5: Request loan against the purchased NFT
         _ve.approve(_loanContract, tokenId);
         
         ILoan(_loanContract).requestLoan(
@@ -359,11 +380,11 @@ contract MarketplaceFacet {
             false           // optInCommunityRewards
         );
 
-        // Step 5: Track collateral and debt in CollateralManager
+        // Step 6: Track collateral and debt in CollateralManager
         CollateralManager.addLockedColleratal(tokenId, address(_ve));
         CollateralManager.increaseTotalDebt(address(_accountConfigStorage), maxLoan);
 
-        // Step 6: Approve flash loan repayment
+        // Step 7: Approve flash loan repayment
         IERC20(token).forceApprove(msg.sender, amount + fee);
 
         emit LBOExecuted(tokenId, initiator, maxLoan);
