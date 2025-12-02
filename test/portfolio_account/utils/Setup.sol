@@ -14,6 +14,9 @@ import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol"
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
+import {Loan as LoanV2} from "../../../src/LoanV2.sol";
+import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 
 contract Setup is Test {
     ClaimingFacet public _claimingFacet;
@@ -23,6 +26,7 @@ contract Setup is Test {
     LoanConfig public _loanConfig;
     VotingConfig public _votingConfig;
     PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioManager public _portfolioManager;
 
     FacetRegistry public _facetRegistry;
 
@@ -35,23 +39,26 @@ contract Setup is Test {
     address FORTY_ACRES_DEPLOYER = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     address public _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
     address public _usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-
+    address public _authorizedCaller = address(0xaaaaa);
+    address public _loanContract = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
+    
     address public _user = address(0x40ac2e);
     address public _portfolioAccount;
     uint256 public _tokenId = 84297;
+    address public _owner = FORTY_ACRES_DEPLOYER;
 
     function setUp() public {
         uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(38869187);
+        vm.rollFork(38869188);
         vm.startPrank(FORTY_ACRES_DEPLOYER);
+        _portfolioManager = new PortfolioManager(FORTY_ACRES_DEPLOYER);
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
         DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
         (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig) = configDeployer.deploy();
-        PortfolioFactoryDeploy factoryDeployer = new PortfolioFactoryDeploy();
-        (FacetRegistry facetRegistry, PortfolioFactory portfolioFactory) = factoryDeployer.deploy("aerodrome");
         _portfolioFactory = portfolioFactory;
         DeployFacets deployer = new DeployFacets();
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc));
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc));
         vm.stopPrank();
 
         // create a portfolio account
@@ -64,6 +71,8 @@ contract Setup is Test {
         vm.startPrank(IVotingEscrow(_ve).ownerOf(_tokenId));
         IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount, _tokenId);
         vm.stopPrank();
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
 
         // Set default loan config values
         vm.startPrank(FORTY_ACRES_DEPLOYER);
@@ -77,5 +86,15 @@ contract Setup is Test {
         _loanConfig.setLenderPremium(2000);
         _loanConfig.setTreasuryFee(500);
         _loanConfig.setZeroBalanceFee(100);
+        _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
+        _portfolioAccountConfig.setLoanContract(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
+
+        // upgrade Loan Contract
+        LoanV2 loanV2 = new LoanV2();
+        address loanContract = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
+        vm.startPrank(ILoan(loanContract).owner());
+        LoanV2(loanContract).upgradeToAndCall(address(loanV2), new bytes(0));
+        vm.stopPrank();
+
     }
 }

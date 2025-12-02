@@ -8,6 +8,7 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IVotingFacet} from "./interfaces/IVotingFacet.sol";
 import {VotingConfig} from "../config/VotingConfig.sol";
 import {UserClaimingConfig} from "../claim/UserClaimingConfig.sol";
+import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 
 /**
  * @title VotingFacet
@@ -22,7 +23,9 @@ contract VotingFacet is IVotingFacet {
     VotingConfig public immutable _votingConfig;
 
     error PoolNotApproved(address pool);
-    
+    error LaunchpadPoolNotApproved(address pool);
+    error PoolsCannotBeEmpty();
+
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingConfigStorage, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
@@ -34,18 +37,23 @@ contract VotingFacet is IVotingFacet {
     }
 
     function vote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) virtual external {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         _vote(tokenId, pools, weights);
     }
 
-    function voteForLaunchpadToken(uint256 tokenId, address[] calldata pools, uint256[] calldata weights, address launchpadToken, bool receiveLaunchPadToken) external {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+    function voteForLaunchpadToken(uint256 tokenId, address[] calldata pools, uint256[] calldata weights, bool receiveLaunchPadToken) external {
+        for(uint256 i = 0; i < pools.length; i++) {
+            address launchpadToken = _votingConfig.getLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[i]);
+            if(launchpadToken != address(0)) {
+                UserClaimingConfig.setLaunchPadTokenForNextEpoch(tokenId, launchpadToken);
+                UserClaimingConfig.setReceiveLaunchPadTokenForNextEpoch(receiveLaunchPadToken);
+            }
+        }
         _vote(tokenId, pools, weights);
-        UserClaimingConfig.setLaunchPadTokenForNextEpoch(tokenId, launchpadToken);
-        UserClaimingConfig.setReceiveLaunchPadTokenForNextEpoch(receiveLaunchPadToken);
     }
 
     function _vote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) internal virtual {
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        require(pools.length > 0, PoolsCannotBeEmpty());
         for(uint256 i = 0; i < pools.length; i++) {
             require(_votingConfig.isApprovedPool(pools[i]), PoolNotApproved(pools[i]));
         }

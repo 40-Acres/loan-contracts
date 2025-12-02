@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import "./FortyAcresPortfolioAccount.sol";
 import "./FacetRegistry.sol";
+import "./PortfolioManager.sol";
 import {CollateralStorage} from "../storage/CollateralStorage.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 /**
@@ -11,6 +12,7 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
  */
 contract PortfolioFactory {
     FacetRegistry public immutable facetRegistry;
+    PortfolioManager public portfolioManager; // for cross-account multicall
 
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -33,6 +35,7 @@ contract PortfolioFactory {
     ) {
         require(_facetRegistry != address(0));
         facetRegistry = FacetRegistry(_facetRegistry);
+        portfolioManager = PortfolioManager(msg.sender);
     }
 
     /**

@@ -9,7 +9,7 @@ import {IRewardsDistributor} from "../../../interfaces/IRewardsDistributor.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
-
+import {UserRewardsConfig} from "./UserRewardsConfig.sol";
 /**
  * @title RewardsProcessingFacet
  * @dev Facet that processes rewards for a portfolio account
@@ -26,7 +26,7 @@ contract RewardsProcessingFacet {
     }
 
     function processRewards(uint256 rewardsAmount, address asset) external {
-        require(_portfolioAccountConfig.isAuthorizedCaller(msg.sender));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCallerForPortfolio(msg.sender, address(this)));
         uint256 totalDebt = CollateralManager.getTotalDebt();
         // if have no debt, process zero balance rewards
         if(totalDebt == 0) {
@@ -45,6 +45,11 @@ contract RewardsProcessingFacet {
     }
 
     function _processZeroBalanceRewards(uint256 rewardsAmount, address asset) internal {
+        address rewardsToken = UserRewardsConfig.getRewardsToken();
+        require(rewardsToken != address(0));
+        address recipient = UserRewardsConfig.getRecipient();
+        require(recipient != address(0));
+        IERC20(rewardsToken).transfer(recipient, rewardsAmount);
     }
 }
 

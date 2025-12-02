@@ -28,7 +28,6 @@ contract PortfolioAccountConfig is Initializable, Ownable2StepUpgradeable, UUPSU
     // Token storage data using named storage slot
     struct PortfolioAccountConfigData {
         mapping(address => bool) approvedContracts;
-        mapping(address => bool) authorizedCallers;
         address loanContract;
         address voteConfig;
         LoanConfig loanConfig;
@@ -55,16 +54,6 @@ contract PortfolioAccountConfig is Initializable, Ownable2StepUpgradeable, UUPSU
     function isApprovedContract(address addr) public view returns (bool) {
         PortfolioAccountConfigData storage collateralStorage = _getPortfolioAccountConfig();
         return collateralStorage.approvedContracts[addr];
-    }
-
-    function setAuthorizedCaller(address addr, bool authorized) public onlyOwner {
-        PortfolioAccountConfigData storage collateralStorage = _getPortfolioAccountConfig();
-        collateralStorage.authorizedCallers[addr] = authorized;
-    }
-
-    function isAuthorizedCaller(address addr) public view returns (bool) {
-        PortfolioAccountConfigData storage collateralStorage = _getPortfolioAccountConfig();
-        return collateralStorage.authorizedCallers[addr];
     }
 
     function setLoanContract(address addr) public onlyOwner {
