@@ -117,7 +117,7 @@ contract MarketplaceFacet {
         if (balance != 0) revert LoanNotPaidOff();
 
         // Remove collateral tracking from this portfolio
-        CollateralManager.removeLockedColleratal(tokenId, address(_accountConfigStorage));
+        CollateralManager.removeLockedCollateral(tokenId, address(_accountConfigStorage));
         
         // Transfer veNFT to buyer
         _ve.transferFrom(address(this), buyer, tokenId);
@@ -166,7 +166,7 @@ contract MarketplaceFacet {
         if (balance != 0) revert LoanNotPaidOff();
 
         // Remove collateral tracking from this portfolio
-        CollateralManager.removeLockedColleratal(tokenId, address(_accountConfigStorage));
+        CollateralManager.removeLockedCollateral(tokenId, address(_accountConfigStorage));
         
         // Transfer veNFT to buyer
         _ve.transferFrom(address(this), buyer, tokenId);
@@ -200,7 +200,7 @@ contract MarketplaceFacet {
         _ve.transferFrom(msg.sender, address(this), tokenId);
         
         // Add collateral tracking to this portfolio
-        CollateralManager.addLockedColleratal(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(tokenId, address(_ve));
 
         // Get the loan balance and add to debt tracking
         (uint256 balance,) = ILoan(_loanContract).getLoanDetails(tokenId);
@@ -221,7 +221,7 @@ contract MarketplaceFacet {
         if (_ve.ownerOf(tokenId) != address(this)) revert VeNFTNotInPortfolio();
         
         // Add collateral tracking
-        CollateralManager.addLockedColleratal(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(tokenId, address(_ve));
 
         // Check if there's associated debt
         (uint256 balance,) = ILoan(_loanContract).getLoanDetails(tokenId);
@@ -381,7 +381,7 @@ contract MarketplaceFacet {
         );
 
         // Step 6: Track collateral and debt in CollateralManager
-        CollateralManager.addLockedColleratal(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(tokenId, address(_ve));
         CollateralManager.increaseTotalDebt(address(_accountConfigStorage), maxLoan);
 
         // Step 7: Approve flash loan repayment

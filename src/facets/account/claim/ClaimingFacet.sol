@@ -59,7 +59,7 @@ contract ClaimingFacet {
             } catch {
             }
         }
-        CollateralManager.updateLockedColleratal(tokenId);
+        CollateralManager.updateLockedCollateral(tokenId);
     }
 
     function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) external {
