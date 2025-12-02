@@ -22,6 +22,7 @@ import { ISwapper } from "./interfaces/ISwapper.sol";
 import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
+import { IMigrationFacet } from "./facets/account/migration/IMigrationFacet.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -500,17 +501,29 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(asset.transfer(loan.borrower, remaining));
     }
 
-    function handleRewards(uint256 tokenId, uint256 rewardsAmount) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        emit RewardsClaimed(currentEpochStart(), rewardsAmount, loan.borrower, tokenId, address(_asset));
-        if(loan.balance == 0) {
-            _handleZeroBalance(loan.tokenId, rewardsAmount, rewardsAmount, false);
-        } else {
-            _handleActiveLoanClaim(loan, tokenId, rewardsAmount, 0, rewardsAmount);
-        }
-        _claimRebase(loan);
+    function handleActiveLoanPortfolioAccount(uint256 rewardsAmount) public {
+        address portfolioFactory = getPortfolioFactory();
+        require(portfolioFactory != address(0));
+        address portfolio = PortfolioFactory(portfolioFactory).ownerOf(msg.sender);
+        require(portfolio != address(0));
+        emit RewardsClaimed(currentEpochStart(), rewardsAmount, portfolio, 0, address(_asset));
+
+
+        uint256 protocolFee = (rewardsAmount * getProtocolFee()) / 10000;
+        _asset.transfer(owner(), protocolFee);
+        emit ProtocolFeePaid(currentEpochStart(), protocolFee, portfolio, 0, address(_asset));
+
+        // Calculate and transfer lender premium
+        uint256 lenderPremium = (rewardsAmount * getLenderPremium()) / 10000;
+        _asset.transfer(_vault, lenderPremium);
+        recordRewards(lenderPremium, portfolio, 0);
+
+        uint256 remaining = rewardsAmount - protocolFee - lenderPremium;
+        _asset.transfer(_vault, remaining);
+        emit LoanPaid(0, portfolio, remaining, currentEpochStart(), false);
     }
 
+    
     /**
      * @dev Handles the payment of zero balance fees for a given loan.
      * @param borrower The address of the borrower.
@@ -875,6 +888,13 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return protocolFee;
     }
 
+    /**
+     * @notice Retrieves the multiplier value for the contract.
+     * @return The multiplier value.
+     */
+    function getMultiplier() public view returns (uint256) {
+        return _multiplier;
+    }
 
     /* VIEW FUNCTIONS */
 
@@ -1223,6 +1243,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function setPayoffToken(uint256 tokenId, bool enable) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
+
+        // do not allow payoff token if borrower is a portfolio account
+        address portfolioFactory = getPortfolioFactory();
+        if(portfolioFactory != address(0)) {
+            require(PortfolioFactory(portfolioFactory).ownerOf(loan.borrower) == address(0));
+        }
         require(loan.balance > 0);
         _setUserPayoffTokenOption(loan.borrower, enable);
         if(enable) {
@@ -1247,9 +1273,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         if(portfolio == address(0)) {
             portfolio = PortfolioFactory(factory).createAccount(msg.sender);
         }
-        
-        loan.borrower = portfolio;
-        emit CollateralAdded(tokenId, portfolio, loan.zeroBalanceOption);
+
+        IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
+        IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
     }
 
     /** ORACLE */

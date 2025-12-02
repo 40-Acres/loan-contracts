@@ -15,7 +15,6 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
 import {BlackholeDeploy} from "../script/BlackholeDeploy.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
 import {BlackholeLoanV2 as Loan} from "../src/Blackhole/BlackholeLoanV2.sol";
 import { Loan as Loanv2 } from "../src/LoanV2.sol";

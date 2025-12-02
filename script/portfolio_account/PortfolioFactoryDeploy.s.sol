@@ -2,8 +2,8 @@
 pragma solidity ^0.8.30;
 
 import {Script} from "forge-std/Script.sol";
-import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
-import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
+import {PortfolioFactory} from "../../src/accounts/PortfolioFactory.sol";
+import {FacetRegistry} from "../../src/accounts/FacetRegistry.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 
 contract PortfolioFactoryDeploy is Script {
@@ -30,25 +30,17 @@ contract PortfolioFactoryDeploy is Script {
         }
         return (facetRegistry, deployPortfolioFactory(platform, facetRegistryAddr));
     }
-}
 
-contract DeployPortfolioFactoryAerodrome is PortfolioFactoryDeploy {
-    function run() external {
+
+    function run(string memory platform) external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        
-        _deploy("aerodrome");
-        
+        _deploy(platform);
         vm.stopBroadcast();
     }
-}
 
-contract DeployPortfolioFactoryVelodrome is PortfolioFactoryDeploy {
-    function run() external {
-        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        
-        _deploy("velodrome");
-        
-        vm.stopBroadcast();
+    function deploy(string memory platform) external returns (FacetRegistry, PortfolioFactory) {
+        (FacetRegistry facetRegistry, PortfolioFactory portfolioFactory) = _deploy(platform);
+        return (facetRegistry, portfolioFactory);
     }
 }
 

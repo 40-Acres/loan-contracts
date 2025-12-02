@@ -14,6 +14,7 @@ interface ILoan {
     function setIncreasePercentage(uint256 tokenId,uint256 increasePercentage) external;
     function claimCollateral(uint256 tokenId) external;
     function getRewardsRate() external view returns (uint256);
+    function getMultiplier() external view returns (uint256);
     function owner() external view returns (address);
 function _asset() external view returns (address);
     function _ve() external view returns (address);
@@ -60,4 +61,5 @@ function _asset() external view returns (address);
     function vote(uint256 tokenId) external returns (bool);
     function userVote(uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external;
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
+    function handleActiveLoanPortfolioAccount(uint256 rewardsAmount) external;
 }
