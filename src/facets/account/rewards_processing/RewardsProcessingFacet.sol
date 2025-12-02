@@ -26,7 +26,7 @@ contract RewardsProcessingFacet {
     }
 
     function processRewards(uint256 rewardsAmount, address asset) external {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCallerForPortfolio(msg.sender, address(this)));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         uint256 totalDebt = CollateralManager.getTotalDebt();
         // if have no debt, process zero balance rewards
         if(totalDebt == 0) {

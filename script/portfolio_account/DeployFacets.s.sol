@@ -7,6 +7,7 @@ import {DeployClaimingFacet} from "./facets/DeployClaimingFacet.s.sol";
 import {DeployCollateralFacet} from "./facets/DeployCollateralFacet.s.sol";
 import {DeployLendingFacet} from "./facets/DeployLendingFacet.s.sol";
 import {DeployVotingFacet} from "./facets/DeployVotingFacet.s.sol";
+import {DeploySwapFacet} from "./facets/DeploySwapFacet.s.sol";
 
 contract DeployFacets is AccountFacetsDeploy {
     DeployBridgeFacet deployBridgeFacet = new DeployBridgeFacet();
@@ -14,6 +15,7 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
     DeployLendingFacet deployLendingFacet = new DeployLendingFacet();
     DeployVotingFacet deployVotingFacet = new DeployVotingFacet();
+    DeploySwapFacet deploySwapFacet = new DeploySwapFacet();
 
     function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc) external {
         deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc);
@@ -21,6 +23,7 @@ contract DeployFacets is AccountFacetsDeploy {
         deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, loanConfig);
         deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
+        deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig);
     }
 }
 

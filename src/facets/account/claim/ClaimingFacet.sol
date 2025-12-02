@@ -38,7 +38,7 @@ contract ClaimingFacet {
     }
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCallerForPortfolio(msg.sender, address(this)));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         // do not claim launchpad token in this method
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
@@ -63,7 +63,7 @@ contract ClaimingFacet {
     }
 
     function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) external {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCallerForPortfolio(msg.sender, address(this)));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
 
 
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
@@ -121,7 +121,7 @@ contract ClaimingFacet {
     }
 
     function processRewards(uint256 rewardsAmount, address asset) external {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCallerForPortfolio(msg.sender, address(this)));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         uint256 totalDebt = CollateralManager.getTotalDebt();
         // if have a balance, use loan contract to handle funds
         if(totalDebt > 0) {

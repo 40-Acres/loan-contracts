@@ -114,16 +114,9 @@ contract PortfolioManager is Ownable {
             abi.encode(facetRegistry)
         );
         
-        if (salt == bytes32(0)) {
-            // Non-deterministic deployment
-            assembly {
-                factory := create(0, add(factoryBytecode, 0x20), mload(factoryBytecode))
-            }
-        } else {
-            // Deterministic CREATE2 deployment
-            assembly {
-                factory := create2(0, add(factoryBytecode, 0x20), mload(factoryBytecode), salt)
-            }
+        require(salt != bytes32(0), "Salt cannot be 0");
+        assembly {
+            factory := create2(0, add(factoryBytecode, 0x20), mload(factoryBytecode), salt)
         }
         
         if (factory == address(0)) {
@@ -317,12 +310,7 @@ contract PortfolioManager is Ownable {
      * @param portfolio The portfolio account address
      * @return True if caller is authorized
      */
-    function isAuthorizedCallerForPortfolio(address caller, address portfolio) external view returns (bool) {
-        // Check global authorization
-        if (authorizedCallers[caller]) {
-            return true;
-        }
-        
+    function isPortfolioOwner(address caller, address portfolio) external view returns (bool) {
         // Check if caller is the portfolio owner
         address factory = portfolioToFactory[portfolio];
         if (factory == address(0)) {
@@ -335,7 +323,7 @@ contract PortfolioManager is Ownable {
     }
 
     /**
-     * @dev Check if a caller is globally authorized (convenience function)
+     * @dev Check if a caller is globally authorized
      * @param caller The address to check
      * @return True if caller is globally authorized
      */

@@ -28,7 +28,7 @@ contract BridgeFacet {
     }
 
     function bridge(address bridgeContract, bytes calldata data) external {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCallerForPortfolio(msg.sender, address(this)));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         require(_bridgeConfigStorage.isApprovedBridge(bridgeContract), NotApprovedBridge(bridgeContract));
         _usdc.approve(address(bridgeContract),  _usdc.balanceOf(address(this)));
         (bool success, ) = bridgeContract.call(data);
