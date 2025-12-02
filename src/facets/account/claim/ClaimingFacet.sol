@@ -11,7 +11,7 @@ import {LoanConfig} from "../config/LoanConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {UserClaimingConfig} from "./UserClaimingConfig.sol";
-
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 /**
  * @title ClaimingFacet
  * @dev Facet that interfaces with voting escrow NFTs
@@ -38,6 +38,7 @@ contract ClaimingFacet {
     }
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public {
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         // do not claim launchpad token in this method
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
@@ -61,14 +62,18 @@ contract ClaimingFacet {
         CollateralManager.updateLockedColleratal(tokenId);
     }
 
-    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, address outputToken, uint256 expectedOutputAmount) external {
-        require(_portfolioAccountConfig.isAuthorizedCaller(msg.sender));
-        claimFees(fees, tokens, tokenId);
+    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) external {
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
+
 
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
         if(launchpadToken == address(0)) {
-            return;
+            revert("Launchpad token not set");
         }
+
+        // claim fees for launchpad token
+        _voter.claimFees(fees, tokens, tokenId);
+
         // ensure only launchpad token is being claimed
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
@@ -76,21 +81,47 @@ contract ClaimingFacet {
             }
         }
 
-        IERC20(launchpadToken).approve(address(tradeContract), IERC20(launchpadToken).balanceOf(address(this)));
-        (bool success, ) = tradeContract.call(tradeData);
-        require(success);
-        uint256 outputAmount = IERC20(outputToken).balanceOf(address(this));
-        require(outputAmount >= expectedOutputAmount, "Output amount is less than expected");
+        // only claim launchpad token if user wants to receive it directly
+        if(!UserClaimingConfig.getReceiveLaunchPadTokenForThisEpoch()) {
+            return;
+        }
+
+        uint256 totalDebt = CollateralManager.getTotalDebt();
+        // if account has a balance, swap and pay lenders/treasury
+        if(totalDebt > 0) {
+            require(tradeContract != address(0));
+            require(tradeData.length > 0);
+            require(expectedOutputAmount > 0);
+            IERC20(launchpadToken).approve(address(tradeContract), IERC20(launchpadToken).balanceOf(address(this)));
+            (bool success, ) = tradeContract.call(tradeData);
+            require(success);
+            address loanContract = _portfolioAccountConfig.getLoanContract();
+            address vault = ILoan(loanContract)._vault();
+            address outputToken = IERC4626(vault).asset();
+            uint256 outputAmount = IERC20(outputToken).balanceOf(address(this));
+            require(outputAmount >= expectedOutputAmount, "Output amount is less than expected");
+            IERC20(launchpadToken).approve(address(tradeContract), 0);
+
+            // get treasury fee and lender premium
+            (uint256 lenderPremium, uint256 treasuryFee) = _loanConfig.getActiveRates();
+
+            // from the total amount of output amount, calculate the treasury fee and lender premium
+            uint256 totalFees = treasuryFee + lenderPremium;
+
+            uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
+            uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;
+            IERC20(outputToken).transfer(ILoan(loanContract).owner(), treasuryFeeAmount);
+            IERC20(outputToken).transfer(ILoan(loanContract)._vault(), lenderPremiumAmount);
+        }
 
 
-        // if has a balance send treasury fee to the vault
-
-        // remove approvals
-        IERC20(launchpadToken).approve(address(tradeContract), 0);
+        // send remaining launchpad token to portfolio owner
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        IERC20(launchpadToken).transfer(portfolioOwner, IERC20(launchpadToken).balanceOf(address(this)));
     }
 
     function processRewards(uint256 rewardsAmount, address asset) external {
-        require(_portfolioAccountConfig.isAuthorizedCaller(msg.sender));
+        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         uint256 totalDebt = CollateralManager.getTotalDebt();
         // if have a balance, use loan contract to handle funds
         if(totalDebt > 0) {
