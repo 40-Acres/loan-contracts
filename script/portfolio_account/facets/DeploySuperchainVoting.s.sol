@@ -2,9 +2,10 @@
 pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
+import {SuperchainVotingFacet} from "../../../src/facets/account/vote/SuperchainVoting.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 
-contract DeployVotingFacet is AccountFacetsDeploy {
+contract DeploySuperchainVotingFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
         address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
@@ -13,23 +14,27 @@ contract DeployVotingFacet is AccountFacetsDeploy {
         address VOTER = vm.envAddress("VOTER");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        VotingFacet facet = new VotingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_CONFIG, VOTING_ESCROW, VOTER);
-        registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "VotingFacet", false);
+        SuperchainVotingFacet facet = new SuperchainVotingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_CONFIG, VOTING_ESCROW, VOTER);
+        registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainVotingFacet", false);
         vm.stopBroadcast();
     }
 
     function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter) external {
-        VotingFacet newFacet = new VotingFacet(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
-        registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "VotingFacet", true);
+        SuperchainVotingFacet newFacet = new SuperchainVotingFacet(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
+        registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "SuperchainVotingFacet", true);
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = VotingFacet.vote.selector;
         selectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         selectors[2] = VotingFacet.setVotingMode.selector;
         selectors[3] = VotingFacet.isManualVoting.selector;
         selectors[4] = VotingFacet.defaultVote.selector;
+        selectors[5] = SuperchainVotingFacet.setSuperchainPool.selector;
+        selectors[6] = SuperchainVotingFacet.isSuperchainPool.selector;
+        selectors[7] = SuperchainVotingFacet.setMinimumWethBalance.selector;
+        selectors[8] = SuperchainVotingFacet.getMinimumWethBalance.selector;
         return selectors;
     }
 }

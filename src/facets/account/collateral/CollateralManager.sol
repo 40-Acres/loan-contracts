@@ -19,6 +19,7 @@ library CollateralManager {
 
     struct CollateralManagerData {
         mapping(uint256 tokenId => uint256 lockedColleratal) lockedCollaterals;
+        mapping(uint256 tokenId => uint256 originTimestamp) originTimestamps;
         uint256 totalLockedColleratal;
         uint256 debt;
     }
@@ -31,6 +32,7 @@ library CollateralManager {
     }
 
     function addLockedColleratal(uint256 tokenId, address ve) external {
+        require(ve != address(0), "Voting escrow address cannot be zero");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
         // if the token is already accounted for, return early
@@ -42,6 +44,7 @@ library CollateralManager {
 
         collateralManagerData.lockedCollaterals[tokenId] = newLockedColleratal;
         collateralManagerData.totalLockedColleratal += newLockedColleratal;
+        collateralManagerData.originTimestamps[tokenId] = block.timestamp;
     }
 
 
@@ -54,10 +57,12 @@ library CollateralManager {
         }
         collateralManagerData.totalLockedColleratal -= previousLockedColleratal;
         collateralManagerData.lockedCollaterals[tokenId] = 0;
+        collateralManagerData.originTimestamps[tokenId] = 0;
         enforceCollateral(portfolioAccountConfig);
     }
 
-    function updateLockedColleratal(uint256 tokenId) external {
+    function updateLockedColleratal(uint256 tokenId, address ve) external {
+        require(ve != address(0), "Voting escrow address cannot be zero");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
 
@@ -66,7 +71,7 @@ library CollateralManager {
             return;
         }
 
-        int128 newLockedColleratalInt = IVotingEscrow(address(this)).locked(tokenId).amount;
+        int128 newLockedColleratalInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
         uint256 newLockedColleratal = uint256(uint128(newLockedColleratalInt));
         if(newLockedColleratal > previousLockedColleratal) {
             uint256 difference = newLockedColleratal - previousLockedColleratal;
@@ -115,5 +120,10 @@ library CollateralManager {
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
         return LoanUtils.getMaxLoanByRewardsRate(totalLockedColleratal, rewardsRate, multiplier, 0, 0, 0);
+    }
+
+    function getOriginTimestamp(uint256 tokenId) external view returns (uint256) {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        return collateralManagerData.originTimestamps[tokenId];
     }
 }

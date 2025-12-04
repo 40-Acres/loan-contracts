@@ -24,7 +24,6 @@ contract SwapFacet {
 
     function swap(address swapContract, bytes calldata data, address outputToken, uint256 expectedOutputAmount) external {
         uint256 beginningOutputTokenBalance = IERC20(outputToken).balanceOf(address(this));
-        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         require(outputToken != address(0));
         require(expectedOutputAmount > 0);
         IERC20(outputToken).approve(address(swapContract), IERC20(outputToken).balanceOf(address(this)));

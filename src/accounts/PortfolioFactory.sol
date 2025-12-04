@@ -66,6 +66,8 @@ contract PortfolioFactory {
         owners[portfolio] = user;
         portfolioAddresses.add(portfolio);
         
+        // Register portfolio with PortfolioManager
+        portfolioManager.registerPortfolio(portfolio, user);
         
         emit AccountCreated(user, portfolio);
         

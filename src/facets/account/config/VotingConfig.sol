@@ -85,4 +85,5 @@ contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     function getLaunchpadPoolTokenForCurrentEpoch(address pool) public view returns (address) {
         return getLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochStart(block.timestamp), pool);
     }
+
 }

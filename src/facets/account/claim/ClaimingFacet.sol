@@ -37,8 +37,7 @@ contract ClaimingFacet {
         _loanConfig = LoanConfig(loanConfig);
     }
 
-    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
+    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
         // do not claim launchpad token in this method
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
@@ -59,13 +58,10 @@ contract ClaimingFacet {
             } catch {
             }
         }
-        CollateralManager.updateLockedColleratal(tokenId);
+        CollateralManager.updateLockedColleratal(tokenId, address(_votingEscrow));
     }
 
-    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) external {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
-
-
+    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external {
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
         if(launchpadToken == address(0)) {
             revert("Launchpad token not set");
@@ -121,7 +117,6 @@ contract ClaimingFacet {
     }
 
     function processRewards(uint256 rewardsAmount, address asset) external {
-        require(_portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
         uint256 totalDebt = CollateralManager.getTotalDebt();
         // if have a balance, use loan contract to handle funds
         if(totalDebt > 0) {

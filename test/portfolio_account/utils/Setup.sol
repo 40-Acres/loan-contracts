@@ -47,7 +47,7 @@ contract Setup is Test {
     uint256 public _tokenId = 84297;
     address public _owner = FORTY_ACRES_DEPLOYER;
 
-    function setUp() public {
+    function setUp() public virtual {
         uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(38869188);

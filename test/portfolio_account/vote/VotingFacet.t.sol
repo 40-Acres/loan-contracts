@@ -15,6 +15,7 @@ import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {Setup} from "../utils/Setup.sol";
+import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
 
 contract VotingFacetTest is Test, Setup {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -29,15 +30,24 @@ contract VotingFacetTest is Test, Setup {
 
     function testVoteEmptyPools() public {
         vm.startPrank(_user);
-        vm.expectRevert(VotingFacet.PoolsCannotBeEmpty.selector);
-        VotingFacet(_portfolioAccount).vote(_tokenId, new address[](0), new uint256[](0));
+        vm.expectRevert();
+        // multicall from portfolio manager
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = address(_portfolioAccount);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.vote.selector, _tokenId, new address[](0), new uint256[](0));
+        _portfolioManager.multicall(calldatas, portfolios, false);
         vm.stopPrank();
     }
 
     function testVoteInvalidPool() public {
         vm.startPrank(_user);
         vm.expectRevert();
-        VotingFacet(_portfolioAccount).vote(_tokenId, pools, weights);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = address(_portfolioAccount);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.vote.selector, _tokenId, pools, weights);
+        _portfolioManager.multicall(calldatas, portfolios, false);
         vm.stopPrank();
     }
 
@@ -46,7 +56,11 @@ contract VotingFacetTest is Test, Setup {
         _votingConfig.setApprovedPool(pools[0], true);
         vm.stopPrank();
         vm.startPrank(_user);
-        VotingFacet(_portfolioAccount).vote(_tokenId, pools, weights);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = address(_portfolioAccount);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.vote.selector, _tokenId, pools, weights);
+        _portfolioManager.multicall(calldatas, portfolios, false);
         vm.stopPrank();
     }
 
@@ -55,7 +69,89 @@ contract VotingFacetTest is Test, Setup {
         _votingConfig.setLaunchpadPoolTokenForNextEpoch(pools[0], launchpadToken);
         vm.stopPrank();
         vm.startPrank(_user);
-        VotingFacet(_portfolioAccount).voteForLaunchpadToken(_tokenId, pools, weights, true);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = address(_portfolioAccount);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.voteForLaunchpadToken.selector, _tokenId, pools, weights, true);
+        _portfolioManager.multicall(calldatas, portfolios, false);
         vm.stopPrank();
+    }
+
+    function testVoteEnterManualVotingMode() public {
+        // token entered this week, user should be able to switch to manual voting even if not voted yet
+        vm.startPrank(_owner);
+        _votingConfig.setApprovedPool(pools[0], true);
+        vm.stopPrank();
+
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, true);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = address(_portfolioAccount);
+        vm.startPrank(_user);
+        // user should not be able to switch to manual mode
+        vm.expectRevert();
+        _portfolioManager.multicall(calldatas, portfolios, false);
+
+        bool isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertFalse(isManualVoting, "User should be in automatic mode after switching");
+        // let user vote for pool and skip to next epoch
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.vote.selector, _tokenId, pools, weights);
+        // week 0: user voted, but not eligible for manual voting, manual votes before voting window
+        _portfolioManager.multicall(calldatas, portfolios, false);
+        isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertTrue(isManualVoting, "User should be in manual mode after voting");
+ 
+        uint256 currentTimestamp = block.timestamp + 7 days;
+        vm.warp(currentTimestamp);
+        vm.roll(block.number + 1);
+        // week 1: user voted last week, should be eligible for manual voting
+
+        isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertTrue(isManualVoting, "User should be in manual mode after voting last week");
+        // user is already in manual mode, but let's verify they can switch back to automatic
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, false);
+        _portfolioManager.multicall(calldatas, portfolios, false);
+        isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertFalse(isManualVoting, "User should be in automatic mode after switching");
+        // switch back to manual mode
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, true);
+        _portfolioManager.multicall(calldatas, portfolios, false);
+        vm.stopPrank();
+        isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertTrue(isManualVoting, "User should be in manual mode");
+
+
+        currentTimestamp = currentTimestamp + 7 days;
+        vm.warp(currentTimestamp);
+        vm.roll(block.number + 1);
+        // week 2: user missed voting last week, should be in automatic mode
+        
+       // user should be in automatic mode since they missed voting last epoch
+        isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertFalse(isManualVoting, "User should be in automatic mode since missed voting last epoch");
+
+        // user should not be able to switch to manual mode
+        calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, true);
+        vm.expectRevert();
+        _portfolioManager.multicall(calldatas, portfolios, false);
+        isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
+        assertFalse(isManualVoting, "User should be in automatic mode since missed voting last epoch");
+    }
+
+
+    function testDefaultVote() public {
+        vm.startPrank(_owner);
+        _votingConfig.setApprovedPool(pools[0], true);
+        vm.stopPrank();
+        vm.startPrank(_authorizedCaller);
+        vm.expectRevert();
+        VotingFacet(_portfolioAccount).defaultVote(_tokenId, pools, weights);
+
+        vm.warp(ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 1 hours);
+        VotingFacet(_portfolioAccount).defaultVote(_tokenId, pools, weights);
+        vm.stopPrank();
+
+        uint256 lastVoted = IVoter(address(_voter)).lastVoted(_tokenId);
+        assertEq(lastVoted, block.timestamp);
     }
 }
