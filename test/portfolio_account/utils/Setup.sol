@@ -17,6 +17,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
+import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 
 contract Setup is Test {
     ClaimingFacet public _claimingFacet;
@@ -27,7 +28,7 @@ contract Setup is Test {
     VotingConfig public _votingConfig;
     PortfolioAccountConfig public _portfolioAccountConfig;
     PortfolioManager public _portfolioManager;
-
+    SwapConfig public _swapConfig;
     FacetRegistry public _facetRegistry;
 
     IVotingEscrow public _votingEscrow = IVotingEscrow(0xc93B315971A4f260875103F5DA84cB1E30f366Cc);
@@ -47,7 +48,7 @@ contract Setup is Test {
     uint256 public _tokenId = 84297;
     address public _owner = FORTY_ACRES_DEPLOYER;
 
-    function setUp() public {
+    function setUp() public virtual {
         uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(38869188);
@@ -55,10 +56,10 @@ contract Setup is Test {
         _portfolioManager = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
         DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig) = configDeployer.deploy();
+        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy();
         _portfolioFactory = portfolioFactory;
         DeployFacets deployer = new DeployFacets();
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc));
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig));
         vm.stopPrank();
 
         // create a portfolio account
@@ -67,7 +68,8 @@ contract Setup is Test {
         _loanConfig = loanConfig;
         _votingConfig = votingConfig;
         _facetRegistry = facetRegistry;
-
+        _swapConfig = swapConfig;
+        
         vm.startPrank(IVotingEscrow(_ve).ownerOf(_tokenId));
         IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount, _tokenId);
         vm.stopPrank();

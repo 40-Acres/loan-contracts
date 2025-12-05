@@ -46,6 +46,7 @@ contract PortfolioManager is Ownable {
 
     error FactoryNotRegistered(address factory);
     error PortfolioNotRegistered(address portfolio);
+    error PortfolioAlreadyRegistered(address portfolio);
     error NotPortfolioOwner(address portfolio, address caller);
     error ArrayLengthMismatch();
     error CallFailed(address portfolio, bytes reason);
@@ -82,20 +83,9 @@ contract PortfolioManager is Ownable {
         );
         
         // Use a derived salt for the FacetRegistry to ensure uniqueness
-        bytes32 registrySalt = salt != bytes32(0) 
-            ? keccak256(abi.encodePacked(salt, "facet-registry"))
-            : bytes32(0);
-        
-        if (registrySalt == bytes32(0)) {
-            // Non-deterministic deployment
-            assembly {
-                facetRegistry := create(0, add(registryBytecode, 0x20), mload(registryBytecode))
-            }
-        } else {
-            // Deterministic CREATE2 deployment
-            assembly {
-                facetRegistry := create2(0, add(registryBytecode, 0x20), mload(registryBytecode), registrySalt)
-            }
+        bytes32 registrySalt = keccak256(abi.encodePacked(salt, "facet-registry"));
+        assembly {
+            facetRegistry := create2(0, add(registryBytecode, 0x20), mload(registryBytecode), registrySalt)
         }
         
         if (facetRegistry == address(0)) {
@@ -114,7 +104,6 @@ contract PortfolioManager is Ownable {
             abi.encode(facetRegistry)
         );
         
-        require(salt != bytes32(0), "Salt cannot be 0");
         assembly {
             factory := create2(0, add(factoryBytecode, 0x20), mload(factoryBytecode), salt)
         }
@@ -134,26 +123,53 @@ contract PortfolioManager is Ownable {
 
 
     /**
-     * @dev Execute multiple calls across different portfolio accounts (with allowFailure option)
+     * @dev Register a portfolio account with the manager
+     * Can only be called by a registered factory
+     * @param portfolio The portfolio account address
+     * @param owner The owner of the portfolio account
+     */
+    function registerPortfolio(address portfolio, address owner) external {
+        // Verify caller is a registered factory
+        if (!isRegisteredFactory[msg.sender]) {
+            revert FactoryNotRegistered(msg.sender);
+        }
+        
+        // Verify portfolio is not already registered
+        if (portfolioToFactory[portfolio] != address(0)) {
+            revert PortfolioAlreadyRegistered(portfolio);
+        }
+        
+        // Map portfolio to factory
+        portfolioToFactory[portfolio] = msg.sender;
+        
+        // Add portfolio to owner's set
+        ownerPortfolios[owner].add(portfolio);
+        
+        // Emit event
+        emit PortfolioRegistered(portfolio, msg.sender, owner);
+    }
+
+    /**
+     * @dev Execute multiple calls across different portfolio accounts
      * Verifies that msg.sender owns all portfolio accounts before executing
-     * @param calls Array of PortfolioCall structs containing portfolio address and calldata
-     * @param allowFailure If true, continues execution even if a call fails
-     * @return results Array of return data from each call (empty bytes on failure if allowFailure is true)
-     * @return successes Array indicating which calls succeeded
+     * Reverts if any call fails
+     * @param calldatas Array of calldatas to execute
+     * @param portfolios Array of portfolio addresses to execute the calldatas on
+     * @return results Array of return data from each call
      */
     function multicall(
-        PortfolioCall[] calldata calls,
-        bool allowFailure
-    ) external returns (bytes[] memory results, bool[] memory successes) {
-        require(calls.length > 0, "PortfolioManager: No calls provided");
+        bytes[] calldata calldatas,
+        address[] calldata portfolios
+    ) external returns (bytes[] memory results) {
+        require(calldatas.length > 0, "PortfolioManager: No calldatas provided");
+        require(portfolios.length > 0, "PortfolioManager: No portfolios provided");
+        require(calldatas.length == portfolios.length, "PortfolioManager: Calldatas and portfolios length mismatch");
         
-        results = new bytes[](calls.length);
-        successes = new bool[](calls.length);
-        address[] memory portfolios = new address[](calls.length);
+        results = new bytes[](calldatas.length);
         
         // verify ownership of all portfolios
-        for (uint256 i = 0; i < calls.length; i++) {
-            address portfolio = calls[i].portfolio;
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            address portfolio = portfolios[i];
             
             // Verify portfolio is registered
             address factory = portfolioToFactory[portfolio];
@@ -163,38 +179,30 @@ contract PortfolioManager is Ownable {
             PortfolioFactory portfolioFactory = PortfolioFactory(factory);
             address owner = portfolioFactory.ownerOf(portfolio);
             require(owner == msg.sender, NotPortfolioOwner(portfolio, msg.sender));
-            
-            portfolios[i] = portfolio;
         }
         
-        // Second pass: execute all calls
-        for (uint256 i = 0; i < calls.length; i++) {
-            (bool success, bytes memory result) = calls[i].portfolio.call(calls[i].data);
+        // execute all calls
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            (bool success, bytes memory result) = portfolios[i].call(calldatas[i]);
             
             if (success) {
                 results[i] = result;
-                successes[i] = true;
             } else {
-                if (allowFailure) {
-                    results[i] = "";
-                    successes[i] = false;
-                } else {
-                    // Try to get revert reason
-                    if (result.length > 0) {
-                        assembly {
-                            let returndata_size := mload(result)
-                            revert(add(32, result), returndata_size)
-                        }
-                    } else {
-                        revert CallFailed(calls[i].portfolio, result);
+                // Try to get revert reason
+                if (result.length > 0) {
+                    assembly {
+                        let returndata_size := mload(result)
+                        revert(add(32, result), returndata_size)
                     }
+                } else {
+                    revert CallFailed(portfolios[i], result);
                 }
             }
         }
         
         emit CrossAccountMulticall(msg.sender, portfolios);
         
-        return (results, successes);
+        return results;
     }
 
     /**
@@ -304,29 +312,14 @@ contract PortfolioManager is Ownable {
     }
 
     /**
-     * @dev Check if a caller is authorized for a portfolio
-     * Checks: 1) Global authorization, 2) Portfolio owner
-     * @param caller The address to check
+     * @dev Check if a caller is owner of a portfolio
      * @param portfolio The portfolio account address
-     * @return True if caller is authorized
+     * @return True if caller is owner of portfolio
      */
-    function isPortfolioOwner(address caller, address portfolio) external view returns (bool) {
-        // Check if caller is the portfolio owner
-        address factory = portfolioToFactory[portfolio];
-        if (factory == address(0)) {
-            return false;
-        }
-        
-        PortfolioFactory portfolioFactory = PortfolioFactory(factory);
-        address owner = portfolioFactory.ownerOf(portfolio);
-        return caller == owner;
+    function isPortfolioOwner(address portfolio) external view returns (bool) {
+        return PortfolioFactory(portfolioToFactory[portfolio]).ownerOf(portfolio) == msg.sender;
     }
 
-    /**
-     * @dev Check if a caller is globally authorized
-     * @param caller The address to check
-     * @return True if caller is globally authorized
-     */
     function isAuthorizedCaller(address caller) external view returns (bool) {
         return authorizedCallers[caller];
     }

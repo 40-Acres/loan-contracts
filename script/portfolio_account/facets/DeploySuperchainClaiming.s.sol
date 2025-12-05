@@ -2,13 +2,15 @@
 pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
+import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/SuperchainClaimingFacet.sol";
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+
 /**
- * @title DeployClaimingFacet
+ * @title DeploySuperchainClaiming
  * @dev Deploy ClaimingFacet contract
  */
-contract DeployClaimingFacet is AccountFacetsDeploy {
+contract DeploySuperchainClaiming is AccountFacetsDeploy {
 
     function run() external {     
         address PORTFOLIO_FACTORY  = vm.envAddress("PORTFOLIO_FACTORY");
@@ -18,23 +20,22 @@ contract DeployClaimingFacet is AccountFacetsDeploy {
         address REWARDS_DISTRIBUTOR = vm.envAddress("REWARDS_DISTRIBUTOR");
         address LOAN_CONFIG = vm.envAddress("LOAN_CONFIG");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
-
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        ClaimingFacet facet = new ClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG);
+        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG);
         
-        registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "ClaimingFacet", false);
+        registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainClaimingFacet", false);
         
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig) external returns (ClaimingFacet) {
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig) external returns (SuperchainClaimingFacet) {
         
-        ClaimingFacet facet = new ClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig);
+        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig);
         bytes4[] memory selectors = getSelectorsForFacet();
-        registerFacet(portfolioFactory, address(facet), selectors, "ClaimingFacet", true);
+        registerFacet(portfolioFactory, address(facet), selectors, "SuperchainClaimingFacet", true);
         
-        return ClaimingFacet(address(facet));
+        return SuperchainClaimingFacet(address(facet));
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {

@@ -517,28 +517,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         require(asset.transfer(loan.borrower, remaining));
     }
 
-    function handleActiveLoanPortfolioAccount(uint256 rewardsAmount) public {
+    function _getPortfolioOwner(address borrower) internal view returns (address) {
         address portfolioFactory = getPortfolioFactory();
         require(portfolioFactory != address(0));
-        address portfolio = PortfolioFactory(portfolioFactory).ownerOf(msg.sender);
-        require(portfolio != address(0));
-        emit RewardsClaimed(currentEpochStart(), rewardsAmount, portfolio, 0, address(_asset));
-
-
-        uint256 protocolFee = (rewardsAmount * getProtocolFee()) / 10000;
-        _asset.transfer(owner(), protocolFee);
-        emit ProtocolFeePaid(currentEpochStart(), protocolFee, portfolio, 0, address(_asset));
-
-        // Calculate and transfer lender premium
-        uint256 lenderPremium = (rewardsAmount * getLenderPremium()) / 10000;
-        _asset.transfer(_vault, lenderPremium);
-        recordRewards(lenderPremium, portfolio, 0);
-
-        uint256 remaining = rewardsAmount - protocolFee - lenderPremium;
-        _asset.transfer(_vault, remaining);
-        emit LoanPaid(0, portfolio, remaining, currentEpochStart(), false);
+        return PortfolioFactory(portfolioFactory).ownerOf(borrower);
     }
-
     
     /**
      * @dev Handles the payment of zero balance fees for a given loan.

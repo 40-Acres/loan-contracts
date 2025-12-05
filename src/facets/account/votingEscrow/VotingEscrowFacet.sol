@@ -15,12 +15,13 @@ import {CollateralManager} from "../collateral/CollateralManager.sol";
 contract VotingEscrowFacet {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
-    IVotingEscrow public _votingEscrow;
+    IVotingEscrow public immutable _votingEscrow;
     IVoter public immutable _voter;
 
     constructor(address portfolioFactory, address accountConfigStorage, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
         require(accountConfigStorage != address(0));
+        require(votingEscrow != address(0), "Voting escrow address cannot be zero");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
         _votingEscrow = IVotingEscrow(votingEscrow);
@@ -30,7 +31,7 @@ contract VotingEscrowFacet {
     function increaseLock(uint256 tokenId, uint256 amount) external {
         IERC20(_votingEscrow.token()).transferFrom(msg.sender, address(this), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
-        CollateralManager.updateLockedCollateral(tokenId);
+        CollateralManager.updateLockedColleratal(tokenId, address(_votingEscrow));
     }
 }
 

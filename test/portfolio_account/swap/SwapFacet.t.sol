@@ -76,14 +76,21 @@ contract SwapFacetTest is Test, Setup {
             _portfolioAccount // receiver
         );
         
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        _swapConfig.approveSwapTarget(address(mockRouter));
+        vm.stopPrank();
         // Execute swap via authorized caller
-        vm.prank(_authorizedCaller);
+        vm.startPrank(_authorizedCaller);
         swapFacet.swap(
+            address(_swapConfig),
             address(mockRouter),
             swapData,
+            inputToken,
+            IERC20(inputToken).balanceOf(_portfolioAccount),
             outputToken,
             expectedOutputAmount
         );
+        vm.stopPrank();
         
         // Verify balances after swap
         uint256 portfolioInputAfter = IERC20(inputToken).balanceOf(_portfolioAccount);
@@ -127,14 +134,18 @@ contract SwapFacetTest is Test, Setup {
         );
         
         // This should fail because output amount is less than expected
-        vm.prank(_authorizedCaller);
+        vm.startPrank(_authorizedCaller, _authorizedCaller);
         vm.expectRevert();
         swapFacet.swap(
+            address(_swapConfig),
             address(mockRouter),
             swapData,
+            inputToken,
+            inputAmount,
             outputToken,
             expectedOutputAmount
         );
+        vm.stopPrank();
     }
 
     function testSwapFailsWithUnauthorizedCaller() public {
@@ -157,8 +168,11 @@ contract SwapFacetTest is Test, Setup {
         vm.prank(address(0x1234));
         vm.expectRevert();
         swapFacet.swap(
+            address(_swapConfig),
             address(mockRouter),
             swapData,
+            inputToken,
+            inputAmount,
             outputToken,
             expectedOutputAmount
         );
@@ -167,27 +181,35 @@ contract SwapFacetTest is Test, Setup {
     function testSwapFailsWithZeroOutputToken() public {
         setupSwapTest();
         
-        vm.prank(_authorizedCaller);
+        vm.startPrank(_authorizedCaller, _authorizedCaller);
         vm.expectRevert();
         swapFacet.swap(
+            address(_swapConfig),
             address(mockRouter),
             new bytes(0),
+            inputToken,
+            inputAmount,
             address(0), // zero address should fail
             expectedOutputAmount
         );
+        vm.stopPrank();
     }
 
     function testSwapFailsWithZeroExpectedOutput() public {
         setupSwapTest();
         
-        vm.prank(_authorizedCaller);
+        vm.startPrank(_authorizedCaller, _authorizedCaller);
         vm.expectRevert();
         swapFacet.swap(
+            address(_swapConfig),
             address(mockRouter),
             new bytes(0),
+            inputToken,
+            inputAmount,
             outputToken,
             0 // zero expected output should fail
         );
+        vm.stopPrank();
     }
 }
 
