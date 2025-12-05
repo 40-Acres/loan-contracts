@@ -9,6 +9,7 @@ import {IFlashLoanProvider} from "../../../interfaces/IFlashLoanProvider.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {LendingFacet} from "../lending/LendingFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {RouteLib} from "../../../libraries/RouteLib.sol";
@@ -367,28 +368,20 @@ contract MarketplaceFacet {
             }
         }
 
-        // Step 5: Request loan against the purchased NFT
-        _ve.approve(_loanContract, tokenId);
-        
-        ILoan(_loanContract).requestLoan(
-            tokenId,
-            maxLoan,
-            ILoan.ZeroBalanceOption.DoNothing,
-            0,              // increasePercentage
-            address(0),     // preferredToken
-            false,          // topUp
-            false           // optInCommunityRewards
-        );
-
-        // Step 6: Track collateral and debt in CollateralManager
+        // Step 5: Add collateral tracking first
         CollateralManager.addLockedCollateral(tokenId, address(_ve));
-        CollateralManager.increaseTotalDebt(address(_accountConfigStorage), maxLoan);
+
+        // Step 6: Request loan via LendingFacet (handles approval, loan request, and debt tracking with fees)
+        LendingFacet(address(this)).borrow(tokenId, maxLoan);
 
         // Step 7: Approve flash loan repayment
         IERC20(token).forceApprove(msg.sender, amount + fee);
 
-        emit LBOExecuted(tokenId, initiator, maxLoan);
-        emit CollateralAdded(tokenId, maxLoan);
+        // Get actual debt (includes origination fee)
+        (uint256 actualDebt,) = ILoan(_loanContract).getLoanDetails(tokenId);
+        
+        emit LBOExecuted(tokenId, initiator, actualDebt);
+        emit CollateralAdded(tokenId, actualDebt);
 
         return true;
     }

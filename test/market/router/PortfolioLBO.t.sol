@@ -20,6 +20,8 @@ import {ILoan} from "src/interfaces/ILoan.sol";
 import {PortfolioFactory} from "src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "src/accounts/FacetRegistry.sol";
 import {MarketplaceFacet} from "src/facets/account/marketplace/MarketplaceFacet.sol";
+import {LendingFacet} from "src/facets/account/lending/LendingFacet.sol";
+import {CollateralFacet} from "src/facets/account/collateral/CollateralFacet.sol";
 import {PortfolioAccountConfig} from "src/facets/account/config/PortfolioAccountConfig.sol";
 import {LoanConfig} from "src/facets/account/config/LoanConfig.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -71,6 +73,32 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
     PortfolioAccountConfig public portfolioAccountConfig;
     LoanConfig public loanConfig;
     MarketplaceFacet public marketplaceFacet;
+    LendingFacet public lendingFacet;
+    CollateralFacet public collateralFacet;
+
+    // ========== HELPER FUNCTIONS ==========
+    
+    // Origination fee is 0.8% (80/10000)
+    function _withFee(uint256 amount) internal pure returns (uint256) {
+        return amount + (amount * 80) / 10000;
+    }
+
+    // Assert CollateralManager debt matches LoanV2 balance for a single tokenId
+    function _assertDebtSynced(address portfolio, uint256 tokenId) internal view {
+        uint256 collateralManagerDebt = CollateralFacet(portfolio).getTotalDebt();
+        (uint256 loanBalance,) = ILoanReq(address(loan)).getLoanDetails(tokenId);
+        assertEq(collateralManagerDebt, loanBalance, "CollateralManager debt should match LoanV2 balance");
+    }
+
+    // Assert collateral is properly tracked
+    function _assertCollateralTracked(address portfolio, uint256 tokenId) internal view {
+        IVotingEscrow ve = IVotingEscrow(VE);
+        IVotingEscrow.LockedBalance memory locked = ve.locked(tokenId);
+        uint256 expectedCollateral = uint256(uint128(locked.amount));
+        
+        uint256 trackedCollateral = CollateralFacet(portfolio).getTotalLockedCollateral();
+        assertEq(trackedCollateral, expectedCollateral, "Collateral should be tracked");
+    }
 
     address seller;
     address buyer;
@@ -150,6 +178,43 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
             diamond // market diamond
         );
 
+        // Deploy LendingFacet (required by MarketplaceFacet for LBO)
+        lendingFacet = new LendingFacet(
+            address(portfolioFactory),
+            address(portfolioAccountConfig)
+        );
+
+        // Deploy CollateralFacet (for reading collateral/debt state)
+        collateralFacet = new CollateralFacet(
+            address(portfolioFactory),
+            address(portfolioAccountConfig),
+            VE
+        );
+
+        // Register LendingFacet in FacetRegistry
+        bytes4[] memory lendingSelectors = new bytes4[](2);
+        lendingSelectors[0] = LendingFacet.borrow.selector;
+        lendingSelectors[1] = LendingFacet.pay.selector;
+
+        facetRegistry.registerFacet(
+            address(lendingFacet),
+            lendingSelectors,
+            "LendingFacet"
+        );
+
+        // Register CollateralFacet in FacetRegistry
+        bytes4[] memory collateralSelectors = new bytes4[](4);
+        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = CollateralFacet.removeCollateral.selector;
+        collateralSelectors[2] = CollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[3] = CollateralFacet.getTotalDebt.selector;
+
+        facetRegistry.registerFacet(
+            address(collateralFacet),
+            collateralSelectors,
+            "CollateralFacet"
+        );
+
         // Register MarketplaceFacet in FacetRegistry - include LBO functions
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = IPortfolioMarketplaceFacet.finalizeMarketPurchase.selector;
@@ -176,6 +241,8 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
         console.log("LoanConfig:", address(loanConfig));
         console.log("PortfolioAccountConfig:", address(portfolioAccountConfig));
         console.log("FacetRegistry:", address(facetRegistry));
+        console.log("LendingFacet:", address(lendingFacet));
+        console.log("CollateralFacet:", address(collateralFacet));
         console.log("MarketplaceFacet:", address(marketplaceFacet));
         console.log("Portfolio infrastructure deployed");
     }
@@ -276,16 +343,21 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
         (uint256 loanBalance, address borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);
         assertEq(borrower, buyerPortfolio, "Borrower should be buyer's portfolio");
         assertTrue(loanBalance > 0, "Should have loan balance from LBO");
+        
+        // Verify loan balance includes origination fee (0.8%)
+        uint256 expectedLoanBalance = _withFee(maxLoanPossible);
+        assertEq(loanBalance, expectedLoanBalance, "Loan balance should include origination fee");
 
         console.log("=== Portfolio LBO Results ===");
         console.log("- Loan Balance:", loanBalance);
+        console.log("- Expected (with fee):", expectedLoanBalance);
         console.log("- Borrower (portfolio):", borrower);
         console.log("- NFT Owner:", ve.ownerOf(tokenId));
         console.log("- Seller USDC received:", IERC20(USDC).balanceOf(seller) - usdcSellerBefore);
         console.log("- Buyer AERO spent:", aeroBuyerBefore - IERC20(AERO).balanceOf(buyer));
 
-        // Verify NFT is in loan custody (not in portfolio directly, but loan holds it as collateral)
-        assertEq(ve.ownerOf(tokenId), address(loan), "NFT should be in loan custody");
+        // Verify NFT stays in portfolio (for portfolio accounts, transfer is skipped in requestLoan)
+        assertEq(ve.ownerOf(tokenId), buyerPortfolio, "NFT should stay in portfolio for portfolio loans");
 
         // Verify AERO was spent from buyer
         assertEq(IERC20(AERO).balanceOf(buyer), aeroBuyerBefore - userAeroAmount, "Buyer AERO should be spent");
@@ -293,6 +365,14 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
         // Verify seller received payment
         assertTrue(IERC20(USDC).balanceOf(seller) > usdcSellerBefore, "Seller should receive USDC");
 
+        // Verify CollateralManager debt tracking matches LoanV2
+        _assertDebtSynced(buyerPortfolio, tokenId);
+        
+        // Verify collateral is tracked
+        _assertCollateralTracked(buyerPortfolio, tokenId);
+        
+        console.log("- CollateralManager debt:", CollateralFacet(buyerPortfolio).getTotalDebt());
+        console.log("- Collateral tracked:", CollateralFacet(buyerPortfolio).getTotalLockedCollateral());
         console.log("Portfolio LBO test completed successfully!");
     }
 
@@ -417,30 +497,55 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
         (uint256 loanBalance, address borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);
         assertEq(borrower, buyerPortfolio, "Portfolio should be borrower");
         assertTrue(loanBalance > 0, "Should have loan balance");
+        
+        // Verify loan balance includes origination fee
+        uint256 expectedLoanBalance = _withFee(maxLoanPossible);
+        assertEq(loanBalance, expectedLoanBalance, "Post-LBO loan should include origination fee");
+        
+        // Verify debt is synced after LBO
+        _assertDebtSynced(buyerPortfolio, tokenId);
+        _assertCollateralTracked(buyerPortfolio, tokenId);
+        
         console.log("Post-LBO loan balance:", loanBalance);
+        console.log("Post-LBO CollateralManager debt:", CollateralFacet(buyerPortfolio).getTotalDebt());
 
         // --- Phase 2: Pay off the loan ---
         uint256 payoffAmount = loanBalance + 1000e6; // Extra buffer
         IUSDC_PL(USDC).mint(buyerPortfolio, payoffAmount);
 
+        // Pay via LendingFacet to ensure debt tracking is updated
         vm.startPrank(buyerPortfolio);
         IERC20(USDC).approve(address(loan), payoffAmount);
-        ILoan(address(loan)).pay(tokenId, loanBalance);
         vm.stopPrank();
+        
+        vm.prank(buyer); // owner of portfolio
+        LendingFacet(buyerPortfolio).pay(tokenId, loanBalance);
 
         // Verify loan is paid off
         (loanBalance, borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);
         assertEq(loanBalance, 0, "Loan balance should be 0 after payoff");
         assertEq(borrower, buyerPortfolio, "Portfolio should still be borrower");
         
-        // veNFT stays in loan custody by design (continues earning rewards)
-        assertEq(ve.ownerOf(tokenId), address(loan), "veNFT should stay in loan custody after payoff");
+        // Verify CollateralManager debt is also zeroed
+        uint256 collateralManagerDebt = CollateralFacet(buyerPortfolio).getTotalDebt();
+        assertEq(collateralManagerDebt, 0, "CollateralManager debt should be 0 after payoff");
+        
+        // Verify debt sync after payoff
+        _assertDebtSynced(buyerPortfolio, tokenId);
+        
+        // Collateral should still be tracked (token still in portfolio)
+        _assertCollateralTracked(buyerPortfolio, tokenId);
+        
+        // For portfolio accounts, veNFT stays in portfolio (transfer is skipped in requestLoan)
+        assertEq(ve.ownerOf(tokenId), buyerPortfolio, "veNFT should stay in portfolio after payoff");
 
         console.log("=== Post-Payoff Status ===");
         console.log("- Loan balance: 0");
-        console.log("- Borrower (still): ", borrower);
-        console.log("- veNFT owner (loan):", ve.ownerOf(tokenId));
-        console.log("LBO payoff test passed - veNFT stays in loan for rewards!");
+        console.log("- CollateralManager debt:", collateralManagerDebt);
+        console.log("- Borrower (still):", borrower);
+        console.log("- veNFT owner (portfolio):", ve.ownerOf(tokenId));
+        console.log("- Collateral still tracked:", CollateralFacet(buyerPortfolio).getTotalLockedCollateral());
+        console.log("LBO payoff test passed - veNFT stays in portfolio for rewards!");
     }
 }
 
