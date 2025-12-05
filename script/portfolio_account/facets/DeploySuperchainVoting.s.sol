@@ -12,7 +12,7 @@ contract DeploySuperchainVotingFacet is AccountFacetsDeploy {
         address VOTING_CONFIG = vm.envAddress("VOTING_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address VOTER = vm.envAddress("VOTER");
-
+        address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         SuperchainVotingFacet facet = new SuperchainVotingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_CONFIG, VOTING_ESCROW, VOTER);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainVotingFacet", false);

@@ -50,7 +50,7 @@ contract BridgeFacetTest is Test {
         
         // Deploy config contracts
         DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (_portfolioAccountConfig, _votingConfig, _loanConfig) = configDeployer.deploy();
+        (_portfolioAccountConfig, _votingConfig, _loanConfig, ) = configDeployer.deploy();
         
         // Deploy BridgeFacet
         DeployBridgeFacet bridgeDeployer = new DeployBridgeFacet();
@@ -90,8 +90,6 @@ contract BridgeFacetTest is Test {
         uint256 balanceBefore = _usdc.balanceOf(_portfolioAccount);
         assertEq(balanceBefore, BRIDGE_AMOUNT);
         
-        // Call bridge directly on the portfolio account
-        // Since bridge() is called via delegatecall, address(this) in BridgeFacet refers to _portfolioAccount
         vm.prank(_user);
         BridgeFacet(_portfolioAccount).bridge();
         
@@ -100,24 +98,5 @@ contract BridgeFacetTest is Test {
         assertEq(balanceAfter, 0, "All USDC should be bridged");
     }
 
-    function testBridgeOnlyFromPortfolioAccount() public {
-        // Bridge should be called directly on the portfolio account
-        // When called on the portfolio account, it uses delegatecall so address(this) refers to the portfolio account
-        vm.prank(_user);
-        BridgeFacet(_portfolioAccount).bridge();
-    }
-
-    function testBridgeDirectCall() public {
-        // Test bridging by calling bridge directly on the portfolio account
-        uint256 balanceBefore = _usdc.balanceOf(_portfolioAccount);
-        assertEq(balanceBefore, BRIDGE_AMOUNT);
-        
-        // Call bridge directly on the portfolio account
-        vm.prank(_user);
-        BridgeFacet(_portfolioAccount).bridge();
-        
-        // Verify all USDC was bridged
-        assertEq(_usdc.balanceOf(_portfolioAccount), 0);
-    }
 }
 

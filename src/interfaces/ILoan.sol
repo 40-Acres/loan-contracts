@@ -61,5 +61,6 @@ function _asset() external view returns (address);
     function vote(uint256 tokenId) external returns (bool);
     function userVote(uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external;
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
-    function handleActiveLoanPortfolioAccount(uint256 rewardsAmount) external;
+    function handleActiveLoanPortfolioAccount(uint256 tokenId, uint256 rewardsAmount) external returns (uint256 remaining);
+    function handleZeroBalanceLoanPortfolioAccount(uint256 tokenId, address asset, uint256 totalRewards, uint256 rewardsPaidtoOwner, uint256 rewardsInvested, uint256 protocolFee) external;
 }

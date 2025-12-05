@@ -9,11 +9,12 @@ import {VotingConfig} from "../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../src/facets/account/config/LoanConfig.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {SwapConfig} from "../../src/facets/account/config/SwapConfig.sol";
 
 contract PortfolioAccountConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 
-    function _deploy(bool mock) internal returns (PortfolioAccountConfig, VotingConfig, LoanConfig) {
+    function _deploy(bool mock) internal returns (PortfolioAccountConfig, VotingConfig, LoanConfig, SwapConfig) {
         // Deploy PortfolioAccountConfig behind proxy
         PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
         ERC1967Proxy configProxy = new ERC1967Proxy(address(configImpl), "");
@@ -31,6 +32,12 @@ contract PortfolioAccountConfigDeploy is Script {
         ERC1967Proxy loanConfigProxy = new ERC1967Proxy(address(loanConfigImpl), "");
         LoanConfig loanConfig = LoanConfig(address(loanConfigProxy));
         loanConfig.initialize(DEPLOYER_ADDRESS);
+
+        // Deploy SwapConfig behind proxy
+        SwapConfig swapConfigImpl = new SwapConfig();
+        ERC1967Proxy swapConfigProxy = new ERC1967Proxy(address(swapConfigImpl), "");
+        SwapConfig swapConfig = SwapConfig(address(swapConfigProxy));
+        swapConfig.initialize(DEPLOYER_ADDRESS);
         
         if(mock) {
             vm.startPrank(DEPLOYER_ADDRESS);
@@ -40,7 +47,7 @@ contract PortfolioAccountConfigDeploy is Script {
         if(mock) {
             vm.stopPrank();
         }
-        return (config, votingConfig, loanConfig);
+        return (config, votingConfig, loanConfig, swapConfig);
     }
 }
 
@@ -53,10 +60,10 @@ contract DeployPortfolioAccountConfig is PortfolioAccountConfigDeploy {
         vm.stopBroadcast();
     }
 
-    function deploy() external returns (PortfolioAccountConfig, VotingConfig, LoanConfig) {
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig) = _deploy(true);
+    function deploy() external returns (PortfolioAccountConfig, VotingConfig, LoanConfig, SwapConfig) {
+        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = _deploy(true);
         
-        return (portfolioAccountConfig, votingConfig, loanConfig);
+        return (portfolioAccountConfig, votingConfig, loanConfig, swapConfig);
     }
 }
 

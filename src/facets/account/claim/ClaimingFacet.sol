@@ -12,6 +12,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {UserClaimingConfig} from "./UserClaimingConfig.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {SwapConfig} from "../config/SwapConfig.sol";
 /**
  * @title ClaimingFacet
  * @dev Facet that interfaces with voting escrow NFTs
@@ -23,10 +24,10 @@ contract ClaimingFacet {
     IVoter public immutable _voter;
     IRewardsDistributor public immutable _rewardsDistributor;
     LoanConfig public immutable _loanConfig;
-
+    SwapConfig public immutable _swapConfig;
     error InvalidClaim(address token);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
@@ -35,6 +36,7 @@ contract ClaimingFacet {
         _voter = IVoter(voter);
         _rewardsDistributor = IRewardsDistributor(rewardsDistributor);
         _loanConfig = LoanConfig(loanConfig);
+        _swapConfig = SwapConfig(swapConfig);
     }
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
@@ -110,24 +112,9 @@ contract ClaimingFacet {
             IERC20(outputToken).transfer(ILoan(loanContract)._vault(), lenderPremiumAmount);
         }
 
-
         // send remaining launchpad token to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IERC20(launchpadToken).transfer(portfolioOwner, IERC20(launchpadToken).balanceOf(address(this)));
-    }
-
-    function processRewards(uint256 rewardsAmount, address asset) external {
-        uint256 totalDebt = CollateralManager.getTotalDebt();
-        // if have a balance, use loan contract to handle funds
-        if(totalDebt > 0) {
-            require(IERC20(asset).balanceOf(address(this)) >= rewardsAmount);
-            address loanContract = _portfolioAccountConfig.getLoanContract();
-            require(loanContract != address(0));
-            IERC20(asset).approve(loanContract, rewardsAmount);
-            ILoan(loanContract).handleActiveLoanPortfolioAccount(rewardsAmount);
-        }
-
-        // if no loan, use config to handle payments
     }
 }
 

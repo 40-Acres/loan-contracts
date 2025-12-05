@@ -91,7 +91,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         portfolios[0] = address(_portfolioAccount);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, _tokenId, new address[](0), new uint256[](0));
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
     }
 
@@ -102,7 +102,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         portfolios[0] = address(_portfolioAccount);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, _tokenId, pools, weights);
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
     }
 
@@ -115,7 +115,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         portfolios[0] = address(_portfolioAccount);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, _tokenId, pools, weights);
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
     }
 
@@ -128,7 +128,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         portfolios[0] = address(_portfolioAccount);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(VotingFacet.voteForLaunchpadToken.selector, _tokenId, pools, weights, true);
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
     }
 
@@ -145,14 +145,14 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         vm.startPrank(_user);
         // user should not be able to switch to manual mode
         vm.expectRevert();
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
 
         bool isManualVoting = SuperchainVotingFacet(_portfolioAccount).isManualVoting(_tokenId);
         assertFalse(isManualVoting, "User should be in automatic mode after switching");
         // let user vote for pool and skip to next epoch
         calldatas[0] = abi.encodeWithSelector(VotingFacet.vote.selector, _tokenId, pools, weights);
         // week 0: user voted, but not eligible for manual voting, manual votes before voting window
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         isManualVoting = SuperchainVotingFacet(_portfolioAccount).isManualVoting(_tokenId);
         assertTrue(isManualVoting, "User should be in manual mode after voting");
  
@@ -165,12 +165,12 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         assertTrue(isManualVoting, "User should be in manual mode after voting last week");
         // user is already in manual mode, but let's verify they can switch back to automatic
         calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, false);
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         isManualVoting = SuperchainVotingFacet(_portfolioAccount).isManualVoting(_tokenId);
         assertFalse(isManualVoting, "User should be in automatic mode after switching");
         // switch back to manual mode
         calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, true);
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         isManualVoting = SuperchainVotingFacet(_portfolioAccount).isManualVoting(_tokenId);
         assertTrue(isManualVoting, "User should be in manual mode");
@@ -188,7 +188,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         // user should not be able to switch to manual mode
         calldatas[0] = abi.encodeWithSelector(VotingFacet.setVotingMode.selector, _tokenId, true);
         vm.expectRevert();
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         isManualVoting = VotingFacet(_portfolioAccount).isManualVoting(_tokenId);
         assertFalse(isManualVoting, "User should be in automatic mode since missed voting last epoch");
     }
@@ -229,7 +229,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, _tokenId, pools, weights);
         vm.expectRevert();
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
 
         // Mint WETH to the portfolio account
@@ -245,7 +245,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         
         // Now test voting with superchain pool
         vm.startPrank(_user);
-        _portfolioManager.multicall(calldatas, portfolios, false);
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
         // Verify WETH was approved to RootMessageBridge
@@ -262,7 +262,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig) = configDeployer.deploy();
+        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, ) = configDeployer.deploy();
 
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
@@ -306,11 +306,11 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         
         // should revert since user has no WETH
         vm.expectRevert();
-        _pm.multicall(calldatas, portfolios, false);
+        _pm.multicall(calldatas, portfolios);
 
         // transferWeth to portfolio Account
         IERC20(0x4200000000000000000000000000000000000006).transfer(portfolioAccount, .002e18);
-        _pm.multicall(calldatas, portfolios, false);
+        _pm.multicall(calldatas, portfolios);
 
         uint256 lastVoted = IVoter(address(voter)).lastVoted(tokenId);
         assertEq(lastVoted, block.timestamp);

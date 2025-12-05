@@ -17,13 +17,13 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployVotingFacet deployVotingFacet = new DeployVotingFacet();
     DeploySwapFacet deploySwapFacet = new DeploySwapFacet();
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc) external {
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address swapConfig) external {
         deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc);
-        deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig);
+        deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig);
         deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, loanConfig);
         deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
-        deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig);
+        deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig);
     }
 }
 

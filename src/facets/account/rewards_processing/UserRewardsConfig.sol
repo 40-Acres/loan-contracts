@@ -8,6 +8,7 @@ import {LoanConfig} from "../config/LoanConfig.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
+
 /**
  * @title UserRewardsConfig
  * @dev Diamond facet for managing user claiming config on a per user basis
@@ -29,6 +30,7 @@ library UserRewardsConfig {
         address recipient;
         ActiveRewardsOption activeRewardsOption;
         ZeroBalanceRewardsOption zeroBalanceRewardsOption;
+        uint256 increasePercentage;
     }
 
     function _getUserRewardsConfigData() internal pure returns (UserRewardsConfigData storage collateralManagerData) {
@@ -36,6 +38,26 @@ library UserRewardsConfig {
         assembly {
             collateralManagerData.slot := position
         }
+    }
+
+    function setActiveRewardsOption(ActiveRewardsOption activeRewardsOption) external {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        collateralManagerData.activeRewardsOption = activeRewardsOption;
+    }
+
+    function getActiveRewardsOption() external view returns (ActiveRewardsOption) {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        return collateralManagerData.activeRewardsOption;
+    }
+
+    function setZeroBalanceRewardsOption(ZeroBalanceRewardsOption zeroBalanceRewardsOption) external {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        collateralManagerData.zeroBalanceRewardsOption = zeroBalanceRewardsOption;
+    }
+
+    function getZeroBalanceRewardsOption() external view returns (ZeroBalanceRewardsOption) {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        return collateralManagerData.zeroBalanceRewardsOption;
     }
 
     function setRewardsToken(address rewardsToken) external {
@@ -56,5 +78,15 @@ library UserRewardsConfig {
     function getRecipient() external view returns (address) {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
         return collateralManagerData.recipient;
+    }
+
+    function setIncreasePercentage(uint256 increasePercentage) external {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        collateralManagerData.increasePercentage = increasePercentage;
+    }
+
+    function getIncreasePercentage() external view returns (uint256) {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        return collateralManagerData.increasePercentage;
     }
 }

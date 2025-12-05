@@ -150,25 +150,22 @@ contract PortfolioManager is Ownable {
     }
 
     /**
-     * @dev Execute multiple calls across different portfolio accounts (with allowFailure option)
+     * @dev Execute multiple calls across different portfolio accounts
      * Verifies that msg.sender owns all portfolio accounts before executing
+     * Reverts if any call fails
      * @param calldatas Array of calldatas to execute
      * @param portfolios Array of portfolio addresses to execute the calldatas on
-     * @param allowFailure If true, continues execution even if a call fails
-     * @return results Array of return data from each call (empty bytes on failure if allowFailure is true)
-     * @return successes Array indicating which calls succeeded
+     * @return results Array of return data from each call
      */
     function multicall(
         bytes[] calldata calldatas,
-        address[] calldata portfolios,
-        bool allowFailure
-    ) external returns (bytes[] memory results, bool[] memory successes) {
+        address[] calldata portfolios
+    ) external returns (bytes[] memory results) {
         require(calldatas.length > 0, "PortfolioManager: No calldatas provided");
         require(portfolios.length > 0, "PortfolioManager: No portfolios provided");
         require(calldatas.length == portfolios.length, "PortfolioManager: Calldatas and portfolios length mismatch");
         
         results = new bytes[](calldatas.length);
-        successes = new bool[](calldatas.length);
         
         // verify ownership of all portfolios
         for (uint256 i = 0; i < calldatas.length; i++) {
@@ -190,28 +187,22 @@ contract PortfolioManager is Ownable {
             
             if (success) {
                 results[i] = result;
-                successes[i] = true;
             } else {
-                if (allowFailure) {
-                    results[i] = "";
-                    successes[i] = false;
-                } else {
-                    // Try to get revert reason
-                    if (result.length > 0) {
-                        assembly {
-                            let returndata_size := mload(result)
-                            revert(add(32, result), returndata_size)
-                        }
-                    } else {
-                        revert CallFailed(portfolios[i], result);
+                // Try to get revert reason
+                if (result.length > 0) {
+                    assembly {
+                        let returndata_size := mload(result)
+                        revert(add(32, result), returndata_size)
                     }
+                } else {
+                    revert CallFailed(portfolios[i], result);
                 }
             }
         }
         
         emit CrossAccountMulticall(msg.sender, portfolios);
         
-        return (results, successes);
+        return results;
     }
 
     /**

@@ -27,6 +27,7 @@ import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/SuperchainClaimingFacet.sol";
 import {DeployBridgeFacet} from "../../../script/portfolio_account/facets/DeployBridgeFacet.s.sol";
+import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 
 contract SuperchainTest is Test, Setup, MockERC20Utils {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -52,7 +53,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig) = configDeployer.deploy();
+        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy();
 
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
@@ -68,7 +69,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter));
 
         DeploySuperchainClaiming claimingDeployer = new DeploySuperchainClaiming();
-        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig));
+        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig));
         
         // Set up authorized caller for claiming
         address authorizedCaller = address(0xaaaaa);
@@ -103,12 +104,12 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         
         // should revert since user has no WETH
         vm.expectRevert();
-        _pm.multicall(calldatas, portfolios, false);
+        _pm.multicall(calldatas, portfolios);
 
         // transferWeth to portfolio Account
         IERC20(0x4200000000000000000000000000000000000006).transfer(portfolioAccount, .001e18);
         IERC20(0x4200000000000000000000000000000000000006).transfer(authorizedCaller, .003e18);
-        _pm.multicall(calldatas, portfolios, false);
+        _pm.multicall(calldatas, portfolios);
 
         uint256 lastVoted = IVoter(address(voter)).lastVoted(tokenId);
         assertEq(lastVoted, block.timestamp);
@@ -172,7 +173,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         PortfolioManager ink_pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory ink_portfolioFactory, FacetRegistry ink_facetRegistry) = ink_pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         DeployPortfolioAccountConfig ink_configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig ink_portfolioAccountConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig) = ink_configDeployer.deploy();
+        (PortfolioAccountConfig ink_portfolioAccountConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig, SwapConfig ink_swapConfig) = ink_configDeployer.deploy();
 
         // deploy the bridge facet
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();
