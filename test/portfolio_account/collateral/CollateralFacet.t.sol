@@ -21,6 +21,11 @@ import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol
 
 contract CollateralFacetTest is Test, Setup {
 
+    // Origination fee is 0.8% (80/10000)
+    function _withFee(uint256 amount) internal pure returns (uint256) {
+        return amount + (amount * 80) / 10000;
+    }
+
     function testAddCollateralWithinPortfolioAccount() public {
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
@@ -60,17 +65,29 @@ contract CollateralFacetTest is Test, Setup {
         vm.startPrank(_portfolioFactory.ownerOf(_portfolioAccount));
         // should revert since no collateral is added
         vm.expectRevert();
-        LendingFacet(_portfolioAccount).borrow(1e6);
+        LendingFacet(_portfolioAccount).borrow(_tokenId, 1e6);
         
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
-        LendingFacet(_portfolioAccount).borrow(1e6);
-        // should revert since collateral is not enough
+        uint256 borrowAmount = 1e6;
+        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
+        
+        // should revert since collateral is not enough (has debt)
         vm.expectRevert();
         CollateralFacet(_portfolioAccount).removeCollateral(_tokenId);
 
-        LendingFacet(_portfolioAccount).pay(1e6);
+        // Pay back full debt (includes 0.8% origination fee)
+        uint256 fullDebt = _withFee(borrowAmount);
+        vm.stopPrank();
+        
+        // Fund portfolio with extra USDC for fee payment
+        uint256 currentBalance = _asset.balanceOf(_portfolioAccount);
+        deal(address(_asset), _portfolioAccount, currentBalance + fullDebt);
+        
+        vm.startPrank(_portfolioFactory.ownerOf(_portfolioAccount));
+        LendingFacet(_portfolioAccount).pay(_tokenId, fullDebt);
         CollateralFacet(_portfolioAccount).removeCollateral(_tokenId);
         vm.stopPrank();
+        
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), 0);
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioFactory.ownerOf(_portfolioAccount));
@@ -86,12 +103,15 @@ contract CollateralFacetTest is Test, Setup {
         vm.startPrank(_portfolioFactory.ownerOf(_portfolioAccount));
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId2);
-        LendingFacet(_portfolioAccount).borrow(1e6);
+        uint256 borrowAmount = 1e6;
+        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
         CollateralFacet(_portfolioAccount).removeCollateral(_tokenId2);
         vm.stopPrank();
+        
         int128 lockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), uint256(uint128(lockedAmount)));
-        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), 1e6);
+        // Debt includes 0.8% origination fee
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), _withFee(borrowAmount));
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount);
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioFactory.ownerOf(_portfolioAccount));
     }

@@ -115,7 +115,7 @@ contract ClaimingFacetTest is Test, Setup {
         // Add collateral and create debt to simulate active loan balance
         vm.startPrank(_user);
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
-        LendingFacet(_portfolioAccount).borrow(1e6);
+        LendingFacet(_portfolioAccount).borrow(_tokenId, 1e6);
         vm.stopPrank();
 
         // Set up launchpad token voting

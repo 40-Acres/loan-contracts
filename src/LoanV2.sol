@@ -81,11 +81,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     // Pools each token votes on for this epoch
-    address[] public _defaultPools;
+    address[] internal _defaultPools;
     // Weights for each pool (must equal length of _defaultPools)
-    uint256[] public _defaultWeights;
+    uint256[] internal _defaultWeights;
     // Time when the default pools were last changed
-    uint256 public _defaultPoolChangeTime;
+    uint256 private _defaultPoolChangeTime;
 
     
     /**
@@ -243,9 +243,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         });
 
 
-        // transfer the token to the contract
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this));
+        // Handle portfolio accounts efficiently - skip transfer for portfolio accounts
+        if (PortfolioFactory(getPortfolioFactory()).isPortfolio(msg.sender)) {
+            // Portfolio account case - token remains in portfolio as collateral
+            // portfolio ownership is verified at the top of this function
+        } else {
+            // EOA case - transfer token to contract
+            _ve.transferFrom(msg.sender, address(this), tokenId);
+            require(_ve.ownerOf(tokenId) == address(this));
+        }
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
 
 
@@ -281,7 +287,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount
     ) public  {
         require(amount > .01e6);
-        require(_ve.ownerOf(tokenId) == address(this));
+        // Token must be in loan contract OR in portfolio account (for portfolio loans)
+        address tokenOwner = _ve.ownerOf(tokenId);
+        require(tokenOwner == address(this) || PortfolioFactory(getPortfolioFactory()).isPortfolio(tokenOwner));
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
 
@@ -1024,15 +1032,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         revert();
     }
 
-    /**
-     * @notice Rescue any ERC20 tokens that are stuck in the contract.
-     * @dev This function can only be called by the owner of the contract.
-     * @param token The address of the ERC20 token to rescue.
-     * @param amount The amount of tokens to rescue.
-     */
-    function rescueERC20(address token, uint256 amount) public onlyOwner {
-        IERC20(token).transfer(owner(), amount);
-    }
+    // /**
+    //  * @notice Rescue any ERC20 tokens that are stuck in the contract.
+    //  * @dev This function can only be called by the owner of the contract.
+    //  * @param token The address of the ERC20 token to rescue.
+    //  * @param amount The amount of tokens to rescue.
+    //  */
+    // function rescueERC20(address token, uint256 amount) public onlyOwner {
+    //     IERC20(token).transfer(owner(), amount);
+    // }
 
 
     /**
