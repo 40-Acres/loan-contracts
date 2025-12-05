@@ -14,12 +14,12 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
  */
 library CollateralManager {
     error InsufficientCollateral();
-    error InvalidLockedColleratal();
+    error InvalidLockedCollateral();
 
 
     struct CollateralManagerData {
-        mapping(uint256 tokenId => uint256 lockedColleratal) lockedCollaterals;
-        uint256 totalLockedColleratal;
+        mapping(uint256 tokenId => uint256 lockedCollateral) lockedCollaterals;
+        uint256 totalLockedCollateral;
         uint256 debt;
     }
 
@@ -30,58 +30,58 @@ library CollateralManager {
         }
     }
 
-    function addLockedColleratal(uint256 tokenId, address ve) external {
+    function addLockedCollateral(uint256 tokenId, address ve) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
+        uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
         // if the token is already accounted for, return early
-        if(previousLockedColleratal != 0) {
+        if(previousLockedCollateral != 0) {
             return;
         }
-        int128 newLockedColleratalInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
-        uint256 newLockedColleratal = uint256(uint128(newLockedColleratalInt));
+        int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
+        uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
 
-        collateralManagerData.lockedCollaterals[tokenId] = newLockedColleratal;
-        collateralManagerData.totalLockedColleratal += newLockedColleratal;
+        collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
+        collateralManagerData.totalLockedCollateral += newLockedCollateral;
     }
 
 
-    function removeLockedColleratal(uint256 tokenId, address portfolioAccountConfig) external {
+    function removeLockedCollateral(uint256 tokenId, address portfolioAccountConfig) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
+        uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
         // if the token is not accounted for, return early
-        if(previousLockedColleratal == 0) {
+        if(previousLockedCollateral == 0) {
             return;
         }
-        collateralManagerData.totalLockedColleratal -= previousLockedColleratal;
+        collateralManagerData.totalLockedCollateral -= previousLockedCollateral;
         collateralManagerData.lockedCollaterals[tokenId] = 0;
         enforceCollateral(portfolioAccountConfig);
     }
 
-    function updateLockedColleratal(uint256 tokenId) external {
+    function updateLockedCollateral(uint256 tokenId) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        uint256 previousLockedColleratal = collateralManagerData.lockedCollaterals[tokenId];
+        uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
 
         // only update collateral for tokens that are already collateralized
-        if(previousLockedColleratal == 0) {
+        if(previousLockedCollateral == 0) {
             return;
         }
 
-        int128 newLockedColleratalInt = IVotingEscrow(address(this)).locked(tokenId).amount;
-        uint256 newLockedColleratal = uint256(uint128(newLockedColleratalInt));
-        if(newLockedColleratal > previousLockedColleratal) {
-            uint256 difference = newLockedColleratal - previousLockedColleratal;
-            collateralManagerData.totalLockedColleratal += difference;
+        int128 newLockedCollateralInt = IVotingEscrow(address(this)).locked(tokenId).amount;
+        uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
+        if(newLockedCollateral > previousLockedCollateral) {
+            uint256 difference = newLockedCollateral - previousLockedCollateral;
+            collateralManagerData.totalLockedCollateral += difference;
         } else {
-            uint256 difference = previousLockedColleratal - newLockedColleratal;
-            collateralManagerData.totalLockedColleratal -= difference;
+            uint256 difference = previousLockedCollateral - newLockedCollateral;
+            collateralManagerData.totalLockedCollateral -= difference;
         }
 
-        collateralManagerData.lockedCollaterals[tokenId] = newLockedColleratal;
+        collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
     }
 
-    function getTotalLockedColleratal() public view returns (uint256) {
+    function getTotalLockedCollateral() public view returns (uint256) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        return collateralManagerData.totalLockedColleratal;
+        return collateralManagerData.totalLockedCollateral;
     }
 
     function getTotalDebt() public view returns (uint256) {
@@ -110,10 +110,10 @@ library CollateralManager {
     }
 
     function getMaxLoan(address portfolioAccountConfig) internal view returns (uint256, uint256) {
-        uint256 totalLockedColleratal = getTotalLockedColleratal();
+        uint256 totalLockedCollateral = getTotalLockedCollateral();
         LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
-        return LoanUtils.getMaxLoanByRewardsRate(totalLockedColleratal, rewardsRate, multiplier, 0, 0, 0);
+        return LoanUtils.getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, 0, 0, 0);
     }
 }

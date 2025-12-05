@@ -32,7 +32,7 @@ contract MigrationFacet {
 
     function migrate(uint256 tokenId) external onlyLoanContract(msg.sender) {
         IVotingEscrow(address(_ve)).transferFrom(msg.sender, address(this), tokenId);
-        CollateralManager.addLockedColleratal(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(tokenId, address(_ve));
 
         (uint256 balance, address borrower) = ILoan(_loanContract).getLoanDetails(tokenId);
         require(borrower == _portfolioFactory.ownerOf(address(this)));

@@ -40,12 +40,12 @@ contract CollateralFacet {
             IVotingEscrow(address(_votingEscrow)).transferFrom(msg.sender, address(this), tokenId);
         }
         // add the collateral to the collateral manager
-        CollateralManager.addLockedColleratal(tokenId, address(_votingEscrow));
+        CollateralManager.addLockedCollateral(tokenId, address(_votingEscrow));
     }
 
 
     function getTotalLockedCollateral() public view returns (uint256) {
-        return CollateralManager.getTotalLockedColleratal();
+        return CollateralManager.getTotalLockedCollateral();
     }
 
     function getTotalDebt() public view returns (uint256) {
@@ -55,6 +55,6 @@ contract CollateralFacet {
     function removeCollateral(uint256 tokenId) public {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)), NotOwnerOfPortfolioAccount());
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), msg.sender, tokenId);
-        CollateralManager.removeLockedColleratal(tokenId, address(_portfolioAccountConfig));
+        CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
     }
 }

@@ -91,14 +91,9 @@ contract AerodromeFacet {
         ILoan(loanContract).setIncreasePercentage(tokenId, increasePercentage);
     }
 
-    function aerodromeSetPreferredToken(address loanContract, uint256 tokenId, address preferredToken) external {
+    function aerodromeSetTopUpAndPreferredToken(address loanContract, uint256 tokenId, bool topUp, address preferredToken) external {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(loanContract).setPreferredToken(tokenId, preferredToken);
-    }
-
-    function aerodromeSetTopUp(address loanContract, uint256 tokenId, bool topUp) external {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(loanContract).setTopUp(tokenId, topUp);
+        ILoan(loanContract).setTopUpAndPreferredToken(tokenId, topUp, preferredToken);
     }
 
     function aerodromeSetZeroBalanceOption(address loanContract, uint256 tokenId, ILoan.ZeroBalanceOption zeroBalanceOption) external {

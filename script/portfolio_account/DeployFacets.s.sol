@@ -21,7 +21,7 @@ contract DeployFacets is AccountFacetsDeploy {
         deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc);
         deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig);
         deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
-        deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, loanConfig);
+        deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig);
         deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
         deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig);
     }
