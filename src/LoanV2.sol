@@ -314,11 +314,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
-        loan.unpaidFees += originationFee;
-        loan.balance += amount + originationFee;
+        loan.balance += amount;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
-        _asset.transferFrom(_vault, loan.borrower, amount);
+        // Transfer origination fee to owner upfront
+        _asset.transferFrom(_vault, owner(), originationFee);
+        emit ProtocolFeePaid(currentEpochStart(), originationFee, loan.borrower, tokenId, address(_asset));
+        // Transfer remaining amount to borrower
+        _asset.transferFrom(_vault, loan.borrower, amount - originationFee);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
