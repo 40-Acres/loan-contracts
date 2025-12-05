@@ -68,12 +68,12 @@ contract RewardsProcessingFacet is AccessControl {
 
         // if have no debt, process zero balance rewards
         if(totalDebt == 0) {
-            _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData);
+            _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData, true);
         } else {
             IERC20(asset).approve(loanContract, rewardsAmount);
-            remaining = _processActiveLoanRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData);
+            remaining = _processActiveLoanRewards(tokenId, rewardsAmount, asset, swapTarget, swapData);
             if(remaining > 0) {
-                _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData);
+                _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData, true);
             }
         }
     }
@@ -82,31 +82,29 @@ contract RewardsProcessingFacet is AccessControl {
         require(IERC20(asset).balanceOf(address(this)) >= rewardsAmount);
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(loanContract != address(0));
-        IERC20(asset).approve(loanContract, rewardsAmount);
-        remaining = ILoan(loanContract).handleActiveLoanPortfolioAccount(tokenId, rewardsAmount);
-        return remaining;
+
+        uint256 protocolFee = _payProtocolFee(rewardsAmount, asset);
+        uint256 lenderPremium = _payLenderPremium(rewardsAmount, asset);
+        uint256 zeroBalanceFee = _payZeroBalanceFee(rewardsAmount, asset);
+        uint256 excess = CollateralManager.decreaseTotalDebt(rewardsAmount - protocolFee - lenderPremium - zeroBalanceFee);
+        return rewardsAmount - protocolFee - lenderPremium - zeroBalanceFee - excess;
     }
 
-    function _processZeroBalanceRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, bytes memory swapData, bool takeFees) internal {
+    function _processZeroBalanceRewards(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset, address swapTarget, bytes memory swapData, bool takeFees) internal {
         address rewardsToken = UserRewardsConfig.getRewardsToken();
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(rewardsToken != address(0));
 
         // send the zero balance fee to the treasury
-        uint256 remaining = rewardsAmount;
         if(takeFees) {
             remaining -= _payZeroBalanceFee(rewardsAmount, asset);
-            uint256 increasePercentage = getIncreasePercentage();
-            if(increasePercentage > 0 && takeFees) {
-                remaining = _increaseCollateral(tokenId, increasePercentage, rewardsToken, rewardsAmount, swapTarget, swapData);
-            }
         }
 
         // whatever is remaining, utlizie based on UserRewardsConfig
         address recipient = _getRecipient();
         UserRewardsConfig.ZeroBalanceRewardsOption zeroBalanceOption = UserRewardsConfig.getZeroBalanceRewardsOption();
         if(zeroBalanceOption == UserRewardsConfig.ZeroBalanceRewardsOption.PayToRecipient) {
-            IERC20(asset).transfer(recipient, rewardsAmount);
+            IERC20(asset).transfer(recipient, remaining);
         } 
         if(zeroBalanceOption == UserRewardsConfig.ZeroBalanceRewardsOption.InvestToVault) {
             address vault = _loanContract._vault();
@@ -174,21 +172,21 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _payZeroBalanceFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
-        uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getZeroBalanceFee()) / 10000;
+        uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
         IERC20(asset).transfer(_portfolioAccountConfig.getLoanContract(), zeroBalanceFee);
         emit ProtocolFeePaid(_currentEpochStart(), zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return zeroBalanceFee;
     }
 
     function _payLenderPremium(uint256 rewardsAmount, address asset) internal returns (uint256) {
-        uint256 lenderPremium = (rewardsAmount * _portfolioAccountConfig.getLenderPremium()) / 10000;
+        uint256 lenderPremium = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
         IERC20(asset).transfer(_portfolioAccountConfig.owner(), lenderPremium);
         emit ProtocolFeePaid(_currentEpochStart(), lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
     }
 
     function _payProtocolFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
-        uint256 protocolFee = (rewardsAmount * _portfolioAccountConfig.getProtocolFee()) / 10000;
+        uint256 protocolFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
         IERC20(asset).transfer(_portfolioAccountConfig.owner(), protocolFee);
         emit ProtocolFeePaid(_currentEpochStart(), protocolFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return protocolFee;

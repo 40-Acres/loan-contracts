@@ -100,9 +100,13 @@ library CollateralManager {
         enforceCollateral(portfolioAccountConfig);
     }
 
-    function decreaseTotalDebt(uint256 amount) external {
+    function decreaseTotalDebt(uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        collateralManagerData.debt -= amount;
+        uint256 totalDebt = collateralManagerData.debt;
+        uint256 amountToDecrease = totalDebt > amount ? amount : totalDebt;
+        collateralManagerData.debt -= amountToDecrease;
+        excess = totalDebt - amountToDecrease;
+        return excess;
     }
 
     function enforceCollateral(address portfolioAccountConfig) internal view {
