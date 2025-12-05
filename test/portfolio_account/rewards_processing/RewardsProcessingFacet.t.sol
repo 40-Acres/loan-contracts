@@ -233,8 +233,6 @@ contract RewardsProcessingFacetTest is Test, Setup {
     }
 
     function testProcessRewardsActiveLoan() public {
-        setupRewards();
-        
         // Create active loan by adding collateral and borrowing
         vm.startPrank(_user);
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
@@ -333,14 +331,10 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 amountForDebt = borrowAmount; // Only 100e6 used for debt
         uint256 remainingAfterDebt = rewardsAmount - totalFees - amountForDebt;
         
-        // Note: decreaseTotalDebt returns remaining debt (0 in this case since debt is fully paid)
-        // So remaining = 0, and zero balance rewards won't be processed
-        // The remaining payment amount is not returned, so it's lost
-        // This might be a bug in the implementation, but testing current behavior
-        
+        // When debt is fully paid, remaining funds should be processed as zero balance rewards
+        // Note: zero balance fee was already paid in _processActiveLoanRewards, so we don't pay it again
         uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
-        // Since remaining = 0 (no remaining debt), zero balance rewards aren't processed
-        assertEq(recipientBalanceAfter, recipientBalanceBefore, "Recipient should not receive rewards when debt is fully paid");
+        assertEq(recipientBalanceAfter, recipientBalanceBefore + remainingAfterDebt, "Recipient should receive remaining rewards after debt is fully paid");
     }
 
     function testProcessRewardsActiveLoanWithIncreaseCollateral() public {
@@ -348,8 +342,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set increase percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
+        address[] memory portfolios = new address[](2);
         portfolios[0] = _portfolioAccount;
+        portfolios[1] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setIncreasePercentage.selector,
@@ -701,6 +696,144 @@ contract RewardsProcessingFacetTest is Test, Setup {
             new bytes(0)
         );
         vm.stopPrank();
+    }
+
+    function testProcessRewardsActiveLoanWith100Rewards() public {
+        // Create active loan by adding collateral and borrowing
+        vm.startPrank(_user);
+        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        uint256 borrowAmount = 100e6; // 100 USDC borrowed
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
+        vm.stopPrank();
+
+        // Get the loan contract asset
+        address loanAsset = ILoan(_loanContract)._asset();
+        
+        // Get initial outstanding capital from loan contract
+        uint256 outstandingCapitalBefore = ILoan(_loanContract).activeAssets();
+        
+        // Get actual debt (may include origination fees or other adjustments)
+        uint256 actualDebtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+        
+        // Fund the portfolio account with enough rewards to cover debt + fees
+        // Calculate fees first to ensure we have enough
+        uint256 rewardsAmount = 100e6;
+        uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
+        uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
+        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        
+        // Ensure rewards are enough to cover debt + fees, otherwise increase rewards
+        if (rewardsAmount < actualDebtBefore + totalFees) {
+            rewardsAmount = actualDebtBefore + totalFees;
+        }
+        
+        address minter = IUSDC(loanAsset).masterMinter();
+        vm.startPrank(minter);
+        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
+        vm.stopPrank();
+        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+
+        address owner = _portfolioAccountConfig.owner();
+        uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
+
+        // Process rewards
+        vm.startPrank(_authorizedCaller);
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(0),
+            address(0),
+            new bytes(0)
+        );
+        vm.stopPrank();
+
+        // Verify debt is fully paid
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, 0, "Debt should be fully paid");
+
+        // Recalculate fees based on actual rewards amount used (may have been increased)
+        protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
+        lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
+        zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+
+        // Verify owner received correct protocol fee and lender premium
+        uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
+        uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
+        assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+
+        // Verify outstanding capital decreased by the amount paid
+        uint256 outstandingCapitalAfter = ILoan(_loanContract).activeAssets();
+        uint256 capitalDecreased = outstandingCapitalBefore - outstandingCapitalAfter;
+        assertEq(capitalDecreased, actualDebtBefore, "Outstanding capital should decrease by debt amount");
+
+        // Verify portfolio balance is zero (all funds used)
+        uint256 portfolioBalanceAfter = IERC20(loanAsset).balanceOf(_portfolioAccount);
+        assertEq(portfolioBalanceAfter, 0, "Portfolio should have used all rewards");
+    }
+
+    function testProcessRewardsActiveLoanWith50DebtAnd100Rewards() public {
+        // Create active loan with $50 debt
+        vm.startPrank(_user);
+        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        uint256 borrowAmount = 50e6; // 50 USDC debt
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
+        vm.stopPrank();
+
+        // Get the loan contract asset
+        address loanAsset = ILoan(_loanContract)._asset();
+        
+        // Fund the portfolio account with 100 USDC for rewards
+        uint256 rewardsAmount = 100e6;
+        address minter = IUSDC(loanAsset).masterMinter();
+        vm.startPrank(minter);
+        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
+        vm.stopPrank();
+        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+
+        address owner = _portfolioAccountConfig.owner();
+        address recipient = address(0x1234); // From setUp
+        uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
+        uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipient);
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+
+        // Process rewards
+        vm.startPrank(_authorizedCaller);
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(0),
+            address(0),
+            new bytes(0)
+        );
+        vm.stopPrank();
+
+        // Verify debt is fully paid
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, 0, "Debt should be fully paid");
+
+        // Calculate expected amounts
+        uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
+        uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
+        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        uint256 amountForDebt = borrowAmount; // 50e6 used for debt
+        uint256 remainingAfterDebt = rewardsAmount - totalFees - amountForDebt;
+
+        // Verify owner received protocol fee and lender premium
+        uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
+        uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
+        assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+
+        // Verify recipient (portfolio owner) received the excess as zero balance rewards
+        // Note: zero balance fee was already paid in _processActiveLoanRewards, so remaining goes to recipient
+        uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
+        uint256 recipientReceived = recipientBalanceAfter - recipientBalanceBefore;
+        assertEq(recipientReceived, remainingAfterDebt, "Recipient should receive excess rewards after debt is fully paid");
+
+        // Verify portfolio balance is zero (all funds used)
+        uint256 portfolioBalanceAfter = IERC20(loanAsset).balanceOf(_portfolioAccount);
+        assertEq(portfolioBalanceAfter, 0, "Portfolio should have used all rewards");
     }
 }
 

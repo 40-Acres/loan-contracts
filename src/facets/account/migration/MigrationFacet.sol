@@ -37,7 +37,7 @@ contract MigrationFacet {
         (uint256 balance, address borrower) = ILoan(_loanContract).getLoanDetails(tokenId);
         require(borrower == _portfolioFactory.ownerOf(address(this)));
 
-        CollateralManager.increaseTotalDebt(address(_accountConfigStorage), balance);
+        CollateralManager.migrateDebt(address(_accountConfigStorage), balance);
     }
 
     modifier onlyLoanContract(address loanContract) {

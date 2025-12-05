@@ -70,24 +70,40 @@ contract RewardsProcessingFacet is AccessControl {
         if(totalDebt == 0) {
             _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData, true);
         } else {
-            IERC20(asset).approve(loanContract, rewardsAmount);
-            remaining = _processActiveLoanRewards(tokenId, rewardsAmount, asset, swapTarget, swapData);
+            remaining = _processActiveLoanRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData);
+            // If there are funds remaining, debt must be fully paid (remaining > 0 implies debt == 0)
+            // Process zero balance rewards only when debt is fully paid and funds remain
+            uint256 debtAfter = CollateralFacet(address(this)).getTotalDebt();
             if(remaining > 0) {
-                _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData, true);
+                require(debtAfter == 0, "If funds remain, debt must be fully paid");
+                _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, swapTarget, swapData, false);
             }
         }
     }
 
-    function _processActiveLoanRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, bytes memory swapData) internal returns (uint256 remaining) {
-        require(IERC20(asset).balanceOf(address(this)) >= rewardsAmount);
+    function _processActiveLoanRewards(uint256 tokenId, uint256 rewardsAmount, uint256 availableAmount, address asset, address swapTarget, bytes memory swapData) internal returns (uint256 remaining) {
+        require(IERC20(asset).balanceOf(address(this)) >= availableAmount);
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(loanContract != address(0));
 
+        // Calculate fees based on original rewards amount
         uint256 protocolFee = _payProtocolFee(rewardsAmount, asset);
         uint256 lenderPremium = _payLenderPremium(rewardsAmount, asset);
         uint256 zeroBalanceFee = _payZeroBalanceFee(rewardsAmount, asset);
-        uint256 excess = CollateralManager.decreaseTotalDebt(rewardsAmount - protocolFee - lenderPremium - zeroBalanceFee);
-        return rewardsAmount - protocolFee - lenderPremium - zeroBalanceFee - excess;
+        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        
+        // Ensure we have enough balance to pay fees
+        require(availableAmount >= totalFees, "Insufficient balance to pay fees");
+        
+        // Amount available for debt payment (after fees)
+        uint256 amountForDebt = availableAmount - totalFees;
+        
+        // Approve loan contract to transfer funds for debt payment
+        IERC20(asset).approve(loanContract, amountForDebt);
+        uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amountForDebt);
+        // Clear approval after use
+        IERC20(asset).approve(loanContract, 0);
+        return excess;
     }
 
     function _processZeroBalanceRewards(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset, address swapTarget, bytes memory swapData, bool takeFees) internal {
@@ -166,7 +182,7 @@ contract RewardsProcessingFacet is AccessControl {
         IERC20(lockedAsset).approve(address(_votingEscrow), increaseAmount);
         _votingEscrow.increaseAmount(tokenId, increaseAmount);
         uint256 remaining = rewardsAmount - amountToSwap;
-        CollateralManager.updateLockedColleratal(tokenId, address(_votingEscrow));
+        CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
 
         return remaining;
     }

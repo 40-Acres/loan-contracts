@@ -31,7 +31,7 @@ contract LendingFacetTest is Test, Setup {
         uint256 borrowAmount = 1e6; // 1 USDC
         
         // Borrow against collateral
-        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
         
         // Check debt is tracked (includes 0.8% origination fee)
         uint256 expectedDebt = _withFee(borrowAmount);
@@ -48,7 +48,7 @@ contract LendingFacetTest is Test, Setup {
         
         // Should revert - no collateral added
         vm.expectRevert();
-        LendingFacet(_portfolioAccount).borrow(_tokenId, 1e6);
+        LendingFacet(_portfolioAccount).borrow(1e6);
         
         vm.stopPrank();
     }
@@ -63,7 +63,7 @@ contract LendingFacetTest is Test, Setup {
         
         // Should revert - portfolio doesn't own token
         vm.expectRevert("Portfolio does not own token");
-        LendingFacet(_portfolioAccount).borrow(_tokenId, 1e6);
+        LendingFacet(_portfolioAccount).borrow(1e6);
         
         vm.stopPrank();
     }
@@ -74,7 +74,7 @@ contract LendingFacetTest is Test, Setup {
         // Setup: add collateral and borrow
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
         uint256 borrowAmount = 1e6;
-        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
         
         uint256 expectedDebt = _withFee(borrowAmount);
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), expectedDebt);
@@ -105,7 +105,7 @@ contract LendingFacetTest is Test, Setup {
         // Setup: add collateral and borrow
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
         uint256 borrowAmount = 2e6; // 2 USDC
-        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
         
         _assertDebtSynced(_tokenId);
         
@@ -127,14 +127,14 @@ contract LendingFacetTest is Test, Setup {
         // Setup: add collateral and initial borrow
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
         uint256 initialBorrow = 1e6;
-        LendingFacet(_portfolioAccount).borrow(_tokenId, initialBorrow);
+        LendingFacet(_portfolioAccount).borrow(initialBorrow);
         
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), _withFee(initialBorrow));
         _assertDebtSynced(_tokenId);
         
         // Borrow more (should increase existing loan)
         uint256 additionalBorrow = 1e6;
-        LendingFacet(_portfolioAccount).borrow(_tokenId, additionalBorrow);
+        LendingFacet(_portfolioAccount).borrow(additionalBorrow);
         
         // Total debt should be sum of both borrows (each with fee)
         uint256 expectedDebt = _withFee(initialBorrow) + _withFee(additionalBorrow);
@@ -154,7 +154,7 @@ contract LendingFacetTest is Test, Setup {
         uint256 excessiveBorrow = 1000000e6; // 1M USDC - should exceed max loan
         
         vm.expectRevert();
-        LendingFacet(_portfolioAccount).borrow(_tokenId, excessiveBorrow);
+        LendingFacet(_portfolioAccount).borrow(excessiveBorrow);
         
         vm.stopPrank();
     }
@@ -175,11 +175,11 @@ contract LendingFacetTest is Test, Setup {
         
         // Borrow against first token
         uint256 borrow1 = 1e6;
-        LendingFacet(_portfolioAccount).borrow(_tokenId, borrow1);
+        LendingFacet(_portfolioAccount).borrow(borrow1);
         
         // Borrow against second token
         uint256 borrow2 = 2e6;
-        LendingFacet(_portfolioAccount).borrow(tokenId2, borrow2);
+        LendingFacet(_portfolioAccount).borrow(borrow2);
         
         // Total debt should be sum of both (with fees)
         uint256 expectedTotalDebt = _withFee(borrow1) + _withFee(borrow2);

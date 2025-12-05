@@ -18,9 +18,9 @@ library CollateralManager {
 
 
     struct CollateralManagerData {
-        mapping(uint256 tokenId => uint256 lockedColleratal) lockedCollaterals;
+        mapping(uint256 tokenId => uint256 lockedCollateral) lockedCollaterals;
         mapping(uint256 tokenId => uint256 originTimestamp) originTimestamps;
-        uint256 totalLockedColleratal;
+        uint256 totalLockedCollateral;
         uint256 debt;
     }
 
@@ -31,7 +31,7 @@ library CollateralManager {
         }
     }
 
-    function addLockedColleratal(uint256 tokenId, address ve) external {
+    function addLockedCollateral(uint256 tokenId, address ve) external {
         require(ve != address(0), "Voting escrow address cannot be zero");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
@@ -42,8 +42,8 @@ library CollateralManager {
         int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
         uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
 
-        collateralManagerData.lockedCollaterals[tokenId] = newLockedColleratal;
-        collateralManagerData.totalLockedColleratal += newLockedColleratal;
+        collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
+        collateralManagerData.totalLockedCollateral += newLockedCollateral;
         collateralManagerData.originTimestamps[tokenId] = block.timestamp;
     }
 
@@ -61,7 +61,7 @@ library CollateralManager {
         enforceCollateral(portfolioAccountConfig);
     }
 
-    function updateLockedColleratal(uint256 tokenId, address ve) external {
+    function updateLockedCollateral(uint256 tokenId, address ve) external {
         require(ve != address(0), "Voting escrow address cannot be zero");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
@@ -71,11 +71,11 @@ library CollateralManager {
             return;
         }
 
-        int128 newLockedColleratalInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
-        uint256 newLockedColleratal = uint256(uint128(newLockedColleratalInt));
-        if(newLockedColleratal > previousLockedColleratal) {
-            uint256 difference = newLockedColleratal - previousLockedColleratal;
-            collateralManagerData.totalLockedColleratal += difference;
+        int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
+        uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
+        if(newLockedCollateral > previousLockedCollateral) {
+            uint256 difference = newLockedCollateral - previousLockedCollateral;
+            collateralManagerData.totalLockedCollateral += difference;
         } else {
             uint256 difference = previousLockedCollateral - newLockedCollateral;
             collateralManagerData.totalLockedCollateral -= difference;
@@ -97,15 +97,24 @@ library CollateralManager {
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         collateralManagerData.debt += amount;
+        ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        loanContract.borrowFromPortfolio(amount);
         enforceCollateral(portfolioAccountConfig);
     }
 
-    function decreaseTotalDebt(uint256 amount) external returns (uint256 excess) {
+    function migrateDebt(address portfolioAccountConfig, uint256 amount) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        collateralManagerData.debt += amount;
+    }
+
+    function decreaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 totalDebt = collateralManagerData.debt;
         uint256 amountToDecrease = totalDebt > amount ? amount : totalDebt;
         collateralManagerData.debt -= amountToDecrease;
-        excess = totalDebt - amountToDecrease;
+        excess = amount - amountToDecrease;
+        ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        loanContract.payFromPortfolio(amountToDecrease);
         return excess;
     }
 

@@ -31,7 +31,7 @@ contract VotingEscrowFacet {
     function increaseLock(uint256 tokenId, uint256 amount) external {
         IERC20(_votingEscrow.token()).transferFrom(msg.sender, address(this), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
-        CollateralManager.updateLockedColleratal(tokenId, address(_votingEscrow));
+        CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
     }
 }
 

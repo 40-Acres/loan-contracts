@@ -89,7 +89,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
             require(_votingConfig.isApprovedPool(pools[i]), PoolNotApproved(pools[i]));
         }
         _voter.vote(tokenId, pools, weights);
-        CollateralManager.addLockedColleratal(tokenId, address(_votingEscrow));
+        CollateralManager.addLockedCollateral(tokenId, address(_votingEscrow));
     }
 
     function isManualVoting(uint256 tokenId) external view returns (bool) {

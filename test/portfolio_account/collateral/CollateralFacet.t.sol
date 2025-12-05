@@ -65,11 +65,11 @@ contract CollateralFacetTest is Test, Setup {
         vm.startPrank(_portfolioFactory.ownerOf(_portfolioAccount));
         // should revert since no collateral is added
         vm.expectRevert();
-        LendingFacet(_portfolioAccount).borrow(_tokenId, 1e6);
+        LendingFacet(_portfolioAccount).borrow(1e6);
         
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
         uint256 borrowAmount = 1e6;
-        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
         
         // should revert since collateral is not enough (has debt)
         vm.expectRevert();
@@ -104,7 +104,7 @@ contract CollateralFacetTest is Test, Setup {
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
         CollateralFacet(_portfolioAccount).addCollateral(_tokenId2);
         uint256 borrowAmount = 1e6;
-        LendingFacet(_portfolioAccount).borrow(_tokenId, borrowAmount);
+        LendingFacet(_portfolioAccount).borrow(borrowAmount);
         CollateralFacet(_portfolioAccount).removeCollateral(_tokenId2);
         vm.stopPrank();
         

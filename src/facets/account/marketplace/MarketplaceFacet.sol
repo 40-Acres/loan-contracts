@@ -372,7 +372,7 @@ contract MarketplaceFacet {
         CollateralManager.addLockedCollateral(tokenId, address(_ve));
 
         // Step 6: Request loan via LendingFacet (handles approval, loan request, and debt tracking with fees)
-        LendingFacet(address(this)).borrow(tokenId, maxLoan);
+        LendingFacet(address(this)).borrow(maxLoan);
 
         // Step 7: Approve flash loan repayment
         IERC20(token).forceApprove(msg.sender, amount + fee);

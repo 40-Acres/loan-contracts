@@ -1224,33 +1224,6 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-    /**
-     * @notice Migrates a loan to be controlled by the user's portfolio account.
-     * @dev Transfers loan ownership from user's EOA to their portfolio account.
-     *      Creates a portfolio if the user doesn't have one.
-     * @param tokenId The ID of the loan to migrate.
-     */
-    function migrateToPortfolio(uint256 tokenId) external {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        
-        address factory = getPortfolioFactory();
-        require(factory != address(0));
-        
-        address portfolio = PortfolioFactory(factory).portfolioOf(msg.sender);
-        if(portfolio == address(0)) {
-            portfolio = PortfolioFactory(factory).createAccount(msg.sender);
-        }
-
-        IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
-        IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
-    }
-
-    function flashLoan(uint256 amount, bytes calldata data) external nonReentrant {
-        _asset.transferFrom(_vault, msg.sender, amount);
-        IInternalFlashLoanReceiver(msg.sender).onFlashLoan(PortfolioFactory(getPortfolioFactory()).ownerOf(msg.sender), address(_asset), amount, 0, data);
-        _asset.transferFrom(msg.sender, _vault, amount);
-    }
 
     /** ORACLE */
     
@@ -1289,4 +1262,55 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     function _entryPoint() internal view virtual returns (address) {
         return 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
     }
+
+    /** Portfolio Account Methods */
+
+    /**
+     * @notice Migrates a loan to be controlled by the user's portfolio account.
+     * @dev Transfers loan ownership from user's EOA to their portfolio account.
+     *      Creates a portfolio if the user doesn't have one.
+     * @param tokenId The ID of the loan to migrate.
+     */
+    function migrateToPortfolio(uint256 tokenId) external {
+        LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.borrower == msg.sender);
+        
+        address factory = getPortfolioFactory();
+        require(factory != address(0));
+        
+        address portfolio = PortfolioFactory(factory).portfolioOf(msg.sender);
+        if(portfolio == address(0)) {
+            portfolio = PortfolioFactory(factory).createAccount(msg.sender);
+        }
+
+        IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
+        IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
+    }
+
+
+    function payFromPortfolio(uint256 balanceToPay) external {
+        address factory = getPortfolioFactory();
+        require(factory != address(0));
+
+        address portfolioOwner = PortfolioFactory(factory).ownerOf(msg.sender);
+        require(portfolioOwner != address(0));
+
+        _asset.transferFrom(msg.sender, _vault, balanceToPay);
+        _outstandingCapital -= balanceToPay;
+        // if lender premium is 0, isManual is false, otherwise is true
+        emit LoanPaid(0, portfolioOwner, balanceToPay, currentEpochStart(), false);
+    }
+
+    function borrowFromPortfolio(uint256 amount) external {
+        address factory = getPortfolioFactory();
+        require(factory != address(0));
+
+        address portfolioOwner = PortfolioFactory(factory).ownerOf(msg.sender);
+        require(portfolioOwner != address(0));
+
+        _asset.transferFrom(_vault, portfolioOwner, amount);
+        _outstandingCapital += amount;
+        emit FundsBorrowed(0, portfolioOwner, amount);
+    }
+
 }
