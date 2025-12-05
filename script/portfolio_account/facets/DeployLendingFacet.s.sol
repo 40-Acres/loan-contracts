@@ -8,16 +8,15 @@ contract DeployLendingFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
         address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
-        address LOAN_CONFIG = vm.envAddress("LOAN_CONFIG");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        LendingFacet facet = new LendingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, LOAN_CONFIG);
+        LendingFacet facet = new LendingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "LendingFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address loanConfig) external {
-        LendingFacet newFacet = new LendingFacet(portfolioFactory, portfolioAccountConfig, loanConfig);
+    function deploy(address portfolioFactory, address portfolioAccountConfig) external {
+        LendingFacet newFacet = new LendingFacet(portfolioFactory, portfolioAccountConfig);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "LendingFacet", true);
     }
 

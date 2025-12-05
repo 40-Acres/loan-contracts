@@ -51,7 +51,8 @@ library MarketStorage {
         mapping(RouteLib.BuyRoute => uint16) feeBps;                  // fee in basis points, max 1000 (10%)
         address feeRecipient;                                         // fee recipient address
         mapping(address => bool) allowedPaymentToken;                 // whitelisted payment tokens
-        address loan;                                                 // ILoan address
+        address loan;
+        address portfolioFactory;                                     // PortfolioFactory address
         address votingEscrow;                                         // IVotingEscrow address
         address accessManager;                                        // AccessManager for role-based auth
         address loanAsset;                                            // payment asset expected by Loan for pay() (e.g., USDC)

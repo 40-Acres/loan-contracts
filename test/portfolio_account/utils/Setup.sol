@@ -96,7 +96,12 @@ contract Setup is Test {
         address loanContract = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
         vm.startPrank(ILoan(loanContract).owner());
         LoanV2(loanContract).upgradeToAndCall(address(loanV2), new bytes(0));
+        // Set portfolio factory in loan contract
+        LoanV2(loanContract).setPortfolioFactory(address(_portfolioFactory));
         vm.stopPrank();
 
+        // Fund the vault with USDC to ensure liquidity for tests
+        address vault = LoanV2(loanContract)._vault();
+        deal(address(_asset), vault, 10_000_000e6); // 10M USDC
     }
 }

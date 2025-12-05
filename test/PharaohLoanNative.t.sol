@@ -728,7 +728,7 @@ contract PharaohLoanNativeTest is Test {
         vm.roll(block.number+1);
         vm.warp(block.timestamp + 3601);
         vm.warp(block.timestamp+1);
-        loan.setPreferredToken(_tokenId, address(weth));
+        loan.setLoanOptions(_tokenId, Loanv2.ZeroBalanceOption.PayToOwner, false, address(weth));
         vm.stopPrank();
         
 
@@ -1128,7 +1128,7 @@ contract PharaohLoanNativeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId2);
         loan.requestLoan(_tokenId2, loanAmount, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         loan.setPayoffToken(_tokenId2, true);
-        loan.setTopUp(_tokenId2, true);
+        loan.setLoanOptions(_tokenId2, Loanv2.ZeroBalanceOption.PayToOwner, true, address(0));
         vm.warp(block.timestamp+3601);
         vm.roll(block.number + 1);
         vm.stopPrank();

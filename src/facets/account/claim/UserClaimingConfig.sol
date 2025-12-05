@@ -14,7 +14,7 @@ import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
  */
 library UserClaimingConfig {
     error InsufficientCollateral();
-    error InvalidLockedColleratal();
+    error InvalidLockedCollateral();
 
 
     struct UserClaimingConfigData {

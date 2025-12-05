@@ -24,6 +24,10 @@ import { LoanUtils } from "./LoanUtils.sol";
 import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 import { IMigrationFacet } from "./facets/account/migration/IMigrationFacet.sol";
 
+interface IInternalFlashLoanReceiver {
+    function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data) external returns (bool);
+}
+
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -47,6 +51,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     mapping(uint256 => uint256) public _rewardsPerEpoch;
     uint256 private _lastEpochPaid; // deprecated
+
 
     
     // ZeroBalanceOption enum to handle different scenarios when the loan balance is zero
@@ -76,11 +81,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     // Pools each token votes on for this epoch
-    address[] public _defaultPools;
+    address[] internal _defaultPools;
     // Weights for each pool (must equal length of _defaultPools)
-    uint256[] public _defaultWeights;
+    uint256[] internal _defaultWeights;
     // Time when the default pools were last changed
-    uint256 public _defaultPoolChangeTime;
+    uint256 private _defaultPoolChangeTime;
 
     
     /**
@@ -238,9 +243,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         });
 
 
-        // transfer the token to the contract
-        _ve.transferFrom(msg.sender, address(this), tokenId);
-        require(_ve.ownerOf(tokenId) == address(this));
+        // Handle portfolio accounts efficiently - skip transfer for portfolio accounts
+        if (PortfolioFactory(getPortfolioFactory()).isPortfolio(msg.sender)) {
+            // Portfolio account case - token remains in portfolio as collateral
+            // portfolio ownership is verified at the top of this function
+        } else {
+            // EOA case - transfer token to contract
+            _ve.transferFrom(msg.sender, address(this), tokenId);
+            require(_ve.ownerOf(tokenId) == address(this));
+        }
         emit CollateralAdded(tokenId, msg.sender, zeroBalanceOption);
 
 
@@ -276,7 +287,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         uint256 amount
     ) public  {
         require(amount > .01e6);
-        require(_ve.ownerOf(tokenId) == address(this));
+        // Token must be in loan contract OR in portfolio account (for portfolio loans)
+        address tokenOwner = _ve.ownerOf(tokenId);
+        require(tokenOwner == address(this) || PortfolioFactory(getPortfolioFactory()).isPortfolio(tokenOwner));
         require(confirmUsdcPrice());
         LoanInfo storage loan = _loanDetails[tokenId];
 
@@ -301,11 +314,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
-        loan.unpaidFees += originationFee;
-        loan.balance += amount + originationFee;
+        loan.balance += amount;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
-        _asset.transferFrom(_vault, loan.borrower, amount);
+        // Transfer origination fee to owner upfront
+        _asset.transferFrom(_vault, owner(), originationFee);
+        emit ProtocolFeePaid(currentEpochStart(), originationFee, loan.borrower, tokenId, address(_asset));
+        // Transfer remaining amount to borrower
+        _asset.transferFrom(_vault, loan.borrower, amount - originationFee);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
@@ -327,17 +343,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         _pay(tokenId, amount, true);
     }
 
-    /**
-     * @dev Allows the borrower to pay off their loan in multiple transactions.
-     *      This function iterates through an array of token IDs and calls the pay function for each one.
-     * 
-     * @param tokenIds An array of token IDs representing the loans to be paid off.
-     */
-    function payMultiple(uint256[] memory tokenIds) public {
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            pay(tokenIds[i], 0);
-        }
-    }
+    // /**
+    //  * @dev Allows the borrower to pay off their loan in multiple transactions.
+    //  *      This function iterates through an array of token IDs and calls the pay function for each one.
+    //  * 
+    //  * @param tokenIds An array of token IDs representing the loans to be paid off.
+    //  */
+    // function payMultiple(uint256[] memory tokenIds) public {
+    //     for (uint256 i = 0; i < tokenIds.length; i++) {
+    //         pay(tokenIds[i], 0);
+    //     }
+    // }
 
 
     /**
@@ -1002,15 +1018,15 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         revert();
     }
 
-    /**
-     * @notice Rescue any ERC20 tokens that are stuck in the contract.
-     * @dev This function can only be called by the owner of the contract.
-     * @param token The address of the ERC20 token to rescue.
-     * @param amount The amount of tokens to rescue.
-     */
-    function rescueERC20(address token, uint256 amount) public onlyOwner {
-        IERC20(token).transfer(owner(), amount);
-    }
+    // /**
+    //  * @notice Rescue any ERC20 tokens that are stuck in the contract.
+    //  * @dev This function can only be called by the owner of the contract.
+    //  * @param token The address of the ERC20 token to rescue.
+    //  * @param amount The amount of tokens to rescue.
+    //  */
+    // function rescueERC20(address token, uint256 amount) public onlyOwner {
+    //     IERC20(token).transfer(owner(), amount);
+    // }
 
 
     /**
@@ -1045,51 +1061,20 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
-    /* USER METHODS */
     /**
-     * @notice Sets the zero balance option for a specific loan.
+     * @notice Allows the borrower to set the loan options for their loan.
      * @dev This function can only be called by the borrower of the loan.
-     * @param tokenId The ID of the loan (NFT).
-     * @param option The zero balance option to set.
+     * @param tokenId The ID of the loan (NFT) for which the options are being set.
+     * @param zeroBalanceOption The zero balance option to set.
+     * @param topUp The top up option to set.
+     * @param preferredToken The preferred token to set.
      */
-    function setZeroBalanceOption(
-        uint256 tokenId,
-        ZeroBalanceOption option
-    ) public {
+    function setLoanOptions(uint256 tokenId, ZeroBalanceOption zeroBalanceOption, bool topUp, address preferredToken) public {
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.borrower == msg.sender);
-        loan.zeroBalanceOption = option;
-    }
-
-
-    /**
-     * @notice Sets the top-up option for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     * @param tokenId The ID of the loan (NFT).
-     * @param enable A boolean indicating whether to enable or disable the top-up option.
-     */
-    function setTopUp(
-        uint256 tokenId,
-        bool enable
-    ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        loan.topUp = enable;
-    }
-
-    /**
-     * @notice Sets the preferred token for a specific loan.
-     * @dev This function can only be called by the borrower of the loan.
-     * @param tokenId The ID of the loan (NFT).
-     * @param preferredToken The address of the preferred token to set.
-     */
-    function setPreferredToken(
-        uint256 tokenId,
-        address preferredToken
-    ) public {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        require(isApprovedToken(preferredToken));
+        if(preferredToken != address(0)) require(isApprovedToken(preferredToken));
+        loan.zeroBalanceOption = zeroBalanceOption;
+        loan.topUp = topUp;
         loan.preferredToken = preferredToken;
     }
 
@@ -1259,6 +1244,12 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
         IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
+    }
+
+    function flashLoan(uint256 amount, bytes calldata data) external nonReentrant {
+        _asset.transferFrom(_vault, msg.sender, amount);
+        IInternalFlashLoanReceiver(msg.sender).onFlashLoan(PortfolioFactory(getPortfolioFactory()).ownerOf(msg.sender), address(_asset), amount, 0, data);
+        _asset.transferFrom(msg.sender, _vault, amount);
     }
 
     /** ORACLE */
