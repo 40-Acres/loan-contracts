@@ -58,7 +58,6 @@ library CollateralManager {
         collateralManagerData.totalLockedCollateral -= previousLockedCollateral;
         collateralManagerData.lockedCollaterals[tokenId] = 0;
         collateralManagerData.originTimestamps[tokenId] = 0;
-        enforceCollateral(portfolioAccountConfig);
     }
 
     function updateLockedCollateral(uint256 tokenId, address ve) external {
@@ -99,7 +98,6 @@ library CollateralManager {
         collateralManagerData.debt += amount;
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
         loanContract.borrowFromPortfolio(amount);
-        enforceCollateral(portfolioAccountConfig);
     }
 
     function migrateDebt(address portfolioAccountConfig, uint256 amount) external {

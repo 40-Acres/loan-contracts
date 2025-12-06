@@ -24,6 +24,7 @@ import {MockERC20} from "../../mocks/MockERC20.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
 
 contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -75,6 +76,11 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         // Mock WETH and mint to portfolio account
         address wethAddress = address(0x4200000000000000000000000000000000000006);
         mockWeth = deployAndOverwrite(wethAddress, "Wrapped Ether", "WETH", 18);
+        
+        // Deploy and overwrite ROOT_VOTING_REWARDS_FACTORY with mock
+        address rootVotingRewardsFactoryAddress = address(0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F);
+        MockRootVotingRewardsFactory mockFactory = new MockRootVotingRewardsFactory();
+        vm.etch(rootVotingRewardsFactoryAddress, address(mockFactory).code);
         
     }
 
@@ -228,6 +234,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         portfolios[0] = address(_portfolioAccount);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, _tokenId, pools, weights);
+        // Should revert with MinimumWethBalanceNotMet error, but may fail with CallFailed if setRecipient fails first
         vm.expectRevert();
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();

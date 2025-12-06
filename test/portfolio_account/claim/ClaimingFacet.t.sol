@@ -34,39 +34,58 @@ contract ClaimingFacetTest is Test, Setup {
     uint256 rewardAmount = 1090570742412276;
     uint256 usdcAmount = 3462465;
 
-    function testClaim() public {
+    // Helper function to add collateral via PortfolioManager multicall
+    function addCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
         address[] memory portfolios = new address[](1);
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            ClaimingFacet.claimFees.selector,
-            bribes,
-            poolTokens,
-            _tokenId
+            CollateralFacet.addCollateral.selector,
+            tokenId
         );
         _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
+    // Helper function to borrow via PortfolioManager multicall
+    function borrowViaMulticall(uint256 amount) internal {
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            LendingFacet.borrow.selector,
+            amount
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
+    // Helper function to vote for launchpad token via PortfolioManager multicall
+    function voteForLaunchpadTokenViaMulticall(uint256 tokenId, address[] memory pools, uint256[] memory weights, bool receiveToken) internal {
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            VotingFacet.voteForLaunchpadToken.selector,
+            tokenId,
+            pools,
+            weights,
+            receiveToken
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
+    function testClaim() public {
+        vm.startPrank(_authorizedCaller);
+        ClaimingFacet(_portfolioAccount).claimFees(bribes, poolTokens, _tokenId);
         vm.stopPrank();
 
         assertEq(IERC20(claimingToken).balanceOf(_portfolioAccount), rewardAmount);
         assertEq(IERC20(_usdc).balanceOf(_portfolioAccount), usdcAmount);
-    }
-
-
-    function testClaimWithMultisend() public {
-        // address[] memory to = new address[](1);
-        // uint256[] memory value = new uint256[](1);
-        // bytes[] memory data = new bytes[](1);
-        
-        // to[0] = _portfolioAccount;
-        // value[0] = 0;
-        // data[0] = abi.encodeWithSelector(ClaimingFacet.claimFees.selector, bribes, poolTokens, _tokenId);
-        
-        // vm.prank(_authorizedCaller);
-        // _multisend.multiSend(to, value, data);
-
-        // assertEq(IERC20(claimingToken).balanceOf(_portfolioAccount), rewardAmount);
-        // assertEq(IERC20(_usdc).balanceOf(_portfolioAccount), usdcAmount);
     }
 
     function testClaimRebase() public {
@@ -90,29 +109,15 @@ contract ClaimingFacetTest is Test, Setup {
         _votingConfig.setLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[0], claimingToken);
         vm.stopPrank();
         // user votes on launchpad token pool
-        vm.startPrank(_user);
-        VotingFacet(_portfolioAccount).voteForLaunchpadToken(_tokenId, pools, weights, true);
-        vm.stopPrank();
+        voteForLaunchpadTokenViaMulticall(_tokenId, pools, weights, true);
 
         // fast forward to next epoch
         vm.warp(ProtocolTimeLibrary.epochNext(block.timestamp));
         vm.roll(block.number + 1);
 
         
-        vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            ClaimingFacet.claimLaunchpadToken.selector,
-            bribes,
-            launchPadTokens,
-            _tokenId,
-            address(0),
-            new bytes(0),
-            rewardAmount
-        );
-        _portfolioManager.multicall(calldatas, portfolios);
+        vm.startPrank(_authorizedCaller);
+        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(0), new bytes(0), rewardAmount);
         vm.stopPrank();
 
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
@@ -125,29 +130,15 @@ contract ClaimingFacetTest is Test, Setup {
         _votingConfig.setLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[0], claimingToken);
         vm.stopPrank();
         // user votes on launchpad token pool
-        vm.startPrank(_user);
-        VotingFacet(_portfolioAccount).voteForLaunchpadToken(_tokenId, pools, weights, false);
-        vm.stopPrank();
+        voteForLaunchpadTokenViaMulticall(_tokenId, pools, weights, false);
 
         // fast forward to next epoch
         vm.warp(ProtocolTimeLibrary.epochNext(block.timestamp));
         vm.roll(block.number + 1);
 
         
-        vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            ClaimingFacet.claimLaunchpadToken.selector,
-            bribes,
-            launchPadTokens,
-            _tokenId,
-            address(0),
-            new bytes(0),
-            rewardAmount
-        );
-        _portfolioManager.multicall(calldatas, portfolios);
+        vm.startPrank(_authorizedCaller);
+        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(0), new bytes(0), rewardAmount);
         vm.stopPrank();
 
         assertEq(IERC20(claimingToken).balanceOf(_portfolioAccount), rewardAmount);
@@ -155,10 +146,8 @@ contract ClaimingFacetTest is Test, Setup {
 
     function testClaimLaunchpadTokenActiveBalanceReceiveToken() public {
         // Add collateral and create debt to simulate active loan balance
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
-        LendingFacet(_portfolioAccount).borrow(1e6);
-        vm.stopPrank();
+        addCollateralViaMulticall(_tokenId);
+        borrowViaMulticall(1e6);
 
         // Set up launchpad token voting
         vm.startPrank(_owner);
@@ -166,9 +155,7 @@ contract ClaimingFacetTest is Test, Setup {
         vm.stopPrank();
         
         // user votes on launchpad token pool with receiveToken = true
-        vm.startPrank(_user);
-        VotingFacet(_portfolioAccount).voteForLaunchpadToken(_tokenId, pools, weights, true);
-        vm.stopPrank();
+        voteForLaunchpadTokenViaMulticall(_tokenId, pools, weights, true);
 
         // fast forward to next epoch
         vm.warp(ProtocolTimeLibrary.epochNext(block.timestamp));
@@ -202,20 +189,8 @@ contract ClaimingFacetTest is Test, Setup {
         uint256 ownerUsdcBefore = IERC20(_usdc).balanceOf(ILoan(_loanContract).owner());
 
         // Claim launchpad token with swap
-        vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            ClaimingFacet.claimLaunchpadToken.selector,
-            bribes, 
-            launchPadTokens, 
-            _tokenId, 
-            address(mockRouter), 
-            tradeData, 
-            expectedUsdcOutput
-        );
-        _portfolioManager.multicall(calldatas, portfolios);
+        vm.startPrank(_authorizedCaller);
+        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(mockRouter), tradeData, expectedUsdcOutput);
         vm.stopPrank();
 
         // Verify the swap happened - portfolio account should have received USDC

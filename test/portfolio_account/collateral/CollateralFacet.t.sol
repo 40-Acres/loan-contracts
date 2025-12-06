@@ -135,12 +135,17 @@ contract CollateralFacetTest is Test, Setup {
         vm.expectRevert();
         removeCollateralViaMulticall(_tokenId);
 
-        // Pay back full debt (includes 0.8% origination fee)
-        uint256 fullDebt = _withFee(borrowAmount);
+        // Pay back full debt (borrowFromPortfolio doesn't add origination fee)
+        uint256 fullDebt = borrowAmount;
         
-        // Fund portfolio with extra USDC for fee payment
+        // Fund portfolio with USDC for payment
         uint256 currentBalance = _asset.balanceOf(_portfolioAccount);
         deal(address(_asset), _portfolioAccount, currentBalance + fullDebt);
+        
+        // Approve loan contract to transfer USDC
+        vm.startPrank(_portfolioAccount);
+        IERC20(_asset).approve(_portfolioAccountConfig.getLoanContract(), fullDebt);
+        vm.stopPrank();
         
         payViaMulticall(_tokenId, fullDebt);
         removeCollateralViaMulticall(_tokenId);
@@ -165,8 +170,8 @@ contract CollateralFacetTest is Test, Setup {
         
         int128 lockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), uint256(uint128(lockedAmount)));
-        // Debt includes 0.8% origination fee
-        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), _withFee(borrowAmount));
+        // Debt doesn't include origination fee for portfolio accounts
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount);
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount);
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioFactory.ownerOf(_portfolioAccount));
     }

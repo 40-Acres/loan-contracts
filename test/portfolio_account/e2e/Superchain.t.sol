@@ -28,6 +28,7 @@ import {CollateralFacet} from "../../../src/facets/account/collateral/Collateral
 import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/SuperchainClaimingFacet.sol";
 import {DeployBridgeFacet} from "../../../script/portfolio_account/facets/DeployBridgeFacet.s.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
 
 contract SuperchainTest is Test, Setup, MockERC20Utils {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -49,6 +50,12 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         uint256 fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(144334133);
+        
+        // Deploy and overwrite ROOT_VOTING_REWARDS_FACTORY with mock
+        address rootVotingRewardsFactoryAddress = address(0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F);
+        MockRootVotingRewardsFactory mockFactory = new MockRootVotingRewardsFactory();
+        vm.etch(rootVotingRewardsFactoryAddress, address(mockFactory).code);
+        
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));

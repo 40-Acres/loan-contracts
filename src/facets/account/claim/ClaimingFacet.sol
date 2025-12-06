@@ -40,7 +40,7 @@ contract ClaimingFacet is AccessControl {
         _swapConfig = SwapConfig(swapConfig);
     }
 
-    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
         // do not claim launchpad token in this method
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
@@ -54,7 +54,7 @@ contract ClaimingFacet is AccessControl {
         claimRebase(tokenId);
     }
 
-    function claimRebase(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function claimRebase(uint256 tokenId) public {
         uint256 claimable = _rewardsDistributor.claimable(tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {
@@ -64,7 +64,7 @@ contract ClaimingFacet is AccessControl {
         CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
     }
 
-    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external onlyAuthorizedCaller(_portfolioFactory) {
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
         if(launchpadToken == address(0)) {
             revert("Launchpad token not set");

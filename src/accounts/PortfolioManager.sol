@@ -5,6 +5,8 @@ import "./PortfolioFactory.sol";
 import "./FacetRegistry.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ICollateralManager} from "../facets/account/collateral/ICollateralManager.sol";
+import {IPortfolioAccountConfig} from "../facets/account/config/IPortfolioAccountConfig.sol";
 
 /**
  * @title PortfolioManager
@@ -201,6 +203,13 @@ contract PortfolioManager is Ownable {
         }
         
         emit CrossAccountMulticall(msg.sender, portfolios);
+
+        // enforce collateral for all portfolio accounts
+        for (uint256 i = 0; i < calldatas.length; i++) {
+            address portfolio = portfolios[i];
+            address portfolioAccountConfig = IPortfolioAccountConfig(portfolioToFactory[portfolio]).getPortfolioAccountConfig();
+            ICollateralManager(portfolio).enforceCollateral(portfolioAccountConfig);
+        }
         
         return results;
     }

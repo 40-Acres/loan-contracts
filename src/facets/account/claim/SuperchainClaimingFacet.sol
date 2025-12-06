@@ -11,7 +11,7 @@ contract SuperchainClaimingFacet is ClaimingFacet {
     }
 
 
-    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public override onlyAuthorizedCaller(_portfolioFactory) {
+    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public override {
         // get tx.origin weth balance
         uint256 preWethBalance = IERC20(address(0x4200000000000000000000000000000000000006)).balanceOf(tx.origin);
         super.claimFees(fees, tokens, tokenId);
