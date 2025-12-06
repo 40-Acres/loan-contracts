@@ -21,6 +21,7 @@ contract EtherexDeploy is Script {
     uint256 fork;
     address _rex = 0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4;
     address _asset = 0x176211869cA2b568f2A7D4EE941E073a821EE1ff;
+    address _deployer = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -86,7 +87,7 @@ contract EtherexDeploy is Script {
         _supportedTokens[1] = _asset;
         supportedTokens = _supportedTokens;
 
-        FacetRegistry facetRegistry = new FacetRegistry();
+        FacetRegistry facetRegistry = new FacetRegistry(_deployer);
 
         // Deploy PortfolioFactory
 

@@ -14,6 +14,7 @@ interface ILoan {
     function setIncreasePercentage(uint256 tokenId,uint256 increasePercentage) external;
     function claimCollateral(uint256 tokenId) external;
     function getRewardsRate() external view returns (uint256);
+    function getMultiplier() external view returns (uint256);
     function owner() external view returns (address);
 function _asset() external view returns (address);
     function _ve() external view returns (address);
@@ -22,8 +23,7 @@ function _asset() external view returns (address);
     function pay(uint256 tokenId, uint256 amount) external;
     function setBorrower(uint256 tokenId, address borrower) external;
     function increaseLoan(uint256 tokenId, uint256 amount) external;    
-    function setPreferredToken(uint256 tokenId, address preferredToken) external;
-    function setTopUp(uint256 tokenId, bool topUp) external;
+    function setTopUpAndPreferredToken(uint256 tokenId, bool topUp, address preferredToken) external;
     function setZeroBalanceOption(uint256 tokenId, ZeroBalanceOption zeroBalanceOption) external;
 
     /**
@@ -60,4 +60,8 @@ function _asset() external view returns (address);
     function vote(uint256 tokenId) external returns (bool);
     function userVote(uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external;
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
+    function handleZeroBalanceLoanPortfolioAccount(uint256 tokenId, address asset, uint256 totalRewards, uint256 rewardsPaidtoOwner, uint256 rewardsInvested, uint256 protocolFee) external;
+
+    function borrowFromPortfolio(uint256 amount) external;
+    function payFromPortfolio(uint256 balanceToPay) external;
 }

@@ -91,14 +91,9 @@ contract AerodromeFacet {
         ILoan(loanContract).setIncreasePercentage(tokenId, increasePercentage);
     }
 
-    function aerodromeSetPreferredToken(address loanContract, uint256 tokenId, address preferredToken) external {
+    function aerodromeSetTopUpAndPreferredToken(address loanContract, uint256 tokenId, bool topUp, address preferredToken) external {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(loanContract).setPreferredToken(tokenId, preferredToken);
-    }
-
-    function aerodromeSetTopUp(address loanContract, uint256 tokenId, bool topUp) external {
-        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        ILoan(loanContract).setTopUp(tokenId, topUp);
+        ILoan(loanContract).setTopUpAndPreferredToken(tokenId, topUp, preferredToken);
     }
 
     function aerodromeSetZeroBalanceOption(address loanContract, uint256 tokenId, ILoan.ZeroBalanceOption zeroBalanceOption) external {
@@ -106,6 +101,28 @@ contract AerodromeFacet {
         ILoan(loanContract).setZeroBalanceOption(tokenId, zeroBalanceOption);
     }
 
+    /**
+     * @notice Migrates a loan from user's EOA to their portfolio account.
+     * @dev Called by the user's EOA. The loan contract will update the borrower to this portfolio.
+     * @param loanContract The loan contract address.
+     * @param tokenId The ID of the loan to migrate.
+     */
+    function aerodromeMigrateLoan(address loanContract, uint256 tokenId) external onlyApprovedContract(loanContract) {
+        require(msg.sender == _portfolioFactory.ownerOf(address(this)));
+        
+        // Verify the loan will be migrated to this portfolio
+        (uint256 balance, address borrower) = ILoan(loanContract).getLoanDetails(tokenId);
+        require(borrower == address(this));
+        require(balance > 0 || IVotingEscrow(address(_ve)).ownerOf(tokenId) == address(loanContract));
+        
+        // Record collateral in portfolio storage
+        CollateralStorage.addNonfungibleCollateral(address(_ve), tokenId);
+    }
+
+    modifier onlyApprovedContract(address destination) {
+        require(_accountConfigStorage.isApprovedContract(destination));
+        _;
+    }
 }
 
 
