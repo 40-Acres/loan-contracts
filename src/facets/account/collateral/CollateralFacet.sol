@@ -10,11 +10,11 @@ import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
-
+import {ICollateralFacet} from "./ICollateralFacet.sol";
 /**
  * @title LoanFacet
  */
-contract CollateralFacet is AccessControl {
+contract CollateralFacet is AccessControl, ICollateralFacet {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
@@ -55,5 +55,16 @@ contract CollateralFacet is AccessControl {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+    }
+
+    function enforceCollateral() public view {
+        CollateralManager.enforceCollateral(address(_portfolioAccountConfig));
+    }
+
+    function getMaxLoan() public view returns (uint256, uint256) {
+        return CollateralManager.getMaxLoan(address(_portfolioAccountConfig));
+    }
+    function getOriginTimestamp(uint256 tokenId) public view returns (uint256) {
+        return CollateralManager.getOriginTimestamp(tokenId);
     }
 }

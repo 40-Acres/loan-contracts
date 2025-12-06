@@ -116,7 +116,7 @@ library CollateralManager {
         return excess;
     }
 
-    function enforceCollateral(address portfolioAccountConfig) internal view {
+    function enforceCollateral(address portfolioAccountConfig) public view {
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         uint256 totalDebt = getTotalDebt();
         // TODO: if voted on but not claimed, then do not allow withdrawals
@@ -125,7 +125,7 @@ library CollateralManager {
         }
     }
 
-    function getMaxLoan(address portfolioAccountConfig) internal view returns (uint256, uint256) {
+    function getMaxLoan(address portfolioAccountConfig) public view returns (uint256, uint256) {
         uint256 totalLockedCollateral = getTotalLockedCollateral();
         LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
         uint256 rewardsRate = loanConfig.getRewardsRate();

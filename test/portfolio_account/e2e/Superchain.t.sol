@@ -29,6 +29,7 @@ import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/Superch
 import {DeployBridgeFacet} from "../../../script/portfolio_account/facets/DeployBridgeFacet.s.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
+import {DeployCollateralFacet} from "../../../script/portfolio_account/facets/DeployCollateralFacet.s.sol";
 
 contract SuperchainTest is Test, Setup, MockERC20Utils {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -77,6 +78,11 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
 
         DeploySuperchainClaiming claimingDeployer = new DeploySuperchainClaiming();
         claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig));
+        
+
+        // Deploy CollateralFacet which is required for enforceCollateral() call after multicall
+        DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
+        deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
         
         // Set up authorized caller for claiming
         address authorizedCaller = address(0xaaaaa);
@@ -185,7 +191,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         // deploy the bridge facet
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();
         ink_deployer.deploy(address(ink_portfolioFactory), address(ink_portfolioAccountConfig), address(0x4200000000000000000000000000000000000006));
-
+        
 
         // user should have a balance on 0x4200000000000000000000000000000000000006 and 0x7f9AdFbd38b669F03d1d11000Bc76b9AaEA28A81 (XVELO)
         assertEq(IERC20(0x4200000000000000000000000000000000000006).balanceOf(user), 7797992391058710);

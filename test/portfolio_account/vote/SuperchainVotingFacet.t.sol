@@ -24,6 +24,7 @@ import {MockERC20} from "../../mocks/MockERC20.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {DeployCollateralFacet} from "../../../script/portfolio_account/facets/DeployCollateralFacet.s.sol";
 import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
 
 contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
@@ -283,6 +284,9 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
         deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter));
 
+        // Deploy CollateralFacet which is required for enforceCollateral() call after multicall
+        DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
+        deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
         
         superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true, 57073);
         superchainVotingConfig.setMinimumWethBalance(.001e18);
