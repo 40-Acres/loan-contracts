@@ -8,11 +8,12 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {AccessControl} from "../utils/AccessControl.sol";
 /**
  * @title VotingEscrowFacet
  * @dev Facet that interfaces with voting escrow NFTs
  */
-contract VotingEscrowFacet {
+contract VotingEscrowFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
     IVotingEscrow public immutable _votingEscrow;
@@ -28,7 +29,7 @@ contract VotingEscrowFacet {
         _voter = IVoter(voter);
     }
 
-    function increaseLock(uint256 tokenId, uint256 amount) external {
+    function increaseLock(uint256 tokenId, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         IERC20(_votingEscrow.token()).transferFrom(msg.sender, address(this), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
         CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));

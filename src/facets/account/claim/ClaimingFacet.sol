@@ -13,11 +13,12 @@ import {ILoan} from "../../../interfaces/ILoan.sol";
 import {UserClaimingConfig} from "./UserClaimingConfig.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
+import {AccessControl} from "../utils/AccessControl.sol";
 /**
  * @title ClaimingFacet
  * @dev Facet that interfaces with voting escrow NFTs
  */
-contract ClaimingFacet {
+contract ClaimingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
@@ -39,7 +40,7 @@ contract ClaimingFacet {
         _swapConfig = SwapConfig(swapConfig);
     }
 
-    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
+    function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual onlyPortfolioManagerMulticall(_portfolioFactory) {
         // do not claim launchpad token in this method
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
@@ -53,7 +54,7 @@ contract ClaimingFacet {
         claimRebase(tokenId);
     }
 
-    function claimRebase(uint256 tokenId) public {
+    function claimRebase(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         uint256 claimable = _rewardsDistributor.claimable(tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {
@@ -63,7 +64,7 @@ contract ClaimingFacet {
         CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
     }
 
-    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external {
+    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external onlyPortfolioManagerMulticall(_portfolioFactory) {
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
         if(launchpadToken == address(0)) {
             revert("Launchpad token not set");

@@ -31,6 +31,7 @@ contract BridgeFacet is AccessControl {
         _destinationDomain = 2; // Optimism Mainnet https://developers.circle.com/cctp/cctp-supported-blockchains
     }
 
+    // @dev Intentionally public - can be called by anyone to bridge tokens
     function bridge() external  {
         uint32 minFinalityThreshold = 2000;
         uint256 maxFee = _usdc.balanceOf(address(this)) / 10000;

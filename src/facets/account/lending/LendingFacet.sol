@@ -7,13 +7,14 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AccessControl} from "../utils/AccessControl.sol";
 
 /**
  * @title LendingFacet
  * @dev Facet for borrowing against collateral in portfolio accounts.
  *      Global debt tracked via CollateralManager, per-loan details from loan contract.
  */
-contract LendingFacet {
+contract LendingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
 
@@ -26,11 +27,11 @@ contract LendingFacet {
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
     }
 
-    function borrow(uint256 amount) public {
+    function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
     }
 
-    function pay(uint256 tokenId, uint256 amount) public {
+    function pay(uint256 tokenId, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
     }
 }

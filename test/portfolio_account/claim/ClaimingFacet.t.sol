@@ -35,12 +35,21 @@ contract ClaimingFacetTest is Test, Setup {
     uint256 usdcAmount = 3462465;
 
     function testClaim() public {
-        vm.prank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimFees(bribes, poolTokens, _tokenId);
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            ClaimingFacet.claimFees.selector,
+            bribes,
+            poolTokens,
+            _tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
 
         assertEq(IERC20(claimingToken).balanceOf(_portfolioAccount), rewardAmount);
-        assertEq(IERC20(_usdc).balanceOf(_portfolioAccount), usdcAmount
-);
+        assertEq(IERC20(_usdc).balanceOf(_portfolioAccount), usdcAmount);
     }
 
 
@@ -62,7 +71,16 @@ contract ClaimingFacetTest is Test, Setup {
 
     function testClaimRebase() public {
         int128 startingLockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
-        ClaimingFacet(_portfolioAccount).claimRebase(_tokenId);
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            ClaimingFacet.claimRebase.selector,
+            _tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
         int128 endingLockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         assertEq(endingLockedAmount, startingLockedAmount + 1128188206630704788);
     }
@@ -81,8 +99,20 @@ contract ClaimingFacetTest is Test, Setup {
         vm.roll(block.number + 1);
 
         
-        vm.startPrank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(0), new bytes(0), rewardAmount);
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            ClaimingFacet.claimLaunchpadToken.selector,
+            bribes,
+            launchPadTokens,
+            _tokenId,
+            address(0),
+            new bytes(0),
+            rewardAmount
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
 
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
@@ -104,8 +134,20 @@ contract ClaimingFacetTest is Test, Setup {
         vm.roll(block.number + 1);
 
         
-        vm.startPrank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(0), new bytes(0), rewardAmount);
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            ClaimingFacet.claimLaunchpadToken.selector,
+            bribes,
+            launchPadTokens,
+            _tokenId,
+            address(0),
+            new bytes(0),
+            rewardAmount
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
 
         assertEq(IERC20(claimingToken).balanceOf(_portfolioAccount), rewardAmount);
@@ -160,8 +202,12 @@ contract ClaimingFacetTest is Test, Setup {
         uint256 ownerUsdcBefore = IERC20(_usdc).balanceOf(ILoan(_loanContract).owner());
 
         // Claim launchpad token with swap
-        vm.startPrank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            ClaimingFacet.claimLaunchpadToken.selector,
             bribes, 
             launchPadTokens, 
             _tokenId, 
@@ -169,6 +215,7 @@ contract ClaimingFacetTest is Test, Setup {
             tradeData, 
             expectedUsdcOutput
         );
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
 
         // Verify the swap happened - portfolio account should have received USDC

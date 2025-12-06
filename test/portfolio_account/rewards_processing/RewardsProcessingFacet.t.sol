@@ -85,6 +85,34 @@ contract RewardsProcessingFacetTest is Test, Setup {
         IUSDC(rewardsToken).mint(_portfolioAccount, rewardsAmount);
     }
 
+    // Helper function to add collateral via PortfolioManager multicall
+    function addCollateralViaMulticall(uint256 tokenId) internal {
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            CollateralFacet.addCollateral.selector,
+            tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
+    // Helper function to borrow via PortfolioManager multicall
+    function borrowViaMulticall(uint256 amount) internal {
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            LendingFacet.borrow.selector,
+            amount
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
     function testProcessRewardsZeroDebtPayToRecipient() public {
         setupRewards();
         
@@ -234,11 +262,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
 
     function testProcessRewardsActiveLoan() public {
         // Create active loan by adding collateral and borrowing
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 500e6; // 500 USDC
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
         
         // Verify we have debt
         uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
@@ -289,11 +315,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         setupRewards();
         
         // Create active loan with small debt
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 100e6; // 100 USDC (smaller than rewards)
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
         
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
@@ -358,8 +382,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Borrow to create active loan
         uint256 borrowAmount = 500e6;
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
         
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
@@ -428,11 +451,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         setupRewards();
         
         // Create active loan with large debt
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 2000e6; // 2000 USDC (larger than rewards)
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
         
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
@@ -484,11 +505,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         setupRewards();
         
         // Create active loan
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 500e6;
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
         
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
@@ -576,9 +595,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Create debt using LendingFacet
         uint256 borrowAmount = 1000e6; // Borrow 1000 USDC
-        vm.startPrank(_user);
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
         
         // Verify total debt is greater than 0
         uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
@@ -700,11 +717,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
 
     function testProcessRewardsActiveLoanWith100Rewards() public {
         // Create active loan by adding collateral and borrowing
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 100e6; // 100 USDC borrowed
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
 
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
@@ -715,18 +730,28 @@ contract RewardsProcessingFacetTest is Test, Setup {
         // Get actual debt (may include origination fees or other adjustments)
         uint256 actualDebtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         
-        // Fund the portfolio account with enough rewards to cover debt + fees
-        // Calculate fees first to ensure we have enough
-        uint256 rewardsAmount = 100e6;
-        uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
-        uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
-        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        // Calculate required rewards amount to cover debt + fees
+        // Since fees are a percentage of rewards, we need to solve: rewards >= debt + (rewards * feeRate / 10000)
+        // This gives us: rewards >= debt / (1 - feeRate / 10000)
+        uint256 treasuryFeeRate = _loanConfig.getTreasuryFee();
+        uint256 lenderPremiumRate = _loanConfig.getLenderPremium();
+        uint256 zeroBalanceFeeRate = _loanConfig.getZeroBalanceFee();
+        uint256 totalFeeRate = treasuryFeeRate + lenderPremiumRate + zeroBalanceFeeRate;
         
-        // Ensure rewards are enough to cover debt + fees, otherwise increase rewards
-        if (rewardsAmount < actualDebtBefore + totalFees) {
-            rewardsAmount = actualDebtBefore + totalFees;
+        // Calculate minimum rewards needed: rewards = debt / (1 - totalFeeRate / 10000)
+        // Using fixed point math: rewards = (debt * 10000) / (10000 - totalFeeRate)
+        uint256 rewardsAmount = 100e6;
+        if (actualDebtBefore > 0 && totalFeeRate < 10000) {
+            uint256 minRewardsNeeded = (actualDebtBefore * 10000) / (10000 - totalFeeRate);
+            if (rewardsAmount < minRewardsNeeded) {
+                rewardsAmount = minRewardsNeeded;
+            }
         }
+        
+        // Calculate fees based on final rewards amount
+        uint256 protocolFee = (rewardsAmount * treasuryFeeRate) / 10000;
+        uint256 lenderPremium = (rewardsAmount * lenderPremiumRate) / 10000;
+        uint256 zeroBalanceFee = (rewardsAmount * zeroBalanceFeeRate) / 10000;
         
         address minter = IUSDC(loanAsset).masterMinter();
         vm.startPrank(minter);
@@ -774,11 +799,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
 
     function testProcessRewardsActiveLoanWith50DebtAnd100Rewards() public {
         // Create active loan with $50 debt
-        vm.startPrank(_user);
-        CollateralFacet(_portfolioAccount).addCollateral(_tokenId);
+        addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 50e6; // 50 USDC debt
-        LendingFacet(_portfolioAccount).borrow(borrowAmount);
-        vm.stopPrank();
+        borrowViaMulticall(borrowAmount);
 
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
