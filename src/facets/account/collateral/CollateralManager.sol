@@ -127,15 +127,6 @@ library CollateralManager {
         return excess;
     }
 
-    function enforceCollateral(address portfolioAccountConfig) public view {
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        uint256 totalDebt = getTotalDebt();
-        // TODO: if voted on but not claimed, then do not allow withdrawals
-        if(totalDebt > maxLoanIgnoreSupply) {
-            revert InsufficientCollateral();
-        }
-    }
-
     function getMaxLoan(address portfolioAccountConfig) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalLockedCollateral = getTotalLockedCollateral();
         LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();

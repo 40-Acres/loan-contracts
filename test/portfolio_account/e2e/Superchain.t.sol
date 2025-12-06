@@ -88,7 +88,6 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig));
         
 
-        // Deploy CollateralFacet which is required for enforceCollateral() call after multicall
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
         deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
         
@@ -114,7 +113,6 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         // Set portfolio factory on loan contract
         loanV2.setPortfolioFactory(address(portfolioFactory));
         
-        // Set loan contract address which is required for enforceCollateral() to call getMaxLoan()
         address loanContract = address(loanProxy);
         portfolioAccountConfig.setLoanContract(loanContract);
         // Note: We don't make loan/vault persistent here because they reference USDC

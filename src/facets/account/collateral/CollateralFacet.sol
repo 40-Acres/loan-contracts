@@ -57,10 +57,6 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
     }
 
-    function enforceCollateral() public view {
-        CollateralManager.enforceCollateral(address(_portfolioAccountConfig));
-    }
-
     function getMaxLoan() public view returns (uint256, uint256) {
         return CollateralManager.getMaxLoan(address(_portfolioAccountConfig));
     }

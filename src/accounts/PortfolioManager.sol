@@ -53,6 +53,7 @@ contract PortfolioManager is Ownable {
     error CallFailed(address portfolio, bytes reason);
     error FactoryDeploymentFailed();
     error FacetRegistryDeploymentFailed();
+    error InsufficientCollateral();
 
     /**
      * @dev Constructor - sets the initial owner
@@ -60,6 +61,71 @@ contract PortfolioManager is Ownable {
      */
     constructor(address initialOwner) Ownable(initialOwner) {}
 
+    /**
+     * @dev Modifier to enforce collateral requirements after operations
+     * Tracks debt and maxLoanIgnoreSupply before operations and ensures either:
+     * 1. Debt is within valid range (debt <= maxLoanIgnoreSupply), OR
+     * 2. Overcollateralization didn't increase (allows operations that improve or don't worsen the position)
+     * 
+     * This prevents users from being locked out when overcollateralized due to rewards rate decreases.
+     * Allows operations such as:
+     * - Paying back debt (debt decreases, overcollateralization decreases)
+     * - Adding collateral (maxLoanIgnoreSupply increases, overcollateralization decreases)
+     * - Operations that don't affect balance (voting, claiming rewards, etc.)
+     * 
+     * Prevents operations that worsen the position:
+     * - Removing collateral (maxLoanIgnoreSupply decreases, overcollateralization increases)
+     * - Borrowing more (debt increases, overcollateralization increases)
+     * - Paying debt but removing more collateral (net overcollateralization increases)
+     * 
+     * @param portfolios Array of portfolio addresses to check
+     */
+    modifier enforceCollateral(address[] calldata portfolios) {
+        // Track debt and maxLoanIgnoreSupply before operations
+        uint256[] memory previousDebts = new uint256[](portfolios.length);
+        uint256[] memory previousMaxLoanIgnoreSupply = new uint256[](portfolios.length);
+        for (uint256 i = 0; i < portfolios.length; i++) {
+            previousDebts[i] = ICollateralFacet(address(portfolios[i])).getTotalDebt();
+            (, previousMaxLoanIgnoreSupply[i]) = ICollateralFacet(address(portfolios[i])).getMaxLoan();
+        }
+        
+        // Execute the function body
+        _;
+        
+        // Enforce collateral after operations
+        for (uint256 i = 0; i < portfolios.length; i++) {
+            address portfolio = portfolios[i];
+            uint256 currentDebt = ICollateralFacet(address(portfolio)).getTotalDebt();
+            (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = ICollateralFacet(address(portfolio)).getMaxLoan();
+            
+            // Allow if debt is within valid range (standard check)
+            if(currentDebt <= maxLoanIgnoreSupply) {
+                continue;
+            }
+            
+            // Account is overcollateralized (currentDebt > maxLoanIgnoreSupply)
+            // Allow operations that improve or don't worsen the position:
+            // 1. Debt decreased AND maxLoanIgnoreSupply didn't decrease by more than debt decrease, OR
+            // 2. Debt stayed same or decreased AND maxLoanIgnoreSupply stayed same or increased
+            //    (allows operations that don't affect balance, like voting/claiming, or adding collateral)
+            
+            // Calculate overcollateralization before and after
+            uint256 previousOvercollateralization = previousDebts[i] > previousMaxLoanIgnoreSupply[i] 
+                ? previousDebts[i] - previousMaxLoanIgnoreSupply[i] 
+                : 0;
+            uint256 currentOvercollateralization = currentDebt > maxLoanIgnoreSupply 
+                ? currentDebt - maxLoanIgnoreSupply 
+                : 0;
+            
+            // Allow if overcollateralization didn't increase (position didn't worsen)
+            if(currentOvercollateralization <= previousOvercollateralization) {
+                continue;
+            }
+            
+            // Position worsened AND account is overcollateralized - revert
+            revert InsufficientCollateral();
+        }
+    }
 
     /**
      * @dev Deploy a new PortfolioFactory and automatically register it
@@ -154,6 +220,7 @@ contract PortfolioManager is Ownable {
      * @dev Execute multiple calls across different portfolio accounts
      * Verifies that msg.sender owns all portfolio accounts before executing
      * Reverts if any call fails
+     * Automatically enforces collateral requirements after operations
      * @param calldatas Array of calldatas to execute
      * @param portfolios Array of portfolio addresses to execute the calldatas on
      * @return results Array of return data from each call
@@ -161,7 +228,7 @@ contract PortfolioManager is Ownable {
     function multicall(
         bytes[] calldata calldatas,
         address[] calldata portfolios
-    ) external returns (bytes[] memory results) {
+    ) external enforceCollateral(portfolios) returns (bytes[] memory results) {
         require(calldatas.length > 0, "PortfolioManager: No calldatas provided");
         require(portfolios.length > 0, "PortfolioManager: No portfolios provided");
         require(calldatas.length == portfolios.length, "PortfolioManager: Calldatas and portfolios length mismatch");
@@ -202,12 +269,6 @@ contract PortfolioManager is Ownable {
         }
         
         emit CrossAccountMulticall(msg.sender, portfolios);
-
-        // enforce collateral for all portfolio accounts
-        for (uint256 i = 0; i < calldatas.length; i++) {
-            address portfolio = portfolios[i];
-            ICollateralFacet(address(portfolio)).enforceCollateral();
-        }
         
         return results;
     }
