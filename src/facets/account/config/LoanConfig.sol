@@ -33,6 +33,9 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         uint256 multiplier;
     }
 
+    error RewardsRateTooHigh();
+    error MultiplierTooHigh();
+
     // Named storage slot for account data
     bytes32 private constant ACCOUNT_STORAGE_POSITION = keccak256("storage.LoanConfig");
 
@@ -53,6 +56,10 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setRewardsRate(uint256 rewardsRate) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+        // limit increase to 30%
+        if(rewardsRate > collateralStorage.rewardsRate * 1.3) {
+            revert RewardsRateTooHigh();
+        }
         collateralStorage.rewardsRate = rewardsRate;
     }
 
@@ -63,6 +70,10 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setMultiplier(uint256 multiplier) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+        // limit increase to 30%
+        if(multiplier > collateralStorage.multiplier * 1.3) {
+            revert MultiplierTooHigh();
+        }
         collateralStorage.multiplier = multiplier;
     }
 

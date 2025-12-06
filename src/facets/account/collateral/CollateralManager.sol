@@ -7,6 +7,10 @@ import {LoanConfig} from "../config/LoanConfig.sol";
 
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+
+import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 /**
  * @title CollateralManager
  * @dev Diamond facet for managing collateral storage
@@ -95,8 +99,15 @@ library CollateralManager {
 
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        collateralManagerData.debt += amount;
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+
+        (uint256 maxLoan, ) = getMaxLoan(portfolioAccountConfig);
+        // Revert if no collateral (maxLoan == 0) or amount exceeds maxLoan
+        if (maxLoan == 0 || amount > maxLoan) {
+            revert InsufficientCollateral();
+        }
+        // Add the borrowed amount to debt
+        collateralManagerData.debt += amount;
         loanContract.borrowFromPortfolio(amount);
     }
 
@@ -125,12 +136,25 @@ library CollateralManager {
         }
     }
 
-    function getMaxLoan(address portfolioAccountConfig) public view returns (uint256, uint256) {
+    function getMaxLoan(address portfolioAccountConfig) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalLockedCollateral = getTotalLockedCollateral();
         LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
-        return LoanUtils.getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, 0, 0, 0);
+
+        ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        uint256 outstandingCapital = loanContract.activeAssets();
+        
+        address vault = loanContract._vault();
+        IERC4626 vaultAsset = IERC4626(vault);
+        // Get the underlying asset balance in the vault 
+        address underlyingAsset = vaultAsset.asset();
+        uint256 vaultBalance = IERC20(underlyingAsset).balanceOf(address(vault));
+        
+        // Get current total debt for the portfolio account 
+        uint256 currentLoanBalance = getTotalDebt();
+
+        return LoanUtils.getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, vaultBalance, outstandingCapital, currentLoanBalance);
     }
 
     function getOriginTimestamp(uint256 tokenId) external view returns (uint256) {

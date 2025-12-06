@@ -12,7 +12,7 @@ import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "./ICollateralFacet.sol";
 /**
- * @title LoanFacet
+ * @title CollateralFacet
  */
 contract CollateralFacet is AccessControl, ICollateralFacet {
     PortfolioFactory public immutable _portfolioFactory;

@@ -147,7 +147,15 @@ contract ClaimingFacetTest is Test, Setup {
     function testClaimLaunchpadTokenActiveBalanceReceiveToken() public {
         // Add collateral and create debt to simulate active loan balance
         addCollateralViaMulticall(_tokenId);
-        borrowViaMulticall(1e6);
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        uint256 borrowAmount = 1e6;
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_usdc), vault, vaultBalance);
+        
+        borrowViaMulticall(borrowAmount);
 
         // Set up launchpad token voting
         vm.startPrank(_owner);

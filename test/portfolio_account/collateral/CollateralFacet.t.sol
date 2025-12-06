@@ -18,6 +18,7 @@ import {CollateralFacet} from "../../../src/facets/account/collateral/Collateral
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
 import {Setup} from "../utils/Setup.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
 contract CollateralFacetTest is Test, Setup {
 
@@ -129,6 +130,13 @@ contract CollateralFacetTest is Test, Setup {
         
         addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 1e6;
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
         borrowViaMulticall(borrowAmount);
         
         // should revert since collateral is not enough (has debt)
@@ -136,7 +144,8 @@ contract CollateralFacetTest is Test, Setup {
         removeCollateralViaMulticall(_tokenId);
 
         // Pay back full debt (borrowFromPortfolio doesn't add origination fee)
-        uint256 fullDebt = borrowAmount;
+        // Get actual debt which may be less than requested if capped
+        uint256 fullDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
         
         // Fund portfolio with USDC for payment
         uint256 currentBalance = _asset.balanceOf(_portfolioAccount);
@@ -165,13 +174,22 @@ contract CollateralFacetTest is Test, Setup {
         addCollateralViaMulticall(_tokenId);
         addCollateralViaMulticall(_tokenId2);
         uint256 borrowAmount = 1e6;
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
         borrowViaMulticall(borrowAmount);
         removeCollateralViaMulticall(_tokenId2);
         
         int128 lockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), uint256(uint128(lockedAmount)));
         // Debt doesn't include origination fee for portfolio accounts
-        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount);
+        // Get actual debt which may be less than requested if capped by vault constraints
+        uint256 actualDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(actualDebt, borrowAmount, "Debt should match borrow amount (or be capped if vault constraints apply)");
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount);
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioFactory.ownerOf(_portfolioAccount));
     }

@@ -30,6 +30,10 @@ import {DeployBridgeFacet} from "../../../script/portfolio_account/facets/Deploy
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
 import {DeployCollateralFacet} from "../../../script/portfolio_account/facets/DeployCollateralFacet.s.sol";
+import {Loan} from "../../../src/Loan.sol";
+import {Loan as LoanV2} from "../../../src/LoanV2.sol";
+import {Vault} from "../../../src/VaultV2.sol";
+import {Vault} from "../../../src/VaultV2.sol";
 
 contract SuperchainTest is Test, Setup, MockERC20Utils {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -51,6 +55,10 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         uint256 fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(144334133);
+        
+        // USDC address on Optimism fork (different from Base)
+        address usdc = address(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
+        // Note: We don't make USDC persistent because we'll switch to INK fork where it doesn't exist
         
         // Deploy and overwrite ROOT_VOTING_REWARDS_FACTORY with mock
         address rootVotingRewardsFactoryAddress = address(0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F);
@@ -83,6 +91,34 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         // Deploy CollateralFacet which is required for enforceCollateral() call after multicall
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
         deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
+        
+        // Deploy fresh Loan contract and Vault
+        // USDC is already marked as persistent above
+        Loan loanImplementation = new Loan();
+        ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
+        Vault vaultImplementation = new Vault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        Vault vault = Vault(address(vaultProxy));
+        
+        // Initialize vault
+        vault.initialize(usdc, address(loanProxy), "40base-USDC-VAULT", "40base-USDC-VAULT");
+        
+        // Initialize loan
+        Loan(address(loanProxy)).initialize(address(vault), usdc);
+        
+        // Upgrade loan to LoanV2
+        LoanV2 loanV2Impl = new LoanV2();
+        LoanV2 loanV2 = LoanV2(payable(loanProxy));
+        loanV2.upgradeToAndCall(address(loanV2Impl), new bytes(0));
+        
+        // Set portfolio factory on loan contract
+        loanV2.setPortfolioFactory(address(portfolioFactory));
+        
+        // Set loan contract address which is required for enforceCollateral() to call getMaxLoan()
+        address loanContract = address(loanProxy);
+        portfolioAccountConfig.setLoanContract(loanContract);
+        // Note: We don't make loan/vault persistent here because they reference USDC
+        // and we'll switch to INK fork where USDC doesn't exist
         
         // Set up authorized caller for claiming
         address authorizedCaller = address(0xaaaaa);
@@ -182,6 +218,8 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         uint256 inkFork = vm.createFork(vm.envString("INK_RPC_URL"));
         vm.selectFork(inkFork);
         vm.rollFork(30768635);
+        // Note: We don't need to make loan/vault/USDC persistent on INK fork
+        // since we're deploying fresh infrastructure on this fork and only checking balances
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         PortfolioManager ink_pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory ink_portfolioFactory, FacetRegistry ink_facetRegistry) = ink_pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
@@ -189,7 +227,9 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         (PortfolioAccountConfig ink_portfolioAccountConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig, SwapConfig ink_swapConfig) = ink_configDeployer.deploy();
 
         // deploy the bridge facet
+        // Use WETH address for INK fork (the bridge facet just stores the address, doesn't interact with it in constructor)
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();
+        // Note: Using WETH address here since USDC doesn't exist on INK fork, but BridgeFacet constructor only stores the address
         ink_deployer.deploy(address(ink_portfolioFactory), address(ink_portfolioAccountConfig), address(0x4200000000000000000000000000000000000006));
         
 

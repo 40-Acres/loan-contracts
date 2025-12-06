@@ -73,6 +73,12 @@ contract LendingFacetTest is Test, Setup {
         
         uint256 borrowAmount = 1e6; // 1 USDC
         
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
         // Borrow against collateral
         borrowViaMulticall(borrowAmount);
         
@@ -104,6 +110,13 @@ contract LendingFacetTest is Test, Setup {
         // Setup: add collateral and borrow
         addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 1e6;
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
         borrowViaMulticall(borrowAmount);
         
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount);
@@ -130,6 +143,13 @@ contract LendingFacetTest is Test, Setup {
         // Setup: add collateral and borrow
         addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 2e6; // 2 USDC
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
         borrowViaMulticall(borrowAmount);
         
         _assertDebtSynced(_tokenId);
@@ -157,13 +177,21 @@ contract LendingFacetTest is Test, Setup {
         // Setup: add collateral and initial borrow
         addCollateralViaMulticall(_tokenId);
         uint256 initialBorrow = 1e6;
+        uint256 additionalBorrow = 1e6;
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: total borrow / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 totalBorrow = initialBorrow + additionalBorrow;
+        uint256 vaultBalance = (totalBorrow * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
         borrowViaMulticall(initialBorrow);
         
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), initialBorrow);
         _assertDebtSynced(_tokenId);
         
         // Borrow more (should increase existing loan)
-        uint256 additionalBorrow = 1e6;
         borrowViaMulticall(additionalBorrow);
         
         // Total debt should be sum of both borrows
@@ -175,6 +203,11 @@ contract LendingFacetTest is Test, Setup {
     function testBorrowExceedsCollateral() public {
         // Add collateral
         addCollateralViaMulticall(_tokenId);
+        
+        // Fund vault (though borrow should fail before using it)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 1000000e6);
         
         // Try to borrow way more than collateral allows
         uint256 excessiveBorrow = 1000000e6; // 1M USDC - should exceed max loan
@@ -195,10 +228,11 @@ contract LendingFacetTest is Test, Setup {
         // Formula: maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) * multiplier) / 1e12
         uint256 maxLoanIgnoreSupply = (((totalLockedCollateral * rewardsRate) / 1000000) * multiplier) / 1e12;
         
-        // Get vault balance
+        // Get vault and fund it with enough balance for our test
         address loanContract = _portfolioAccountConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
-        uint256 vaultBalance = _asset.balanceOf(vault);
+        uint256 vaultBalance = maxLoanIgnoreSupply + 10e6; // Enough to exceed maxLoanIgnoreSupply
+        deal(address(_asset), vault, vaultBalance);
         
         // Ensure vault has enough balance for our test
         require(vaultBalance > maxLoanIgnoreSupply, "Vault balance must exceed maxLoanIgnoreSupply for this test");
@@ -224,6 +258,11 @@ contract LendingFacetTest is Test, Setup {
         addCollateralViaMulticall(_tokenId);
         addCollateralViaMulticall(tokenId2);
         
+        // Fund vault so borrows can succeed
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 5e6); // Enough for both borrows
+        
         // Borrow against first token
         uint256 borrow1 = 1e6;
         borrowViaMulticall(borrow1);
@@ -238,5 +277,121 @@ contract LendingFacetTest is Test, Setup {
         
         // Verify debt is tracked
         _assertDebtSynced(_tokenId);
+    }
+
+    function testBorrowLimitedByVault80PercentCap() public {
+        // Add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Get loan contract and vault
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        
+        // Set vault balance to 10 USD
+        uint256 vaultBalance = 10e6; // 10 USDC
+        deal(address(_asset), vault, vaultBalance);
+        
+        // Verify vault has 10 USD
+        assertEq(_asset.balanceOf(vault), vaultBalance, "Vault should have 10 USD");
+        
+        // Get outstandingCapital from loan contract (may be non-zero from previous tests)
+        uint256 outstandingCapital = ILoan(loanContract).activeAssets();
+        
+        // Calculate maxLoanIgnoreSupply based on collateral to ensure user can borrow at least 10 USD
+        uint256 totalLockedCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        
+        // Formula: maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) * multiplier) / 1e12
+        uint256 maxLoanIgnoreSupply = (((totalLockedCollateral * rewardsRate) / 1000000) * multiplier) / 1e12;
+        
+        // Ensure user has enough collateral to borrow 10 USD (or more)
+        // If not, we need to adjust the test setup
+        require(maxLoanIgnoreSupply >= 10e6, "User needs enough collateral to borrow at least 10 USD for this test");
+        
+        // Get the actual max loan considering vault constraints
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupplyActual) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        
+        // Verify maxLoanIgnoreSupply matches our calculation
+        assertEq(maxLoanIgnoreSupplyActual, maxLoanIgnoreSupply, "maxLoanIgnoreSupply should match calculation");
+        
+        // With vault balance of 10 USD and 80% cap:
+        // vaultSupply = vaultBalance + outstandingCapital
+        // maxUtilization = vaultSupply * 0.8
+        // vaultAvailableSupply = maxUtilization - outstandingCapital
+        // If outstandingCapital >= maxUtilization, maxLoan = 0 (vault is over-utilized)
+        // Otherwise, maxLoan = min(vaultAvailableSupply, vaultBalance, maxLoanIgnoreSupply - currentLoanBalance)
+        uint256 vaultSupply = vaultBalance + outstandingCapital;
+        uint256 maxUtilization = (vaultSupply * 8000) / 10000;
+        
+        // If vault is over-utilized, we need to adjust the test
+        require(outstandingCapital < maxUtilization, "Vault must not be over-utilized for this test");
+        
+        // Get current loan balance for this portfolio account
+        uint256 currentLoanBalance = CollateralFacet(_portfolioAccount).getTotalDebt();
+        
+        // Calculate expected maxLoan following the same logic as LoanUtils.getMaxLoanByRewardsRate
+        uint256 vaultAvailableSupply = maxUtilization - outstandingCapital;
+        uint256 expectedMaxLoan = maxLoanIgnoreSupply - currentLoanBalance;
+        
+        // Cap by vaultAvailableSupply
+        if (expectedMaxLoan > vaultAvailableSupply) {
+            expectedMaxLoan = vaultAvailableSupply;
+        }
+        
+        // Cap by vaultBalance
+        if (expectedMaxLoan > vaultBalance) {
+            expectedMaxLoan = vaultBalance;
+        }
+        
+        // The maxLoan should be capped by the 80% vault utilization limit
+        // Note: expectedMaxLoan accounts for outstandingCapital, so it may be less than 8 USD if outstandingCapital > 0
+        assertEq(maxLoan, expectedMaxLoan, "Max loan should be limited by 80% vault utilization cap");
+        
+        // Get user's balance before borrowing
+        uint256 userBalanceBefore = _asset.balanceOf(_user);
+        
+        // User requests expectedMaxLoan (the actual max they can borrow)
+        // The borrow should succeed with expectedMaxLoan amount
+        borrowViaMulticall(expectedMaxLoan);
+        
+        // User should receive expectedMaxLoan due to the 80% cap
+        uint256 userBalanceAfter = _asset.balanceOf(_user);
+        uint256 actualBorrowed = userBalanceAfter - userBalanceBefore;
+        
+        // Verify user received expectedMaxLoan
+        assertEq(actualBorrowed, expectedMaxLoan, "User should receive expectedMaxLoan");
+        
+        // Verify debt matches what was borrowed
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), expectedMaxLoan, "Debt should match borrowed amount");
+        
+        // Verify vault balance decreased by expectedMaxLoan
+        uint256 vaultBalanceAfterBorrow = vaultBalance - expectedMaxLoan;
+        assertEq(_asset.balanceOf(vault), vaultBalanceAfterBorrow, "Vault balance should decrease by expectedMaxLoan");
+        
+        // Verify that if more was in vault, user could borrow more (but still capped at 80%)
+        // This demonstrates the user could borrow more if vault had more funds
+        uint256 additionalVaultBalance = 15e6; // Add 15 more USD to vault
+        // Current vault balance after borrow
+        deal(address(_asset), vault, vaultBalanceAfterBorrow + additionalVaultBalance);
+        
+        // After adding more to vault, the max loan should increase
+        // Note: outstandingCapital may have increased due to the borrow, so we recalculate
+        uint256 newOutstandingCapital = ILoan(loanContract).activeAssets();
+        uint256 newVaultBalance = _asset.balanceOf(vault);
+        uint256 newVaultSupply = newVaultBalance + newOutstandingCapital;
+        uint256 newMaxUtilization = (newVaultSupply * 8000) / 10000;
+        uint256 newVaultAvailableSupply = newMaxUtilization > newOutstandingCapital ? newMaxUtilization - newOutstandingCapital : 0;
+        
+        // Get updated max loan to verify user could borrow more if vault had more funds
+        (uint256 maxLoanAfter, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        
+        // User could borrow more now (up to the new limit), demonstrating that with more vault funds,
+        // user could borrow more (subject to 80% cap and collateral limits)
+        assertGt(maxLoanAfter, 0, "User should be able to borrow more if vault had more funds");
+        
+        // The key point: even though user has collateral for 10+ USD, they were limited by the 80% vault utilization cap
+        assertTrue(maxLoanIgnoreSupply >= 10e6, "User has enough collateral to borrow 10+ USD");
+        assertEq(actualBorrowed, expectedMaxLoan, "But user only received expectedMaxLoan due to 80% vault cap");
     }
 }

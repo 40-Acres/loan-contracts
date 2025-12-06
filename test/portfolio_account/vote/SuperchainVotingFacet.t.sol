@@ -288,6 +288,13 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
         deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
         
+        // Set loan contract address which is required for enforceCollateral() to call getMaxLoan()
+        // Use Optimism loan contract address (not Base)
+        address loanContract = address(0xf132bD888897254521D13e2c401e109caABa06A7);
+        portfolioAccountConfig.setLoanContract(loanContract);
+        // Mark loan contract as persistent for fork testing
+        vm.makePersistent(loanContract);
+        
         superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true, 57073);
         superchainVotingConfig.setMinimumWethBalance(.001e18);
 

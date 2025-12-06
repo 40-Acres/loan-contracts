@@ -15,9 +15,12 @@ import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
+import {Loan} from "../../../src/Loan.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Vault} from "../../../src/VaultV2.sol";
 
 contract Setup is Test {
     ClaimingFacet public _claimingFacet;
@@ -41,7 +44,8 @@ contract Setup is Test {
     address public _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
     address public _usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
     address public _authorizedCaller = address(0xaaaaa);
-    address public _loanContract = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
+    address public _loanContract;
+    address public _vault;
     
     address public _user = address(0x40ac2e);
     address public _portfolioAccount;
@@ -89,19 +93,33 @@ contract Setup is Test {
         _loanConfig.setTreasuryFee(500);
         _loanConfig.setZeroBalanceFee(100);
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
-        _portfolioAccountConfig.setLoanContract(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
-
-        // upgrade Loan Contract
-        LoanV2 loanV2 = new LoanV2();
-        address loanContract = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
-        vm.startPrank(ILoan(loanContract).owner());
-        LoanV2(loanContract).upgradeToAndCall(address(loanV2), new bytes(0));
-        // Set portfolio factory in loan contract
-        LoanV2(loanContract).setPortfolioFactory(address(_portfolioFactory));
-        vm.stopPrank();
-
-        // Fund the vault with USDC to ensure liquidity for tests
-        address vault = LoanV2(loanContract)._vault();
-        deal(address(_asset), vault, 10_000_000e6); // 10M USDC
+        
+        // Deploy fresh Loan contract and Vault
+        Loan loanImplementation = new Loan();
+        ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
+        Vault vaultImplementation = new Vault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        Vault vault = Vault(address(vaultProxy));
+        
+        // Initialize vault
+        vault.initialize(address(_usdc), address(loanProxy), "40base-USDC-VAULT", "40base-USDC-VAULT");
+        
+        // Initialize loan
+        Loan(address(loanProxy)).initialize(address(vault), _usdc);
+        
+        // Upgrade loan to LoanV2
+        LoanV2 loanV2Impl = new LoanV2();
+        LoanV2 loanV2 = LoanV2(payable(loanProxy));
+        loanV2.upgradeToAndCall(address(loanV2Impl), new bytes(0));
+        
+        // Set portfolio factory on loan contract
+        loanV2.setPortfolioFactory(address(_portfolioFactory));
+        
+        // Store addresses
+        _loanContract = address(loanProxy);
+        _vault = address(vault);
+        
+        // Set loan contract in config
+        _portfolioAccountConfig.setLoanContract(_loanContract);
     }
 }
