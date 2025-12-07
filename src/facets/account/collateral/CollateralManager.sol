@@ -125,26 +125,20 @@ library CollateralManager {
     function decreaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         
-        
-        // Process debt payment
+        // get the total debt to ensure we don't overpay
         uint256 totalDebt = collateralManagerData.debt;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
-        collateralManagerData.debt -= balancePayment;
         excess = amount - balancePayment;
         
+        // for accounts migrated over, unpaid fees must be sent to protocol owner first as a balance payment
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
-        uint256 feesToPay = collateralManagerData.unpaidFees;
-        uint256 totalPayment = balancePayment + feesToPay;
-        
-        // Approve loan contract to transfer funds (executes in portfolio account context via delegatecall)
-        if (totalPayment > 0) {
-            address asset = loanContract._asset();
-            IERC20(asset).approve(address(loanContract), totalPayment);
-            loanContract.payFromPortfolio(balancePayment, feesToPay);
-            // Clear approval after use
-            IERC20(asset).approve(address(loanContract), 0);
-        }
+        uint256 feesToPay = collateralManagerData.unpaidFees > balancePayment ? balancePayment : collateralManagerData.unpaidFees;
 
+        IERC20(loanContract._asset()).approve(address(loanContract), balancePayment);
+        loanContract.payFromPortfolio(balancePayment, feesToPay);
+        IERC20(loanContract._asset()).approve(address(loanContract), 0);
+        
+        collateralManagerData.debt -= balancePayment;
         collateralManagerData.unpaidFees -= feesToPay;
         return excess;
     }

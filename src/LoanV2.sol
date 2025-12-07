@@ -1289,29 +1289,26 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
 
-    function payFromPortfolio(uint256 balanceToPay, uint256 unpaidFees) external {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external {
         address factory = getPortfolioFactory();
         require(factory != address(0));
 
         address portfolioOwner = PortfolioFactory(factory).ownerOf(msg.sender);
         require(portfolioOwner != address(0));
-
-        uint256 feesPaid = unpaidFees;
-        uint256 amountToVault = balanceToPay;
         
         // Handle unpaid fees first - transfer to protocol owner
-        if(feesPaid > 0) {
-            _asset.transferFrom(msg.sender, owner(), feesPaid);
-            amountToVault = balanceToPay - feesPaid;
-            emit LoanPaid(0, portfolioOwner, feesPaid, currentEpochStart(), true);
-            emit ProtocolFeePaid(currentEpochStart(), feesPaid, portfolioOwner, 0, address(_asset));
+        if(feesToPay > 0) {
+            _asset.transferFrom(msg.sender, owner(), feesToPay);
+            emit LoanPaid(0, portfolioOwner, feesToPay, currentEpochStart(), true);
+            emit ProtocolFeePaid(currentEpochStart(), feesToPay, portfolioOwner, 0, address(_asset));
         }
         
         // Transfer remaining amount to vault
-        if(amountToVault > 0) {
-            _asset.transferFrom(msg.sender, _vault, amountToVault);
-            _outstandingCapital -= amountToVault;
-            emit LoanPaid(0, portfolioOwner, amountToVault, currentEpochStart(), false);
+        uint256 balanceToPay = totalPayment - feesToPay;
+        if(balanceToPay > 0) {
+            _asset.transferFrom(msg.sender, _vault, balanceToPay);
+            _outstandingCapital -= balanceToPay;
+            emit LoanPaid(0, portfolioOwner, balanceToPay, currentEpochStart(), false);
         }
     }
 

@@ -117,7 +117,7 @@ contract MigrationWithUnpaidFeesTest is Test {
         console.log("Portfolio Account:", portfolioAccount);
     }
 
-    function testMigrateLoanWithUnpaidFees() public {
+    function testMigrateLoanWithUnpaidFeesFullPayoff() public {
         // Verify initial state
         (uint256 initialBalance, address initialBorrower) = loanContract.getLoanDetails(TOKEN_ID);
         require(initialBorrower == user, "User must be the borrower");
@@ -204,8 +204,9 @@ contract MigrationWithUnpaidFeesTest is Test {
         uint256 portfolioDebtAfter = CollateralFacet(portfolioAccount).getTotalDebt();
         console.log("Portfolio Debt After Payment:", portfolioDebtAfter);
         
-        // Debt should be reduced by payment amount minus fees paid
-        uint256 expectedDebtAfter = initialBalance - (paymentAmount - feesPaidToOwner);
+        // Debt should be reduced by the payment amount (fees are separate)
+        // Since paymentAmount equals initialBalance, debt should be fully paid (0)
+        uint256 expectedDebtAfter = initialBalance >= paymentAmount ? initialBalance - paymentAmount : 0;
         assertEq(portfolioDebtAfter, expectedDebtAfter, "Portfolio debt should be reduced correctly");
         
         // Verify unpaid fees were reduced
