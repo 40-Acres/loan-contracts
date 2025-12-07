@@ -6,5 +6,5 @@ pragma solidity ^0.8.28;
  * @dev Interface for the MigrationFacet contract
  */
 interface IMigrationFacet {
-    function migrate(uint256 tokenId) external;
+    function migrate(uint256 tokenId, uint256 unpaidFees) external;
 }

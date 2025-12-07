@@ -23,6 +23,7 @@ import {ICommunityRewards} from "./interfaces/ICommunityRewards.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 import { PortfolioFactory } from "./accounts/PortfolioFactory.sol";
 import { IMigrationFacet } from "./facets/account/migration/IMigrationFacet.sol";
+import { ICollateralFacet } from "./facets/account/collateral/ICollateralFacet.sol";
 
 interface IInternalFlashLoanReceiver {
     function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data) external returns (bool);
@@ -1284,32 +1285,52 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
 
         IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
-        IMigrationFacet(portfolio).migrate(tokenId);   // migrate the loan to the portfolio
+        IMigrationFacet(portfolio).migrate(tokenId, loan.unpaidFees);   // migrate the loan to the portfolio with unpaid fees
     }
 
 
-    function payFromPortfolio(uint256 balanceToPay) external {
+    function payFromPortfolio(uint256 balanceToPay, uint256 unpaidFees) external {
         address factory = getPortfolioFactory();
         require(factory != address(0));
 
         address portfolioOwner = PortfolioFactory(factory).ownerOf(msg.sender);
         require(portfolioOwner != address(0));
 
-        _asset.transferFrom(msg.sender, _vault, balanceToPay);
-        _outstandingCapital -= balanceToPay;
-        // if lender premium is 0, isManual is false, otherwise is true
-        emit LoanPaid(0, portfolioOwner, balanceToPay, currentEpochStart(), false);
+        uint256 feesPaid = unpaidFees;
+        uint256 amountToVault = balanceToPay;
+        
+        // Handle unpaid fees first - transfer to protocol owner
+        if(feesPaid > 0) {
+            _asset.transferFrom(msg.sender, owner(), feesPaid);
+            amountToVault = balanceToPay - feesPaid;
+            emit LoanPaid(0, portfolioOwner, feesPaid, currentEpochStart(), true);
+            emit ProtocolFeePaid(currentEpochStart(), feesPaid, portfolioOwner, 0, address(_asset));
+        }
+        
+        // Transfer remaining amount to vault
+        if(amountToVault > 0) {
+            _asset.transferFrom(msg.sender, _vault, amountToVault);
+            _outstandingCapital -= amountToVault;
+            emit LoanPaid(0, portfolioOwner, amountToVault, currentEpochStart(), false);
+        }
     }
 
-    function borrowFromPortfolio(uint256 amount) external {
+    function borrowFromPortfolio(uint256 amount) external returns (uint256 originationFee) {
         address factory = getPortfolioFactory();
         require(factory != address(0));
 
         address portfolioOwner = PortfolioFactory(factory).ownerOf(msg.sender);
         require(portfolioOwner != address(0));
 
-        _asset.transferFrom(_vault, portfolioOwner, amount);
+        originationFee = (amount * 80) / 10000; // 0.8%
         _outstandingCapital += amount;
+        
+        // Transfer origination fee to owner upfront
+        _asset.transferFrom(_vault, owner(), originationFee);
+        emit ProtocolFeePaid(currentEpochStart(), originationFee, portfolioOwner, 0, address(_asset));
+        
+        // Transfer remaining amount to portfolio owner
+        _asset.transferFrom(_vault, portfolioOwner, amount - originationFee);
         emit FundsBorrowed(0, portfolioOwner, amount);
     }
 

@@ -51,6 +51,10 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         return CollateralManager.getTotalDebt();
     }
 
+    function getUnpaidFees() public view returns (uint256) {
+        return CollateralManager.getUnpaidFees();
+    }
+
     function removeCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);

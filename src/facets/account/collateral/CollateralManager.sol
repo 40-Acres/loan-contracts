@@ -26,6 +26,7 @@ library CollateralManager {
         mapping(uint256 tokenId => uint256 originTimestamp) originTimestamps;
         uint256 totalLockedCollateral;
         uint256 debt;
+        uint256 unpaidFees;
     }
 
     function _getCollateralManagerData() internal pure returns (CollateralManagerData storage collateralManagerData) {
@@ -97,6 +98,11 @@ library CollateralManager {
         return collateralManagerData.debt;
     }
 
+    function getUnpaidFees() public view returns (uint256) {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        return collateralManagerData.unpaidFees;
+    }
+
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
@@ -106,24 +112,40 @@ library CollateralManager {
         if (maxLoan == 0 || amount > maxLoan) {
             revert InsufficientCollateral();
         }
-        // Add the borrowed amount to debt
-        collateralManagerData.debt += amount;
         loanContract.borrowFromPortfolio(amount);
+        collateralManagerData.debt += amount;
     }
 
-    function migrateDebt(address portfolioAccountConfig, uint256 amount) external {
+    function migrateDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         collateralManagerData.debt += amount;
+        collateralManagerData.unpaidFees += unpaidFees;
     }
 
     function decreaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        
+        
+        // Process debt payment
         uint256 totalDebt = collateralManagerData.debt;
-        uint256 amountToDecrease = totalDebt > amount ? amount : totalDebt;
-        collateralManagerData.debt -= amountToDecrease;
-        excess = amount - amountToDecrease;
+        uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
+        collateralManagerData.debt -= balancePayment;
+        excess = amount - balancePayment;
+        
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
-        loanContract.payFromPortfolio(amountToDecrease);
+        uint256 feesToPay = collateralManagerData.unpaidFees;
+        uint256 totalPayment = balancePayment + feesToPay;
+        
+        // Approve loan contract to transfer funds (executes in portfolio account context via delegatecall)
+        if (totalPayment > 0) {
+            address asset = loanContract._asset();
+            IERC20(asset).approve(address(loanContract), totalPayment);
+            loanContract.payFromPortfolio(balancePayment, feesToPay);
+            // Clear approval after use
+            IERC20(asset).approve(address(loanContract), 0);
+        }
+
+        collateralManagerData.unpaidFees -= feesToPay;
         return excess;
     }
 

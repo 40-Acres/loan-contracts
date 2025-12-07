@@ -26,16 +26,6 @@ function _asset() external view returns (address);
     function setTopUpAndPreferredToken(uint256 tokenId, bool topUp, address preferredToken) external;
     function setZeroBalanceOption(uint256 tokenId, ZeroBalanceOption zeroBalanceOption) external;
 
-    /**
-     * @notice Finalizes a marketplace purchase by assigning the borrower to the buyer
-     * @dev Must only be callable by the configured marketplace/diamond/router
-     * @param tokenId The ID of the loan (NFT)
-     * @param buyer The address of the buyer
-     * @param expectedSeller The expected seller recorded on the listing
-     */
-    function finalizeMarketPurchase(uint256 tokenId, address buyer, address expectedSeller) external;
-    function finalizeLBOPurchase(uint256 tokenId, address buyer) external;
-    function finalizeOfferPurchase(uint256 tokenId, address buyer, address expectedSeller, uint256 offerId) external;
     
     /**
      * @notice Calculates the maximum loan amount for a token
@@ -62,6 +52,6 @@ function _asset() external view returns (address);
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
     function handleZeroBalanceLoanPortfolioAccount(uint256 tokenId, address asset, uint256 totalRewards, uint256 rewardsPaidtoOwner, uint256 rewardsInvested, uint256 protocolFee) external;
 
-    function borrowFromPortfolio(uint256 amount) external;
-    function payFromPortfolio(uint256 balanceToPay) external;
+    function borrowFromPortfolio(uint256 amount) external returns (uint256 originationFee);
+    function payFromPortfolio(uint256 balanceToPay, uint256 unpaidFees) external;
 }

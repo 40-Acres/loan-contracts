@@ -360,7 +360,7 @@ contract LendingFacetTest is Test, Setup {
         uint256 actualBorrowed = userBalanceAfter - userBalanceBefore;
         
         // Verify user received expectedMaxLoan
-        assertEq(actualBorrowed, expectedMaxLoan, "User should receive expectedMaxLoan");
+        assertEq(actualBorrowed, expectedMaxLoan - (expectedMaxLoan * 80) / 10000, "User should receive expectedMaxLoan minus origination fee");
         
         // Verify debt matches what was borrowed
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), expectedMaxLoan, "Debt should match borrowed amount");
@@ -392,6 +392,7 @@ contract LendingFacetTest is Test, Setup {
         
         // The key point: even though user has collateral for 10+ USD, they were limited by the 80% vault utilization cap
         assertTrue(maxLoanIgnoreSupply >= 10e6, "User has enough collateral to borrow 10+ USD");
-        assertEq(actualBorrowed, expectedMaxLoan, "But user only received expectedMaxLoan due to 80% vault cap");
+        // User receives expectedMaxLoan minus origination fee (0.8%)
+        assertEq(actualBorrowed, expectedMaxLoan - (expectedMaxLoan * 80) / 10000, "But user only received expectedMaxLoan minus origination fee due to 80% vault cap");
     }
 }

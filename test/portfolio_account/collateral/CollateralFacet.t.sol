@@ -143,7 +143,7 @@ contract CollateralFacetTest is Test, Setup {
         vm.expectRevert();
         removeCollateralViaMulticall(_tokenId);
 
-        // Pay back full debt (borrowFromPortfolio doesn't add origination fee)
+        // Pay back full debt (debt includes origination fee, but user only receives net amount)
         // Get actual debt which may be less than requested if capped
         uint256 fullDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
         
