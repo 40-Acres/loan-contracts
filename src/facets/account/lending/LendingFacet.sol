@@ -17,21 +17,30 @@ import {AccessControl} from "../utils/AccessControl.sol";
 contract LendingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
+    IERC20 public immutable _lendingToken;
 
     error NotOwnerOfToken();
     error NotPortfolioOwner();
 
-    constructor(address portfolioFactory, address portfolioAccountConfig) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
+        _lendingToken = IERC20(lendingToken);
     }
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
     }
 
-    function pay(uint256 tokenId, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function pay(uint256 amount) public  {
+        // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
+        address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
+
+        // transfer the funds from the from address to the portfolio account then pay the loan
+        IERC20(address(_lendingToken)).transferFrom(from, address(this), amount);
+        IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), amount);
         CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
+        IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), 0);
     }
 }

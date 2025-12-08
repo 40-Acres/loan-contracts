@@ -67,4 +67,8 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
     function getOriginTimestamp(uint256 tokenId) public view returns (uint256) {
         return CollateralManager.getOriginTimestamp(tokenId);
     }
+
+    function getCollateralToken() public view returns (address tokenAddress) {
+        return address(_votingEscrow);
+    }
 }

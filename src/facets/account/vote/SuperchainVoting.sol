@@ -31,11 +31,13 @@ contract SuperchainVotingFacet is VotingFacet {
 
     function vote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) public override onlyPortfolioManagerMulticall(_portfolioFactory) {
         for(uint256 i = 0; i < pools.length; i++) {
-            bool isSuperchainPool = _superchainVotingConfig.isSuperchainPool(pools[i]);
-            if(isSuperchainPool) {
+            if(_superchainVotingConfig.isSuperchainPool(pools[i])) {
                 _requireMinimumWethBalance();
                 uint256 chainId = _superchainVotingConfig.getSuperchainPoolChainId(pools[i]);
-                IRootVotingRewardsFactory(ROOT_VOTING_REWARDS_FACTORY).setRecipient(chainId, address(this));
+                address recipient = IRootVotingRewardsFactory(ROOT_VOTING_REWARDS_FACTORY).recipient(address(this), chainId);
+                if(recipient != address(this)) {
+                    IRootVotingRewardsFactory(ROOT_VOTING_REWARDS_FACTORY).setRecipient(chainId, address(this));
+                }
             }
         }
         super.vote(tokenId, pools, weights);

@@ -94,7 +94,8 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
             address(loanConfig),
             address(usdc),
             address(0), // swapConfig - not needed
-            BASE_LOAN_CONTRACT // loanContract
+            BASE_LOAN_CONTRACT, // loanContract
+            address(usdc) // lendingToken
         );
         
         // Set loan contract in config
@@ -178,9 +179,10 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         
         // Execute first payment
         vm.startPrank(portfolioOwner);
+        deal(address(usdc), portfolioOwner, firstPaymentAmount);
+        IERC20(usdc).approve(portfolioAccount, firstPaymentAmount);
         bytes memory firstPayCalldata = abi.encodeWithSelector(
             LendingFacet.pay.selector,
-            TOKEN_ID,
             firstPaymentAmount
         );
         
@@ -233,9 +235,10 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         
         // Execute second payment
         vm.startPrank(portfolioOwner);
+        deal(address(usdc), portfolioOwner, secondPaymentAmount);
+        IERC20(usdc).approve(portfolioAccount, secondPaymentAmount);
         bytes memory secondPayCalldata = abi.encodeWithSelector(
             LendingFacet.pay.selector,
-            TOKEN_ID,
             secondPaymentAmount
         );
         

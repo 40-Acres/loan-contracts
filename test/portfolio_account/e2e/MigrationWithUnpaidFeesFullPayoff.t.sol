@@ -94,7 +94,8 @@ contract MigrationWithUnpaidFeesTest is Test {
             address(loanConfig),
             address(usdc),
             address(0), // swapConfig - not needed
-            BASE_LOAN_CONTRACT // loanContract
+            BASE_LOAN_CONTRACT, // loanContract
+            address(usdc) // lendingToken
         );
         
         // Set loan contract in config
@@ -170,10 +171,11 @@ contract MigrationWithUnpaidFeesTest is Test {
         address portfolioOwner = PortfolioFactory(portfolioFactory).ownerOf(portfolioAccount);
         vm.startPrank(portfolioOwner);
         
+        deal(address(usdc), portfolioOwner, paymentAmount);
+        IERC20(usdc).approve(portfolioAccount, paymentAmount);
         // Pay via multicall (using LendingFacet)
         bytes memory payCalldata = abi.encodeWithSelector(
             LendingFacet.pay.selector,
-            TOKEN_ID,
             paymentAmount
         );
         

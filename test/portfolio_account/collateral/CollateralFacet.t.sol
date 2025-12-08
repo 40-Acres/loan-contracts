@@ -70,17 +70,10 @@ contract CollateralFacetTest is Test, Setup {
     }
 
     // Helper function to pay via PortfolioManager multicall
-    function payViaMulticall(uint256 tokenId, uint256 amount) internal {
+    function pay(address portfolioAccount, uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
-            tokenId,
-            amount
-        );
-        _portfolioManager.multicall(calldatas, portfolios);
+        deal(address(_asset), _user, amount);
+        LendingFacet(portfolioAccount).pay(amount);
         vm.stopPrank();
     }
 
@@ -95,8 +88,16 @@ contract CollateralFacetTest is Test, Setup {
     function testAddCollateralOutsidePortfolioAccount() public {
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
         // Transfer token to portfolio owner first
-        vm.startPrank(_portfolioAccount);
-        IVotingEscrow(_ve).transferFrom(_portfolioAccount, _user, _tokenId);
+        vm.startPrank(_user);
+        // multicall remove collateral from portfolio account
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            CollateralFacet.removeCollateral.selector,
+            _tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         // Approve portfolio account to transfer the token
         vm.startPrank(_user);
@@ -151,12 +152,10 @@ contract CollateralFacetTest is Test, Setup {
         uint256 currentBalance = _asset.balanceOf(_portfolioAccount);
         deal(address(_asset), _portfolioAccount, currentBalance + fullDebt);
         
-        // Approve loan contract to transfer USDC
-        vm.startPrank(_portfolioAccount);
-        IERC20(_asset).approve(_portfolioAccountConfig.getLoanContract(), fullDebt);
+        vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, fullDebt);
         vm.stopPrank();
-        
-        payViaMulticall(_tokenId, fullDebt);
+        pay(_portfolioAccount, fullDebt);
         removeCollateralViaMulticall(_tokenId);
         
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
@@ -244,21 +243,17 @@ contract CollateralFacetTest is Test, Setup {
         uint256 currentBalance = _asset.balanceOf(_portfolioAccount);
         deal(address(_asset), _portfolioAccount, currentBalance + payAmount);
         
-        // Approve loan contract
-        vm.startPrank(_portfolioAccount);
-        IERC20(_asset).approve(loanContract, payAmount);
-        vm.stopPrank();
         
         // Try to pay debt and remove collateral in same call - should revert
         // because removing collateral reduces maxLoanIgnoreSupply more than paying debt reduces overcollateralization
         vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, payAmount);
         address[] memory portfolios = new address[](2);
         portfolios[0] = _portfolioAccount;
         portfolios[1] = _portfolioAccount; // Same portfolio for second operation
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.pay.selector,
-            _tokenId,
             payAmount
         );
         calldatas[1] = abi.encodeWithSelector(
@@ -280,17 +275,13 @@ contract CollateralFacetTest is Test, Setup {
         currentBalance = _asset.balanceOf(_portfolioAccount);
         deal(address(_asset), _portfolioAccount, currentBalance + largePayAmount - payAmount);
         
-        // Approve loan contract
-        vm.startPrank(_portfolioAccount);
-        IERC20(_asset).approve(loanContract, largePayAmount);
-        vm.stopPrank();
         
         // This should succeed because paying down most debt offsets the collateral removal
         vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, largePayAmount);
         // Reuse the same portfolios array (already has 2 entries from previous test)
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.pay.selector,
-            _tokenId,
             largePayAmount
         );
         calldatas[1] = abi.encodeWithSelector(

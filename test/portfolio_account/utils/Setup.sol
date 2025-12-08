@@ -70,7 +70,7 @@ contract Setup is Test {
         ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
         _loanContract = address(loanProxy);
 
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig), address(_loanContract));
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig), address(_loanContract), address(_usdc));
         vm.stopPrank();
 
         // create a portfolio account

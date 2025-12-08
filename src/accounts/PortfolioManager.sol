@@ -6,7 +6,7 @@ import "./FacetRegistry.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ICollateralFacet} from "../facets/account/collateral/ICollateralFacet.sol";
-
+import {console} from "forge-std/console.sol";
 /**
  * @title PortfolioManager
  * @dev Central manager for the portfolio system that deploys FacetRegistries and PortfolioFactories,
@@ -53,7 +53,7 @@ contract PortfolioManager is Ownable {
     error CallFailed(address portfolio, bytes reason);
     error FactoryDeploymentFailed();
     error FacetRegistryDeploymentFailed();
-    error InsufficientCollateral();
+    error InsufficientCollateral(uint256 currentDebt, uint256 maxLoanIgnoreSupply);
 
     /**
      * @dev Constructor - sets the initial owner
@@ -121,9 +121,14 @@ contract PortfolioManager is Ownable {
             if(currentOvercollateralization <= previousOvercollateralization) {
                 continue;
             }
+
+            // user user has no debt, allow the operation
+            if(currentDebt == 0) {
+                continue;
+            }
             
             // Position worsened AND account is overcollateralized - revert
-            revert InsufficientCollateral();
+            revert InsufficientCollateral(currentDebt, maxLoanIgnoreSupply);
         }
     }
 

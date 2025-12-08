@@ -181,7 +181,8 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
         // Deploy LendingFacet (required by MarketplaceFacet for LBO)
         lendingFacet = new LendingFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig)
+            address(portfolioAccountConfig),
+            USDC
         );
 
         // Deploy CollateralFacet (for reading collateral/debt state)
@@ -519,7 +520,7 @@ contract PortfolioLBOTest is DiamondMarketTestBase {
         vm.stopPrank();
         
         vm.prank(buyer); // owner of portfolio
-        LendingFacet(buyerPortfolio).pay(tokenId, loanBalance);
+        LendingFacet(buyerPortfolio).pay(loanBalance);
 
         // Verify loan is paid off
         (loanBalance, borrower) = ILoanReq(address(loan)).getLoanDetails(tokenId);

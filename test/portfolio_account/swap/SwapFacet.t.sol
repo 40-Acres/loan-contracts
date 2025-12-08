@@ -8,6 +8,7 @@ import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
+import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 
 contract SwapFacetTest is Test, Setup {
     SwapFacet public swapFacet;
@@ -208,6 +209,40 @@ contract SwapFacetTest is Test, Setup {
             inputAmount,
             outputToken,
             0 // zero expected output should fail
+        );
+        vm.stopPrank();
+    }
+
+    function testSwapFailsWithCollateralToken() public {
+        setupSwapTest();
+        
+        // Get the collateral token address
+        address collateralToken = CollateralFacet(_portfolioAccount).getCollateralToken();
+        
+        bytes memory swapData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwap.selector,
+            collateralToken,  // Attempt to swap collateral token
+            outputToken,
+            inputAmount,
+            outputAmount,
+            _portfolioAccount
+        );
+        
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        _swapConfig.approveSwapTarget(address(mockRouter));
+        vm.stopPrank();
+        
+        // Attempt to swap collateral token - should fail
+        vm.startPrank(_authorizedCaller);
+        vm.expectRevert("Input token cannot be collateral token");
+        swapFacet.swap(
+            address(_swapConfig),
+            address(mockRouter),
+            swapData,
+            collateralToken,  // Using collateral token as input
+            inputAmount,
+            outputToken,
+            expectedOutputAmount
         );
         vm.stopPrank();
     }

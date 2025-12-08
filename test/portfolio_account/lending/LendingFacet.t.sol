@@ -46,17 +46,10 @@ contract LendingFacetTest is Test, Setup {
     }
 
     // Helper function to pay via PortfolioManager multicall
-    function payViaMulticall(uint256 tokenId, uint256 amount) internal {
+    function pay(address portfolioAccount, uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
-            tokenId,
-            amount
-        );
-        _portfolioManager.multicall(calldatas, portfolios);
+        deal(address(_asset), _user, amount);
+        LendingFacet(portfolioAccount).pay(amount);
         vm.stopPrank();
     }
 
@@ -96,9 +89,16 @@ contract LendingFacetTest is Test, Setup {
     }
 
     function testBorrowFailsWithoutOwningToken() public {
-        // Transfer token out of portfolio first (need to prank as portfolio account)
-        vm.startPrank(_portfolioAccount);
-        IVotingEscrow(_ve).transferFrom(_portfolioAccount, address(0xdead), _tokenId);
+        // Remove collateral
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            CollateralFacet.removeCollateral.selector,
+            _tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
         // Should revert - insufficient collateral (no token owned means no collateral)
@@ -128,12 +128,12 @@ contract LendingFacetTest is Test, Setup {
         deal(address(_asset), _portfolioAccount, currentBalance + borrowAmount);
         
         // Approve loan contract to transfer USDC
-        vm.startPrank(_portfolioAccount);
-        IERC20(_asset).approve(_portfolioAccountConfig.getLoanContract(), borrowAmount);
+        vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, borrowAmount);
         vm.stopPrank();
         
         // Pay back the full loan balance
-        payViaMulticall(_tokenId, borrowAmount);
+        pay(_portfolioAccount, borrowAmount);
         
         // Debt should be zero
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), 0);
@@ -159,13 +159,13 @@ contract LendingFacetTest is Test, Setup {
         deal(address(_asset), _portfolioAccount, currentBalance + 1e6);
         
         // Approve loan contract to transfer USDC
-        vm.startPrank(_portfolioAccount);
-        IERC20(_asset).approve(_portfolioAccountConfig.getLoanContract(), 1e6);
+        vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, 1e6);
         vm.stopPrank();
         
         // Pay back half of the original amount
         uint256 payAmount = 1e6;
-        payViaMulticall(_tokenId, payAmount);
+        pay(_portfolioAccount, payAmount);
         
         // Debt should be reduced
         uint256 expectedBalance = borrowAmount - payAmount;

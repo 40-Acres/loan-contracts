@@ -7,6 +7,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SwapMod} from "./SwapMod.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 import {AccessControl} from "../../account/utils/AccessControl.sol";
+import {CollateralFacet} from "../collateral/CollateralFacet.sol";
+
 /**
  * @title SwapFacet
  * @dev Facet that swaps tokens within the portfolio
@@ -25,6 +27,9 @@ contract SwapFacet is AccessControl {
     }
 
     function swap(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
+        if(inputToken == CollateralFacet(address(this)).getCollateralToken()) {
+            revert("Input token cannot be collateral token");
+        }
         amount = SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount);
         return amount;
     }
