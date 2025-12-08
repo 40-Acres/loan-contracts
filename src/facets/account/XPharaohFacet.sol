@@ -156,7 +156,10 @@ contract XPharaohFacet {
         if(preferredToken != address(0)) {
             uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
             if(preferredTokenBalance > beginningPreferredTokenBalance) {
-                IERC20(preferredToken).transfer(address(msg.sender), preferredTokenBalance - beginningPreferredTokenBalance);
+                IERC20(preferredToken).transfer(
+                    address(msg.sender),
+                    preferredTokenBalance - beginningPreferredTokenBalance
+                    );
             }
         }
         if(IERC20(vaultAsset).balanceOf(address(this)) > beginningAssetBalance) {
