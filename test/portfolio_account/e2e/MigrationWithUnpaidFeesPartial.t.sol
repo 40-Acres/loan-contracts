@@ -142,6 +142,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         
         // Migrate the loan to portfolio account
         vm.startPrank(user);
+        console.log("Migrating loan to portfolio account");
         loanContract.migrateToPortfolio(TOKEN_ID);
         vm.stopPrank();
         
@@ -191,6 +192,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = firstPayCalldata;
         
+        console.log("Executing first payment");
         PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolios);
         vm.stopPrank();
         
@@ -243,6 +245,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         );
         
         calldatas[0] = secondPayCalldata;
+        console.log("Executing second payment");
         PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolios);
         vm.stopPrank();
         

@@ -16,7 +16,7 @@ import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 library UserLendingConfig {
 
     struct UserLendingConfigData {
-        address topUpEnabled;
+        bool topUpEnabled;
     }
 
     function _getUserLendingConfigData() internal pure returns (UserLendingConfigData storage collateralManagerData) {
@@ -27,12 +27,12 @@ library UserLendingConfig {
     }
 
 
-    function setTopUpEnabled(address topUpEnabled) external {
+    function setTopUp(bool topUpEnabled) external {
         UserLendingConfigData storage collateralManagerData = _getUserLendingConfigData();
         collateralManagerData.topUpEnabled = topUpEnabled;
     }
 
-    function getTopUpEnabled() external view returns (address) {
+    function getTopUp() external view returns (bool) {
         UserLendingConfigData storage collateralManagerData = _getUserLendingConfigData();
         return collateralManagerData.topUpEnabled;
     }

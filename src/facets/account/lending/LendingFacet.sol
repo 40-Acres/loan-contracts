@@ -46,14 +46,19 @@ contract LendingFacet is AccessControl {
         IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), 0);
     }
 
+    function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserLendingConfig.setTopUp(topUpEnabled);
+    }
+
     function topUp() public {
-        address topUpEnabled = UserLendingConfig.getTopUpEnabled();
-        require(topUpEnabled != address(0), "Top up not enabled");
+        bool topUpEnabled = UserLendingConfig.getTopUp();
+        if(!topUpEnabled) {
+            return;
+        }
         (uint256 maxLoan, ) = CollateralFacet(address(this)).getMaxLoan();
         if(maxLoan == 0) {
             return;
         }
-        
-
+        CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
     }
 }

@@ -77,6 +77,7 @@ contract CollateralFacetTest is Test, Setup {
         vm.stopPrank();
     }
 
+
     function testAddCollateralWithinPortfolioAccount() public {
         assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
         addCollateralViaMulticall(_tokenId);
@@ -295,9 +296,10 @@ contract CollateralFacetTest is Test, Setup {
         _portfolioManager.multicall(calldatas, portfolios);
 
 
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.pay.selector,
-            initialDebt
+            totalDebt
         );
         calldatas[1] = abi.encodeWithSelector(
             CollateralFacet.removeCollateral.selector,

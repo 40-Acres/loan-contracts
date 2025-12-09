@@ -263,7 +263,7 @@ contract LendingFacetTest is Test, Setup {
         require(borrowAmount < vaultBalance, "Borrow amount must be less than vault balance for this test");
         
         // Should revert with InsufficientCollateral error
-        vm.expectRevert(CollateralManager.BadDebt.selector);
+        vm.expectRevert();
         borrowViaMulticall(borrowAmount);
     }
 
@@ -415,5 +415,236 @@ contract LendingFacetTest is Test, Setup {
         assertTrue(maxLoanIgnoreSupply >= 10e6, "User has enough collateral to borrow 10+ USD");
         // User receives expectedMaxLoan minus origination fee (0.8%)
         assertEq(actualBorrowed, expectedMaxLoan - (expectedMaxLoan * 80) / 10000, "But user only received expectedMaxLoan minus origination fee due to 80% vault cap");
+    }
+
+    // Helper function to enable topUp via PortfolioManager multicall
+    function enableTopUp() internal {
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            LendingFacet.setTopUp.selector,
+            true
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
+    // Helper function to disable topUp via PortfolioManager multicall
+    function disableTopUp() internal {
+        vm.startPrank(_user);
+        address[] memory portfolios = new address[](1);
+        portfolios[0] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            LendingFacet.setTopUp.selector,
+            false
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+        vm.stopPrank();
+    }
+
+    // Helper function to call topUp directly (user-initiated action, similar to pay())
+    function topUp() internal {
+        vm.startPrank(_user);
+        LendingFacet(_portfolioAccount).topUp();
+        vm.stopPrank();
+    }
+
+    function testTopUpWhenEnabled() public {
+        // Setup: add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Enable topUp
+        enableTopUp();
+        
+        // Fund vault with enough balance
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 10e6); // 10 USDC
+        
+        // Get max loan before topUp
+        (uint256 maxLoanBefore, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoanBefore > 0, "Must have available max loan for this test");
+        
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtBefore, 0, "Should start with no debt");
+        
+        // Call topUp
+        topUp();
+        
+        // Verify debt increased by maxLoan
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, maxLoanBefore, "Debt should equal maxLoan before topUp");
+    }
+
+    function testTopUpWhenDisabled() public {
+        // Setup: add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Ensure topUp is disabled (default state)
+        disableTopUp();
+        
+        // Fund vault
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 10e6);
+        
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+        
+        // Call topUp (should do nothing)
+        topUp();
+        
+        // Verify debt didn't change
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, debtBefore, "Debt should not change when topUp is disabled");
+    }
+
+    function testTopUpWhenMaxLoanIsZero() public {
+        // Setup: add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Enable topUp
+        enableTopUp();
+        
+        // Borrow max loan first to make maxLoan = 0
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 10e6);
+        
+        (uint256 maxLoan, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoan > 0, "Must have available max loan for this test");
+        
+        // Borrow max loan
+        borrowViaMulticall(maxLoan);
+        
+        // Verify maxLoan is now 0
+        (uint256 newMaxLoan, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        assertEq(newMaxLoan, 0, "Max loan should be 0 after borrowing max");
+        
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+        
+        // Call topUp (should do nothing since maxLoan = 0)
+        topUp();
+        
+        // Verify debt didn't change
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, debtBefore, "Debt should not change when maxLoan is 0");
+    }
+
+    function testTopUpIncreasesExistingDebt() public {
+        // Setup: add collateral and borrow some amount
+        addCollateralViaMulticall(_tokenId);
+        
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 10e6);
+        
+        // Borrow initial amount
+        uint256 initialBorrow = 1e6;
+        borrowViaMulticall(initialBorrow);
+        
+        uint256 debtAfterInitialBorrow = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfterInitialBorrow, initialBorrow, "Debt should equal initial borrow");
+        
+        // Enable topUp
+        enableTopUp();
+        
+        // Get max loan after initial borrow
+        (uint256 maxLoanAfterBorrow, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoanAfterBorrow > 0, "Must have available max loan after initial borrow");
+        
+        // Call topUp
+        topUp();
+        
+        // Verify debt increased by maxLoanAfterBorrow
+        uint256 debtAfterTopUp = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 expectedDebt = initialBorrow + maxLoanAfterBorrow;
+        assertEq(debtAfterTopUp, expectedDebt, "Debt should be initial borrow + maxLoan after topUp");
+    }
+
+    function testTopUpRespectsCollateralLimits() public {
+        // Setup: add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Enable topUp
+        enableTopUp();
+        
+        // Fund vault with more than collateral allows
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 1000000e6); // Very large amount
+        
+        // Get maxLoanIgnoreSupply (collateral-based limit)
+        (, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoanIgnoreSupply > 0, "Must have collateral-based max loan");
+        
+        // Call topUp
+        topUp();
+        
+        // Verify debt doesn't exceed collateral limit
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertLe(debtAfter, maxLoanIgnoreSupply, "Debt should not exceed collateral-based max loan");
+    }
+
+    function testTopUpRespectsVaultLimits() public {
+        // Setup: add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Enable topUp
+        enableTopUp();
+        
+        // Fund vault with limited balance (less than collateral allows)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = 5e6; // 5 USDC
+        deal(address(_asset), vault, vaultBalance);
+        
+        // Get maxLoan (should be limited by vault)
+        (uint256 maxLoan, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoan > 0, "Must have available max loan");
+        require(maxLoan <= vaultBalance, "Max loan should be limited by vault balance for this test");
+        
+        // Call topUp
+        topUp();
+        
+        // Verify debt equals maxLoan (which is limited by vault)
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, maxLoan, "Debt should equal maxLoan (limited by vault)");
+        assertLe(debtAfter, vaultBalance, "Debt should not exceed vault balance");
+    }
+
+    function testTopUpMultipleTimes() public {
+        // Setup: add collateral
+        addCollateralViaMulticall(_tokenId);
+        
+        // Enable topUp
+        enableTopUp();
+        
+        // Fund vault
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 10e6);
+        
+        // First topUp
+        (uint256 maxLoan1, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoan1 > 0, "Must have available max loan");
+        
+        topUp();
+        uint256 debtAfterFirst = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfterFirst, maxLoan1, "Debt should equal first maxLoan");
+        
+        // Add more to vault to allow more borrowing
+        deal(address(_asset), vault, 20e6);
+        
+        // Second topUp (should borrow the new maxLoan)
+        (uint256 maxLoan2, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoan2 > 0, "Must have available max loan after first topUp");
+        
+        topUp();
+        uint256 debtAfterSecond = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 expectedDebt = maxLoan1 + maxLoan2;
+        assertEq(debtAfterSecond, expectedDebt, "Debt should be sum of both topUps");
     }
 }

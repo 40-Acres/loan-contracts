@@ -11,7 +11,6 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {console} from "forge-std/console.sol";
 
 /**
  * @title CollateralManager
@@ -30,7 +29,7 @@ library CollateralManager {
         uint256 totalLockedCollateral;
         uint256 debt;
         uint256 unpaidFees;
-        uint256 badDebt;
+        uint256 overSuppliedVaultDebt;
         uint256 undercollateralizedDebt;
     }
 
@@ -42,7 +41,6 @@ library CollateralManager {
     }
 
     function addLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
-        require(ve != address(0), "Voting escrow address cannot be zero");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
@@ -50,17 +48,28 @@ library CollateralManager {
         if(previousLockedCollateral != 0) {
             return;
         }
-        int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
-        require(newLockedCollateralInt > 0, "Locked collateral amount must be greater than 0");
-        uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
 
-        collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
-        collateralManagerData.totalLockedCollateral += newLockedCollateral;
-        collateralManagerData.originTimestamps[tokenId] = block.timestamp;
-
+        _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+    }
+
+    function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
+        _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
+    }
+
+    function _addLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) internal {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        require(ve != address(0), "Voting escrow address cannot be zero");
+
+        int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
+        require(newLockedCollateralInt > 0, "Locked collateral amount must be greater than 0");
+        uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
+        
+        collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
+        collateralManagerData.totalLockedCollateral += newLockedCollateral;
+        collateralManagerData.originTimestamps[tokenId] = block.timestamp;
     }
 
 
@@ -128,7 +137,7 @@ library CollateralManager {
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         // if the amount is greater than the max loan (vault supply constraints), add to bad debt
         if (amount > maxLoan) {
-            collateralManagerData.badDebt += amount - maxLoan;
+            collateralManagerData.overSuppliedVaultDebt += amount - maxLoan;
         }
         // if the amount is greater than the max loan ignore supply (collateral-based), add to undercollateralized debt
         if(amount > maxLoanIgnoreSupply) {
@@ -152,8 +161,10 @@ library CollateralManager {
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
         excess = amount - balancePayment;
 
-        if(collateralManagerData.badDebt > 0) {
-            collateralManagerData.badDebt -= collateralManagerData.badDebt > balancePayment ? balancePayment : collateralManagerData.badDebt;
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+
+        if(collateralManagerData.overSuppliedVaultDebt > 0) {
+            collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > balancePayment ? balancePayment : collateralManagerData.overSuppliedVaultDebt;
         }
         
         // for accounts migrated over, unpaid fees must be sent to protocol owner first as a balance payment
@@ -167,14 +178,9 @@ library CollateralManager {
         collateralManagerData.debt -= balancePayment;
         collateralManagerData.unpaidFees -= feesToPay;
         
-        // Recalculate undercollateralized debt after debt reduction
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        uint256 newTotalDebt = collateralManagerData.debt;
-        if(newTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt = newTotalDebt - maxLoanIgnoreSupply;
-        } else {
-            collateralManagerData.undercollateralizedDebt = 0;
-        }
+
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
         
         return excess;
     }
@@ -208,6 +214,7 @@ library CollateralManager {
     /**
      * @dev Enforce collateral requirements
      * @return success True if collateral requirements are met, revert otherwise
+     * @notice This function prevents any additional debt from being added to the portfolio account
      * @notice The bad debt is the debt that is not being paid back by the user, this should always be 0 at the end of every transaction
      * @notice The undercollateralized debt is the debt that is not being covered by the collateral, this should always be 0 at the end of every transaction
      * @notice The collateral requirements are:
@@ -217,9 +224,8 @@ library CollateralManager {
      */
     function enforceCollateralRequirements() external view returns (bool success) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        console.log("enforceCollateralRequirements");
-        if(collateralManagerData.badDebt > 0) {
-            revert BadDebt(collateralManagerData.badDebt);
+        if(collateralManagerData.overSuppliedVaultDebt > 0) {
+            revert BadDebt(collateralManagerData.overSuppliedVaultDebt);
         }
         if(collateralManagerData.undercollateralizedDebt > 0) {
             revert UndercollateralizedDebt(collateralManagerData.undercollateralizedDebt);
@@ -269,65 +275,40 @@ library CollateralManager {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
+    /**
+     * @dev Update the undercollateralized debt
+     * @param previousMaxLoanIgnoreSupply The previous max loan ignore supply
+     * @param newMaxLoanIgnoreSupply The new max loan ignore supply
+     */
     function _updateUndercollateralizedDebt(uint256 previousMaxLoanIgnoreSupply, uint256 newMaxLoanIgnoreSupply) internal {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 totalDebt = collateralManagerData.debt;
         
         bool isRemovingCollateral = previousMaxLoanIgnoreSupply > newMaxLoanIgnoreSupply;
-        console.log("isRemovingCollateral", isRemovingCollateral);
-        console.log("previousMaxLoanIgnoreSupply", previousMaxLoanIgnoreSupply);
-        console.log("newMaxLoanIgnoreSupply", newMaxLoanIgnoreSupply);
-        if(totalDebt < newMaxLoanIgnoreSupply) {
+
+        // If debt is now fully covered, set undercollateralized debt to 0
+        if(totalDebt <= newMaxLoanIgnoreSupply) {
             collateralManagerData.undercollateralizedDebt = 0;
-            console.log("totalDebt < newMaxLoanIgnoreSupply");        
-            console.log("collateralManagerData.undercollateralizedDebt", collateralManagerData.undercollateralizedDebt);
             return;
         }
-        console.log("totalDebt", totalDebt);
-        console.log("newMaxLoanIgnoreSupply", newMaxLoanIgnoreSupply);
-        console.log("previousMaxLoanIgnoreSupply", previousMaxLoanIgnoreSupply);
-        uint256 totalDebtMinusNewMaxLoanIgnoreSupply = totalDebt - newMaxLoanIgnoreSupply;
-        // Safe subtraction: if totalDebt < previousMaxLoanIgnoreSupply, then undercollateralized debt was 0 before
-        uint256 totalDebtMinusPreviousMaxLoanIgnoreSupply = totalDebt >= previousMaxLoanIgnoreSupply 
-            ? totalDebt - previousMaxLoanIgnoreSupply 
-            : 0;
-        console.log("totalDebtMinusPreviousMaxLoanIgnoreSupply", totalDebtMinusPreviousMaxLoanIgnoreSupply);
-        console.log("totalDebtMinusNewMaxLoanIgnoreSupply", totalDebtMinusNewMaxLoanIgnoreSupply);
         
         // Calculate the change in undercollateralized debt
-        // Safe subtraction to avoid underflow
+        // The difference is simply the change in maxLoanIgnoreSupply:
+        // - When removing collateral: maxLoanIgnoreSupply decreases, so undercollateralized debt increases
+        // - When adding collateral: maxLoanIgnoreSupply increases, so undercollateralized debt decreases
         uint256 difference;
         if(isRemovingCollateral) {
-            // When removing collateral, undercollateralized debt increases
-            // difference = newUndercollateralizedDebt - oldUndercollateralizedDebt
-            if(totalDebtMinusNewMaxLoanIgnoreSupply >= totalDebtMinusPreviousMaxLoanIgnoreSupply) {
-                difference = totalDebtMinusNewMaxLoanIgnoreSupply - totalDebtMinusPreviousMaxLoanIgnoreSupply;
-            } else {
-                // This shouldn't happen when removing collateral, but handle it safely
-                difference = 0;
-            }
-        } else {
-            // When adding collateral, undercollateralized debt decreases
-            // difference = oldUndercollateralizedDebt - newUndercollateralizedDebt
-            if(totalDebtMinusPreviousMaxLoanIgnoreSupply >= totalDebtMinusNewMaxLoanIgnoreSupply) {
-                difference = totalDebtMinusPreviousMaxLoanIgnoreSupply - totalDebtMinusNewMaxLoanIgnoreSupply;
-            } else {
-                // This shouldn't happen when adding collateral, but handle it safely
-                difference = 0;
-            }
-        }
-        
-        // Recalculate undercollateralized debt based on current state
-        console.log("totalDebtMinusNewMaxLoanIgnoreSupply", totalDebtMinusNewMaxLoanIgnoreSupply);
-        if(isRemovingCollateral) {
+            // Removing collateral: undercollateralized debt increases by the reduction in maxLoanIgnoreSupply
+            difference = previousMaxLoanIgnoreSupply - newMaxLoanIgnoreSupply;
             collateralManagerData.undercollateralizedDebt += difference;
         } else {
+            // Adding collateral: undercollateralized debt decreases by the increase in maxLoanIgnoreSupply
+            difference = newMaxLoanIgnoreSupply - previousMaxLoanIgnoreSupply;
             if(collateralManagerData.undercollateralizedDebt < difference) {
                 collateralManagerData.undercollateralizedDebt = 0;
             } else {
                 collateralManagerData.undercollateralizedDebt -= difference;
             }
         }
-        console.log("collateralManagerData.undercollateralizedDebt", collateralManagerData.undercollateralizedDebt);
     }
 }
