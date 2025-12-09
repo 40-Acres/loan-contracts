@@ -32,7 +32,7 @@ contract VotingEscrowFacet is AccessControl {
     function increaseLock(uint256 tokenId, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         IERC20(_votingEscrow.token()).transferFrom(msg.sender, address(this), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
-        CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
+        CollateralManager.updateLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
     }
 }
 

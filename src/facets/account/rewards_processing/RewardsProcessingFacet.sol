@@ -188,7 +188,7 @@ contract RewardsProcessingFacet is AccessControl {
             IERC20(lockedAsset).approve(address(_votingEscrow), amountToUse);
             _votingEscrow.increaseAmount(tokenId, amountToUse);
             IERC20(lockedAsset).approve(address(_votingEscrow), 0);
-            CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
+            CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
             return rewardsAmount - amountToUse;
         }
 
@@ -208,7 +208,7 @@ contract RewardsProcessingFacet is AccessControl {
         _votingEscrow.increaseAmount(tokenId, increaseAmount);
         // Clear approval after use
         IERC20(lockedAsset).approve(address(_votingEscrow), 0);
-        CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
+        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
 
         return remaining;
     }

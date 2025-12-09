@@ -8,6 +8,8 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
+import {UserLendingConfig} from "./UserLendingConfig.sol";
+import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 
 /**
  * @title LendingFacet
@@ -42,5 +44,16 @@ contract LendingFacet is AccessControl {
         IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), amount);
         CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
         IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), 0);
+    }
+
+    function topUp() public {
+        address topUpEnabled = UserLendingConfig.getTopUpEnabled();
+        require(topUpEnabled != address(0), "Top up not enabled");
+        (uint256 maxLoan, ) = CollateralFacet(address(this)).getMaxLoan();
+        if(maxLoan == 0) {
+            return;
+        }
+        
+
     }
 }

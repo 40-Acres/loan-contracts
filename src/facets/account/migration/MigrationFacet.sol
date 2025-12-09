@@ -9,7 +9,7 @@ import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
 import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";  
-
+import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 
 
 /**
@@ -19,22 +19,21 @@ contract MigrationFacet {
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
     IVotingEscrow public immutable _ve;
-    address public immutable _loanContract;
+    PortfolioAccountConfig public immutable _portfolioAccountConfig;
 
 
-    constructor(address portfolioFactory, address accountConfigStorage, address ve, address loanContract) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address ve) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
-        _loanContract = loanContract;
+        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _ve = IVotingEscrow(ve);
     }
 
     function migrate(uint256 tokenId, uint256 unpaidFees) external onlyLoanContract(msg.sender) {
         IVotingEscrow(address(_ve)).transferFrom(msg.sender, address(this), tokenId);
-        CollateralManager.addLockedCollateral(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_ve));
 
-        (uint256 balance, address borrower) = ILoan(_loanContract).getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = ILoan(_portfolioAccountConfig.getLoanContract()).getLoanDetails(tokenId);
         require(borrower == _portfolioFactory.ownerOf(address(this)));
 
 
@@ -42,7 +41,7 @@ contract MigrationFacet {
     }
 
     modifier onlyLoanContract(address loanContract) {
-        require(msg.sender == _loanContract);
+        require(msg.sender == _portfolioAccountConfig.getLoanContract());
         _;
     }
 }

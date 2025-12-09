@@ -10,16 +10,15 @@ contract DeployMigrationFacet is AccountFacetsDeploy {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
         address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
-        address LOAN_CONTRACT = vm.envAddress("LOAN_CONTRACT");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        MigrationFacet facet = new MigrationFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, LOAN_CONTRACT);
+        MigrationFacet facet = new MigrationFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "MigrationFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address loanContract) external {
-        MigrationFacet newFacet = new MigrationFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, loanContract);
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
+        MigrationFacet newFacet = new MigrationFacet(portfolioFactory, portfolioAccountConfig, votingEscrow);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "MigrationFacet", true);
     }
 

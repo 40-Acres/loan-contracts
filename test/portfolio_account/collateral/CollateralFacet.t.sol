@@ -260,11 +260,13 @@ contract CollateralFacetTest is Test, Setup {
             CollateralFacet.removeCollateral.selector,
             _tokenId
         );
+        (uint256 newMaxLoan2, uint256 newMaxLoanIgnoreSupply2) = CollateralFacet(_portfolioAccount).getMaxLoan();
         
         vm.expectRevert(); // Should revert because overcollateralization increases
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
-        
+        (uint256 newMaxLoan3, uint256 newMaxLoanIgnoreSupply3) = CollateralFacet(_portfolioAccount).getMaxLoan();
+
         // Test 2: Pay down enough debt so that even with collateral removal, overcollateralization doesn't increase
         // Calculate how much we need to pay to offset collateral removal
         // We need: (initialDebt - payAmount) - (newMaxLoanIgnoreSupply - collateralValue) <= overcollateralizationBefore
@@ -273,12 +275,12 @@ contract CollateralFacetTest is Test, Setup {
         
         // Fund portfolio with more USDC
         currentBalance = _asset.balanceOf(_portfolioAccount);
-        deal(address(_asset), _portfolioAccount, currentBalance + largePayAmount - payAmount);
+        deal(address(_asset), _user, initialDebt);
         
         
         // This should succeed because paying down most debt offsets the collateral removal
         vm.startPrank(_user);
-        IERC20(_asset).approve(_portfolioAccount, largePayAmount);
+        IERC20(_asset).approve(_portfolioAccount, initialDebt);
         // Reuse the same portfolios array (already has 2 entries from previous test)
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.pay.selector,
@@ -289,7 +291,20 @@ contract CollateralFacetTest is Test, Setup {
             _tokenId
         );
         
+        vm.expectRevert();
         _portfolioManager.multicall(calldatas, portfolios);
+
+
+        calldatas[0] = abi.encodeWithSelector(
+            LendingFacet.pay.selector,
+            initialDebt
+        );
+        calldatas[1] = abi.encodeWithSelector(
+            CollateralFacet.removeCollateral.selector,
+            _tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolios);
+
         vm.stopPrank();
         
         // Verify final state
@@ -312,11 +327,12 @@ contract CollateralFacetTest is Test, Setup {
         vm.startPrank(IVotingEscrow(_ve).ownerOf(_tokenId2));
         IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioAccount, _tokenId2);
         vm.stopPrank();
-        
+
         addCollateralViaMulticall(_tokenId);
         addCollateralViaMulticall(_tokenId2);
-        
-        uint256 borrowAmount = 1e6;
+
+        int128 lockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
+        uint256 borrowAmount = .52e6;
         address loanContract = _portfolioAccountConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000;
@@ -359,11 +375,10 @@ contract CollateralFacetTest is Test, Setup {
             CollateralFacet.addCollateral.selector,
             _tokenId2 // Re-adding same token (should be no-op since already added)
         );
-        
-        // This should revert because removing collateral reduces maxLoanIgnoreSupply
+
+        // should revert
         vm.expectRevert();
         _portfolioManager.multicall(calldatas, portfolios);
-        vm.stopPrank();
     }
 
     // Edge case: Operations that don't affect debt or collateral (like voting)

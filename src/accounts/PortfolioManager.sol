@@ -7,6 +7,7 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ICollateralFacet} from "../facets/account/collateral/ICollateralFacet.sol";
 import {console} from "forge-std/console.sol";
+import {IPortfolioAccountConfig} from "../facets/account/config/IPortfolioAccountConfig.sol";
 /**
  * @title PortfolioManager
  * @dev Central manager for the portfolio system that deploys FacetRegistries and PortfolioFactories,
@@ -53,7 +54,7 @@ contract PortfolioManager is Ownable {
     error CallFailed(address portfolio, bytes reason);
     error FactoryDeploymentFailed();
     error FacetRegistryDeploymentFailed();
-    error InsufficientCollateral(uint256 currentDebt, uint256 maxLoanIgnoreSupply);
+    error InsufficientCollateral();
 
     /**
      * @dev Constructor - sets the initial owner
@@ -81,54 +82,14 @@ contract PortfolioManager is Ownable {
      * @param portfolios Array of portfolio addresses to check
      */
     modifier enforceCollateral(address[] calldata portfolios) {
-        // Track debt and maxLoanIgnoreSupply before operations
-        uint256[] memory previousDebts = new uint256[](portfolios.length);
-        uint256[] memory previousMaxLoanIgnoreSupply = new uint256[](portfolios.length);
-        for (uint256 i = 0; i < portfolios.length; i++) {
-            previousDebts[i] = ICollateralFacet(address(portfolios[i])).getTotalDebt();
-            (, previousMaxLoanIgnoreSupply[i]) = ICollateralFacet(address(portfolios[i])).getMaxLoan();
-        }
-        
-        // Execute the function body
         _;
         
         // Enforce collateral after operations
         for (uint256 i = 0; i < portfolios.length; i++) {
-            address portfolio = portfolios[i];
-            uint256 currentDebt = ICollateralFacet(address(portfolio)).getTotalDebt();
-            (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = ICollateralFacet(address(portfolio)).getMaxLoan();
-            
-            // Allow if debt is within valid range (standard check)
-            if(currentDebt <= maxLoanIgnoreSupply) {
-                continue;
+            // enforce collateral requirements should revert if false, but revert here to be safe
+            if(!ICollateralFacet(address(portfolios[i])).enforceCollateralRequirements()) {
+                revert InsufficientCollateral();
             }
-            
-            // Account is overcollateralized (currentDebt > maxLoanIgnoreSupply)
-            // Allow operations that improve or don't worsen the position:
-            // 1. Debt decreased AND maxLoanIgnoreSupply didn't decrease by more than debt decrease, OR
-            // 2. Debt stayed same or decreased AND maxLoanIgnoreSupply stayed same or increased
-            //    (allows operations that don't affect balance, like voting/claiming, or adding collateral)
-            
-            // Calculate overcollateralization before and after
-            uint256 previousOvercollateralization = previousDebts[i] > previousMaxLoanIgnoreSupply[i] 
-                ? previousDebts[i] - previousMaxLoanIgnoreSupply[i] 
-                : 0;
-            uint256 currentOvercollateralization = currentDebt > maxLoanIgnoreSupply 
-                ? currentDebt - maxLoanIgnoreSupply 
-                : 0;
-            
-            // Allow if overcollateralization didn't increase (position didn't worsen)
-            if(currentOvercollateralization <= previousOvercollateralization) {
-                continue;
-            }
-
-            // user user has no debt, allow the operation
-            if(currentDebt == 0) {
-                continue;
-            }
-            
-            // Position worsened AND account is overcollateralized - revert
-            revert InsufficientCollateral(currentDebt, maxLoanIgnoreSupply);
         }
     }
 

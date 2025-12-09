@@ -35,11 +35,11 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         // token must be in portfolio owners wallet or already in the portfolio account
         require(tokenOwner == portfolioOwner || tokenOwner == address(this), NotOwnerOfToken());
         if(tokenOwner == portfolioOwner) {
-            // if we have to transfer, transfer from portfolio owner to this portfolio account
-            IVotingEscrow(address(_votingEscrow)).transferFrom(portfolioOwner, address(this), tokenId);
-        }
+    // if we have to transfer, transfer from portfolio owner to this portfolio account
+    IVotingEscrow(address(_votingEscrow)).transferFrom(portfolioOwner, address(this), tokenId);
+}
         // add the collateral to the collateral manager
-        CollateralManager.addLockedCollateral(tokenId, address(_votingEscrow));
+        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
     }
 
 
@@ -70,5 +70,9 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
 
     function getCollateralToken() public view returns (address tokenAddress) {
         return address(_votingEscrow);
+    }
+
+    function enforceCollateralRequirements() public view returns (bool success) {
+        return CollateralManager.enforceCollateralRequirements();
     }
 }

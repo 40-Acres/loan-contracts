@@ -61,7 +61,7 @@ contract ClaimingFacet is AccessControl {
             } catch {
             }
         }
-        CollateralManager.updateLockedCollateral(tokenId, address(_votingEscrow));
+        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
     }
 
     function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external onlyAuthorizedCaller(_portfolioFactory) {

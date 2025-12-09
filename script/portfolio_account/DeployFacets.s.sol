@@ -26,7 +26,7 @@ contract DeployFacets is AccountFacetsDeploy {
         deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, lendingToken);
         deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
         deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig);
-        deployMigrationFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, loanContract);
+        deployMigrationFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
     }
 }
 

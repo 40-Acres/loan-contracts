@@ -9,6 +9,7 @@ import {Setup} from "../utils/Setup.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 
 contract LendingFacetTest is Test, Setup {
 
@@ -80,6 +81,26 @@ contract LendingFacetTest is Test, Setup {
         
         // Verify CollateralManager tracks debt
         _assertDebtSynced(_tokenId);
+    }
+
+
+    function testBorrowMaxLoanTwice() public {
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        address underlyingAsset = IERC4626(vault).asset();
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        // Add collateral first
+        addCollateralViaMulticall(_tokenId);
+        deal(address(underlyingAsset), vault, 1000000e18);
+        (maxLoan, maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        borrowViaMulticall(maxLoan);
+        
+        // After borrowing maxLoan, the new maxLoan should be 0 (or very small)
+        (uint256 newMaxLoan, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        assertEq(newMaxLoan, 0, "should not be able to borrow max loan twice - new maxLoan should be 0");
+
+        vm.expectRevert();
+        borrowViaMulticall(maxLoan);
     }
 
     function testBorrowFailsWithoutCollateral() public {
@@ -242,7 +263,7 @@ contract LendingFacetTest is Test, Setup {
         require(borrowAmount < vaultBalance, "Borrow amount must be less than vault balance for this test");
         
         // Should revert with InsufficientCollateral error
-        vm.expectRevert(CollateralManager.InsufficientCollateral.selector);
+        vm.expectRevert(CollateralManager.BadDebt.selector);
         borrowViaMulticall(borrowAmount);
     }
 

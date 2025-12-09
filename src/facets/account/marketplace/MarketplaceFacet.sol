@@ -201,7 +201,7 @@ contract MarketplaceFacet {
         _ve.transferFrom(msg.sender, address(this), tokenId);
         
         // Add collateral tracking to this portfolio
-        CollateralManager.addLockedCollateral(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_ve));
 
         // Get the loan balance and add to debt tracking
         (uint256 balance,) = ILoan(_loanContract).getLoanDetails(tokenId);
@@ -222,7 +222,7 @@ contract MarketplaceFacet {
         if (_ve.ownerOf(tokenId) != address(this)) revert VeNFTNotInPortfolio();
         
         // Add collateral tracking
-        CollateralManager.addLockedCollateral(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_ve));
 
         // Check if there's associated debt
         (uint256 balance,) = ILoan(_loanContract).getLoanDetails(tokenId);
@@ -369,7 +369,7 @@ contract MarketplaceFacet {
         }
 
         // Step 5: Add collateral tracking first
-        CollateralManager.addLockedCollateral(tokenId, address(_ve));
+        CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_ve));
 
         // Step 6: Request loan via LendingFacet (handles approval, loan request, and debt tracking with fees)
         LendingFacet(address(this)).borrow(maxLoan);

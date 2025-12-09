@@ -152,6 +152,13 @@ contract ClaimingFacetTest is Test, Setup {
         uint256 borrowAmount = 1e6;
         address loanContract = _portfolioAccountConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
+        deal(address(_usdc), vault, 10000e6);
+
+        // get max loan
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        console.log("maxLoan", maxLoan);
+        console.log("maxLoanIgnoreSupply", maxLoanIgnoreSupply);
+        require(borrowAmount <= maxLoan, "Borrow amount exceeds max loan");
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_usdc), vault, vaultBalance);
         
