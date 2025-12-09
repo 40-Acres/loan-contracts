@@ -9,6 +9,10 @@ import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import "../../libraries/Errors.sol";
 
+interface ILoanMinimal {
+    function getPortfolioFactory() external view returns (address);
+}
+
 /**
  * @title MarketConfigFacet
  * @dev Facet for managing market configuration
@@ -61,6 +65,7 @@ contract MarketConfigFacet is IMarketConfigFacet {
 
         cfg.loan = loan;
         cfg.votingEscrow = votingEscrow;
+        cfg.portfolioFactory = ILoanMinimal(loan).getPortfolioFactory();
         setMarketFee(RouteLib.BuyRoute.InternalWallet, baseMarketFeeBps);
         setMarketFee(RouteLib.BuyRoute.InternalLoan, baseMarketFeeBps);
         setMarketFee(RouteLib.BuyRoute.ExternalAdapter, externalMarketFeeBps);

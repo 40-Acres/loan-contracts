@@ -227,8 +227,6 @@ contract LoanUpgradeTest is Test {
         loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.stopPrank();
 
-        uint256 loanWeight = loan.getTotalWeight();
-        assertTrue(loanWeight > 0, "loan weight should be greater than 0");
     }
 
 
@@ -286,8 +284,6 @@ contract LoanUpgradeTest is Test {
         loan.vote(_tokenId);
         assertEq(block.timestamp, voter.lastVoted(_tokenId));
 
-        uint256 loanWeight = loan.getTotalWeight();
-        assertTrue(loanWeight > 0, "loan weight should be greater than 0");
     }
 
 

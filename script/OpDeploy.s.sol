@@ -21,7 +21,7 @@ contract OpDeploy is Script {
     }
 
     function deployLoan() public returns (LoanV2, Vault) {
-        Loan loan = new VeloLoan();
+        VeloLoan loan = new VeloLoan();
         ERC1967Proxy proxy = new ERC1967Proxy(address(loan), "");
         Vault vault = new Vault(address(usdc), address(proxy), "40op-USDC-VAULT", "40op-USDC-VAULT");
         Loan(address(proxy)).initialize(address(vault), address(usdc));
@@ -36,10 +36,10 @@ contract OpDeploy is Script {
         weights[2] = 25e18;
         weights[3] = 25e18;
         console.log(Ownable2StepUpgradeable(loan).owner());
-        Loan(address(proxy)).setRewardsRate(743);
-        Loan(address(proxy)).setMultiplier(10);
-        Loan(address(proxy)).setDefaultPools(pools, weights);
-        Loan(address(proxy)).upgradeToAndCall(address(new LoanV2()), new bytes(0));
+        LoanV2(address(proxy)).setRewardsRate(743);
+        LoanV2(address(proxy)).setMultiplier(10);
+        LoanV2(address(proxy)).setDefaultPools(pools, weights);
+        LoanV2(address(proxy)).upgradeToAndCall(address(new LoanV2()), new bytes(0));
         return (LoanV2(address(proxy)), vault);
     }
 }

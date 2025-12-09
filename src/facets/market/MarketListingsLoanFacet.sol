@@ -14,9 +14,14 @@ import {AccessRoleLib} from "../../libraries/AccessRoleLib.sol";
 import "lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
+import {IPortfolioMarketplaceFacet} from "../../interfaces/IPortfolioMarketplaceFacet.sol";
+import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 
-// Permit2 handled via Permit2Lib
-
+/**
+ * @title MarketListingsLoanFacet
+ * @dev Handles marketplace listings for veNFTs held by portfolio accounts
+ * Portfolio accounts hold veNFTs and track collateral via CollateralManager
+ */
 contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     using SafeERC20 for IERC20;
 
@@ -45,6 +50,15 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         revert Errors.NotAuthorized();
     }
 
+    /**
+     * @notice Create a listing for a veNFT held by a portfolio account
+     * @dev The caller must be the portfolio owner or have operator approval
+     * @param tokenId The veNFT token ID
+     * @param price The listing price in paymentToken
+     * @param paymentToken The token to receive payment in
+     * @param expiresAt Listing expiration timestamp (0 = never)
+     * @param allowedBuyer Optional address restriction for buyer
+     */
     function makeLoanListing(
         uint256 tokenId,
         uint256 price,
@@ -55,26 +69,32 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         if (!MarketStorage.configLayout().allowedPaymentToken[paymentToken]) revert Errors.CurrencyNotAllowed();
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Errors.InvalidExpiration();
 
-        address tokenOwner = MarketLogicLib.getTokenOwnerOrBorrower(tokenId);
-        // Only the token owner can create listings (operators cannot at this time)
-        if (tokenOwner != msg.sender) revert Errors.NotAuthorized();
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        
+        // Get the veNFT owner (should be a portfolio)
+        address veNFTOwner = IVotingEscrow(cfg.votingEscrow).ownerOf(tokenId);
+        
+        // Verify the veNFT is held by a portfolio
+        PortfolioFactory factory = PortfolioFactory(cfg.portfolioFactory);
+        if (!factory.isPortfolio(veNFTOwner)) revert Errors.BadCustody();
+        
+        // Authorization: caller must be portfolio, portfolio owner, or approved operator
+        if (!MarketLogicLib.canOperate(veNFTOwner, msg.sender)) revert Errors.NotAuthorized();
 
-        // Ensure token is in Loan custody (not wallet)
-        address loanContract = MarketStorage.configLayout().loan;
-        if (IVotingEscrow(MarketStorage.configLayout().votingEscrow).ownerOf(tokenId) != loanContract) revert Errors.BadCustody();
-
-        (uint256 balance,) = ILoan(MarketStorage.configLayout().loan).getLoanDetails(tokenId);
+        // Check for outstanding loan balance
+        (uint256 balance,) = ILoan(cfg.loan).getLoanDetails(tokenId);
         bool hasOutstandingLoan = balance > 0;
 
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
-        listing.owner = tokenOwner;
+        listing.owner = veNFTOwner; // Portfolio address is the listing owner
         listing.tokenId = tokenId;
         listing.price = price;
         listing.paymentToken = paymentToken;
         listing.hasOutstandingLoan = hasOutstandingLoan;
         listing.expiresAt = expiresAt;
         listing.allowedBuyer = allowedBuyer;
-        emit ListingCreated(tokenId, tokenOwner, price, paymentToken, hasOutstandingLoan, expiresAt, allowedBuyer);
+        
+        emit ListingCreated(tokenId, veNFTOwner, price, paymentToken, hasOutstandingLoan, expiresAt, allowedBuyer);
     }
 
     function updateLoanListing(
@@ -87,6 +107,7 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.canOperate(listing.owner, msg.sender)) revert Errors.NotAuthorized();
+        
         require(MarketStorage.configLayout().allowedPaymentToken[newPaymentToken], Errors.InvalidPaymentToken());
         if (newExpiresAt != 0) require(newExpiresAt > block.timestamp, Errors.InvalidExpiration());
 
@@ -151,9 +172,10 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (listing.allowedBuyer != address(0) && listing.allowedBuyer != buyer) revert Errors.NotAllowedBuyer();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
+        
         (uint256 total, uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
 
-        // Optional Permit2 handled via Permit2Lib
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
 
         if (inputToken == paymentToken && tradeData.length == 0) {
             // Pull exactly listing price + loan payoff; seller pays protocol fee from proceeds
@@ -163,10 +185,10 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
             }
             // If there is outstanding loan balance, pay it directly in the same currency
             if (loanBalance > 0) {
-                address loanAsset = MarketStorage.configLayout().loanAsset;
+                address loanAsset = cfg.loanAsset;
                 if (loanAsset != paymentToken) revert Errors.NoValidRoute();
-                IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
-                ILoan(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
+                IERC20(loanAsset).approve(cfg.loan, loanBalance);
+                ILoan(cfg.loan).pay(tokenId, loanBalance);
             }
         } else if (tradeData.length > 0) {
             address odos = 0x19cEeAd7105607Cd444F5ad10dd51356436095a1;
@@ -186,12 +208,12 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
                 IERC20(inputToken).approve(odos, 0);
             }
             // After Odos, require balances sufficient for listing price + loan payoff
-            address loanAsset = MarketStorage.configLayout().loanAsset;
+            address loanAsset = cfg.loanAsset;
             if (IERC20(paymentToken).balanceOf(address(this)) < listingPrice) revert Errors.Slippage();
             if (loanBalance > 0 && IERC20(loanAsset).balanceOf(address(this)) < loanBalance) revert Errors.Slippage();
             if (loanBalance > 0) {
-                IERC20(loanAsset).approve(MarketStorage.configLayout().loan, loanBalance);
-                ILoan(MarketStorage.configLayout().loan).pay(tokenId, loanBalance);
+                IERC20(loanAsset).approve(cfg.loan, loanBalance);
+                ILoan(cfg.loan).pay(tokenId, loanBalance);
             }
         } else {
             revert Errors.InvalidRoute();
@@ -203,12 +225,21 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
             IERC20(paymentToken).safeTransfer(FeeLib.feeRecipient(), feeListing);
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
-        ILoan(MarketStorage.configLayout().loan).finalizeMarketPurchase(tokenId, buyer, listing.owner);
+        
+        // Finalize purchase through the portfolio's MarketplaceFacet
+        // The portfolio handles veNFT transfer and collateral tracking updates
+        IPortfolioMarketplaceFacet(listing.owner).finalizeMarketPurchase(tokenId, buyer, listing.owner);
+        
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, listingPrice, feeListing);
     }
 
-    function takeLoanListingWithPermit(uint256 tokenId, address inputToken, IMarketListingsLoanFacet.PermitSingle calldata permitSingle, bytes calldata signature) external payable nonReentrant onlyWhenNotPaused {
+    function takeLoanListingWithPermit(
+        uint256 tokenId,
+        address inputToken,
+        IMarketListingsLoanFacet.PermitSingle calldata permitSingle,
+        bytes calldata signature
+    ) external payable nonReentrant onlyWhenNotPaused {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         if (listing.owner == address(0)) revert Errors.ListingNotFound();
         if (!MarketLogicLib.isListingActive(tokenId)) revert Errors.ListingExpired();
@@ -278,7 +309,6 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         total = listingPrice + loanBalance;
     }
 
-    // Removed swap-based quoting. Use Odos for swap-required cases.
 
     function _takeLoanListing(uint256 tokenId, address buyer, address inputToken) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
@@ -291,8 +321,11 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
     function _settleLoanListing(uint256 tokenId, address buyer, address inputToken, uint256 prePulledAmount) internal {
         MarketStorage.Listing storage listing = MarketStorage.orderbookLayout().listings[tokenId];
         ( , uint256 listingPrice, uint256 loanBalance, address paymentToken) = _getTotalCostOfListingAndDebt(tokenId);
-        if (MarketStorage.configLayout().loan == address(0)) revert Errors.LoanNotConfigured();
+        
+        MarketStorage.MarketConfigLayout storage cfg = MarketStorage.configLayout();
+        if (cfg.loan == address(0)) revert Errors.LoanNotConfigured();
         if (loanBalance > 0) revert Errors.NoValidRoute();
+        
         if (prePulledAmount == 0) {
             require(inputToken == paymentToken && inputToken != address(0));
             IERC20(paymentToken).safeTransferFrom(buyer, address(this), listingPrice);
@@ -307,12 +340,10 @@ contract MarketListingsLoanFacet is IMarketListingsLoanFacet {
         }
         IERC20(paymentToken).safeTransfer(listing.owner, listingPrice - feeListing);
 
-        // Assign borrower to buyer via market-protected finalizer
-        ILoan(MarketStorage.configLayout().loan).finalizeMarketPurchase(tokenId, buyer, listing.owner);
+        // Finalize purchase through the portfolio's MarketplaceFacet
+        IPortfolioMarketplaceFacet(listing.owner).finalizeMarketPurchase(tokenId, buyer, listing.owner);
 
         delete MarketStorage.orderbookLayout().listings[tokenId];
         emit ListingTaken(tokenId, buyer, listingPrice, feeListing);
     }
 }
-
-

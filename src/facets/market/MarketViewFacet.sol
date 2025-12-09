@@ -105,7 +105,7 @@ contract MarketViewFacet is IMarketViewFacet {
     }
 
     function _canOperate(address owner, address operator) internal view returns (bool) {
-        return owner == operator || MarketStorage.orderbookLayout().isOperatorFor[owner][operator];
+        return MarketLogicLib.canOperate(owner, operator);
     }
 }
 

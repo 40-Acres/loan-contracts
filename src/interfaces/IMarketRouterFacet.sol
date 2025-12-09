@@ -4,10 +4,6 @@ pragma solidity ^0.8.28;
 import {RouteLib} from "../libraries/RouteLib.sol";
 
 interface IMarketRouterFacet {
-
-    // Events
-    event LBOLenderFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 lenderFeeAmount, address vault);
-    event LBOProtocolFeePaid(uint256 indexed tokenId, address indexed buyer, uint256 protocolFeeAmount, address vault);
     
     function quoteToken(
         RouteLib.BuyRoute route,
@@ -42,21 +38,9 @@ interface IMarketRouterFacet {
         bytes calldata optionalPermit2
     ) external payable;
 
-    /// @dev Leveraged buyout function that combines user payment with flash loan to purchase NFT and create loan
-    /// @param tokenId veNFT id to purchase
-    /// @param userPaymentAsset Asset provided by user (address(0) for ETH)
-    /// @param userPaymentAmount Amount of asset provided by user
-    /// @param purchaseOrderData Encoded purchaseOrder struct containing buy details
-    /// @param tradeData ODOS calldata for swapping user asset + flash loan asset to purchase asset
-    /// @param optionalPermit2 Optional Permit2 payload to pull user funds
-    function buyTokenWithLBO(
-        uint256 tokenId,
-        address userPaymentAsset,
-        uint256 userPaymentAmount,
-        bytes calldata purchaseOrderData,
-        bytes calldata tradeData,
-        bytes calldata optionalPermit2
-    ) external payable;
+    // NOTE: buyTokenWithLBO has been deprecated
+    // LBO operations should now go through user portfolio accounts
+    // See: src/facets/account/marketplace/MarketplaceFacet.sol executeLBO()
 }
 
 

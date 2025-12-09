@@ -83,7 +83,6 @@ contract PharaohLoanV2 is Loan {
         _ve.transferFrom(msg.sender, address(this), from);
         _ve.merge(from, to);
         uint256 weightIncrease = _getLockedAmount(to) - beginningBalance;
-        addTotalWeight(weightIncrease);
         loan.weight += weightIncrease;
     }
 
