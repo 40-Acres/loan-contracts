@@ -41,6 +41,7 @@ library CollateralManager {
     }
 
     function addLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
+
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
@@ -49,6 +50,7 @@ library CollateralManager {
             return;
         }
 
+        
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
@@ -60,6 +62,8 @@ library CollateralManager {
     }
 
     function _addLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) internal {
+        // require the token to be in the portfolio account
+        require(IVotingEscrow(address(ve)).ownerOf(tokenId) == address(this), "Token not in portfolio account");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         require(ve != address(0), "Voting escrow address cannot be zero");
 

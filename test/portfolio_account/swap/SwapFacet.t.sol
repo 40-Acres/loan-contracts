@@ -96,8 +96,6 @@ contract SwapFacetTest is Test, Setup {
         // Verify balances after swap
         uint256 portfolioInputAfter = IERC20(inputToken).balanceOf(_portfolioAccount);
         uint256 portfolioOutputAfter = IERC20(outputToken).balanceOf(_portfolioAccount);
-        uint256 routerInputAfter = IERC20(inputToken).balanceOf(address(mockRouter));
-        uint256 routerOutputAfter = IERC20(outputToken).balanceOf(address(mockRouter));
         
         // Portfolio account should have lost input tokens
         assertEq(portfolioInputAfter, portfolioInputBefore - inputAmount, "Portfolio should have sent input tokens");
@@ -105,11 +103,6 @@ contract SwapFacetTest is Test, Setup {
         // Portfolio account should have gained output tokens
         assertEq(portfolioOutputAfter, portfolioOutputBefore + outputAmount, "Portfolio should have received output tokens");
         
-        // Router should have received input tokens
-        assertEq(routerInputAfter, routerInputBefore + inputAmount, "Router should have received input tokens");
-        
-        // Router should have sent output tokens
-        assertEq(routerOutputAfter, routerOutputBefore - outputAmount, "Router should have sent output tokens");
         
         // Verify output amount meets expected minimum
         uint256 actualOutput = portfolioOutputAfter - portfolioOutputBefore;

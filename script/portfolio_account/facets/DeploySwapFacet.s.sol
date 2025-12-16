@@ -30,8 +30,9 @@ contract DeploySwapFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](1);
+        bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = SwapFacet.swap.selector;
+        selectors[1] = SwapFacet.userSwap.selector;
         return selectors;
     }
 }

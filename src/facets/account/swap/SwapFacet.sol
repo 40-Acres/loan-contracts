@@ -33,5 +33,15 @@ contract SwapFacet is AccessControl {
         amount = SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount);
         return amount;
     }
+
+    function userSwap(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 amount) {
+        if(inputToken == CollateralFacet(address(this)).getCollateralToken()) {
+            revert("Input token cannot be collateral token");
+        }
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        IERC20(inputToken).transferFrom(portfolioOwner, address(this), inputAmount);
+        amount = SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount);
+        return amount;
+    }
 }
 
