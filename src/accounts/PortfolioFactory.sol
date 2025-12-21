@@ -100,7 +100,7 @@ contract PortfolioFactory {
     function getAllPortfolios() external view returns (address[] memory) {
         return portfolioAddresses.values();
     }
-
+    
     function getPortfoliosLength() external view returns (uint256) {
         return portfolioAddresses.length();
     }

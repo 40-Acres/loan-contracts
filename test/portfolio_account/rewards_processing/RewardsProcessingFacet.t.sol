@@ -60,8 +60,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             recipient
         );
         calldatas[2] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceRewardsOption.selector,
-            UserRewardsConfig.ZeroBalanceRewardsOption.PayToRecipient
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.PayToRecipient
         );
         calldatas[3] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
@@ -152,18 +152,23 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Change zero balance option to InvestToVault
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
+        address[] memory portfolios = new address[](2);
         portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
+        portfolios[1] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceRewardsOption.selector,
-            UserRewardsConfig.ZeroBalanceRewardsOption.InvestToVault
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.InvestToVault
+        );
+        calldatas[1] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
+            100
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
         address vault = ILoan(_loanContract)._vault();
-        uint256 recipientVaultSharesBefore = IERC20(vault).balanceOf(recipient);
+        uint256 portfolioOwnerVaultSharesBefore = IERC20(vault).balanceOf(_portfolioFactory.ownerOf(_portfolioAccount));
         uint256 portfolioBalanceBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
         
         // Process rewards
@@ -178,10 +183,10 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.stopPrank();
         
         // Verify vault deposit
-        uint256 recipientVaultSharesAfter = IERC20(vault).balanceOf(recipient);
+        uint256 portfolioOwnerVaultSharesAfter = IERC20(vault).balanceOf(_portfolioFactory.ownerOf(_portfolioAccount));
         uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
         
-        assertGt(recipientVaultSharesAfter, recipientVaultSharesBefore, "Recipient should have vault shares");
+        assertGt(portfolioOwnerVaultSharesAfter, portfolioOwnerVaultSharesBefore, "Portfolio owner should have vault shares");
         assertEq(portfolioBalanceAfter, portfolioBalanceBefore - rewardsAmount, "Portfolio should have sent rewards");
     }
 
@@ -190,12 +195,17 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set increase percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
+        address[] memory portfolios = new address[](2);
         portfolios[0] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
+        portfolios[1] = _portfolioAccount;
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setIncreasePercentage.selector,
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             20
+        );
+        calldatas[1] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.IncreaseCollateral
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
@@ -343,9 +353,10 @@ contract RewardsProcessingFacetTest is Test, Setup {
         IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
         
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
-        uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipient);
+        address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
+        uint256 portfolioOwnerVaultSharesBefore = IERC20(vault).balanceOf(portfolioOwner);
         
-        // Process rewards - should pay down debt and process remaining as zero balance rewards
+        // Process rewards - should pay down debt and deposit remaining to vault as shares for portfolio owner
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
@@ -370,10 +381,11 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 amountForDebt = actualDebt; // Actual debt used
         uint256 remainingAfterDebt = rewardsAmount - totalFees - amountForDebt;
         
-        // When debt is fully paid, remaining funds should be processed as zero balance rewards
-        // Note: zero balance fee was already paid in _processActiveLoanRewards, so we don't pay it again
-        uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
-        assertEq(recipientBalanceAfter, recipientBalanceBefore + remainingAfterDebt, "Recipient should receive remaining rewards after debt is fully paid");
+        // When debt is fully paid, remaining funds should be deposited to vault as shares for portfolio owner
+        // Note: zero balance fee was already paid in _processActiveLoanRewards, so remaining goes to portfolio owner as vault shares
+        uint256 portfolioOwnerVaultSharesAfter = IERC20(vault).balanceOf(portfolioOwner);
+        uint256 portfolioOwnerVaultSharesReceived = portfolioOwnerVaultSharesAfter - portfolioOwnerVaultSharesBefore;
+        assertGt(portfolioOwnerVaultSharesReceived, 0, "Portfolio owner should receive vault shares");
     }
 
     function testProcessRewardsActiveLoanWithIncreaseCollateral() public {
@@ -381,15 +393,21 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set increase percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](2);
+        address[] memory portfolios = new address[](3);
         portfolios[0] = _portfolioAccount;
         portfolios[1] = _portfolioAccount;
-        bytes[] memory calldatas = new bytes[](2);
+        portfolios[2] = _portfolioAccount;
+
+        bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setIncreasePercentage.selector,
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             15 // 15% (capped at 25% when there's debt)
         );
         calldatas[1] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.IncreaseCollateral
+        );
+        calldatas[2] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
             _tokenId
         );
@@ -584,25 +602,25 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertEq(totalFeesPaid, expectedTotalFees, "Total fees should match expected");
     }
 
-    function testGetIncreasePercentage() public {
+    function testGetRewardsOptionPercentage() public {
         // Test with no debt
-        uint256 increasePercentage = rewardsProcessingFacet.getIncreasePercentage();
-        assertEq(increasePercentage, 0, "Should return 0 when not set");
+        uint256 rewardsOptionPercentage = rewardsProcessingFacet.getRewardsOptionPercentage();
+        assertEq(rewardsOptionPercentage, 0, "Should return 0 when not set");
         
-        // Set increase percentage
+        // Set rewards option percentage
         vm.startPrank(_user);
         address[] memory portfolios = new address[](1);
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setIncreasePercentage.selector,
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             30
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
-        increasePercentage = rewardsProcessingFacet.getIncreasePercentage();
-        assertEq(increasePercentage, 30, "Should return set percentage when no debt");
+        rewardsOptionPercentage = rewardsProcessingFacet.getRewardsOptionPercentage();
+        assertEq(rewardsOptionPercentage, 30, "Should return set percentage when no debt");
         
         // Test with debt - should cap at 25%
         // Note: This would require setting up actual debt
@@ -616,14 +634,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setIncreasePercentage.selector,
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             50
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
         // Verify percentage is 50 when there's no debt
-        uint256 increasePercentageBeforeDebt = rewardsProcessingFacet.getIncreasePercentage();
+        uint256 increasePercentageBeforeDebt = rewardsProcessingFacet.getRewardsOptionPercentage();
         assertEq(increasePercentageBeforeDebt, 50, "Should return 50 when no debt");
         
         // Create debt using LendingFacet
@@ -642,25 +660,25 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertGt(totalDebt, 0, "Should have debt after borrowing");
         
         // When there's debt, it should be capped at 25
-        uint256 increasePercentageWithDebt = rewardsProcessingFacet.getIncreasePercentage();
+        uint256 increasePercentageWithDebt = rewardsProcessingFacet.getRewardsOptionPercentage();
         assertEq(increasePercentageWithDebt, 25, "Should be capped at 25 when there's debt");
     }
 
-    function testSetActiveRewardsOption() public {
+    function testSetRewardsOption() public {
         // Test setting active rewards option
         vm.startPrank(_user);
         address[] memory portfolios = new address[](1);
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveRewardsOption.selector,
-            UserRewardsConfig.ActiveRewardsOption.PayToRecipient
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.PayToRecipient
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
-        UserRewardsConfig.ActiveRewardsOption option = rewardsProcessingFacet.getActiveRewardsOption();
-        assertEq(uint256(option), uint256(UserRewardsConfig.ActiveRewardsOption.PayToRecipient), "Should set active rewards option");
+        UserRewardsConfig.RewardsOption option = rewardsProcessingFacet.getRewardsOption();
+        assertEq(uint256(option), uint256(UserRewardsConfig.RewardsOption.PayToRecipient), "Should set active rewards option");
     }
 
     function testSetZeroBalanceRewardsOption() public {
@@ -670,31 +688,31 @@ contract RewardsProcessingFacetTest is Test, Setup {
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceRewardsOption.selector,
-            UserRewardsConfig.ZeroBalanceRewardsOption.InvestToVault
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.InvestToVault
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
-        UserRewardsConfig.ZeroBalanceRewardsOption option = rewardsProcessingFacet.getZeroBalanceRewardsOption();
-        assertEq(uint256(option), uint256(UserRewardsConfig.ZeroBalanceRewardsOption.InvestToVault), "Should set zero balance rewards option");
+        UserRewardsConfig.RewardsOption option = rewardsProcessingFacet.getRewardsOption();
+        assertEq(uint256(option), uint256(UserRewardsConfig.RewardsOption.InvestToVault), "Should set zero balance rewards option");
     }
 
-    function testSetIncreasePercentage() public {
+    function testSetRewardsOptionPercentage() public {
         // Test setting increase percentage
         vm.startPrank(_user);
         address[] memory portfolios = new address[](1);
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setIncreasePercentage.selector,
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             15
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
         
-        uint256 percentage = rewardsProcessingFacet.getIncreasePercentage();
-        assertEq(percentage, 15, "Should set increase percentage");
+        uint256 percentage = rewardsProcessingFacet.getRewardsOptionPercentage();
+        assertEq(percentage, 15, "Should set rewards option percentage");
     }
 
     function testProcessRewardsFailsWithUnauthorizedCaller() public {
@@ -858,8 +876,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         // Get the loan contract asset
         address loanAsset = ILoan(_loanContract)._asset();
         
-        // Fund the portfolio account with 100 USDC for rewards
-        uint256 rewardsAmount = 100e6;
+        // Fund the portfolio account with 500 USDC for rewards (increased to avoid rounding issues)
+        uint256 rewardsAmount = 500e6;
         address minter = IUSDC(loanAsset).masterMinter();
         vm.startPrank(minter);
         IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
@@ -868,8 +886,10 @@ contract RewardsProcessingFacetTest is Test, Setup {
 
         address owner = _portfolioAccountConfig.owner();
         address recipient = address(0x1234); // From setUp
+        address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
         uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipient);
+        uint256 portfolioOwnerVaultSharesBefore = IERC20(vault).balanceOf(portfolioOwner);
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
 
         // Process rewards
@@ -902,11 +922,16 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
         assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
 
-        // Verify recipient (portfolio owner) received the excess as zero balance rewards
-        // Note: zero balance fee was already paid in _processActiveLoanRewards, so remaining goes to recipient
+        // Verify portfolio owner received vault shares (not recipient)
+        // Note: zero balance fee was already paid in _processActiveLoanRewards, so remaining goes to portfolio owner as vault shares
+        uint256 portfolioOwnerVaultSharesAfter = IERC20(vault).balanceOf(portfolioOwner);
+        uint256 portfolioOwnerVaultSharesReceived = portfolioOwnerVaultSharesAfter - portfolioOwnerVaultSharesBefore;
+        assertGt(portfolioOwnerVaultSharesReceived, 0, "Portfolio owner should receive vault shares");
+        
+        // Verify recipient did NOT receive the loan asset
         uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
         uint256 recipientReceived = recipientBalanceAfter - recipientBalanceBefore;
-        assertEq(recipientReceived, remainingAfterDebt, "Recipient should receive excess rewards after debt is fully paid");
+        assertEq(recipientReceived, 0, "Recipient should not receive loan asset");
 
         // Verify portfolio balance is zero (all funds used)
         uint256 portfolioBalanceAfter = IERC20(loanAsset).balanceOf(_portfolioAccount);

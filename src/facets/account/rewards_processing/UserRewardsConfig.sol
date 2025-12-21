@@ -14,13 +14,9 @@ import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
  * @dev Diamond facet for managing user claiming config on a per user basis
  */
 library UserRewardsConfig {
-    enum ActiveRewardsOption {
+    enum RewardsOption {
         PayBalance,
         IncreaseCollateral,
-        PayToRecipient
-    }
-
-    enum ZeroBalanceRewardsOption {
         PayToRecipient,
         InvestToVault
     }
@@ -28,9 +24,8 @@ library UserRewardsConfig {
     struct UserRewardsConfigData {
         address rewardsToken;
         address recipient;
-        ActiveRewardsOption activeRewardsOption;
-        ZeroBalanceRewardsOption zeroBalanceRewardsOption;
-        uint256 increasePercentage;
+        RewardsOption rewardsOption;
+        uint256 rewardsOptionPercentage;
     }
 
     function _getUserRewardsConfigData() internal pure returns (UserRewardsConfigData storage collateralManagerData) {
@@ -40,24 +35,24 @@ library UserRewardsConfig {
         }
     }
 
-    function setActiveRewardsOption(ActiveRewardsOption activeRewardsOption) external {
+    function setRewardsOption(RewardsOption rewardsOption) external {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.activeRewardsOption = activeRewardsOption;
+        collateralManagerData.rewardsOption = rewardsOption;
     }
 
-    function getActiveRewardsOption() external view returns (ActiveRewardsOption) {
+    function setRewardsOptionPercentage(uint256 rewardsOptionPercentage) external {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.activeRewardsOption;
+        collateralManagerData.rewardsOptionPercentage = rewardsOptionPercentage;
     }
 
-    function setZeroBalanceRewardsOption(ZeroBalanceRewardsOption zeroBalanceRewardsOption) external {
+    function getRewardsOption() external view returns (RewardsOption) {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.zeroBalanceRewardsOption = zeroBalanceRewardsOption;
+        return collateralManagerData.rewardsOption;
     }
 
-    function getZeroBalanceRewardsOption() external view returns (ZeroBalanceRewardsOption) {
+    function getRewardsOptionPercentage() external view returns (uint256) {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.zeroBalanceRewardsOption;
+        return collateralManagerData.rewardsOptionPercentage;
     }
 
     function setRewardsToken(address rewardsToken) external {
@@ -78,15 +73,5 @@ library UserRewardsConfig {
     function getRecipient() external view returns (address) {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
         return collateralManagerData.recipient;
-    }
-
-    function setIncreasePercentage(uint256 increasePercentage) external {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.increasePercentage = increasePercentage;
-    }
-
-    function getIncreasePercentage() external view returns (uint256) {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.increasePercentage;
     }
 }
