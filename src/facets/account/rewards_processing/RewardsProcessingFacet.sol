@@ -27,9 +27,12 @@ contract RewardsProcessingFacet is AccessControl {
     IVotingEscrow public immutable _votingEscrow;
     IERC4626 public immutable _vault;
 
-    event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, address asset);
-    event ZeroBalanceFeePaid(uint256 epoch, uint256 amount, address borrower, address asset);
-    event LenderPremiumPaid(uint256 epoch, uint256 amount, address borrower, address asset);
+
+    event GasReclamationPaid(uint256 epoch, uint256 amount, address user, address asset);
+    event ProtocolFeePaid(uint256 epoch, uint256 amount, address user, address asset);
+    event ZeroBalanceFeePaid(uint256 epoch, uint256 amount, address user, address asset);
+    event LenderPremiumPaid(uint256 epoch, uint256 amount, address user, address asset);
+    event RewardsProcessed(uint256 epoch, uint256 rewardsAmount, address user, address asset);
     
     constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
         require(portfolioFactory != address(0));
@@ -44,7 +47,8 @@ contract RewardsProcessingFacet is AccessControl {
         _vault = IERC4626(vault);
     }
 
-    function processRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, bytes memory swapData) external onlyAuthorizedCaller(_portfolioFactory) {
+    function processRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
+        emit RewardsProcessed(_currentEpochStart(), rewardsAmount, _portfolioFactory.ownerOf(address(this)), address(asset));
         uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(loanContract != address(0));
@@ -62,6 +66,19 @@ contract RewardsProcessingFacet is AccessControl {
 
         // if increase percentage is set, swap the rewards amount to the asset and increase the collateral
         uint256 remaining = rewardsAmount;
+
+        // send gas reclamation to the tx.origin
+        if(gasReclamation > 0) {
+            // amount of gas is capped at 5% of the rewards amount
+            uint256 gasReclamationCap = rewardsAmount * 5 / 100;
+            if(gasReclamation > gasReclamationCap) {
+                gasReclamation = gasReclamationCap;
+            }
+            emit GasReclamationPaid(_currentEpochStart(), gasReclamation, _portfolioFactory.ownerOf(address(this)), address(asset));
+            IERC20(asset).transfer(tx.origin, gasReclamation);
+            remaining -= gasReclamation;
+        }
+
         UserRewardsConfig.RewardsOption rewardsOption = getRewardsOption();
         uint256 rewardsOptionPercentage = getRewardsOptionPercentage();
         if(rewardsOptionPercentage > 0) {

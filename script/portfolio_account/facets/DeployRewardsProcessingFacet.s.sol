@@ -33,8 +33,8 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
         bytes4[] memory selectors = new bytes4[](8);
-        selectors[0] = RewardsProcessingFacet.processRewards.selector;
-        selectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
+        selectors[1] = RewardsProcessingFacet.processRewards.selector;
+        selectors[0] = RewardsProcessingFacet.setRewardsOption.selector;
         selectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
         selectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
         selectors[4] = RewardsProcessingFacet.setRewardsToken.selector;

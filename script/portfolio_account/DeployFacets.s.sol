@@ -27,7 +27,7 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployOpenXFacet deployOpenXFacet = new DeployOpenXFacet();
     DeployERC721ReceiverFacet deployERC721ReceiverFacet = new DeployERC721ReceiverFacet();
     DeployRewardsProcessingFacet deployRewardsProcessingFacet = new DeployRewardsProcessingFacet();
-    
+
     function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address swapConfig, address loanContract, address lendingToken, address vault) external {
         deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc);
         deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
@@ -43,9 +43,3 @@ contract DeployFacets is AccountFacetsDeploy {
         deployRewardsProcessingFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
     }
 }
-
-// Usage examples:
-// forge script script/portfolio_account/DeployAllFacets.s.sol:DeployAllFacets --rpc-url $RPC_URL --broadcast
-// forge script script/portfolio_account/DeployAllFacets.s.sol:DeployAerodromeFacet --rpc-url $RPC_URL --broadcast
-// forge script script/portfolio_account/DeployAllFacets.s.sol:UpgradeAerodromeFacet --rpc-url $RPC_URL --broadcast
-

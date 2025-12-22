@@ -80,6 +80,8 @@ contract Setup is Test {
         
         // Initialize loan
         Loan(address(_loanContract)).initialize(address(vault), _usdc);
+        LoanV2 loanV2 = new LoanV2();
+        LoanV2(address(_loanContract)).upgradeToAndCall(address(loanV2), new bytes(0));
         
         _vault = address(vault);
         deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig), address(_loanContract), address(_usdc), _vault);
@@ -121,8 +123,9 @@ contract Setup is Test {
         // Set portfolio factory on loan contract
         loanV2.setPortfolioFactory(address(_portfolioFactory));
         
-        // Set loan contract in config
+        // Set loan contract and loan config in PortfolioAccountConfig
         _portfolioAccountConfig.setLoanContract(_loanContract);
+        _portfolioAccountConfig.setLoanConfig(address(_loanConfig));
     }
 
 }

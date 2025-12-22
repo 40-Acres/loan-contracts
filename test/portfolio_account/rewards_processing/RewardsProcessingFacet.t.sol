@@ -130,7 +130,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0), // asset will be determined from config
             address(0), // no swap
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -178,7 +179,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -244,7 +246,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             rewardsToken,
             address(mockRouter),
-            swapData
+            swapData,
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -307,7 +310,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0), // asset will be determined from loan contract
             address(0), // no swap
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -363,7 +367,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -464,7 +469,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             loanAsset,
             address(mockRouter),
-            swapData
+            swapData,
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -522,7 +528,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -581,7 +588,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
         
@@ -726,7 +734,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
     }
 
@@ -740,7 +749,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
     }
@@ -768,9 +778,156 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
+    }
+
+    function testProcessRewardsWithGasReclamation() public {
+        setupRewards();
+        
+        uint256 gasReclamationAmount = 10e6; // 10 USDC
+        uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
+        uint256 portfolioBalanceBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        uint256 authorizedCallerBalanceBefore = IERC20(rewardsToken).balanceOf(_authorizedCaller);
+        
+        // Process rewards with gas reclamation
+        // Use vm.startPrank with both msg.sender and tx.origin set to _authorizedCaller
+        // since gas reclamation is transferred to tx.origin
+        vm.startPrank(_authorizedCaller, _authorizedCaller);
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(0),
+            address(0),
+            new bytes(0),
+            gasReclamationAmount
+        );
+        vm.stopPrank();
+        
+        // Verify gas reclamation was deducted from remaining and transferred
+        uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
+        uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        uint256 authorizedCallerBalanceAfter = IERC20(rewardsToken).balanceOf(_authorizedCaller);
+        
+        // Calculate expected amounts
+        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
+        uint256 expectedRecipientAmount = rewardsAmount - gasReclamationAmount - feeAmount;
+        
+        // Verify recipient received reduced amount (after gas reclamation deduction)
+        assertEq(recipientBalanceAfter, recipientBalanceBefore + expectedRecipientAmount, "Recipient should receive rewards minus gas reclamation and fee");
+        
+        // Verify portfolio balance is 0 (all rewards processed)
+        assertEq(portfolioBalanceAfter, 0, "Portfolio should have processed all rewards");
+        
+        // Verify authorized caller received the gas reclamation
+        assertEq(authorizedCallerBalanceAfter, authorizedCallerBalanceBefore + gasReclamationAmount, "Authorized caller should receive gas reclamation");
+    }
+
+    function testProcessRewardsWithGasReclamationCappedAt5Percent() public {
+        setupRewards();
+        
+        uint256 gasReclamationAmount = 100e6; // 100 USDC (10% of rewards, should be capped at 5%)
+        uint256 expectedCappedAmount = rewardsAmount * 5 / 100; // 5% cap = 50 USDC
+        uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
+        uint256 portfolioBalanceBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        uint256 authorizedCallerBalanceBefore = IERC20(rewardsToken).balanceOf(_authorizedCaller);
+        
+        // Process rewards with gas reclamation that exceeds cap
+        // Use vm.startPrank with both msg.sender and tx.origin set to _authorizedCaller
+        vm.startPrank(_authorizedCaller, _authorizedCaller);
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(0),
+            address(0),
+            new bytes(0),
+            gasReclamationAmount // Will be capped at 5%
+        );
+        vm.stopPrank();
+        
+        // Verify gas reclamation was capped at 5%
+        uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
+        uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        uint256 authorizedCallerBalanceAfter = IERC20(rewardsToken).balanceOf(_authorizedCaller);
+        
+        // Calculate expected amounts with capped gas reclamation
+        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
+        uint256 expectedRecipientAmount = rewardsAmount - expectedCappedAmount - feeAmount;
+        
+        // Verify recipient received amount after capped gas reclamation deduction
+        assertEq(recipientBalanceAfter, recipientBalanceBefore + expectedRecipientAmount, "Recipient should receive rewards minus capped gas reclamation and fee");
+        
+        // Verify authorized caller received the capped gas reclamation
+        assertEq(authorizedCallerBalanceAfter, authorizedCallerBalanceBefore + expectedCappedAmount, "Authorized caller should receive capped gas reclamation");
+        
+        // Verify portfolio balance is 0 (all rewards processed, including gas reclamation transfer)
+        assertEq(portfolioBalanceAfter, 0, "Portfolio should have processed all rewards");
+    }
+
+    function testProcessRewardsWithGasReclamationActiveLoan() public {
+        // Create active loan
+        addCollateralViaMulticall(_tokenId);
+        uint256 borrowAmount = 500e6;
+        
+        address vault = ILoan(_loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000;
+        deal(address(_usdc), vault, vaultBalance);
+        
+        borrowViaMulticall(borrowAmount);
+        
+        address loanAsset = ILoan(_loanContract)._asset();
+        
+        // Fund portfolio with rewards
+        address minter = IUSDC(loanAsset).masterMinter();
+        vm.startPrank(minter);
+        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
+        vm.stopPrank();
+        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+        
+        uint256 gasReclamationAmount = 10e6; // 10 USDC
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 portfolioBalanceBefore = IERC20(loanAsset).balanceOf(_portfolioAccount);
+        uint256 authorizedCallerBalanceBefore = IERC20(loanAsset).balanceOf(_authorizedCaller);
+        
+        // Process rewards with gas reclamation
+        // Use vm.startPrank with both msg.sender and tx.origin set to _authorizedCaller
+        // since gas reclamation is transferred to tx.origin
+        vm.startPrank(_authorizedCaller, _authorizedCaller);
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(0),
+            address(0),
+            new bytes(0),
+            gasReclamationAmount
+        );
+        vm.stopPrank();
+        
+        // Verify debt was decreased (accounting for gas reclamation deduction)
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 portfolioBalanceAfter = IERC20(loanAsset).balanceOf(_portfolioAccount);
+        uint256 authorizedCallerBalanceAfter = IERC20(loanAsset).balanceOf(_authorizedCaller);
+        
+        // Calculate expected fees and debt payment
+        uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
+        uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
+        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        uint256 amountForDebt = rewardsAmount - gasReclamationAmount - totalFees;
+        
+        // Debt should be decreased by amountForDebt (or to zero if less)
+        uint256 expectedDebt = debtBefore > amountForDebt ? debtBefore - amountForDebt : 0;
+        assertEq(debtAfter, expectedDebt, "Debt should be decreased accounting for gas reclamation");
+        
+        // Verify portfolio balance is 0 (all rewards processed)
+        assertEq(portfolioBalanceAfter, 0, "Portfolio should have processed all rewards");
+        
+        // Verify authorized caller received the gas reclamation
+        assertEq(authorizedCallerBalanceAfter, authorizedCallerBalanceBefore + gasReclamationAmount, "Authorized caller should have received gas reclamation");
     }
 
     function testProcessRewardsActiveLoanWith100Rewards() public {
@@ -833,7 +990,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
 
@@ -899,7 +1057,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
             rewardsAmount,
             address(0),
             address(0),
-            new bytes(0)
+            new bytes(0),
+            0 // gas reclamation
         );
         vm.stopPrank();
 

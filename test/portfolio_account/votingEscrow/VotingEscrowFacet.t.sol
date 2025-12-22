@@ -12,15 +12,14 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 contract VotingEscrowFacetTest is Test, Setup {
     
     // Helper function to create lock via PortfolioManager multicall and return the tokenId
-    function createLockViaMulticall(uint256 amount, uint256 lockDuration) internal returns (uint256 tokenId) {
+    function createLockViaMulticall(uint256 amount) internal returns (uint256 tokenId) {
         vm.startPrank(_user);
         address[] memory portfolios = new address[](1);
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VotingEscrowFacet.createLock.selector,
-            amount,
-            lockDuration
+            amount
         );
         bytes[] memory results = _portfolioManager.multicall(calldatas, portfolios);
         require(results.length > 0, "Multicall failed - no results");
@@ -30,15 +29,14 @@ contract VotingEscrowFacetTest is Test, Setup {
     }
 
     // Helper function for tests that expect reverts - doesn't catch the revert
-    function createLockViaMulticallExpectRevert(uint256 amount, uint256 lockDuration) internal {
+    function createLockViaMulticallExpectRevert(uint256 amount) internal {
         vm.startPrank(_user);
         address[] memory portfolios = new address[](1);
         portfolios[0] = _portfolioAccount;
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VotingEscrowFacet.createLock.selector,
-            amount,
-            lockDuration
+            amount
         );
         // Let the revert bubble up naturally
         _portfolioManager.multicall(calldatas, portfolios);
@@ -53,8 +51,6 @@ contract VotingEscrowFacetTest is Test, Setup {
         
         // Amount to lock (1 AERO)
         uint256 lockAmount = 1e18;
-        // Lock duration (1 year = 365 days)
-        uint256 lockDuration = 365 days;
         
         // Fund user with tokens
         deal(aeroToken, _user, lockAmount);
@@ -84,7 +80,7 @@ contract VotingEscrowFacetTest is Test, Setup {
         assertEq(initialCollateral, 0, "Initial collateral should be 0");
         
         // Create the lock and get the tokenId directly
-        uint256 tokenId = createLockViaMulticall(lockAmount, lockDuration);
+        uint256 tokenId = createLockViaMulticall(lockAmount);
         assertGt(tokenId, 0, "TokenId should be returned");
         
         // Verify collateral was added
@@ -95,7 +91,7 @@ contract VotingEscrowFacetTest is Test, Setup {
         // Verify the lock using .locked()
         IVotingEscrow.LockedBalance memory locked = _ve.locked(tokenId);
         assertEq(uint256(uint128(locked.amount)), lockAmount, "Locked amount should match");
-        assertGt(locked.end, block.timestamp, "Lock end time should be in the future");
+        assertEq(locked.isPermanent, true, "Lock should be permanent");
         assertEq(_ve.ownerOf(tokenId), _portfolioAccount, "Token should be owned by portfolio account");
     }
 
@@ -108,8 +104,6 @@ contract VotingEscrowFacetTest is Test, Setup {
         amounts[0] = 1e18;      // 1 AERO
         amounts[1] = 10e18;     // 10 AERO
         amounts[2] = 100e18;    // 100 AERO
-        
-        uint256 lockDuration = 365 days;
         
         for (uint256 i = 0; i < amounts.length; i++) {
             uint256 amount = amounts[i];
@@ -130,7 +124,7 @@ contract VotingEscrowFacetTest is Test, Setup {
             uint256 collateralBefore = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
             
             // Create lock and get the tokenId directly
-            uint256 tokenId = createLockViaMulticall(amount, lockDuration);
+            uint256 tokenId = createLockViaMulticall(amount);
             assertGt(tokenId, 0, "TokenId should be returned");
             
             // Verify collateral increased
@@ -146,37 +140,33 @@ contract VotingEscrowFacetTest is Test, Setup {
         IERC20 aero = IERC20(aeroToken);
         
         uint256 lockAmount = 1e18;
-        uint256[] memory durations = new uint256[](3);
-        durations[0] = 7 days;
-        durations[1] = 30 days;
-        durations[2] = 365 days;
         
-        for (uint256 i = 0; i < durations.length; i++) {
-            uint256 duration = durations[i];
-            
-            // Fund user with tokens
-            deal(aeroToken, _user, lockAmount);
-            
-            // Approve
-            vm.startPrank(_user);
-            aero.approve(_portfolioAccount, type(uint256).max);
-            vm.stopPrank();
-            
-            vm.startPrank(_portfolioAccount);
-            aero.approve(address(_ve), type(uint256).max);
-            vm.stopPrank();
-            
-            // Create lock and get the tokenId directly
-            uint256 tokenId = createLockViaMulticall(lockAmount, duration);
-            assertGt(tokenId, 0, "TokenId should be returned");
-            
-            // Verify collateral was added
-            uint256 collateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-            assertGt(collateral, 0, "Collateral should be added");
-            IVotingEscrow.LockedBalance memory locked = _ve.locked(tokenId);
-            assertEq(uint256(uint128(locked.amount)), lockAmount, "Locked amount should match");
-            assertGt(locked.end, block.timestamp, "Lock end time should be in the future");
-        }
+        // Note: createLock now hardcodes the lock duration to 4 years
+        // This test verifies that locks are created successfully regardless of duration parameter
+        // (since duration is no longer a parameter)
+        
+        // Fund user with tokens
+        deal(aeroToken, _user, lockAmount);
+        
+        // Approve
+        vm.startPrank(_user);
+        aero.approve(_portfolioAccount, type(uint256).max);
+        vm.stopPrank();
+        
+        vm.startPrank(_portfolioAccount);
+        aero.approve(address(_ve), type(uint256).max);
+        vm.stopPrank();
+        
+        // Create lock and get the tokenId directly
+        uint256 tokenId = createLockViaMulticall(lockAmount);
+        assertGt(tokenId, 0, "TokenId should be returned");
+        
+        // Verify collateral was added
+        uint256 collateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertGt(collateral, 0, "Collateral should be added");
+        IVotingEscrow.LockedBalance memory locked = _ve.locked(tokenId);
+        assertEq(uint256(uint128(locked.amount)), lockAmount, "Locked amount should match");
+        assertEq(locked.isPermanent, true, "Lock should be permanent");
     }
 
     function testCreateLockRevertsWhenNotEnoughBalance() public {
@@ -184,7 +174,6 @@ contract VotingEscrowFacetTest is Test, Setup {
         IERC20 aero = IERC20(aeroToken);
         
         uint256 lockAmount = 1e18;
-        uint256 lockDuration = 365 days;
         
         // Approve the portfolio account to spend from user (so allowance is not the issue)
         // But don't fund the user - should revert on insufficient balance
@@ -199,7 +188,7 @@ contract VotingEscrowFacetTest is Test, Setup {
         
         // Should revert due to insufficient balance in user account
         vm.expectRevert();
-        createLockViaMulticallExpectRevert(lockAmount, lockDuration);
+        createLockViaMulticallExpectRevert(lockAmount);
     }
 
     function testCreateLockRevertsWhenNotApproved() public {
@@ -207,7 +196,6 @@ contract VotingEscrowFacetTest is Test, Setup {
         IERC20 aero = IERC20(aeroToken);
         
         uint256 lockAmount = 1e18;
-        uint256 lockDuration = 365 days;
         
         // Fund user but don't approve user -> portfolio account
         deal(aeroToken, _user, lockAmount);
@@ -219,7 +207,7 @@ contract VotingEscrowFacetTest is Test, Setup {
         
         // Should revert due to insufficient allowance from user
         vm.expectRevert();
-        createLockViaMulticallExpectRevert(lockAmount, lockDuration);
+        createLockViaMulticallExpectRevert(lockAmount);
     }
 }
 

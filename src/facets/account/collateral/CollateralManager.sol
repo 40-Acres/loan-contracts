@@ -42,6 +42,11 @@ library CollateralManager {
 
     function addLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
 
+        // ensure locked is permanent
+        if(!IVotingEscrow(address(ve)).locked(tokenId).isPermanent) {
+            IVotingEscrow(address(ve)).lockPermanent(tokenId);
+        }
+        
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
