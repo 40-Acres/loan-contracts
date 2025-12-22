@@ -1327,7 +1327,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         emit ProtocolFeePaid(currentEpochStart(), originationFee, portfolioOwner, 0, address(_asset));
         
         // Transfer remaining amount to portfolio owner
-        _asset.transferFrom(_vault, portfolioOwner, amount - originationFee);
+        _asset.transferFrom(_vault, msg.sender, amount - originationFee);
         emit FundsBorrowed(0, portfolioOwner, amount);
     }
 

@@ -7,6 +7,7 @@ import {DeployClaimingFacet} from "./facets/DeployClaimingFacet.s.sol";
 import {DeployCollateralFacet} from "./facets/DeployCollateralFacet.s.sol";
 import {DeployLendingFacet} from "./facets/DeployLendingFacet.s.sol";
 import {DeployVotingFacet} from "./facets/DeployVotingFacet.s.sol";
+import {DeployVotingEscrowFacet} from "./facets/DeployVotingEscrowFacet.s.sol";
 import {DeploySwapFacet} from "./facets/DeploySwapFacet.s.sol";
 import {DeployMigrationFacet} from "./facets/DeployMigrationFacet.s.sol";
 import {DeployVexyFacet, DeployOpenXFacet} from "./facets/DeployMarketplaceFacets.s.sol";
@@ -18,6 +19,7 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
     DeployLendingFacet deployLendingFacet = new DeployLendingFacet();
     DeployVotingFacet deployVotingFacet = new DeployVotingFacet();
+    DeployVotingEscrowFacet deployVotingEscrowFacet = new DeployVotingEscrowFacet();
     DeploySwapFacet deploySwapFacet = new DeploySwapFacet();
     DeployMigrationFacet deployMigrationFacet = new DeployMigrationFacet();
     DeployVexyFacet deployVexyFacet = new DeployVexyFacet();
@@ -30,6 +32,7 @@ contract DeployFacets is AccountFacetsDeploy {
         deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, lendingToken);
         deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
+        deployVotingEscrowFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter);
         deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig);
         deployMigrationFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployVexyFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);

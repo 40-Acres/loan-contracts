@@ -30,6 +30,7 @@ contract PortfolioManager is Ownable {
     mapping(address => address) public portfolioToFactory;
     // owner => all portfolio accounts across all factories
     mapping(address => EnumerableSet.AddressSet) private ownerPortfolios;
+    mapping(bytes32 => address) public factoryBySalt;
 
     // Authorized callers - global authorization across all portfolios
     mapping(address => bool) public authorizedCallers;
@@ -140,6 +141,9 @@ contract PortfolioManager is Ownable {
         assembly {
             factory := create2(0, add(factoryBytecode, 0x20), mload(factoryBytecode), salt)
         }
+        
+        require(factoryBySalt[salt] == address(0), "Factory already deployed with this salt");
+        factoryBySalt[salt] = factory;
         
         if (factory == address(0)) {
             revert FactoryDeploymentFailed();

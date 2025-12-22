@@ -134,7 +134,7 @@ library CollateralManager {
         return collateralManagerData.unpaidFees;
     }
 
-    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external {
+    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external  returns (uint256 loanAmount) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
@@ -148,7 +148,8 @@ library CollateralManager {
             collateralManagerData.undercollateralizedDebt += amount - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
-        loanContract.borrowFromPortfolio(amount);
+        uint256 originationFee = loanContract.borrowFromPortfolio(amount);
+        return amount - originationFee;
     }
 
     function migrateDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {

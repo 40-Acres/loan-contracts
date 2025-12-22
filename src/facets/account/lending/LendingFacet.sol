@@ -10,6 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {UserLendingConfig} from "./UserLendingConfig.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
 /**
  * @title LendingFacet
@@ -32,7 +33,27 @@ contract LendingFacet is AccessControl {
     }
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
+    }
+
+    /**
+     * @dev Borrow funds to a specific address within the 40acres ecosystem
+     * @param to The address to borrow funds to
+     * @param amount The amount of funds to borrow
+     * @notice O
+     */
+    function borrowTo(address to, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        // verify with portfolio manager that the to address is part of 40acres
+        require(PortfolioManager(address(_portfolioFactory.portfolioManager())).isPortfolioOwner(to), "To address is not part of 40acres");
+        address portfolioOwner = PortfolioFactory(address(_portfolioFactory.portfolioManager())).ownerOf(to);
+        // require owner of to address to be the portfolio owner
+        require(portfolioOwner == _portfolioFactory.ownerOf(to), "not the same owner for to adress and current portfolio");
+
+
+        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
     }
 
     function pay(uint256 amount) public  {
@@ -59,6 +80,9 @@ contract LendingFacet is AccessControl {
         if(maxLoan == 0) {
             return;
         }
-        CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
+        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
+        // send to portfolio owner
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
     }
 }

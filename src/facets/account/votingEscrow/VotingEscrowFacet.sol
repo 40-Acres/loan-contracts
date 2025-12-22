@@ -30,9 +30,19 @@ contract VotingEscrowFacet is AccessControl {
     }
 
     function increaseLock(uint256 tokenId, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        IERC20(_votingEscrow.token()).transferFrom(msg.sender, address(this), amount);
+        // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
+        address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
+        IERC20(_votingEscrow.token()).transferFrom(from, address(this), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
         CollateralManager.updateLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
+    }
+
+    function createLock(uint256 amount, uint256 lockDuration) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 tokenId) {
+        // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
+        address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
+        IERC20(_votingEscrow.token()).transferFrom(from, address(this), amount);
+        tokenId = _votingEscrow.createLock(amount, lockDuration);
+        CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
     }
 }
 
