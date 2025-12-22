@@ -5,7 +5,6 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import { LoanUtils } from "../../../LoanUtils.sol";
 import {LoanConfig} from "../config/LoanConfig.sol";
 
-import {ILoan} from "../../../interfaces/ILoan.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 /**

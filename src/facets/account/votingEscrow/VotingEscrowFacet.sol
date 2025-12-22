@@ -44,5 +44,6 @@ contract VotingEscrowFacet is AccessControl {
         tokenId = _votingEscrow.createLock(amount, lockDuration);
         CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
     }
+    
 }
 

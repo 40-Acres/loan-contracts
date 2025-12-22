@@ -25,22 +25,23 @@ contract RewardsProcessingFacet is AccessControl {
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     SwapConfig public immutable _swapConfig;
     IVotingEscrow public immutable _votingEscrow;
-    ILoan public immutable _loanContract;
+    IERC4626 public immutable _vault;
 
     event ProtocolFeePaid(uint256 epoch, uint256 amount, address borrower, address asset);
     event ZeroBalanceFeePaid(uint256 epoch, uint256 amount, address borrower, address asset);
     event LenderPremiumPaid(uint256 epoch, uint256 amount, address borrower, address asset);
     
-    constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
         require(swapConfig != address(0));
         require(votingEscrow != address(0));
+        // vault can be zero address if there is no vault (no lending)
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _swapConfig = SwapConfig(swapConfig);
         _votingEscrow = IVotingEscrow(votingEscrow);
-        _loanContract = ILoan(_portfolioAccountConfig.getLoanContract());
+        _vault = IERC4626(vault);
     }
 
     function processRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, bytes memory swapData) external onlyAuthorizedCaller(_portfolioFactory) {
@@ -49,7 +50,7 @@ contract RewardsProcessingFacet is AccessControl {
         require(loanContract != address(0));
         
         // Get vault asset from loan contract if we have debt, otherwise use rewards token
-        address vaultAsset = totalDebt > 0 ? ILoan(loanContract)._asset() : UserRewardsConfig.getRewardsToken();
+        address vaultAsset = totalDebt > 0 ? _vault.asset() : UserRewardsConfig.getRewardsToken();
         if (asset == address(0)) {
             asset = vaultAsset;
         }
@@ -84,11 +85,10 @@ contract RewardsProcessingFacet is AccessControl {
             // Deposit to vault if any funds remain, this ensure if any owners are blacklisted the lender does not lose funds
             if(remaining > 0) {
                 // if any funds remain, deposit to vault
-                address vault = _loanContract._vault();
-                IERC20(asset).approve(vault, remaining);
-                IERC4626(vault).deposit(remaining, _portfolioFactory.ownerOf(address(this)));
+                IERC20(asset).approve(address(_vault), remaining);
+                _vault.deposit(remaining, _portfolioFactory.ownerOf(address(this)));
                 // Clear approval after use
-                IERC20(asset).approve(vault, 0);
+                IERC20(asset).approve(address(_vault), 0);
             }
         }
     }
@@ -175,7 +175,7 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, bytes memory swapData) internal returns (uint256 remaining) {
-        address vaultAsset = ILoan(_portfolioAccountConfig.getLoanContract())._asset();
+        address vaultAsset = _vault.asset();
         uint256 rewardsAmountToInvest = rewardsAmount * percentage / 100;
         uint256 actualAmountToInvest = rewardsAmountToInvest;
         
@@ -193,11 +193,11 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 amountToDeposit = vaultAssetBalance < actualAmountToInvest ? vaultAssetBalance : actualAmountToInvest;
         
         // deposit the asset to the vault
-        IERC20(vaultAsset).approve(address(_loanContract._vault()), amountToDeposit);
+        IERC20(vaultAsset).approve(address(_vault), amountToDeposit);
         address recipient = _portfolioFactory.ownerOf(address(this));
-        IERC4626(address(_loanContract._vault())).deposit(amountToDeposit, recipient);
+        _vault.deposit(amountToDeposit, recipient);
         // Clear approval after use
-        IERC20(vaultAsset).approve(address(_loanContract._vault()), 0);
+        IERC20(vaultAsset).approve(address(_vault), 0);
         
         return rewardsAmount - amountToDeposit;
     }

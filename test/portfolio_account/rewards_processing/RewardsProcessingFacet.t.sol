@@ -29,7 +29,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         // Deploy RewardsProcessingFacet
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         DeployRewardsProcessingFacet deployer = new DeployRewardsProcessingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig), address(_ve));
+        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig), address(_ve), _vault);
         vm.stopPrank();
         
         // Initialize facet reference

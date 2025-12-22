@@ -17,16 +17,17 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
         address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
+        address VAULT = vm.envAddress("VAULT");
         
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        RewardsProcessingFacet newFacet = new RewardsProcessingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG, VOTING_ESCROW);
+        RewardsProcessingFacet newFacet = new RewardsProcessingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG, VOTING_ESCROW, VAULT);
         
         registerFacet(PORTFOLIO_FACTORY, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow) external {
-        RewardsProcessingFacet newFacet = new RewardsProcessingFacet(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow);
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) external {
+        RewardsProcessingFacet newFacet = new RewardsProcessingFacet(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", true);
     }
 
