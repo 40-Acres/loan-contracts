@@ -70,7 +70,19 @@ contract Setup is Test {
         ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
         _loanContract = address(loanProxy);
 
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig), address(_loanContract), address(_usdc));
+        // Create vault before deploying facets (needed for ClaimingFacet and RewardsProcessingFacet)
+        Vault vaultImplementation = new Vault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        Vault vault = Vault(address(vaultProxy));
+        
+        // Initialize vault
+        vault.initialize(address(_usdc), address(_loanContract), "40base-USDC-VAULT", "40base-USDC-VAULT");
+        
+        // Initialize loan
+        Loan(address(_loanContract)).initialize(address(vault), _usdc);
+        
+        _vault = address(vault);
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig), address(_loanContract), address(_usdc), _vault);
         vm.stopPrank();
 
         // create a portfolio account
@@ -101,27 +113,13 @@ contract Setup is Test {
         _loanConfig.setZeroBalanceFee(100);
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
         
-        Vault vaultImplementation = new Vault();
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
-        Vault vault = Vault(address(vaultProxy));
-        
-        // Initialize vault
-        vault.initialize(address(_usdc), address(_loanContract), "40base-USDC-VAULT", "40base-USDC-VAULT");
-        
-        // Initialize loan
-        Loan(address(_loanContract)).initialize(address(vault), _usdc);
-        
-        // Upgrade loan to LoanV2
+        // Upgrade loan to LoanV2 (vault and loan are already initialized in setUp)
         LoanV2 loanV2Impl = new LoanV2();
         LoanV2 loanV2 = LoanV2(payable(_loanContract));
         loanV2.upgradeToAndCall(address(loanV2Impl), new bytes(0));
         
         // Set portfolio factory on loan contract
         loanV2.setPortfolioFactory(address(_portfolioFactory));
-        
-        // Store addresses
-        _loanContract = address(_loanContract);
-        _vault = address(vault);
         
         // Set loan contract in config
         _portfolioAccountConfig.setLoanContract(_loanContract);

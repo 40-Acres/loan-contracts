@@ -26,9 +26,10 @@ contract ClaimingFacet is AccessControl {
     IRewardsDistributor public immutable _rewardsDistributor;
     LoanConfig public immutable _loanConfig;
     SwapConfig public immutable _swapConfig;
+    IERC4626 public immutable _vault;
     error InvalidClaim(address token);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
@@ -38,6 +39,8 @@ contract ClaimingFacet is AccessControl {
         _rewardsDistributor = IRewardsDistributor(rewardsDistributor);
         _loanConfig = LoanConfig(loanConfig);
         _swapConfig = SwapConfig(swapConfig);
+        // vault can be zero address if there is no vault (no lending)
+        _vault = IERC4626(vault);
     }
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
@@ -94,9 +97,9 @@ contract ClaimingFacet is AccessControl {
             IERC20(launchpadToken).approve(address(tradeContract), IERC20(launchpadToken).balanceOf(address(this)));
             (bool success, ) = tradeContract.call(tradeData);
             require(success);
+            require(address(_vault) != address(0), "Vault not set");
             address loanContract = _portfolioAccountConfig.getLoanContract();
-            address vault = ILoan(loanContract)._vault();
-            address outputToken = IERC4626(vault).asset();
+            address outputToken = _vault.asset();
             uint256 outputAmount = IERC20(outputToken).balanceOf(address(this));
             require(outputAmount >= expectedOutputAmount, "Output amount is less than expected");
             IERC20(launchpadToken).approve(address(tradeContract), 0);
@@ -110,7 +113,7 @@ contract ClaimingFacet is AccessControl {
             uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
             uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;
             IERC20(outputToken).transfer(ILoan(loanContract).owner(), treasuryFeeAmount);
-            IERC20(outputToken).transfer(ILoan(loanContract)._vault(), lenderPremiumAmount);
+            IERC20(outputToken).transfer(address(_vault), lenderPremiumAmount);
         }
 
         // send remaining launchpad token to portfolio owner

@@ -39,6 +39,7 @@ contract MigrationWithUnpaidFeesTest is Test {
     PortfolioManager public portfolioManager;
     PortfolioAccountConfig public portfolioAccountConfig;
     LoanConfig public loanConfig;
+    SwapConfig public swapConfig;
     FacetRegistry public facetRegistry;
     address public user;
     address public portfolioAccount;
@@ -80,7 +81,7 @@ contract MigrationWithUnpaidFeesTest is Test {
         
         // Deploy config contracts
         DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (portfolioAccountConfig, , loanConfig, ) = configDeployer.deploy();
+        (portfolioAccountConfig, , loanConfig, swapConfig) = configDeployer.deploy();
         
         // Deploy facets
         DeployFacets deployer = new DeployFacets();
@@ -93,9 +94,10 @@ contract MigrationWithUnpaidFeesTest is Test {
             address(0), // rewardsDistributor - not needed
             address(loanConfig),
             address(usdc),
-            address(0), // swapConfig - not needed
+            address(swapConfig), // swapConfig
             BASE_LOAN_CONTRACT, // loanContract
-            address(usdc) // lendingToken
+            address(usdc), // lendingToken
+            loanContract._vault()
         );
         
         // Set loan contract in config

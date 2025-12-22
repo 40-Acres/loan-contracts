@@ -12,6 +12,7 @@ import {DeploySwapFacet} from "./facets/DeploySwapFacet.s.sol";
 import {DeployMigrationFacet} from "./facets/DeployMigrationFacet.s.sol";
 import {DeployVexyFacet, DeployOpenXFacet} from "./facets/DeployMarketplaceFacets.s.sol";
 import {DeployERC721ReceiverFacet} from "./facets/DeployERC721ReceiverFacet.s.sol";
+import {DeployRewardsProcessingFacet} from "./facets/DeployRewardsProcessingFacet.s.sol";
 
 contract DeployFacets is AccountFacetsDeploy {
     DeployBridgeFacet deployBridgeFacet = new DeployBridgeFacet();
@@ -25,10 +26,11 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployVexyFacet deployVexyFacet = new DeployVexyFacet();
     DeployOpenXFacet deployOpenXFacet = new DeployOpenXFacet();
     DeployERC721ReceiverFacet deployERC721ReceiverFacet = new DeployERC721ReceiverFacet();
-
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address swapConfig, address loanContract, address lendingToken) external {
+    DeployRewardsProcessingFacet deployRewardsProcessingFacet = new DeployRewardsProcessingFacet();
+    
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address swapConfig, address loanContract, address lendingToken, address vault) external {
         deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc);
-        deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig);
+        deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
         deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, lendingToken);
         deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
@@ -38,6 +40,7 @@ contract DeployFacets is AccountFacetsDeploy {
         deployVexyFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployOpenXFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployERC721ReceiverFacet.deploy(portfolioFactory);
+        deployRewardsProcessingFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
     }
 }
 

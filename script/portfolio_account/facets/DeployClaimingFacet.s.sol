@@ -18,19 +18,20 @@ contract DeployClaimingFacet is AccountFacetsDeploy {
         address REWARDS_DISTRIBUTOR = vm.envAddress("REWARDS_DISTRIBUTOR");
         address LOAN_CONFIG = vm.envAddress("LOAN_CONFIG");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
+        address VAULT = vm.envAddress("VAULT");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        ClaimingFacet facet = new ClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG);
+        ClaimingFacet facet = new ClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG, VAULT);
         
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "ClaimingFacet", false);
         
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig) external returns (ClaimingFacet) {
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault) external returns (ClaimingFacet) {
         
-        ClaimingFacet facet = new ClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig);
+        ClaimingFacet facet = new ClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
         bytes4[] memory selectors = getSelectorsForFacet();
         registerFacet(portfolioFactory, address(facet), selectors, "ClaimingFacet", true);
         

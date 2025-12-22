@@ -10,7 +10,7 @@ import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
-import {DeployRewardsProcessingFacet} from "../../../script/portfolio_account/facets/DeployRewardsProcessingFacet.sol";
+import {DeployRewardsProcessingFacet} from "../../../script/portfolio_account/facets/DeployRewardsProcessingFacet.s.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 

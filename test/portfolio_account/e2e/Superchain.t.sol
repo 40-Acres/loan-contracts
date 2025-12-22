@@ -85,7 +85,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter));
 
         DeploySuperchainClaiming claimingDeployer = new DeploySuperchainClaiming();
-        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig));
+        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig), address(0)); // vault - will be set later
         
 
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
