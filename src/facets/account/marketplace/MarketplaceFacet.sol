@@ -55,10 +55,11 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     }
 
     /**
-     * @notice Processes payment from marketplace, pays down debt if needed, and approves seller to take remaining funds
-     * @dev Called by marketplace after taking funds from buyer
+     * @notice Processes payment from marketplace and approves buyer for NFT transfer
+     * @dev Called by marketplace after taking funds from buyer. Buyer must be a portfolio account.
+     *      Approves buyer to transfer NFT. Buyer must call finalizePurchase to complete the purchase.
      * @param tokenId The ID of the veNFT being sold
-     * @param buyer The address of the buyer
+     * @param buyer The address of the buyer (must be a portfolio account)
      * @param paymentAmount The amount being paid (should match listing price)
      */
     function processPayment(
@@ -97,52 +98,107 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         IERC20 paymentToken = IERC20(listing.paymentToken);
         paymentToken.transferFrom(msg.sender, address(this), paymentAmount);
         
-        // Handle debt payment if there's debt attached or current debt
-        uint256 remainingAmount = paymentAmount;
-        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
+        // Always transfer full payment amount to portfolio owner (seller)
+        // Debt will be transferred to buyer in finalizePurchase (never automatically paid down)
+        paymentToken.transfer(portfolioOwner, paymentAmount);
         
-        // Use debtAttached if specified, otherwise use current total debt
-        uint256 debtToPay = listing.debtAttached > 0 ? listing.debtAttached : totalDebt;
+        // Get buyer's portfolio account (buyer parameter is the EOA, but we need to approve the portfolio account)
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
+        require(buyerPortfolio != address(0), "Buyer must have a portfolio account");
         
-        if (debtToPay > 0 && totalDebt > 0) {
-            // Cap debt payment to actual total debt
-            uint256 actualDebtToPay = debtToPay > totalDebt ? totalDebt : debtToPay;
-            
-            // Cap debt payment to available payment amount
-            if (actualDebtToPay > remainingAmount) {
-                actualDebtToPay = remainingAmount;
-            }
-            
-            if (actualDebtToPay > 0) {
-                // Get loan contract
-                address loanContract = _portfolioAccountConfig.getLoanContract();
-                require(loanContract != address(0), "Loan contract not set");
-                
-                // Approve loan contract to take payment
-                paymentToken.approve(loanContract, actualDebtToPay);
-                
-                // Pay down debt
-                CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), actualDebtToPay);
-                
-                // Clear approval
-                paymentToken.approve(loanContract, 0);
-                
-                remainingAmount -= actualDebtToPay;
-            }
-        }
-        
-        // Transfer remaining amount to portfolio owner (seller)
-        if (remainingAmount > 0) {
-            paymentToken.transfer(portfolioOwner, remainingAmount);
-        }
+        // Approve buyer's portfolio account to transfer the NFT
+        _votingEscrow.approve(buyerPortfolio, tokenId);
         
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
+    }
+
+    /**
+     * @notice Finalize purchase by transferring NFT and debt from seller
+     * @param seller The seller's portfolio account address
+     * @param tokenId The token ID being purchased
+     * @param debtAmount The amount of debt to transfer
+     * @dev Called by marketplace to complete the purchase. Seller must have approved this account in processPayment.
+     *      Calculates proportional unpaid fees based on debt amount.
+     */
+    function finalizePurchase(
+        address seller,
+        uint256 tokenId,
+        uint256 debtAmount
+    ) external {
+        require(msg.sender == _marketplace, "Only marketplace can finalize purchase");
+        require(_portfolioFactory.isPortfolio(seller), "Seller must be a portfolio account");
+        require(seller != address(this), "Cannot purchase from self");
         
-        // Transfer NFT to buyer
-        _votingEscrow.transferFrom(address(this), buyer, tokenId);
+        // Calculate debt amount - use debtAmount if provided, otherwise use seller's total debt
+        uint256 actualDebtAmount = debtAmount;
+        if (actualDebtAmount == 0) {
+            // If debtAmount is 0, use seller's total debt
+            actualDebtAmount = CollateralFacet(seller).getTotalDebt();
+        }
         
-        // Remove collateral from collateral manager
+        // Calculate proportional unpaid fees if there's debt to transfer
+        uint256 unpaidFeesToTransfer = 0;
+        if (actualDebtAmount > 0) {
+            // Get seller's total debt and unpaid fees
+            uint256 sellerTotalDebt = CollateralFacet(seller).getTotalDebt();
+            uint256 sellerUnpaidFees = CollateralFacet(seller).getUnpaidFees();
+            
+            // Cap debt amount to seller's actual total debt
+            if (actualDebtAmount > sellerTotalDebt) {
+                actualDebtAmount = sellerTotalDebt;
+            }
+            
+            // Calculate proportional unpaid fees
+            if (sellerUnpaidFees > 0 && sellerTotalDebt > 0) {
+                unpaidFeesToTransfer = (sellerUnpaidFees * actualDebtAmount) / sellerTotalDebt;
+            }
+            
+            // Transfer debt away from seller by calling seller's MarketplaceFacet
+            // This must happen before NFT transfer since transferDebtToBuyer checks token ownership
+            IMarketplaceFacet(seller).transferDebtToBuyer(tokenId, address(this), actualDebtAmount, unpaidFeesToTransfer);
+        }
+        
+        // Transfer NFT from seller to this portfolio account (buyer)
+        // Seller must have approved this account in processPayment
+        _votingEscrow.transferFrom(seller, address(this), tokenId);
+        
+        // Add collateral to buyer's account BEFORE adding debt (to avoid undercollateralization)
+        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        
+        // Add debt to buyer's account AFTER adding collateral
+        // Use addDebtFromMarketplace which updates undercollateralized debt tracking
+        if (actualDebtAmount > 0) {
+            CollateralManager.addDebtFromMarketplace(address(_portfolioAccountConfig), actualDebtAmount, unpaidFeesToTransfer);
+            
+        }
+    }
+
+    /**
+     * @notice Transfer debt away from this portfolio account (seller) to buyer
+     * @dev Called by buyer's finalizePurchase to transfer debt
+     * @param tokenId The token ID being purchased
+     * @param buyer The buyer's portfolio account address
+     * @param debtAmount The amount of debt to transfer
+     * @param unpaidFees The unpaid fees to transfer
+     */
+    function transferDebtToBuyer(
+        uint256 tokenId,
+        address buyer,
+        uint256 debtAmount,
+        uint256 unpaidFees
+    ) external {
+        // Only allow calls from buyer's portfolio account
+        require(_portfolioFactory.isPortfolio(msg.sender), "Caller must be a portfolio account");
+        require(msg.sender == buyer, "Caller must be the buyer");
+        
+        // Verify token is owned by this portfolio account (seller)
+        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not in seller's portfolio");
+        
+        // Transfer debt away from seller (this portfolio account)
+        CollateralManager.transferDebtAway(address(_portfolioAccountConfig), debtAmount, unpaidFees);
+        
+        // Remove collateral from seller's collateral manager
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         CollateralManager.enforceCollateralRequirements();
     }

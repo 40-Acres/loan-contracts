@@ -27,5 +27,32 @@ interface IMarketplaceFacet {
         address buyer,
         uint256 paymentAmount
     ) external;
+
+    /**
+     * @notice Finalize purchase by transferring NFT and debt from seller
+     * @param seller The seller's portfolio account address
+     * @param tokenId The token ID being purchased
+     * @param debtAmount The amount of debt to transfer
+     */
+    function finalizePurchase(
+        address seller,
+        uint256 tokenId,
+        uint256 debtAmount
+    ) external;
+
+    /**
+     * @notice Transfer debt away from this portfolio account (seller) to buyer
+     * @dev Called by buyer's finalizePurchase to transfer debt
+     * @param tokenId The token ID being purchased
+     * @param buyer The buyer's portfolio account address
+     * @param debtAmount The amount of debt to transfer
+     * @param unpaidFees The unpaid fees to transfer
+     */
+    function transferDebtToBuyer(
+        uint256 tokenId,
+        address buyer,
+        uint256 debtAmount,
+        uint256 unpaidFees
+    ) external;
 }
 

@@ -80,7 +80,8 @@ contract VexyMarketplaceTest is Test, Setup {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VexyFacet.buyVexyListing.selector,
-            VEXY_LISTING_ID
+            VEXY_LISTING_ID,
+            _user
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
@@ -157,7 +158,8 @@ contract VexyMarketplaceTest is Test, Setup {
         );
         calldatas[1] = abi.encodeWithSelector(
             VexyFacet.buyVexyListing.selector,
-            VEXY_LISTING_ID
+            VEXY_LISTING_ID,
+            _user
         );
 
         _portfolioManager.multicall(calldatas, portfolios);

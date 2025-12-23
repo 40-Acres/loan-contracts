@@ -80,7 +80,8 @@ contract OpenXMarketplaceTest is Test, Setup {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             OpenXFacet.buyOpenXListing.selector,
-            OPENX_LISTING_ID
+            OPENX_LISTING_ID,
+            _user
         );
         _portfolioManager.multicall(calldatas, portfolios);
         vm.stopPrank();
@@ -157,7 +158,8 @@ contract OpenXMarketplaceTest is Test, Setup {
         );
         calldatas[1] = abi.encodeWithSelector(
             OpenXFacet.buyOpenXListing.selector,
-            OPENX_LISTING_ID
+            OPENX_LISTING_ID,
+            _user
         );
 
         _portfolioManager.multicall(calldatas, portfolios);

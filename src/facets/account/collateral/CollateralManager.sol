@@ -326,4 +326,58 @@ library CollateralManager {
             }
         }
     }
+
+
+    /**
+     * @dev Add debt from marketplace purchase
+     * @param amount The amount of debt to add
+     * @param unpaidFees The unpaid fees to add
+     * @notice This is used when transferring debt in marketplace purchases
+     */
+    function addDebtFromMarketplace(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        // Add debt and unpaid fees
+        collateralManagerData.debt += amount;
+        collateralManagerData.unpaidFees += unpaidFees;
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+    }
+
+    /**
+     * @dev Transfer debt away from this portfolio account without payment
+     * @param amount The amount of debt to transfer away
+     * @param unpaidFees The unpaid fees to transfer away
+     * @notice This is used when transferring debt to another portfolio account (e.g., in marketplace sales)
+     */
+    function transferDebtAway(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        // Cap the amount to actual total debt
+        uint256 debtToTransfer = amount > collateralManagerData.debt ? collateralManagerData.debt : amount;
+        
+        if (debtToTransfer == 0) {
+            return;
+        }
+        
+        // Decrease over-supplied vault debt proportionally if it exists
+        if (collateralManagerData.overSuppliedVaultDebt > 0) {
+            uint256 overSuppliedToTransfer = collateralManagerData.overSuppliedVaultDebt > debtToTransfer 
+                ? debtToTransfer 
+                : collateralManagerData.overSuppliedVaultDebt;
+            collateralManagerData.overSuppliedVaultDebt -= overSuppliedToTransfer;
+        }
+        
+        // Decrease unpaid fees (cap to actual unpaid fees)
+        uint256 feesToTransfer = unpaidFees > collateralManagerData.unpaidFees 
+            ? collateralManagerData.unpaidFees 
+            : unpaidFees;
+        collateralManagerData.unpaidFees -= feesToTransfer;
+        
+        // Decrease debt
+        collateralManagerData.debt -= debtToTransfer;
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+    }
 }

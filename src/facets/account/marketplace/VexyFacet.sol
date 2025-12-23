@@ -22,8 +22,8 @@ contract VexyFacet is AccessControl {
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
     }
 
-    function buyVexyListing(uint256 listingId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+    function buyVexyListing(uint256 listingId, address buyer) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        require(buyer != address(this), "Buyer cannot be the portfolio account");
 
         (
             ,
@@ -45,11 +45,11 @@ contract VexyFacet is AccessControl {
         
         // Check if portfolio owner has sufficient balance and approval
         IERC20 currencyToken = IERC20(currency);
-        require(currencyToken.balanceOf(portfolioOwner) >= price, "Insufficient balance");
-        require(currencyToken.allowance(portfolioOwner, address(this)) >= price, "Insufficient allowance");
+        require(currencyToken.balanceOf(buyer) >= price, "Insufficient balance");
+        require(currencyToken.allowance(buyer, address(this)) >= price, "Insufficient allowance");
         
         // transfer funds from portfolio owner to this contract
-        currencyToken.transferFrom(portfolioOwner, address(this), price);
+        currencyToken.transferFrom(buyer, address(this), price);
         // approve the marketplace to spend the funds
         currencyToken.approve(address(_vexy), price);
         // buy the listings

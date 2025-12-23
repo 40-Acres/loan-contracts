@@ -7,6 +7,7 @@ import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IMarketplaceFacet} from "../../interfaces/IMarketplaceFacet.sol";
+import {ICollateralFacet} from "../account/collateral/ICollateralFacet.sol";
 import {UserMarketplaceModule} from "../account/marketplace/UserMarketplaceModule.sol";
 
 /**
@@ -125,6 +126,10 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             revert PaymentAmountMismatch();
         }
         
+        // Calculate debt amount BEFORE calling processPayment (which removes listing)
+        // Use debtAttached if specified, otherwise use seller's total debt
+        uint256 debtAmount = listing.debtAttached;
+        
         // Transfer payment from buyer to this contract
         IERC20 paymentTokenContract = IERC20(paymentToken);
         require(
@@ -136,11 +141,23 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         paymentTokenContract.approve(portfolioAccount, paymentAmount);
         
         // Call portfolio account's processPayment function
-        // This will handle debt payment and transfer remaining to seller
+        // This will approve buyer for NFT transfer and transfer payment to seller
         IMarketplaceFacet(portfolioAccount).processPayment(tokenId, msg.sender, paymentAmount);
         
         // Clear approval
         paymentTokenContract.approve(portfolioAccount, 0);
+        
+        // Get buyer's portfolio account
+        address buyerPortfolio = portfolioFactory.portfolioOf(msg.sender);
+        require(buyerPortfolio != address(0), "Buyer must be a portfolio account");
+        
+        // Finalize purchase: transfer NFT and debt from seller to buyer
+        // Always transfer debt (never pay it down automatically)
+        IMarketplaceFacet(buyerPortfolio).finalizePurchase(
+            portfolioAccount, // seller
+            tokenId,
+            debtAmount
+        );
         
         emit ListingPurchased(
             tokenId,
