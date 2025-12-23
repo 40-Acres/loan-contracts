@@ -45,11 +45,11 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set up UserRewardsConfig through PortfolioManager multicall
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](4);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount;
-        portfolios[2] = _portfolioAccount;
-        portfolios[3] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](4);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
+        portfolioFactories[2] = address(_portfolioFactory);
+        portfolioFactories[3] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](4);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsToken.selector,
@@ -67,7 +67,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             CollateralFacet.addCollateral.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Approve swap target
@@ -88,28 +88,28 @@ contract RewardsProcessingFacetTest is Test, Setup {
     // Helper function to add collateral via PortfolioManager multicall
     function addCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
             tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to borrow via PortfolioManager multicall
     function borrowViaMulticall(uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.borrow.selector,
             amount
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
@@ -153,9 +153,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Change zero balance option to InvestToVault
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](2);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOption.selector,
@@ -165,7 +165,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             100
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         address vault = ILoan(_loanContract)._vault();
@@ -197,9 +197,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set increase percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](2);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOptionPercentage.selector,
@@ -209,7 +209,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             RewardsProcessingFacet.setRewardsOption.selector,
             UserRewardsConfig.RewardsOption.IncreaseCollateral
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Fund mock router with locked asset
@@ -398,10 +398,10 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set increase percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](3);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount;
-        portfolios[2] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](3);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
+        portfolioFactories[2] = address(_portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
@@ -416,7 +416,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             CollateralFacet.addCollateral.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         
         // Borrow to create active loan
         uint256 borrowAmount = 500e6;
@@ -617,14 +617,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set rewards option percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             30
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         rewardsOptionPercentage = rewardsProcessingFacet.getRewardsOptionPercentage();
@@ -638,14 +638,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
     function testGetIncreasePercentageCappedAt25WithDebt() public {
         // Set increase percentage above 25
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             50
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Verify percentage is 50 when there's no debt
@@ -675,14 +675,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
     function testSetRewardsOption() public {
         // Test setting active rewards option
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOption.selector,
             UserRewardsConfig.RewardsOption.PayToRecipient
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         UserRewardsConfig.RewardsOption option = rewardsProcessingFacet.getRewardsOption();
@@ -692,14 +692,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
     function testSetZeroBalanceRewardsOption() public {
         // Test setting zero balance rewards option
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOption.selector,
             UserRewardsConfig.RewardsOption.InvestToVault
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         UserRewardsConfig.RewardsOption option = rewardsProcessingFacet.getRewardsOption();
@@ -709,14 +709,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
     function testSetRewardsOptionPercentage() public {
         // Test setting increase percentage
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsOptionPercentage.selector,
             15
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         uint256 percentage = rewardsProcessingFacet.getRewardsOptionPercentage();
@@ -760,14 +760,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Set rewards token to zero using the facet's setter through multicall
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsToken.selector,
             address(0)
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // This should fail when processing zero balance rewards

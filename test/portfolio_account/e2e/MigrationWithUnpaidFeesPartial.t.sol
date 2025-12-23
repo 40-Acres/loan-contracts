@@ -180,6 +180,11 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         uint256 protocolOwnerBalanceAfterFirst = usdc.balanceOf(protocolOwner);
         uint256 vaultBalanceAfterFirst = usdc.balanceOf(vault);
         
+        // Declare variables outside prank blocks so they can be reused
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        
         // Execute first payment
         vm.startPrank(portfolioOwner);
         deal(address(usdc), portfolioOwner, firstPaymentAmount);
@@ -189,13 +194,10 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
             firstPaymentAmount
         );
         
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = portfolioAccount;
-        bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = firstPayCalldata;
         
         console.log("Executing first payment");
-        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolios);
+        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Verify first payment: all should go to owner, nothing to vault
@@ -246,9 +248,11 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
             secondPaymentAmount
         );
         
+        // Reuse variables from first payment
+        portfolioFactories[0] = address(portfolioFactory);
         calldatas[0] = secondPayCalldata;
         console.log("Executing second payment");
-        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolios);
+        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Verify second payment: fees to owner, remainder to vault

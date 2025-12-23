@@ -14,14 +14,14 @@ contract VotingEscrowFacetTest is Test, Setup {
     // Helper function to create lock via PortfolioManager multicall and return the tokenId
     function createLockViaMulticall(uint256 amount) internal returns (uint256 tokenId) {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VotingEscrowFacet.createLock.selector,
             amount
         );
-        bytes[] memory results = _portfolioManager.multicall(calldatas, portfolios);
+        bytes[] memory results = _portfolioManager.multicall(calldatas, portfolioFactories);
         require(results.length > 0, "Multicall failed - no results");
         // Decode the tokenId from the return data
         tokenId = abi.decode(results[0], (uint256));
@@ -31,15 +31,15 @@ contract VotingEscrowFacetTest is Test, Setup {
     // Helper function for tests that expect reverts - doesn't catch the revert
     function createLockViaMulticallExpectRevert(uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VotingEscrowFacet.createLock.selector,
             amount
         );
         // Let the revert bubble up naturally
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 

@@ -192,31 +192,40 @@ contract PortfolioManager is Ownable {
      * Reverts if any call fails
      * Automatically enforces collateral requirements after operations
      * @param calldatas Array of calldatas to execute
-     * @param portfolios Array of portfolio addresses to execute the calldatas on
+     * @param portfolioFactories Array of portfolio factory addresses to execute the calldatas on
      * @return results Array of return data from each call
      */
     function multicall(
         bytes[] calldata calldatas,
-        address[] calldata portfolios
-    ) external enforceCollateral(portfolios) returns (bytes[] memory results) {
+        address[] calldata portfolioFactories
+    ) external returns (bytes[] memory results) {
         require(calldatas.length > 0, "PortfolioManager: No calldatas provided");
-        require(portfolios.length > 0, "PortfolioManager: No portfolios provided");
-        require(calldatas.length == portfolios.length, "PortfolioManager: Calldatas and portfolios length mismatch");
+        require(portfolioFactories.length > 0, "PortfolioManager: No portfolio factories provided");
+        require(calldatas.length == portfolioFactories.length, "PortfolioManager: Calldatas and portfolio factories length mismatch");
         
         results = new bytes[](calldatas.length);
+        address[] memory portfolios = new address[](calldatas.length);
         
-        // verify ownership of all portfolios
+        // Get portfolios from factories and verify ownership
         for (uint256 i = 0; i < calldatas.length; i++) {
-            address portfolio = portfolios[i];
+            address factory = portfolioFactories[i];
+            
+            // Verify factory is registered
+            require(isRegisteredFactory[factory], FactoryNotRegistered(factory));
+            
+            // Get portfolio for msg.sender from this factory
+            PortfolioFactory portfolioFactory = PortfolioFactory(factory);
+            address portfolio = portfolioFactory.portfolioOf(msg.sender);
+            
+            // Create portfolio if it doesn't exist
+            if (portfolio == address(0)) {
+                portfolio = portfolioFactory.createAccount(msg.sender);
+            }
             
             // Verify portfolio is registered
-            address factory = portfolioToFactory[portfolio];
-            require(factory != address(0), PortfolioNotRegistered(portfolio));
+            require(portfolioToFactory[portfolio] == factory, PortfolioNotRegistered(portfolio));
             
-            // Verify ownership
-            PortfolioFactory portfolioFactory = PortfolioFactory(factory);
-            address owner = portfolioFactory.ownerOf(portfolio);
-            require(owner == msg.sender, NotPortfolioOwner(portfolio, msg.sender));
+            portfolios[i] = portfolio;
         }
         
         // execute all calls
@@ -235,6 +244,13 @@ contract PortfolioManager is Ownable {
                 } else {
                     revert CallFailed(portfolios[i], result);
                 }
+            }
+        }
+        
+        // Enforce collateral requirements after operations
+        for (uint256 i = 0; i < portfolios.length; i++) {
+            if(!ICollateralFacet(address(portfolios[i])).enforceCollateralRequirements()) {
+                revert InsufficientCollateral();
             }
         }
         

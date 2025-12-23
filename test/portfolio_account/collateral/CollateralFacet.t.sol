@@ -30,42 +30,42 @@ contract CollateralFacetTest is Test, Setup {
     // Helper function to add collateral via PortfolioManager multicall
     function addCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
             tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to remove collateral via PortfolioManager multicall
     function removeCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.removeCollateral.selector,
             tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to borrow via PortfolioManager multicall
     function borrowViaMulticall(uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.borrow.selector,
             amount
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
@@ -91,14 +91,14 @@ contract CollateralFacetTest is Test, Setup {
         // Transfer token to portfolio owner first
         vm.startPrank(_user);
         // multicall remove collateral from portfolio account
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.removeCollateral.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         // Approve portfolio account to transfer the token
         vm.startPrank(_user);
@@ -249,9 +249,9 @@ contract CollateralFacetTest is Test, Setup {
         // because removing collateral reduces maxLoanIgnoreSupply more than paying debt reduces overcollateralization
         vm.startPrank(_user);
         IERC20(_asset).approve(_portfolioAccount, payAmount);
-        address[] memory portfolios = new address[](2);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount; // Same portfolio for second operation
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory); // Same portfolio for second operation
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.pay.selector,
@@ -264,7 +264,7 @@ contract CollateralFacetTest is Test, Setup {
         (uint256 newMaxLoan2, uint256 newMaxLoanIgnoreSupply2) = CollateralFacet(_portfolioAccount).getMaxLoan();
         
         vm.expectRevert(); // Should revert because overcollateralization increases
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         (uint256 newMaxLoan3, uint256 newMaxLoanIgnoreSupply3) = CollateralFacet(_portfolioAccount).getMaxLoan();
 
@@ -293,7 +293,7 @@ contract CollateralFacetTest is Test, Setup {
         );
         
         vm.expectRevert();
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
 
 
         uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
@@ -305,7 +305,7 @@ contract CollateralFacetTest is Test, Setup {
             CollateralFacet.removeCollateral.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
 
         vm.stopPrank();
         
@@ -365,9 +365,9 @@ contract CollateralFacetTest is Test, Setup {
         // If the net effect reduces maxLoanIgnoreSupply, it should revert
         // If the net effect increases or keeps maxLoanIgnoreSupply same, it should pass
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](2);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount; // Same portfolio for second operation
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory); // Same portfolio for second operation
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.removeCollateral.selector,
@@ -380,7 +380,7 @@ contract CollateralFacetTest is Test, Setup {
 
         // should revert
         vm.expectRevert();
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
     }
 
     // Edge case: Operations that don't affect debt or collateral (like voting)

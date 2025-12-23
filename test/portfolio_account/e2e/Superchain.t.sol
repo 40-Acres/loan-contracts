@@ -144,19 +144,19 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         voteWeights[0] = 100e18;
         
         // Call vote through PortfolioManager multicall (required by onlyPortfolioManagerMulticall modifier)
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, tokenId, votePools, voteWeights);
         
         // should revert since user has no WETH
         vm.expectRevert();
-        _pm.multicall(calldatas, portfolios);
+        _pm.multicall(calldatas, portfolioFactories);
 
         // transferWeth to portfolio Account
         IERC20(0x4200000000000000000000000000000000000006).transfer(portfolioAccount, .001e18);
         IERC20(0x4200000000000000000000000000000000000006).transfer(authorizedCaller, .003e18);
-        _pm.multicall(calldatas, portfolios);
+        _pm.multicall(calldatas, portfolioFactories);
 
         uint256 lastVoted = IVoter(address(voter)).lastVoted(tokenId);
         assertEq(lastVoted, block.timestamp);

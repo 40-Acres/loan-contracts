@@ -86,14 +86,14 @@ contract MarketplaceFacetTest is Test, Setup {
     // Helper function to add collateral via PortfolioManager multicall
     function addCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
             tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
@@ -107,8 +107,8 @@ contract MarketplaceFacetTest is Test, Setup {
         address allowedBuyer
     ) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             MarketplaceFacet.makeListing.selector,
@@ -119,21 +119,21 @@ contract MarketplaceFacetTest is Test, Setup {
             expiresAt,
             allowedBuyer
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to borrow via PortfolioManager multicall
     function borrowViaMulticall(uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.borrow.selector,
             amount
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
@@ -462,14 +462,14 @@ contract MarketplaceFacetTest is Test, Setup {
         
         // Cancel listing
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             MarketplaceFacet.cancelListing.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Verify listing is removed
@@ -587,14 +587,14 @@ contract MarketplaceFacetTest is Test, Setup {
         // Now update the listing to pay down enough debt to avoid undercollateralization
         // Cancel the current listing
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             MarketplaceFacet.cancelListing.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Calculate debtAttached that would avoid undercollateralization

@@ -23,28 +23,28 @@ contract VexyMarketplaceTest is Test, Setup {
     // Helper function to add collateral via PortfolioManager multicall
     function addCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
             tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to borrow via PortfolioManager multicall
     function borrowViaMulticall(uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.borrow.selector,
             amount
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
@@ -75,15 +75,15 @@ contract VexyMarketplaceTest is Test, Setup {
 
         vm.startPrank(_user);
         IERC20(currency).approve(_portfolioAccount, price);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VexyFacet.buyVexyListing.selector,
             VEXY_LISTING_ID,
             _user
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
         // assert the getLockedCollateral returns the correct collateral
@@ -131,9 +131,9 @@ contract VexyMarketplaceTest is Test, Setup {
         // Approve portfolio account to pull tokens (userSwap will transferFrom USDC, buyVexyListing will transferFrom currency)
         IERC20(address(_usdc)).approve(_portfolioAccount, price);
         IERC20(currency).approve(_portfolioAccount, price);
-        address[] memory portfolios = new address[](2);
-        portfolios[0] = _portfolioAccount;
-        portfolios[1] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](2);
 
         // Create swap data to call executeSwap on MockOdosRouter
@@ -162,7 +162,7 @@ contract VexyMarketplaceTest is Test, Setup {
             _user
         );
 
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
 

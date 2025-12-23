@@ -181,12 +181,12 @@ contract MigrationWithUnpaidFeesTest is Test {
             paymentAmount
         );
         
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = payCalldata;
         
-        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolios);
+        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
         // Verify unpaid fees were paid to protocol owner first

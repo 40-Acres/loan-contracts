@@ -37,36 +37,36 @@ contract ClaimingFacetTest is Test, Setup {
     // Helper function to add collateral via PortfolioManager multicall
     function addCollateralViaMulticall(uint256 tokenId) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             CollateralFacet.addCollateral.selector,
             tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to borrow via PortfolioManager multicall
     function borrowViaMulticall(uint256 amount) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             LendingFacet.borrow.selector,
             amount
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
     // Helper function to vote for launchpad token via PortfolioManager multicall
     function voteForLaunchpadTokenViaMulticall(uint256 tokenId, address[] memory pools, uint256[] memory weights, bool receiveToken) internal {
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VotingFacet.voteForLaunchpadToken.selector,
@@ -75,7 +75,7 @@ contract ClaimingFacetTest is Test, Setup {
             weights,
             receiveToken
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
@@ -91,14 +91,14 @@ contract ClaimingFacetTest is Test, Setup {
     function testClaimRebase() public {
         int128 startingLockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         vm.startPrank(_user);
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = _portfolioAccount;
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             ClaimingFacet.claimRebase.selector,
             _tokenId
         );
-        _portfolioManager.multicall(calldatas, portfolios);
+        _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         int128 endingLockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         assertEq(endingLockedAmount, startingLockedAmount + 1128188206630704788);
