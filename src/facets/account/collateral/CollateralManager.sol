@@ -221,6 +221,11 @@ library CollateralManager {
         return collateralManagerData.originTimestamps[tokenId];
     }
 
+    function getLockedCollateral(uint256 tokenId) external view returns (uint256) {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        return collateralManagerData.lockedCollaterals[tokenId];
+    }
+
     /**
      * @dev Enforce collateral requirements
      * @return success True if collateral requirements are met, revert otherwise

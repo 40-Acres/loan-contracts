@@ -71,6 +71,10 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         return address(_votingEscrow);
     }
 
+    function getLockedCollateral(uint256 tokenId) public view returns (uint256) {
+        return CollateralManager.getLockedCollateral(tokenId);
+    }
+
     function enforceCollateralRequirements() public view returns (bool success) {
         return CollateralManager.enforceCollateralRequirements();
     }
