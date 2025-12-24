@@ -9,6 +9,7 @@ import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/Voting
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {stdJson} from "forge-std/StdJson.sol";
+import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
 /**
  * @title CreateLock
@@ -28,82 +29,10 @@ contract CreateLock is Script {
     using stdJson for string;
 
     /**
-     * @dev Load PortfolioManager address from addresses.json or environment variable
-     */
-    function loadPortfolioManager() internal view returns (PortfolioManager) {
-        address portfolioManagerAddr;
-        
-        // Try to read from addresses.json
-        try vm.readFile(string.concat(vm.projectRoot(), "/addresses/addresses.json")) returns (string memory addressesJson) {
-            portfolioManagerAddr = addressesJson.readAddress(".portfoliomanager");
-        } catch {
-            // Fall back to environment variable
-            portfolioManagerAddr = vm.envAddress("PORTFOLIO_MANAGER");
-        }
-        
-        require(portfolioManagerAddr != address(0), "PortfolioManager address not found. Set PORTFOLIO_MANAGER env var or allow file access with --fs addresses");
-        return PortfolioManager(portfolioManagerAddr);
-    }
-
-    /**
-     * @dev Get PortfolioFactory for aerodrome-usdc from PortfolioManager
-     */
-    function getAerodromeFactory(PortfolioManager portfolioManager) internal view returns (PortfolioFactory) {
-        bytes32 salt = keccak256(abi.encodePacked("aerodrome-usdc"));
-        address factoryAddress = portfolioManager.factoryBySalt(salt);
-        require(factoryAddress != address(0), "Aerodrome factory not found");
-        return PortfolioFactory(factoryAddress);
-    }
-
-    /**
      * @dev Get voting escrow address - hardcoded for Aerodrome on Base
      */
     function getVotingEscrow() internal pure returns (address) {
         return 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO on Base
-    }
-
-    /**
-     * @dev Get or create portfolio address for an owner from the aerodrome-usdc factory
-     */
-    function getPortfolioForOwner(address owner) internal returns (address) {
-        PortfolioManager portfolioManager = loadPortfolioManager();
-        PortfolioFactory factory = getAerodromeFactory(portfolioManager);
-        address portfolio = factory.portfolioOf(owner);
-        
-        // If portfolio doesn't exist, create it
-        if (portfolio == address(0)) {
-            portfolio = factory.createAccount(owner);
-            console.log("Created new portfolio for owner:", owner);
-            console.log("Portfolio address:", portfolio);
-        }
-        
-        return portfolio;
-    }
-
-    /**
-     * @dev Load PortfolioAddress from addresses.json (optional, returns address(0) if not found)
-     * Note: This function does NOT create portfolios - only reads existing addresses
-     */
-    function loadPortfolioAddress() internal view returns (address) {
-        // Try to read from addresses.json
-        try vm.readFile(string.concat(vm.projectRoot(), "/addresses/addresses.json")) returns (string memory addressesJson) {
-            // Try to read portfolioaddress (lowercase)
-            if (addressesJson.keyExists(".portfolioaddress")) {
-                return addressesJson.readAddress(".portfolioaddress");
-            }
-            
-            // Try alternative field name (camelCase)
-            if (addressesJson.keyExists(".portfolioAddress")) {
-                return addressesJson.readAddress(".portfolioAddress");
-            }
-            
-            // Note: We don't create portfolio here - that happens during broadcast
-            // If owner is in JSON, we'll return 0 and let the broadcast block handle creation
-        } catch {
-            // File read failed, will fall back to env vars
-        }
-        
-        return address(0);
     }
 
     /**
@@ -120,10 +49,10 @@ contract CreateLock is Script {
         uint256 lockDuration,
         address owner
     ) internal returns (uint256 tokenId) {
-        PortfolioManager portfolioManager = loadPortfolioManager();
+        PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
         
         // Verify the facet is registered
-        PortfolioFactory factory = getAerodromeFactory(portfolioManager);
+        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = VotingEscrowFacet.createLock.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
@@ -143,8 +72,9 @@ contract CreateLock is Script {
             console.log("Approved portfolio to spend tokens");
         }
         
-        address[] memory portfolios = new address[](1);
-        portfolios[0] = portfolioAddress;
+        // Use factory address instead of portfolio address for multicall
+        address[] memory factories = new address[](1);
+        factories[0] = address(factory);
         
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
@@ -152,7 +82,7 @@ contract CreateLock is Script {
             amount
         );
         
-        bytes[] memory results = portfolioManager.multicall(calldatas, portfolios);
+        bytes[] memory results = portfolioManager.multicall(calldatas, factories);
         require(results.length > 0, "Multicall failed - no results");
         
         tokenId = abi.decode(results[0], (uint256));
@@ -177,17 +107,10 @@ contract CreateLock is Script {
         uint256 lockDuration
     ) external {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        address owner = getAddressFromPrivateKey(privateKey);
+        address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         vm.startBroadcast(privateKey);
         createLock(portfolioAddress, amount, lockDuration, owner);
         vm.stopBroadcast();
-    }
-
-    /**
-     * @dev Get address from private key
-     */
-    function getAddressFromPrivateKey(uint256 pk) internal pure returns (address) {
-        return vm.addr(pk);
     }
 
     /**
@@ -202,19 +125,19 @@ contract CreateLock is Script {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         
         // Get owner address from private key
-        address owner = getAddressFromPrivateKey(privateKey);
+        address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         
         vm.startBroadcast(privateKey);
         
         // Get or create portfolio (must happen during broadcast)
         // Always use owner-based lookup when PRIVATE_KEY is available to ensure portfolio exists
-        address portfolioAddress = getPortfolioForOwner(owner);
+        address portfolioAddress = PortfolioHelperUtils.getPortfolioForOwner(vm, owner);
         
         // Only use PORTFOLIO_ADDRESS if explicitly provided and different from owner-based lookup
         try vm.envAddress("PORTFOLIO_ADDRESS") returns (address providedAddr) {
             if (providedAddr != address(0) && providedAddr != portfolioAddress) {
                 // Validate that provided address is registered
-                PortfolioManager portfolioManager = loadPortfolioManager();
+                PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
                 address factory = portfolioManager.portfolioToFactory(providedAddr);
                 if (factory != address(0)) {
                     portfolioAddress = providedAddr;
@@ -231,5 +154,6 @@ contract CreateLock is Script {
     }
 }
 
-//     AMOUNT=1000000000000000000    LOCK_DURATION=31536000    forge script script/portfolio_account/helper/CreateLock.s.sol:CreateLock      --sig "run()"      --rpc-url $BASE_RPC_URL      --broadcast
+// Example usage:
+// AMOUNT=1000000000000000000 forge script script/portfolio_account/helper/CreateLock.s.sol:CreateLock --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
 

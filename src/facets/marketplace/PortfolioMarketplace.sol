@@ -18,7 +18,7 @@ import {UserMarketplaceModule} from "../account/marketplace/UserMarketplaceModul
 contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     PortfolioFactory public immutable portfolioFactory;
     IVotingEscrow public immutable votingEscrow;
-    
+    uint256 public protocolFeeBps;
     address public feeRecipient;
     
     event ListingPurchased(
@@ -50,6 +50,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         portfolioFactory = PortfolioFactory(_portfolioFactory);
         votingEscrow = IVotingEscrow(_votingEscrow);
         feeRecipient = _feeRecipient;
+        protocolFeeBps = _protocolFeeBps;
     }
     
     /**
@@ -58,8 +59,12 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
      */
     function setProtocolFee(uint256 _protocolFeeBps) external onlyOwner {
         require(_protocolFeeBps <= 1000, "Fee too high");
+        protocolFeeBps = _protocolFeeBps;
     }
     
+    function protocolFee() external view returns (uint256) {
+        return protocolFeeBps;
+    }
     /**
      * @notice Set fee recipient address
      * @param _feeRecipient New fee recipient address

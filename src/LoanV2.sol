@@ -644,15 +644,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         }
     }
 
+
     /**
-     * @notice Returns the address of the ODOS Router contract.
+     * @notice Returns the address of the ODOS V3 Router contract.
      * @dev This function is used to interact with the ODOS Router for trading and swapping tokens.
      * @return The address of the ODOS Router contract.
      */
     function odosRouter() public virtual pure returns (address) {
-        return 0x19cEeAd7105607Cd444F5ad10dd51356436095a1; // ODOS Router address
+        return 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05; // ODOS Router address
     }
-
+    
     /**
      * @notice Handles claim process when loan balance becomes zero.
      * @dev Increases NFT balance and processes zero balance state.

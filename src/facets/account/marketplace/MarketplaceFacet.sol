@@ -10,6 +10,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IMarketplaceFacet} from "../../../interfaces/IMarketplaceFacet.sol";
+import {PortfolioMarketplace} from "../../marketplace/PortfolioMarketplace.sol";
 
 contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     PortfolioFactory public immutable _portfolioFactory;
@@ -26,6 +27,13 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _votingEscrow = IVotingEscrow(votingEscrow);
         _marketplace = marketplace;
+    }
+
+    event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
+    event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
+
+    function marketplace() external view returns (address) {
+        return _marketplace;
     }
 
     function makeListing(
@@ -96,7 +104,17 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Transfer payment token from marketplace to this portfolio account
         IERC20 paymentToken = IERC20(listing.paymentToken);
+
+
+        // take fees from the payment amount
+        uint256 protocolFee = (paymentAmount * PortfolioMarketplace(address(_marketplace)).protocolFee()) / 10000;
+        emit ProtocolFeeTaken(tokenId, msg.sender, protocolFee);
+        paymentToken.transferFrom(msg.sender, PortfolioMarketplace(address(_marketplace)).feeRecipient(), protocolFee);
+
+        emit PaymentProcessed(tokenId, msg.sender, paymentAmount, protocolFee);
+        paymentAmount = paymentAmount - protocolFee;
         paymentToken.transferFrom(msg.sender, address(this), paymentAmount);
+        
         
         // Handle payment based on whether debt is attached
         // - If debtAttached == 0: listing price pays down debt, excess goes to seller

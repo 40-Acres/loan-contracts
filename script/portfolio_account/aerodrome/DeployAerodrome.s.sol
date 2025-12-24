@@ -27,6 +27,8 @@ import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {Vault} from "../../../src/VaultV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationFacet.sol";
+import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 
 contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
@@ -162,6 +164,19 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
         
+        // Deploy MarketplaceFacet
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
+        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
+        marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
+        marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
+        marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
+        marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
+        marketplaceSelectors[5] = MarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[6] = MarketplaceFacet.cancelListing.selector;
+        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+
         // Deploy ERC721ReceiverFacet
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
         bytes4[] memory erc721ReceiverSelectors = new bytes4[](1);
