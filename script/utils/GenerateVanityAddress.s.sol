@@ -17,7 +17,7 @@ contract GenerateVanityPortfolioFactory is Script {
         uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         // Create a mock FacetRegistry for bytecode generation
-        FacetRegistry mockFacetRegistry = new FacetRegistry{salt: keccak256(abi.encodePacked("40acres","FacetRegistry"))}();
+        FacetRegistry mockFacetRegistry = new FacetRegistry{salt: keccak256(abi.encodePacked("40acres","FacetRegistry"))}(deployer);
         
         // Generate the actual PortfolioFactory bytecode
         bytes memory bytecode = abi.encodePacked(
