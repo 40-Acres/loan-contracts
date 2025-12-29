@@ -35,22 +35,4 @@ contract VeloLoan is Loan {
         _aeroFactory = address(0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a);
         _multiplier = 8;
     }
-
-
-    /* ORACLE */
-    function confirmUsdcPrice() internal view override virtual returns (bool) {
-        (
-            /* uint80 roundID */,
-            int answer ,
-            /*uint startedAt*/,
-            uint256 timestamp,
-            /*uint80 answeredInRound*/
-        ) = AggregatorV3Interface(address(0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3)).latestRoundData();
-
-        // add staleness check, data updates every 24 hours
-        require(timestamp > block.timestamp - 25 hours);
-        
-        // confirm price of usdc is $1
-        return answer >= 99900000;
-    }
 }
