@@ -13,27 +13,26 @@ import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
  * @title WithdrawCollateral
  * @dev Helper script to withdraw collateral via PortfolioManager multicall
  * 
- * Portfolio address can be loaded from addresses.json (field: "portfolioaddress" or "portfolioAddress")
- * or passed as a parameter/environment variable.
+ * Portfolio is automatically determined from the factory using the owner address (from PRIVATE_KEY).
  * 
  * Usage:
- * 1. With parameters: forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run(address,uint256)" <PORTFOLIO_ADDRESS> <TOKEN_ID> --rpc-url $RPC_URL --broadcast
- * 2. From addresses.json + env vars: TOKEN_ID=1 forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run()" --rpc-url $RPC_URL --broadcast
+ * 1. With parameters: forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run(uint256)" <TOKEN_ID> --rpc-url $RPC_URL --broadcast
+ * 2. From env vars: TOKEN_ID=1 forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run()" --rpc-url $RPC_URL --broadcast
  * 
  * Example:
- * forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run(address,uint256)" 0x123... 1 --rpc-url $BASE_RPC_URL --broadcast
+ * forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run(uint256)" 1 --rpc-url $BASE_RPC_URL --broadcast
  */
 contract WithdrawCollateral is Script {
     using stdJson for string;
 
     /**
      * @dev Withdraw collateral via PortfolioManager multicall
-     * @param portfolioAddress The portfolio account address
      * @param tokenId The token ID of the voting escrow NFT to withdraw from collateral
+     * @param owner The owner address (for getting portfolio from factory for logging)
      */
     function withdrawCollateral(
-        address portfolioAddress,
-        uint256 tokenId
+        uint256 tokenId,
+        address owner
     ) internal {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
         
@@ -44,7 +43,15 @@ contract WithdrawCollateral is Script {
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "CollateralFacet.removeCollateral not registered in FacetRegistry. Please deploy facets first.");
         
-        // Use factory address instead of portfolio address for multicall
+        // Get portfolio address from factory for logging
+        address portfolioAddress = factory.portfolioOf(owner);
+        if (portfolioAddress == address(0)) {
+            // Portfolio will be created by multicall, but we need it for logging
+            // We'll create it here to get the address
+            portfolioAddress = factory.createAccount(owner);
+        }
+        
+        // Use factory address for multicall
         address[] memory factories = new address[](1);
         factories[0] = address(factory);
         
@@ -67,23 +74,20 @@ contract WithdrawCollateral is Script {
 
     /**
      * @dev Main run function for forge script execution
-     * @param portfolioAddress The portfolio account address
      * @param tokenId The token ID of the voting escrow NFT to withdraw from collateral
      */
     function run(
-        address portfolioAddress,
         uint256 tokenId
     ) external {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         vm.startBroadcast(privateKey);
-        withdrawCollateral(portfolioAddress, tokenId);
+        withdrawCollateral(tokenId, owner);
         vm.stopBroadcast();
     }
 
     /**
-     * @dev Alternative run function that reads parameters from addresses.json and environment variables
-     * Portfolio address is loaded from addresses.json if available, otherwise from PORTFOLIO_ADDRESS env var,
-     * or from PRIVATE_KEY/OWNER env var using the aerodrome-usdc factory
+     * @dev Alternative run function that reads parameters from environment variables
      * Usage: PRIVATE_KEY=0x... TOKEN_ID=1 forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run()" --rpc-url $RPC_URL --broadcast
      */
     function run() external {
@@ -94,13 +98,7 @@ contract WithdrawCollateral is Script {
         address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         
         vm.startBroadcast(privateKey);
-        
-        // Get or create portfolio (must happen during broadcast)
-        // Always use owner-based lookup when PRIVATE_KEY is available to ensure portfolio exists
-        address portfolioAddress = PortfolioHelperUtils.getPortfolioForOwner(vm, owner);
-
-        
-        withdrawCollateral(portfolioAddress, tokenId);
+        withdrawCollateral(tokenId, owner);
         vm.stopBroadcast();
     }
 }

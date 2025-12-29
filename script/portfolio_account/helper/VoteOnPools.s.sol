@@ -14,12 +14,11 @@ import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
  * @title VoteOnPools
  * @dev Helper script to vote on pools via PortfolioManager multicall
  * 
- * Portfolio address can be loaded from addresses.json (field: "portfolioaddress" or "portfolioAddress")
- * or passed as a parameter/environment variable.
+ * Portfolio is automatically determined from the factory using the owner address (from PRIVATE_KEY).
  * 
  * Usage:
  * 1. With parameters: forge script script/portfolio_account/helper/VoteOnPools.s.sol:VoteOnPools --sig "run(uint256,address[],uint256[])" <TOKEN_ID> <POOLS_ARRAY> <WEIGHTS_ARRAY> --rpc-url $RPC_URL --broadcast
- * 2. From addresses.json + env vars: TOKEN_ID=1 POOLS=0x123... WEIGHTS=100e18 forge script script/portfolio_account/helper/VoteOnPools.s.sol:VoteOnPools --sig "run()" --rpc-url $RPC_URL --broadcast
+ * 2. From env vars: TOKEN_ID=1 POOLS='["0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0"]' WEIGHTS='["100e18"]' forge script script/portfolio_account/helper/VoteOnPools.s.sol:VoteOnPools --sig "run()" --rpc-url $RPC_URL --broadcast
  * 
  * Example:
  * forge script script/portfolio_account/helper/VoteOnPools.s.sol:VoteOnPools --sig "run(uint256,address[],uint256[])" 1 "[0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0]" "[100e18]" --rpc-url $BASE_RPC_URL --broadcast
@@ -29,16 +28,16 @@ contract VoteOnPools is Script {
 
     /**
      * @dev Vote on pools via PortfolioManager multicall
-     * @param portfolioAddress The portfolio account address
      * @param tokenId The voting escrow token ID
      * @param pools Array of pool addresses to vote on
      * @param weights Array of weights for each pool (should sum to 100e18)
+     * @param owner The owner address (for getting portfolio from factory for logging)
      */
     function voteOnPools(
-        address portfolioAddress,
         uint256 tokenId,
         address[] memory pools,
-        uint256[] memory weights
+        uint256[] memory weights,
+        address owner
     ) internal {
         require(pools.length > 0, "Pools array cannot be empty");
         require(pools.length == weights.length, "Pools and weights arrays must have the same length");
@@ -52,7 +51,15 @@ contract VoteOnPools is Script {
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "VotingFacet.vote not registered in FacetRegistry. Please deploy facets first.");
         
-        // Use factory address instead of portfolio address for multicall
+        // Get portfolio address from factory for logging
+        address portfolioAddress = factory.portfolioOf(owner);
+        if (portfolioAddress == address(0)) {
+            // Portfolio will be created by multicall, but we need it for logging
+            // We'll create it here to get the address
+            portfolioAddress = factory.createAccount(owner);
+        }
+        
+        // Use factory address for multicall
         address[] memory factories = new address[](1);
         factories[0] = address(factory);
         
@@ -79,28 +86,25 @@ contract VoteOnPools is Script {
 
     /**
      * @dev Main run function for forge script execution
-     * @param portfolioAddress The portfolio account address
      * @param tokenId The voting escrow token ID
      * @param pools Array of pool addresses to vote on
      * @param weights Array of weights for each pool
      */
     function run(
-        address portfolioAddress,
         uint256 tokenId,
         address[] memory pools,
         uint256[] memory weights
     ) external {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         vm.startBroadcast(privateKey);
-        voteOnPools(portfolioAddress, tokenId, pools, weights);
+        voteOnPools(tokenId, pools, weights, owner);
         vm.stopBroadcast();
     }
 
 
     /**
-     * @dev Alternative run function that reads parameters from addresses.json and environment variables
-     * Portfolio address is loaded from addresses.json if available, otherwise from PORTFOLIO_ADDRESS env var,
-     * or from PRIVATE_KEY/OWNER env var using the aerodrome-usdc factory
+     * @dev Alternative run function that reads parameters from environment variables
      * 
      * Environment variables:
      * - TOKEN_ID: The voting escrow token ID (required)
@@ -129,27 +133,7 @@ contract VoteOnPools is Script {
         require(pools.length > 0, "Pools array cannot be empty");
         require(pools.length == weights.length, "Pools and weights arrays must have the same length");
         
-        // Get or create portfolio (must happen during broadcast)
-        // Always use owner-based lookup when PRIVATE_KEY is available to ensure portfolio exists
-        address portfolioAddress = PortfolioHelperUtils.getPortfolioForOwner(vm, owner);
-        
-        // Only use PORTFOLIO_ADDRESS if explicitly provided and different from owner-based lookup
-        try vm.envAddress("PORTFOLIO_ADDRESS") returns (address providedAddr) {
-            if (providedAddr != address(0) && providedAddr != portfolioAddress) {
-                // Validate that provided address is registered
-                PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
-                address factory = portfolioManager.portfolioToFactory(providedAddr);
-                if (factory != address(0)) {
-                    portfolioAddress = providedAddr;
-                } else {
-                    console.log("Warning: PORTFOLIO_ADDRESS not registered, using owner-based portfolio");
-                }
-            }
-        } catch {
-            // PORTFOLIO_ADDRESS not set, use owner-based portfolio
-        }
-        
-        voteOnPools(portfolioAddress, tokenId, pools, weights);
+        voteOnPools(tokenId, pools, weights, owner);
         vm.stopBroadcast();
     }
 }
