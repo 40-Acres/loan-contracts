@@ -238,6 +238,12 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     }
 
 
+    function buyMarketplaceListings(uint256[] calldata tokenIds, address buyer) public {
+        for(uint256 i = 0; i < tokenIds.length; i++) {
+            buyMarketplaceListing(tokenIds[i], buyer);
+        }
+    }
+    
     /**
      * @notice Buy a 40 Acres listing
      * @param tokenId The token ID being purchased

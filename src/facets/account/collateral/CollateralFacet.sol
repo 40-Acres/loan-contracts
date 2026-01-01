@@ -20,6 +20,7 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
 
     error NotOwnerOfToken();
     error NotOwnerOfPortfolioAccount();
+    // add/remove collateral event
 
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) {
         require(portfolioFactory != address(0));

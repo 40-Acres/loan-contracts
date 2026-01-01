@@ -91,7 +91,7 @@ contract ApprovePool is Script {
     function approvePool(address poolAddress, bool approved) internal {
         require(poolAddress != address(0), "Pool address cannot be zero");
         
-        VotingConfig votingConfig = VotingConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
+        VotingConfig votingConfig = VotingConfig(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C);
         console.log("VotingConfig address:", address(votingConfig));
         
         // Check current approval status
