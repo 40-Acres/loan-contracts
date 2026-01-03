@@ -13,54 +13,59 @@ import {DebtToken} from "./DebtToken.sol";
 import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
 
 contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
-    DebtToken public _debtToken;
-
+    address public _debtToken;
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address asset, address /* loan */, string memory name, string memory symbol, address /* portfolioFactory */) public initializer {
+    function initialize(address asset, address loan, string memory name, string memory symbol, address portfolioFactory) public initializer {
         __ERC4626_init(ERC20(asset));
         __ERC20_init(name, symbol);
         __UUPSUpgradeable_init();
-        __Ownable_init(msg.sender);
         __Ownable2Step_init();
-        _debtToken = new DebtToken(address(this));
+        _transferOwnership(msg.sender);
+        _getDynamicFeesVaultStorage().portfolioFactory = portfolioFactory;
+        _getDynamicFeesVaultStorage().debtToken = new DebtToken(address(this), asset);
     }
 
     function totalLoanedAssets() public view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         return $.totalLoanedAssets;
     }
-    
 
     function totalAssets() public view override returns (uint256) {
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         
-        uint256 assetsRepaidCurrentEpoch = _debtToken.totalAssetsUnlocked(currentEpoch);
-        // Read directly from mapping to avoid state modification in view function
-        // Note: This may return a stale value if earned() hasn't been called recently
-        address debtTokenAddress = address(_debtToken);
-        uint256 lenderPremiumCurrentEpoch = _debtToken.tokenClaimedPerEpoch(address(this), debtTokenAddress, currentEpoch);
+        // Calculate principal repaid up to now (real-time)
+        uint256 currentPrincipalRepaid = _getPrincipalRepaidUpToNow();
         
-        // Calculate principal repaid in current epoch
-        uint256 principalRepaidCurrentEpoch = assetsRepaidCurrentEpoch > lenderPremiumCurrentEpoch 
-            ? assetsRepaidCurrentEpoch - lenderPremiumCurrentEpoch 
+        // Calculate how much principal has been repaid since the last checkpoint
+        // Use checked subtraction to prevent underflow (shouldn't happen in normal operation)
+        uint256 principalRepaidSinceCheckpoint = currentPrincipalRepaid >= $.principalRepaidAtCheckpoint
+            ? currentPrincipalRepaid - $.principalRepaidAtCheckpoint
             : 0;
         
-        // For past epochs that haven't been settled, we need to account for them
-        // But since we can't modify state in a view function, we'll handle this in settlePreviousEpoch
-        // For now, we only subtract current epoch repayments
-        return IERC20(asset()).balanceOf(address(this)) + totalLoanedAssets() - principalRepaidCurrentEpoch + lenderPremiumCurrentEpoch;
+        // Adjust totalLoanedAssets by subtracting principal repaid since checkpoint
+        uint256 adjustedTotalLoanedAssets = $.totalLoanedAssets > principalRepaidSinceCheckpoint 
+            ? $.totalLoanedAssets - principalRepaidSinceCheckpoint 
+            : 0;
+        
+        // Get current lender premium (earned income) - view-safe version
+        uint256 lenderPremiumCurrentEpoch = _getLenderPremiumUnlockedThisEpochView();
+        
+        return IERC20(asset()).balanceOf(address(this)) + adjustedTotalLoanedAssets + lenderPremiumCurrentEpoch;
     }
 
     // named storage slot for the dynamic fees vault
     bytes32 private constant DYNAMIC_FEES_VAULT_STORAGE_POSITION = keccak256("dynamic.fees.vault");
     struct DynamicFeesVaultStorage {
         uint256 totalLoanedAssets; // total assets currently loaned out to users
+        mapping(address => uint256) debtBalance; // debt balance of each user
         uint256 originationFeeBasisPoints; // basis points for the origination fee
-        uint256 lastSettledEpoch; // last epoch for which totalLoanedAssets was updated
-        uint256 cumulativePrincipalRepaid; // cumulative principal repaid across all settled epochs
+        uint256 settlementCheckpointEpoch; // epoch of the last settlement checkpoint
+        uint256 principalRepaidAtCheckpoint; // cumulative principal repaid at the checkpoint
+        address portfolioFactory; // portfolio factory address
+        DebtToken debtToken; // debt token address
     }
 
     function _getDynamicFeesVaultStorage() private pure returns (DynamicFeesVaultStorage storage $) {
@@ -71,102 +76,115 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
 
+    /**
+     * @notice Gets lender premium unlocked this epoch (view-safe, may be slightly stale for current epoch)
+     * @dev This is a view-safe version that reads directly from storage without side effects
+     * @dev For non-view contexts, use the state-modifying version in DebtToken
+     */
+    function _getLenderPremiumUnlockedThisEpochView() internal view returns (uint256) {
+        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        // Read directly from storage to avoid side effects in view functions
+        // Note: This may be slightly stale for the current epoch if earned() hasn't been called recently
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.debtToken.tokenClaimedPerEpoch(address(this), address($.debtToken), currentEpoch);
+    }
+
     function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
-        return _debtToken.lenderPremiumUnlockedThisEpoch();
+        // This version calls earned() to update state - use in non-view contexts
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.debtToken.lenderPremiumUnlockedThisEpoch();
     }
 
     function assetsUnlockedThisEpoch() public view returns (uint256) {
-        return _debtToken.totalAssetsUnlocked(ProtocolTimeLibrary.epochStart(block.timestamp));
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.debtToken.totalAssetsUnlocked(ProtocolTimeLibrary.epochStart(block.timestamp));
     }
 
-    function debtRepaidThisEpoch() public returns (uint256) {
-        return assetsUnlockedThisEpoch() - lenderPremiumUnlockedThisEpoch();
+    function debtRepaidThisEpoch() public view returns (uint256) {
+        return assetsUnlockedThisEpoch() - _getLenderPremiumUnlockedThisEpochView();
     }
     
     /**
-     * @notice Gets the principal repaid (assets - premium) for a specific epoch
-     * @param epoch The epoch to query
-     * @return The principal amount repaid in that epoch
+     * @notice Gets the cumulative principal repaid up to the current moment in time
+     * @dev Calculates principal repaid from checkpoint to now, including prorated current epoch
+     * @dev If checkpoint is 0 (uninitialized), calculates from current epoch only
+     * @return The total principal amount repaid up to now
      */
-    function getPrincipalRepaidForEpoch(uint256 epoch) public returns (uint256) {
-        uint256 assetsUnlocked = _debtToken.totalAssetsUnlocked(epoch);
-        // For past epochs, we need to get the final claimed premium
-        // For current epoch, use the unlocked premium (this may modify state)
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 lenderPremium;
-        // In DebtToken, lenderPremiumUnlockedThisEpoch uses tokenClaimedPerEpoch[vault][address(this)][epoch]
-        // where address(this) in DebtToken context is the DebtToken contract address
-        // So we use the DebtToken address as the token identifier
-        address debtTokenAddress = address(_debtToken);
-        if (epoch == currentEpoch) {
-            lenderPremium = _debtToken.lenderPremiumUnlockedThisEpoch();
-        } else {
-            // For past epochs, get the final claimed amount
-            lenderPremium = _debtToken.tokenClaimedPerEpoch(address(this), debtTokenAddress, epoch);
-        }
-        return assetsUnlocked > lenderPremium ? assetsUnlocked - lenderPremium : 0;
-    }
-    
-    /**
-     * @notice Settles the previous epoch by updating totalLoanedAssets with principal repaid
-     * @dev This should be called when a new epoch starts to ensure totalLoanedAssets is accurate
-     * @dev Can be called by anyone, but is idempotent (won't settle the same epoch twice)
-     * @dev For past epochs, the premium should already be calculated and stored in tokenClaimedPerEpoch
-     */
-    function settlePreviousEpoch() public {
+    function _getPrincipalRepaidUpToNow() internal view returns (uint256) {
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        uint256 checkpointEpoch = $.settlementCheckpointEpoch;
+        address debtTokenAddress = address($.debtToken);
+        uint256 totalPrincipalRepaid = 0;
         
-        // Calculate previous epoch
-        uint256 previousEpoch = currentEpoch - ProtocolTimeLibrary.WEEK;
+        // If checkpoint is 0, we only calculate current epoch (will be synced on first update)
+        // Otherwise, calculate from checkpoint epoch to current epoch (inclusive)
+        uint256 startEpoch = checkpointEpoch > 0 ? checkpointEpoch : currentEpoch;
         
-        // Only settle if we haven't settled this epoch yet
-        if ($.lastSettledEpoch >= previousEpoch) {
-            return; // Already settled
+        // Calculate principal repaid for epochs from start to current (inclusive)
+        for (uint256 epoch = startEpoch; epoch <= currentEpoch; epoch += ProtocolTimeLibrary.WEEK) {
+            uint256 assetsUnlocked = $.debtToken.totalAssetsUnlocked(epoch);
+            if (assetsUnlocked == 0) continue;
+            
+            uint256 lenderPremium;
+            if (epoch == currentEpoch) {
+                // For current epoch, use the unlocked premium (view-safe, reads from storage)
+                // Note: This may be slightly stale if earned() hasn't been called recently
+                lenderPremium = _getLenderPremiumUnlockedThisEpochView();
+            } else {
+                // For past epochs, get the final claimed amount
+                lenderPremium = $.debtToken.tokenClaimedPerEpoch(address(this), debtTokenAddress, epoch);
+            }
+            
+            uint256 principalRepaid = assetsUnlocked > lenderPremium ? assetsUnlocked - lenderPremium : 0;
+            totalPrincipalRepaid += principalRepaid;
         }
         
-        // Calculate principal repaid in previous epoch
-        // For past epochs, totalAssetsUnlocked returns the full amount (not prorated)
-        uint256 assetsUnlocked = _debtToken.totalAssetsUnlocked(previousEpoch);
-        
-        // Get the lender premium for that epoch
-        // In DebtToken, lenderPremiumUnlockedThisEpoch uses tokenClaimedPerEpoch[vault][address(this)][epoch]
-        // where address(this) in DebtToken context is the DebtToken contract address
-        // So we use the DebtToken address as the token identifier
-        address debtTokenAddress = address(_debtToken);
-        uint256 lenderPremium = _debtToken.tokenClaimedPerEpoch(address(this), debtTokenAddress, previousEpoch);
-        
-        // Calculate principal repaid (assets - premium)
-        uint256 principalRepaid = assetsUnlocked > lenderPremium ? assetsUnlocked - lenderPremium : 0;
-        
-        // Update totalLoanedAssets by the principal repaid
-        if (principalRepaid > 0) {
-            $.totalLoanedAssets -= principalRepaid;
-            $.cumulativePrincipalRepaid += principalRepaid;
-        }
-        
-        // Update last settled epoch
-        $.lastSettledEpoch = previousEpoch;
+        return totalPrincipalRepaid;
     }
     
     /**
-     * @notice Gets the last settled epoch
-     * @return The epoch number that was last settled
+     * @notice Updates the settlement checkpoint to the current state
+     * @dev This should be called in hooks to sync totalLoanedAssets with actual repayments
      */
-    function getLastSettledEpoch() public view returns (uint256) {
+    function _updateSettlementCheckpoint() internal {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        return $.lastSettledEpoch;
+        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        
+        // Calculate current principal repaid
+        uint256 currentPrincipalRepaid = _getPrincipalRepaidUpToNow();
+        
+        // Calculate how much principal has been repaid since the last checkpoint
+        uint256 principalRepaidSinceCheckpoint = currentPrincipalRepaid >= $.principalRepaidAtCheckpoint
+            ? currentPrincipalRepaid - $.principalRepaidAtCheckpoint
+            : 0;
+        
+        // Update totalLoanedAssets by subtracting principal repaid since checkpoint
+        // If totalLoanedAssets < principalRepaidSinceCheckpoint, this indicates an accounting error
+        // We should still update to prevent the error from compounding, but log it
+        if (principalRepaidSinceCheckpoint > 0) {
+            if ($.totalLoanedAssets >= principalRepaidSinceCheckpoint) {
+                $.totalLoanedAssets -= principalRepaidSinceCheckpoint;
+            } else {
+                // Accounting error: principal repaid exceeds totalLoanedAssets
+                // Set to 0 to prevent underflow, but this indicates a serious issue
+                $.totalLoanedAssets = 0;
+            }
+        }
+        
+        // Update checkpoint
+        $.settlementCheckpointEpoch = currentEpoch;
+        $.principalRepaidAtCheckpoint = currentPrincipalRepaid;
     }
     
     /**
-     * @notice Gets the settlement checkpoint (last settled epoch and cumulative principal repaid)
-     * @return checkpointEpoch The last epoch that was settled
-     * @return principalRepaid The cumulative principal repaid up to the checkpoint epoch
+     * @notice Gets the settlement checkpoint information
+     * @return checkpointEpoch The epoch of the last checkpoint
+     * @return principalRepaidAtCheckpoint The principal repaid amount at the checkpoint
      */
-    function getSettlementCheckpoint() public view returns (uint256 checkpointEpoch, uint256 principalRepaid) {
+    function getSettlementCheckpoint() public view returns (uint256 checkpointEpoch, uint256 principalRepaidAtCheckpoint) {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        checkpointEpoch = $.lastSettledEpoch;
-        principalRepaid = $.cumulativePrincipalRepaid;
+        return ($.settlementCheckpointEpoch, $.principalRepaidAtCheckpoint);
     }
     
     /**
@@ -177,41 +195,64 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function decreaseTotalLoanedAssets(uint256 amount) public {
-        require(msg.sender == address(_debtToken), "Only debt token can call this function");
-        _getDynamicFeesVaultStorage().totalLoanedAssets -= amount;
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        require(msg.sender == address($.debtToken), "Only debt token can call this function");
+        $.totalLoanedAssets -= amount;
     }
 
-    function borrow(uint256 amount, address to) public {
-        IERC20(asset()).transfer(to, amount);
-        _getDynamicFeesVaultStorage().totalLoanedAssets += amount;
+    function borrow(uint256 amount) public {
+        _updateUserDebtBalance(msg.sender);
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        IERC20(asset()).transfer(msg.sender, amount);
+        $.debtBalance[msg.sender] += amount;
+        $.totalLoanedAssets += amount;
     }
 
     function repay(uint256 amount) public {
-        IERC20(asset()).transferFrom(msg.sender, address(this), amount);
-        _getDynamicFeesVaultStorage().totalLoanedAssets -= amount;
+        _updateUserDebtBalance(msg.sender);
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        uint256 debtBalance = $.debtBalance[msg.sender];
+        uint256 amountToRepay = debtBalance < amount ? debtBalance : amount;
+        IERC20(asset()).transferFrom(msg.sender, address(this), amountToRepay);
+        $.totalLoanedAssets -= amountToRepay;
+        $.debtBalance[msg.sender] -= amountToRepay;
     }
 
     function payWithRewards(uint256 amount) public {
-        // TODO: handle the users debt token earned rewards here
+        _updateUserDebtBalance(msg.sender);
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
 
-        _debtToken.mint(msg.sender, amount);
+        $.debtToken.mint(msg.sender, amount);
     }
 
     /**
-     * @dev Override _deposit to automatically settle previous epoch before deposits
-     * @dev This ensures totalAssets() is accurate when users deposit
+     * @notice Updates the debt balance of a user
+     * @dev This function updates the debt balance of a user by calling the _updateUserDebtBalance function
+     * @param borrower The address of the borrower
+     */
+    function _updateUserDebtBalance(address borrower) internal {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        $.debtBalance[borrower] -= $.debtToken.earned(address(this), borrower);
+    }
+    /**
+     * @dev Override _deposit to automatically update settlement checkpoint and rebalance
+     * @dev This ensures totalAssets() is accurate in real-time and vault ratio is maintained when users deposit
      */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        // Settle previous epoch if needed (idempotent, so safe to call)
-        settlePreviousEpoch();
+        // Update settlement checkpoint to sync totalLoanedAssets with current repayments (real-time)
+        _updateSettlementCheckpoint();
         
         // Call parent implementation
         super._deposit(caller, receiver, assets, shares);
+        
+        // Rebalance DebtToken to maintain vault ratio after deposit
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        $.debtToken.rebalance();
     }
 
     /**
-     * @dev Override _withdraw to automatically settle previous epoch before withdrawals
-     * @dev This ensures totalAssets() is accurate when users withdraw
+     * @dev Override _withdraw to automatically update settlement checkpoint and rebalance
+     * @dev This ensures totalAssets() is accurate in real-time and vault ratio is maintained when users withdraw
      */
     function _withdraw(
         address caller,
@@ -220,16 +261,25 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 assets,
         uint256 shares
     ) internal virtual override {
-        // Settle previous epoch if needed (idempotent, so safe to call)
-        settlePreviousEpoch();
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        // Update settlement checkpoint to sync totalLoanedAssets with current repayments (real-time)
+        _updateSettlementCheckpoint();
         
         // Call parent implementation
         super._withdraw(caller, receiver, owner, assets, shares);
+        
+        // Rebalance DebtToken to maintain vault ratio after withdrawal
+        $.debtToken.rebalance();
     }
 
-    // modifier onlyPortfolio() {
-    //     require(IPortfolioFactory(portfolioFactory).isPortfolio(msg.sender), "Only portfolio can call this function");
-    //     _;
-    // }
+    modifier onlyPortfolio() {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        require(IPortfolioFactory($.portfolioFactory).isPortfolio(msg.sender), "Only portfolio can call this function");
+        _;
+    }
     
+    function debtToken() public view returns (DebtToken) {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.debtToken;
+    }
 }

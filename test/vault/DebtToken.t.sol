@@ -18,7 +18,7 @@ contract MockDebtToken is DebtToken {
      * @notice Constructor to initialize the mock
      * @param _vault The vault address to use for rebalancing
      */
-    constructor(address _vault) DebtToken(_vault) {
+    constructor(address _vault, address _asset) DebtToken(_vault, _asset) {
         // Initialize any required state
     }
 
@@ -148,7 +148,9 @@ contract DebtTokenTest is Test {
         
         // Create a mock vault address (using the test contract itself for simplicity)
         address mockVault = address(this);
-        debtToken = new MockDebtToken(mockVault);
+        // Create a mock asset address (using a simple address for testing)
+        address mockAsset = address(0x1234);
+        debtToken = new MockDebtToken(mockVault, mockAsset);
         authorized = address(0x100);
         user1 = address(0x1);
         user2 = address(0x2);

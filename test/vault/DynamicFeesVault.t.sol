@@ -40,15 +40,15 @@ contract MockPortfolioFactory {
  * @notice DebtToken with exposed internal functions for testing
  */
 contract TestableDebtToken is DebtToken {
-    constructor(address _vault) DebtToken(_vault) {}
+    constructor(address _vault, address _asset) DebtToken(_vault, _asset) {}
     
     // Expose internal state manipulation for testing
     function testSetTotalAssetsPerEpoch(uint256 epoch, uint256 amount) external {
         totalAssetsPerEpoch[epoch] = amount;
     }
 
-    function testSetTokenClaimedPerEpoch(address owner, uint256 epoch, uint256 amount) external {
-        tokenClaimedPerEpoch[owner][address(this)][epoch] = amount;
+    function testSetTokenClaimedPerEpoch(address owner, address token, uint256 epoch, uint256 amount) external {
+        tokenClaimedPerEpoch[owner][token][epoch] = amount;
     }
 
     function testSetAuthorized(address _authorized) external {
@@ -90,7 +90,7 @@ contract DynamicFeesVaultTest is Test {
 
     // Helper functions to manipulate DebtToken storage for testing
     // Storage slot calculation based on DebtToken contract layout:
-    // Slot 1: tokenClaimedPerEpoch mapping (address => address => uint256 => uint256)
+    // Slot 2: tokenClaimedPerEpoch mapping
     // Slot 14: totalAssetsPerEpoch mapping
     function _setTotalAssetsPerEpoch(address debtTokenAddr, uint256 epoch, uint256 amount) internal {
         // totalAssetsPerEpoch is at slot 14 (based on variable order in DebtToken)
@@ -98,18 +98,19 @@ contract DynamicFeesVaultTest is Test {
         vm.store(debtTokenAddr, slot, bytes32(amount));
     }
 
-    function _setTokenClaimedPerEpoch(address debtTokenAddr, address owner, uint256 epoch, uint256 amount) internal {
-        // tokenClaimedPerEpoch[owner][debtTokenAddr][epoch] is at slot 1
-        // 2-level mapping: keccak256(abi.encode(epoch, keccak256(abi.encode(owner, 1))))
-        bytes32 ownerSlot = keccak256(abi.encode(owner, uint256(1)));
-        bytes32 epochSlot = keccak256(abi.encode(epoch, ownerSlot));
+    function _setTokenClaimedPerEpoch(address debtTokenAddr, address owner, address token, uint256 epoch, uint256 amount) internal {
+        // tokenClaimedPerEpoch[owner][token][epoch] is at slot 2
+        // Nested mapping: keccak256(abi.encode(epoch, keccak256(abi.encode(token, keccak256(abi.encode(owner, 2)))))
+        bytes32 ownerSlot = keccak256(abi.encode(owner, uint256(2)));
+        bytes32 tokenSlot = keccak256(abi.encode(token, ownerSlot));
+        bytes32 epochSlot = keccak256(abi.encode(epoch, tokenSlot));
         vm.store(debtTokenAddr, epochSlot, bytes32(amount));
     }
     
     // Helper to set up debt token state for testing
     function _setupDebtTokenState(uint256 epoch, uint256 totalAssets, uint256 lenderPremium) internal {
         _setTotalAssetsPerEpoch(address(debtToken), epoch, totalAssets);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), epoch, lenderPremium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), epoch, lenderPremium);
     }
 
     function setUp() public {
@@ -141,7 +142,7 @@ contract DynamicFeesVaultTest is Test {
         vault = DynamicFeesVault(address(proxy));
 
         // Get the debt token that was created in initialize() with the proxy address
-        debtToken = vault._debtToken();
+        debtToken = vault.debtToken();
         
         // Now the debt token's vault is correctly set to the proxy address
 
@@ -256,7 +257,7 @@ contract DynamicFeesVaultTest is Test {
         // At 25% through epoch, set premium
         vm.warp(epochStart + WEEK / 4);
         uint256 premiumAt25 = 500e18; // Premium earned so far
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premiumAt25);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premiumAt25);
         
         uint256 assetsUnlocked = vault.assetsUnlockedThisEpoch();
         uint256 epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
@@ -282,7 +283,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 expectedPrincipal = expectedAssetsUnlocked - lenderPremium; // 3000e18
         
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, totalAssets);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, lenderPremium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, lenderPremium);
         
         // Principal = Assets Unlocked - Lender Premium
         uint256 assetsUnlocked = vault.assetsUnlockedThisEpoch();
@@ -302,12 +303,12 @@ contract DynamicFeesVaultTest is Test {
         
         // Set initial loaned assets
         vm.prank(address(debtToken));
-        vault.borrow(initialLoaned, user1);
+        vault.borrow(initialLoaned);
         assertEq(vault.totalLoanedAssets(), initialLoaned, "Initial loaned assets should be set");
         
         // Set up debt token state
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, totalAssetsForEpoch);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, lenderPremium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, lenderPremium);
         
         // Move to 50% through epoch so assets are unlocked
         vm.warp(epochStart + WEEK / 2);
@@ -340,7 +341,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 expectedPrincipal = expectedAssetsUnlocked - lenderPremium; // 2000e18
         
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, totalAssets);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, lenderPremium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, lenderPremium);
         
         uint256 assetsUnlocked = vault.assetsUnlockedThisEpoch();
         uint256 epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
@@ -364,7 +365,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 epoch1Principal = epoch1Assets - epoch1Premium; // 4000e18
         
         _setTotalAssetsPerEpoch(address(debtToken), epoch1, epoch1Assets);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), epoch1, epoch1Premium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), epoch1, epoch1Premium);
         
         // Set a checkpoint in epoch 1 first (so we have a baseline)
         vm.warp(epoch1Start + WEEK / 2); // 50% through epoch 1
@@ -385,7 +386,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 epoch2PartialPrincipal = epoch2AssetsUnlockedAt50 - epoch2PremiumAt50; // 3000e18
         
         _setTotalAssetsPerEpoch(address(debtToken), epoch2Start, epoch2Assets);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), epoch2Start, epoch2PremiumAt50);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), epoch2Start, epoch2PremiumAt50);
         
         // Trigger checkpoint in epoch 2
         vm.startPrank(user1);
@@ -421,7 +422,7 @@ contract DynamicFeesVaultTest is Test {
         // At 25% through epoch
         vm.warp(epochStart + WEEK / 4);
         uint256 premium1 = 250e18; // Premium with lower balance
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premium1);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premium1);
         
         // Update to higher balance
         // Note: checkpoint manipulation not needed for basic tests
@@ -430,7 +431,7 @@ contract DynamicFeesVaultTest is Test {
         // At 50% through epoch
         vm.warp(epochStart + WEEK / 2);
         uint256 premium2 = 1250e18; // Premium with higher balance (should be higher)
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premium2);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premium2);
         
         // Verify premium increased more with higher balance
         assertGt(premium2, premium1, "Premium should increase with higher vault balance");
@@ -454,7 +455,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 premiumAmount = 100e18;
         
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, assetsAmount);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premiumAmount);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premiumAmount);
 
         // Move to 50% through epoch so assets are unlocked
         vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + WEEK / 2);
@@ -483,12 +484,12 @@ contract DynamicFeesVaultTest is Test {
 
         // Set initial loaned assets to track reduction
         vm.prank(address(debtToken));
-        vault.borrow(5000e18, user1);
+        vault.borrow(5000e18);
         uint256 initialLoaned = vault.totalLoanedAssets();
 
         // First checkpoint at 25% through epoch
         vm.warp(epochStart + WEEK / 4);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premium1);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premium1);
         
         // Do a deposit to trigger checkpoint update
         vm.startPrank(user1);
@@ -507,7 +508,7 @@ contract DynamicFeesVaultTest is Test {
         
         // Second checkpoint at 50% through same epoch
         vm.warp(epochStart + WEEK / 2);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premium2);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premium2);
         
         // Do another deposit to trigger checkpoint update
         vm.startPrank(user1);
@@ -545,12 +546,12 @@ contract DynamicFeesVaultTest is Test {
         
         // Set initial loaned assets
         vm.prank(address(debtToken));
-        vault.borrow(5000e18, user1);
+        vault.borrow(5000e18);
         uint256 initialLoaned = vault.totalLoanedAssets();
         
         // Checkpoint mid-epoch 1 (at 50%)
         vm.warp(epoch1Start + WEEK / 2);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), epoch1, epoch1Premium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), epoch1, epoch1Premium);
         
         // Trigger checkpoint
         vm.startPrank(user1);
@@ -575,7 +576,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 epoch2Premium = 150e18;
         
         _setTotalAssetsPerEpoch(address(debtToken), epoch2Start, epoch2Assets);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), epoch2Start, epoch2Premium);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), epoch2Start, epoch2Premium);
         
         // Trigger checkpoint in epoch 2
         vm.startPrank(user1);
@@ -625,7 +626,7 @@ contract DynamicFeesVaultTest is Test {
         
         // Borrow (simulating a loan)
         vm.prank(address(debtToken));
-        vault.borrow(borrowAmount, user1);
+        vault.borrow(borrowAmount);
         
         uint256 totalAssets = vault.totalAssets();
         // After deposit: initialTotalAssets + depositAmount
@@ -649,11 +650,11 @@ contract DynamicFeesVaultTest is Test {
         
         // Set up debt token state
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, totalAssetsForEpoch);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premiumAmount);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premiumAmount);
         
         // Set initial loaned assets
         vm.prank(address(debtToken));
-        vault.borrow(5000e18, user1);
+        vault.borrow(5000e18);
         
         // Trigger checkpoint update
         vm.startPrank(user1);
@@ -678,7 +679,7 @@ contract DynamicFeesVaultTest is Test {
         
         // Set initial checkpoint with high principal
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, 1000e18);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, 50e18);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, 50e18);
         
         // Trigger checkpoint
         vm.startPrank(user1);
@@ -690,7 +691,7 @@ contract DynamicFeesVaultTest is Test {
         // Move back in time to simulate reduced assets
         vm.warp(epochStart + WEEK / 4); // 25% through epoch
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, 100e18);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, 90e18);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, 90e18);
         
         // This should not revert due to underflow protection
         uint256 totalAssets = vault.totalAssets();
@@ -716,12 +717,13 @@ contract DynamicFeesVaultTest is Test {
         uint256 shares = vault.balanceOf(user1);
         assertGt(shares, 0, "User should receive shares");
         
-        // 2. Borrow
-        vm.prank(address(debtToken));
-        vault.borrow(borrowAmount, user1);
+        // 2. Borrow (user2 borrows directly to have debt balance)
+        vm.startPrank(user2);
+        vault.borrow(borrowAmount);
+        vm.stopPrank();
         assertEq(vault.totalLoanedAssets(), borrowAmount, "Total loaned assets should equal borrow amount");
         
-        // 3. Repay
+        // 3. Repay (user2 repays their debt)
         vm.startPrank(user2);
         asset.approve(address(vault), repayAmount);
         vault.repay(repayAmount);
@@ -743,7 +745,7 @@ contract DynamicFeesVaultTest is Test {
         uint256 premiumAmount = 100e18;
         
         _setTotalAssetsPerEpoch(address(debtToken), currentEpoch, assetsAmount);
-        _setTokenClaimedPerEpoch(address(debtToken), address(vault), currentEpoch, premiumAmount);
+        _setTokenClaimedPerEpoch(address(debtToken), address(vault), address(debtToken), currentEpoch, premiumAmount);
         
         // Multiple deposits
         vm.startPrank(user1);

@@ -91,8 +91,9 @@ contract DebtToken {
     mapping(uint256 => uint256) public totalAssetsPerEpoch;
 
 
-    constructor(address _vault) {
+    constructor(address _vault, address _debtToken) {
         vault = _vault;
+        // debtToken = _debtToken;
     }
 
     /**
@@ -279,7 +280,7 @@ contract DebtToken {
         return totalAssetsUnlocked(_epoch) - lenderPremiumUnlockedThisEpoch();
     }
 
-    function earned(address _token, address _owner) internal returns (uint256) {
+    function earned(address _token, address _owner) public returns (uint256) {
         if (numCheckpoints[_owner] == 0) {
             return 0;
         }
@@ -388,6 +389,10 @@ contract DebtToken {
         if (msg.sender != vault) revert NotAuthorized();
         if (_amount == 0) revert ZeroAmount();
         _mint(_to, _amount);
+    }
+
+    function rebalance() external {
+        _rebalance();
     }
 
     function _rebalance() internal {
