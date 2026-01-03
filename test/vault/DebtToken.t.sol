@@ -54,7 +54,7 @@ contract MockDebtToken is DebtToken {
      * @param _to The address to mint to
      * @param _amount The amount to mint
      */
-    function mint(address _to, uint256 _amount) external {
+    function mint(address _to, uint256 _amount) override external {
         if (msg.sender != authorized) revert NotAuthorized();
         if (_amount == 0) revert ZeroAmount();
         _mint(_to, _amount);
@@ -105,26 +105,6 @@ contract MockDebtToken is DebtToken {
         return supplyNumCheckpoints;
     }
 
-    /**
-     * @notice Exposes _convertToShares for testing
-     * @param assets The amount of assets to convert
-     * @param rounding The rounding direction
-     * @return The amount of shares
-     */
-    function convertToShares(uint256 assets, uint8 rounding) external view returns (uint256) {
-        return _convertToShares(assets, Math.Rounding(rounding));
-    }
-
-    /**
-     * @notice Exposes _convertToShares with epoch for testing
-     * @param assets The amount of assets to convert
-     * @param rounding The rounding direction
-     * @param epoch The epoch to use for conversion
-     * @return The amount of shares
-     */
-    function convertToShares(uint256 assets, uint8 rounding, uint256 epoch) external view returns (uint256) {
-        return _convertToShares(assets, Math.Rounding(rounding), epoch);
-    }
 
     /**
      * @notice Exposes _convertToAssets for testing
@@ -700,7 +680,7 @@ contract DebtTokenTest is Test {
 
         // For current epoch, assets are distributed over time, so it will be less than full amount
         // unless we're at the end of the epoch
-        uint256 distributedAssets = debtToken.totalAssets(currentEpoch);
+        uint256 distributedAssets = debtToken.totalAssetsUnlocked(currentEpoch);
         assertLe(distributedAssets, amount, "Distributed assets should be <= full amount");
         assertGt(distributedAssets, 0, "Distributed assets should be > 0");
         
@@ -720,7 +700,7 @@ contract DebtTokenTest is Test {
         vm.stopPrank();
 
         // For current epoch, assets are distributed over time
-        uint256 distributedAssets = debtToken.totalAssets(currentEpoch);
+        uint256 distributedAssets = debtToken.totalAssetsUnlocked(currentEpoch);
         assertLe(distributedAssets, total, "Distributed assets should be <= full amount");
         assertGt(distributedAssets, 0, "Distributed assets should be > 0");
     }
@@ -733,7 +713,7 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, amount1);
 
         // We're currently in epoch1, so it returns distributed amount
-        uint256 distributed1 = debtToken.totalAssets(epoch1);
+        uint256 distributed1 = debtToken.totalAssetsUnlocked(epoch1);
         assertLe(distributed1, amount1, "Current epoch should return distributed amount");
         assertGt(distributed1, 0, "Distributed amount should be > 0");
 
@@ -747,17 +727,17 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, amount2);
 
         // Epoch1 is now a past epoch, should return full amount
-        assertEq(debtToken.totalAssets(epoch1), amount1, "Epoch1 assets should return full amount (past epoch)");
+        assertEq(debtToken.totalAssetsUnlocked(epoch1), amount1, "Epoch1 assets should return full amount (past epoch)");
         
         // Epoch2 is current epoch, so it returns distributed amount
-        uint256 distributedAssets2 = debtToken.totalAssets(epoch2);
+        uint256 distributedAssets2 = debtToken.totalAssetsUnlocked(epoch2);
         assertLe(distributedAssets2, amount2, "Current epoch assets should be distributed");
         assertGt(distributedAssets2, 0, "Distributed assets should be > 0");
     }
 
     function test_TotalAssets_ZeroWhenNoMints() public {
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        assertEq(debtToken.totalAssets(currentEpoch), 0, "Total assets should be 0 when no mints");
+        assertEq(debtToken.totalAssetsUnlocked(currentEpoch), 0, "Total assets should be 0 when no mints");
     }
 
     // ============ Time-Based Distribution Tests ============
@@ -777,34 +757,34 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, amount);
 
         // At the start of epoch, distributed amount should be 0
-        uint256 assetsAtStart = debtToken.totalAssets(currentEpoch);
+        uint256 assetsAtStart = debtToken.totalAssetsUnlocked(currentEpoch);
         assertEq(assetsAtStart, 0, "At epoch start, distributed assets should be 0");
 
         // Warp to 25% through the epoch
         vm.warp(epochStart + epochDuration / 4);
         vm.roll(block.number + 1);
-        uint256 assetsAt25Percent = debtToken.totalAssets(currentEpoch);
+        uint256 assetsAt25Percent = debtToken.totalAssetsUnlocked(currentEpoch);
         uint256 expectedAt25Percent = amount / 4;
         assertApproxEqAbs(assetsAt25Percent, expectedAt25Percent, 1e15, "At 25% of epoch, should have ~25% of assets");
 
         // Warp to 50% through the epoch
         vm.warp(epochStart + epochDuration / 2);
         vm.roll(block.number + 1);
-        uint256 assetsAt50Percent = debtToken.totalAssets(currentEpoch);
+        uint256 assetsAt50Percent = debtToken.totalAssetsUnlocked(currentEpoch);
         uint256 expectedAt50Percent = amount / 2;
         assertApproxEqAbs(assetsAt50Percent, expectedAt50Percent, 1e15, "At 50% of epoch, should have ~50% of assets");
 
         // Warp to 75% through the epoch
         vm.warp(epochStart + (epochDuration * 3) / 4);
         vm.roll(block.number + 1);
-        uint256 assetsAt75Percent = debtToken.totalAssets(currentEpoch);
+        uint256 assetsAt75Percent = debtToken.totalAssetsUnlocked(currentEpoch);
         uint256 expectedAt75Percent = (amount * 3) / 4;
         assertApproxEqAbs(assetsAt75Percent, expectedAt75Percent, 1e15, "At 75% of epoch, should have ~75% of assets");
 
         // Warp to end of epoch (should have almost full amount, accounting for integer division precision)
         vm.warp(ProtocolTimeLibrary.epochNext(currentEpoch) - 1);
         vm.roll(block.number + 1);
-        uint256 assetsAtEnd = debtToken.totalAssets(currentEpoch);
+        uint256 assetsAtEnd = debtToken.totalAssetsUnlocked(currentEpoch);
         // Due to integer division, we might be slightly less than full amount
         // The error is approximately assets / duration, which for 1000e18 / 604800 ≈ 1.65e15
         assertApproxEqAbs(assetsAtEnd, amount, 2e15, "At end of epoch, should have almost full amount");
@@ -823,10 +803,10 @@ contract DebtTokenTest is Test {
         uint256 epoch2 = ProtocolTimeLibrary.epochStart(block.timestamp);
 
         // Epoch1 is now a past epoch, should return full amount
-        assertEq(debtToken.totalAssets(epoch1), amount, "Past epoch should return full amount");
+        assertEq(debtToken.totalAssetsUnlocked(epoch1), amount, "Past epoch should return full amount");
         
         // Epoch2 is current, should return distributed amount (but we just started it, so should be 0 or very small)
-        uint256 distributed = debtToken.totalAssets(epoch2);
+        uint256 distributed = debtToken.totalAssetsUnlocked(epoch2);
         assertLe(distributed, amount, "Current epoch should return distributed amount");
     }
 
@@ -850,7 +830,7 @@ contract DebtTokenTest is Test {
         // Warp to 50% through epoch
         vm.warp(epochStart + epochDuration / 2);
         vm.roll(block.number + 1);
-        uint256 distributedAfterFirst = debtToken.totalAssets(currentEpoch);
+        uint256 distributedAfterFirst = debtToken.totalAssetsUnlocked(currentEpoch);
         uint256 expectedAfterFirst = amount1 / 2;
         assertApproxEqAbs(distributedAfterFirst, expectedAfterFirst, 1e15, "After first mint at 50%, should have 50% of first amount");
 
@@ -861,7 +841,7 @@ contract DebtTokenTest is Test {
         // Now total assets in epoch is amount1 + amount2
         // At 50% through epoch, should have 50% of total
         // Note: The distribution is based on when the epoch started, not when mints occurred
-        uint256 distributedAfterSecond = debtToken.totalAssets(currentEpoch);
+        uint256 distributedAfterSecond = debtToken.totalAssetsUnlocked(currentEpoch);
         uint256 expectedAfterSecond = total / 2;
         assertApproxEqAbs(distributedAfterSecond, expectedAfterSecond, 1e15, "After second mint at 50%, should have 50% of total");
     }
@@ -881,12 +861,12 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, amount);
 
         // At the very start of epoch (epoch timestamp itself)
-        assertEq(debtToken.totalAssets(currentEpoch), 0, "At epoch start, should be 0");
+        assertEq(debtToken.totalAssetsUnlocked(currentEpoch), 0, "At epoch start, should be 0");
 
         // Just before next epoch
         vm.warp(nextEpoch - 1);
         vm.roll(block.number + 1);
-        uint256 assetsJustBeforeEnd = debtToken.totalAssets(currentEpoch);
+        uint256 assetsJustBeforeEnd = debtToken.totalAssetsUnlocked(currentEpoch);
         // Due to integer division, we might be slightly less than full amount
         // The error is approximately assets / duration
         assertApproxEqAbs(assetsJustBeforeEnd, amount, 2e15, "Just before epoch end, should have almost full amount");
@@ -894,7 +874,7 @@ contract DebtTokenTest is Test {
         // Move to next epoch - current epoch becomes past epoch
         vm.warp(nextEpoch);
         vm.roll(block.number + 1);
-        assertEq(debtToken.totalAssets(currentEpoch), amount, "Past epoch should return full amount");
+        assertEq(debtToken.totalAssetsUnlocked(currentEpoch), amount, "Past epoch should return full amount");
     }
 
     function test_TotalAssets_50PercentRatio_TrackDistributionThroughoutWeek() public {
@@ -920,56 +900,56 @@ contract DebtTokenTest is Test {
         
         // Track distribution throughout the week
         // Day 0 (start of epoch) - 0% elapsed
-        uint256 assetsDay0 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay0 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay0 = 0;
         assertEq(assetsDay0, expectedDay0, "Day 0: Should have 0 assets distributed");
         
         // Day 1 - ~14.29% elapsed (1/7 of week)
         vm.warp(epochStart + epochDuration / 7);
         vm.roll(block.number + 1);
-        uint256 assetsDay1 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay1 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay1 = amount / 7;
         assertApproxEqAbs(assetsDay1, expectedDay1, 1e15, "Day 1: Should have ~14.29% of assets");
         
         // Day 2 - ~28.57% elapsed (2/7 of week)
         vm.warp(epochStart + (epochDuration * 2) / 7);
         vm.roll(block.number + 1);
-        uint256 assetsDay2 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay2 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay2 = (amount * 2) / 7;
         assertApproxEqAbs(assetsDay2, expectedDay2, 1e15, "Day 2: Should have ~28.57% of assets");
         
         // Day 3 - ~42.86% elapsed (3/7 of week)
         vm.warp(epochStart + (epochDuration * 3) / 7);
         vm.roll(block.number + 1);
-        uint256 assetsDay3 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay3 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay3 = (amount * 3) / 7;
         assertApproxEqAbs(assetsDay3, expectedDay3, 1e15, "Day 3: Should have ~42.86% of assets");
         
         // Day 4 - ~57.14% elapsed (4/7 of week) - Mid week
         vm.warp(epochStart + (epochDuration * 4) / 7);
         vm.roll(block.number + 1);
-        uint256 assetsDay4 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay4 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay4 = (amount * 4) / 7;
         assertApproxEqAbs(assetsDay4, expectedDay4, 1e15, "Day 4: Should have ~57.14% of assets (mid week)");
         
         // Day 5 - ~71.43% elapsed (5/7 of week)
         vm.warp(epochStart + (epochDuration * 5) / 7);
         vm.roll(block.number + 1);
-        uint256 assetsDay5 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay5 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay5 = (amount * 5) / 7;
         assertApproxEqAbs(assetsDay5, expectedDay5, 1e15, "Day 5: Should have ~71.43% of assets");
         
         // Day 6 - ~85.71% elapsed (6/7 of week)
         vm.warp(epochStart + (epochDuration * 6) / 7);
         vm.roll(block.number + 1);
-        uint256 assetsDay6 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay6 = debtToken.totalAssetsUnlocked(epochStart);
         uint256 expectedDay6 = (amount * 6) / 7;
         assertApproxEqAbs(assetsDay6, expectedDay6, 1e15, "Day 6: Should have ~85.71% of assets");
         
         // Day 7 (end of epoch) - ~100% elapsed
         vm.warp(ProtocolTimeLibrary.epochNext(epochStart) - 1);
         vm.roll(block.number + 1);
-        uint256 assetsDay7 = debtToken.totalAssets(epochStart);
+        uint256 assetsDay7 = debtToken.totalAssetsUnlocked(epochStart);
         // At the end, should have almost full amount (accounting for integer division)
         // The error is approximately assets / duration, which for 10000e18 / 604800 ≈ 1.65e16
         assertApproxEqAbs(assetsDay7, amount, 2e16, "Day 7: Should have almost full amount");
@@ -997,7 +977,7 @@ contract DebtTokenTest is Test {
         // Move to next epoch and verify past epoch returns full amount
         vm.warp(ProtocolTimeLibrary.epochNext(epochStart));
         vm.roll(block.number + 1);
-        uint256 assetsPastEpoch = debtToken.totalAssets(epochStart);
+        uint256 assetsPastEpoch = debtToken.totalAssetsUnlocked(epochStart);
         assertEq(assetsPastEpoch, amount, "Past epoch should return full amount");
         
         // Verify vault ratio is maintained throughout
@@ -1041,7 +1021,7 @@ contract DebtTokenTest is Test {
         vm.roll(block.number + 1);
         
         // Use the actual epoch start we minted in
-        uint256 totalAssetsDay1 = debtToken.totalAssets(actualEpochStart);
+        uint256 totalAssetsDay1 = debtToken.totalAssetsUnlocked(actualEpochStart);
         uint256 userBalanceDay1 = debtToken.getCurrentBalance(user1);
         uint256 vaultBalanceDay1 = debtToken.getCurrentBalance(debtToken.vault());
         
@@ -1053,7 +1033,7 @@ contract DebtTokenTest is Test {
         uint256 userBalanceDay2 = debtToken.getCurrentBalance(user1);
         uint256 vaultBalanceDay2 = debtToken.getCurrentBalance(debtToken.vault());
         uint256 totalSupplyDay2 = debtToken.totalSupply(actualEpochStart);
-        uint256 totalAssetsDay2 = debtToken.totalAssets(actualEpochStart);
+        uint256 totalAssetsDay2 = debtToken.totalAssetsUnlocked(actualEpochStart);
         
         // Verify assets are increasing (distributed over time)
         assertGt(totalAssetsDay2, totalAssetsDay1, "Total assets should increase from day 1 to day 2");
@@ -1072,7 +1052,7 @@ contract DebtTokenTest is Test {
         // Check state before ratio change (using actual epoch start)
         uint256 userBalanceBeforeRatioChange = debtToken.getCurrentBalance(user1);
         uint256 vaultBalanceBeforeRatioChange = debtToken.getCurrentBalance(debtToken.vault());
-        uint256 totalAssetsBeforeRatioChange = debtToken.totalAssets(actualEpochStart);
+        uint256 totalAssetsBeforeRatioChange = debtToken.totalAssetsUnlocked(actualEpochStart);
         
         // Change ratio to 80% vault (20% user)
         vm.prank(authorized);
@@ -1085,7 +1065,7 @@ contract DebtTokenTest is Test {
         uint256 userBalanceDay4 = debtToken.getCurrentBalance(user1);
         uint256 vaultBalanceDay4 = debtToken.getCurrentBalance(debtToken.vault());
         uint256 totalSupplyDay4 = debtToken.totalSupply(actualEpochStart);
-        uint256 totalAssetsDay4 = debtToken.totalAssets(actualEpochStart);
+        uint256 totalAssetsDay4 = debtToken.totalAssetsUnlocked(actualEpochStart);
         
         // CRITICAL: No assets should decrease
         assertGe(totalAssetsDay4, totalAssetsBeforeRatioChange, "Total assets should NOT decrease after ratio change");
@@ -1104,7 +1084,7 @@ contract DebtTokenTest is Test {
         uint256 userBalanceDay6 = debtToken.getCurrentBalance(user1);
         uint256 vaultBalanceDay6 = debtToken.getCurrentBalance(debtToken.vault());
         uint256 totalSupplyDay6 = debtToken.totalSupply(actualEpochStart);
-        uint256 totalAssetsDay6 = debtToken.totalAssets(actualEpochStart);
+        uint256 totalAssetsDay6 = debtToken.totalAssetsUnlocked(actualEpochStart);
         
         // Assets should continue to increase
         assertGt(totalAssetsDay6, totalAssetsDay4, "Total assets should continue increasing from day 4 to day 6");
@@ -1123,7 +1103,7 @@ contract DebtTokenTest is Test {
         uint256 userBalanceDay7 = debtToken.getCurrentBalance(user1);
         uint256 vaultBalanceDay7 = debtToken.getCurrentBalance(debtToken.vault());
         uint256 totalSupplyDay7 = debtToken.totalSupply(actualEpochStart);
-        uint256 totalAssetsDay7 = debtToken.totalAssets(actualEpochStart);
+        uint256 totalAssetsDay7 = debtToken.totalAssetsUnlocked(actualEpochStart);
         
         // Final checks: assets should be at maximum
         assertGt(totalAssetsDay7, totalAssetsDay6, "Total assets should continue increasing to end");
@@ -1155,153 +1135,10 @@ contract DebtTokenTest is Test {
 
     // ============ Conversion Tests ============
 
-    function test_ConvertToShares_BasicConversion() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-
-        // After mint: totalAssets = 1000, totalSupply includes vault (5000 with 80% ratio)
-        uint256 shares = debtToken.convertToShares(assets, 0, currentEpoch); // Rounding.Floor = 0
-        assertGt(shares, 0, "Shares should be greater than 0");
-        assertLt(shares, assets * 10, "Shares should be reasonable");
-    }
-
-    function test_ConvertToAssets_BasicConversion() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-
-        // Convert shares back to assets
-        uint256 shares = debtToken.convertToShares(assets, 0, currentEpoch);
-        uint256 convertedAssets = debtToken.convertToAssets(shares, 0, currentEpoch);
-        
-        // Should be approximately equal (within rounding)
-        assertApproxEqRel(convertedAssets, assets, 1e15, "Converted assets should be approximately equal to original");
-    }
-
-    function test_ConvertToShares_ZeroAssets() public {
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 shares = debtToken.convertToShares(0, 0, currentEpoch);
-        assertEq(shares, 0, "Zero assets should convert to zero shares");
-    }
-
     function test_ConvertToAssets_ZeroShares() public {
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         uint256 assets = debtToken.convertToAssets(0, 0, currentEpoch);
         assertEq(assets, 0, "Zero shares should convert to zero assets");
-    }
-
-    function test_ConvertToShares_WithVaultRatio() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-
-        // With 80% vault ratio: totalSupply = 5000, totalAssets = 1000
-        uint256 shares = debtToken.convertToShares(assets, 0, currentEpoch);
-        
-        // shares = 1000 * (5000 + 1) / (1000 + 1) ≈ 4995
-        assertGt(shares, assets, "Shares should be greater than assets due to vault ratio");
-    }
-
-    function test_ConvertToShares_DifferentRatios() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        // Test with 80% ratio (default)
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-        uint256 shares80 = debtToken.convertToShares(assets, 0, currentEpoch);
-
-        // Change to 20% ratio
-        vm.prank(authorized);
-        debtToken.setVaultRatioBps(2000);
-        
-        // Mint in new epoch to test new ratio
-        vm.warp(1767742579);
-        vm.roll(block.number + 1);
-        uint256 epoch2 = 1767225600;
-        
-        vm.prank(authorized);
-        debtToken.mint(user2, assets);
-        uint256 shares20 = debtToken.convertToShares(assets, 0, epoch2);
-
-        // With 20% ratio, totalSupply is smaller, so shares should be different
-        assertTrue(shares80 != shares20, "Shares should differ with different ratios");
-    }
-
-    function test_ConvertToShares_RoundingModes() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-
-        uint256 sharesFloor = debtToken.convertToShares(assets, 0, currentEpoch); // Floor
-        uint256 sharesCeil = debtToken.convertToShares(assets, 1, currentEpoch); // Ceil
-
-        assertGe(sharesCeil, sharesFloor, "Ceiling should be >= floor");
-    }
-
-    function test_ConvertToAssets_RoundingModes() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-
-        uint256 shares = debtToken.convertToShares(assets, 0, currentEpoch);
-        uint256 assetsFloor = debtToken.convertToAssets(shares, 0, currentEpoch); // Floor
-        uint256 assetsCeil = debtToken.convertToAssets(shares, 1, currentEpoch); // Ceil
-
-        assertGe(assetsCeil, assetsFloor, "Ceiling should be >= floor");
-    }
-
-    function test_ConvertToShares_MultipleMints() public {
-        uint256 amount1 = 1000e18;
-        uint256 amount2 = 2000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.startPrank(authorized);
-        debtToken.mint(user1, amount1);
-        debtToken.mint(user2, amount2);
-        vm.stopPrank();
-
-        // Convert total assets to shares
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch);
-        uint256 shares = debtToken.convertToShares(totalAssets, 0, currentEpoch);
-        
-        assertGt(shares, 0, "Shares should be greater than 0");
-    }
-
-    function test_ConvertToShares_AcrossEpochs() public {
-        uint256 amount1 = 1000e18;
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.prank(authorized);
-        debtToken.mint(user1, amount1);
-
-        uint256 shares1 = debtToken.convertToShares(amount1, 0, epoch1);
-
-        // Move to next epoch
-        vm.warp(1767742579);
-        vm.roll(block.number + 1);
-        uint256 epoch2 = 1767225600;
-        uint256 amount2 = 2000e18;
-
-        vm.prank(authorized);
-        debtToken.mint(user1, amount2);
-
-        uint256 shares2 = debtToken.convertToShares(amount2, 0, epoch2);
-
-        // Shares in different epochs should be independent
-        assertGt(shares1, 0, "Shares1 should be greater than 0");
-        assertGt(shares2, 0, "Shares2 should be greater than 0");
     }
 
     // ============ Integration Tests ============
@@ -1313,7 +1150,7 @@ contract DebtTokenTest is Test {
         vm.prank(authorized);
         debtToken.mint(user1, amount);
 
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch); // Distributed
+        uint256 totalAssets = debtToken.totalAssetsUnlocked(currentEpoch); // Distributed
         uint256 totalAssetsFull = amount; // Full amount
         uint256 totalSupply = debtToken.totalSupply(currentEpoch);
 
@@ -1325,55 +1162,10 @@ contract DebtTokenTest is Test {
         assertEq(totalSupply, amount + (amount * 8000 / 2000), "Total supply should include vault");
     }
 
-    function test_Conversion_Consistency() public {
-        uint256 assets = 1000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
 
-        vm.prank(authorized);
-        debtToken.mint(user1, assets);
-
-        // Convert assets to shares
-        uint256 shares = debtToken.convertToShares(assets, 0, currentEpoch);
-        
-        // Convert shares back to assets
-        uint256 convertedAssets = debtToken.convertToAssets(shares, 0, currentEpoch);
-        
-        // Should be approximately equal (allowing for rounding)
-        assertApproxEqRel(convertedAssets, assets, 1e15, "Round-trip conversion should be consistent");
-    }
-
-    function test_Conversion_WithMultipleUsers() public {
-        uint256 amount1 = 1000e18;
-        uint256 amount2 = 2000e18;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        vm.startPrank(authorized);
-        debtToken.mint(user1, amount1);
-        debtToken.mint(user2, amount2);
-        vm.stopPrank();
-
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch);
-        uint256 shares1 = debtToken.convertToShares(amount1, 0, currentEpoch);
-        uint256 shares2 = debtToken.convertToShares(amount2, 0, currentEpoch);
-        uint256 totalShares = debtToken.convertToShares(totalAssets, 0, currentEpoch);
-
-        // Total shares should be approximately sum of individual shares
-        // Due to distribution and rounding, there may be slight differences
-        // Using absolute tolerance to account for distribution effects
-        // The difference is due to how conversion works with distributed assets
-        uint256 expectedSum = shares1 + shares2;
-        assertApproxEqAbs(expectedSum, totalShares, 4e19, "Total shares should approximately equal sum (accounting for distribution)");
-    }
 
     // ============ Edge Cases ============
 
-    function test_ConvertToShares_WhenNoAssets() public {
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 shares = debtToken.convertToShares(1000e18, 0, currentEpoch);
-        // When totalAssets = 0, formula is: assets * (totalSupply + 1) / (0 + 1)
-        // This should still work but result in very large shares
-        assertGt(shares, 0, "Shares should be calculated even when no assets exist");
-    }
 
     function test_ConvertToAssets_WhenNoSupply() public {
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
@@ -1393,10 +1185,10 @@ contract DebtTokenTest is Test {
         vm.prank(authorized);
         debtToken.mint(user1, amount);
 
-        uint256 assetsBefore = debtToken.totalAssets(currentEpoch);
+        uint256 assetsBefore = debtToken.totalAssetsUnlocked(currentEpoch);
         
         // Rebalance shouldn't affect total assets (but we're in current epoch so it's distributed)
-        uint256 assetsAfter = debtToken.totalAssets(currentEpoch);
+        uint256 assetsAfter = debtToken.totalAssetsUnlocked(currentEpoch);
         
         assertEq(assetsBefore, assetsAfter, "Total assets should not change after rebalance");
         // Assets are distributed over time in current epoch, so they should be <= amount
@@ -1415,7 +1207,7 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, amount);
 
         // With 0 ratio, totalSupply should equal totalAssets (but assets are distributed)
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch); // Distributed
+        uint256 totalAssets = debtToken.totalAssetsUnlocked(currentEpoch); // Distributed
         uint256 totalAssetsFull = amount; // Full amount
         uint256 totalSupply = debtToken.totalSupply(currentEpoch);
         
@@ -1423,14 +1215,6 @@ contract DebtTokenTest is Test {
         assertLe(totalAssets, totalAssetsFull, "Distributed assets should be <= full amount");
         // With 0 ratio, supply should equal the full assets amount (not distributed)
         assertEq(totalSupply, totalAssetsFull, "Supply should equal full assets with 0 ratio");
-        
-        // Conversion uses distributed assets, so shares will be based on distributed amount
-        // shares = assets * (totalSupply + 1) / (totalAssets + 1)
-        // With 0 ratio and distributed assets, shares will be slightly more than assets
-        uint256 shares = debtToken.convertToShares(amount, 0, currentEpoch);
-        // Shares will be approximately equal to assets, but may vary slightly due to distribution
-        // The difference is due to using distributed assets in the conversion formula
-        assertApproxEqAbs(shares, amount, 3e18, "Shares should approximately equal assets with 0 ratio (accounting for distribution)");
     }
 
     // ============ Repayment and Redemption Scenario Tests ============
@@ -1452,7 +1236,7 @@ contract DebtTokenTest is Test {
         // Verify the state after repayment
         uint256 userBalance = debtToken.getCurrentBalance(user1);
         uint256 vaultBalance = debtToken.getCurrentBalance(debtToken.vault());
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch); // Distributed amount
+        uint256 totalAssets = debtToken.totalAssetsUnlocked(currentEpoch); // Distributed amount
         uint256 totalAssetsFull = repaymentAmount; // Full amount for epoch
         uint256 totalSupply = debtToken.totalSupply(currentEpoch);
         
@@ -1474,35 +1258,17 @@ contract DebtTokenTest is Test {
         uint256 actualRatio = (vaultBalance * 10000) / totalSupply;
         assertEq(actualRatio, 2000, "Vault should have exactly 20% of total supply");
         
-        // Step 2: Calculate what shares the user has when they deposit 20 assets
-        uint256 userShares = debtToken.convertToShares(repaymentAmount, 0, currentEpoch);
-        
-        // shares = assets * (totalSupply + 1) / (totalAssets + 1)
-        // shares = 20 * (25 + 1) / (20 + 1) = 20 * 26 / 21 ≈ 24.76
-        assertGt(userShares, repaymentAmount, "User should have more shares than assets due to vault ratio");
-        
         // Step 3: Calculate what assets user receives when redeeming their balance
         // The user's balance represents their share of the total supply
         // User owns: userBalance / totalSupply = 20 / 25 = 80% of supply
         // Since totalAssets is distributed, they receive: userBalance * totalAssets / totalSupply
         // This equals 80% of the distributed assets
         
-        // Method 1: Direct proportional calculation (what user expects)
+        // Direct proportional calculation (what user expects)
         uint256 expectedAssetsReceived = (userBalance * totalAssets) / totalSupply;
         // Expected is 80% of the distributed assets
         uint256 expectedFromDistributed = (totalAssets * 8000) / 10000;
         assertApproxEqAbs(expectedAssetsReceived, expectedFromDistributed, 1e15, "User should receive 80% of distributed assets via proportional calculation");
-        
-        // Method 2: Using conversion function (ERC4626 standard - maintains round-trip)
-        uint256 assetsViaConversion = debtToken.convertToAssets(userShares, 0, currentEpoch);
-        // This gives back ~20 because ERC4626 maintains round-trip conversion
-        assertApproxEqAbs(assetsViaConversion, repaymentAmount, 1e15, "ERC4626 conversion maintains round-trip (returns ~20)");
-        
-        // The key insight: User's balance (20) represents their assets deposited
-        // But when redeeming, if we want them to get their proportional share (80%),
-        // we need to calculate: balance * totalAssets / totalSupply
-        // Since totalAssets is distributed, this gives 80% of distributed assets
-        // NOT use the ERC4626 conversion which maintains round-trip
         
         // Verify the proportional calculation
         uint256 userShareOfSupply = (userBalance * 10000) / totalSupply;
@@ -1530,7 +1296,7 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, repayment2);
         
         uint256 userBalance = debtToken.getCurrentBalance(user1);
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch); // This is distributed amount
+        uint256 totalAssets = debtToken.totalAssetsUnlocked(currentEpoch); // This is distributed amount
         uint256 totalAssetsFull = repayment1 + repayment2; // Full amount for the epoch
         uint256 totalSupply = debtToken.totalSupply(currentEpoch);
         
@@ -1572,7 +1338,7 @@ contract DebtTokenTest is Test {
         debtToken.mint(user1, repaymentAmount);
         
         uint256 userBalance20 = debtToken.getCurrentBalance(user1);
-        uint256 totalAssets20 = debtToken.totalAssets(currentEpoch);
+        uint256 totalAssets20 = debtToken.totalAssetsUnlocked(currentEpoch);
         uint256 totalSupply20 = debtToken.totalSupply(currentEpoch);
         
         // Proportional redemption: user gets their share of assets
@@ -1593,7 +1359,7 @@ contract DebtTokenTest is Test {
         debtToken.mint(user2, repaymentAmount);
         
         uint256 userBalance50 = debtToken.getCurrentBalance(user2);
-        uint256 totalAssets50 = debtToken.totalAssets(epoch2);
+        uint256 totalAssets50 = debtToken.totalAssetsUnlocked(epoch2);
         uint256 totalSupply50 = debtToken.totalSupply(epoch2);
         
         // Proportional redemption: user gets their share of assets
@@ -1625,7 +1391,7 @@ contract DebtTokenTest is Test {
         
         // Verify state
         uint256 userBalance = debtToken.getCurrentBalance(user1);
-        uint256 totalAssets = debtToken.totalAssets(currentEpoch); // Distributed amount
+        uint256 totalAssets = debtToken.totalAssetsUnlocked(currentEpoch); // Distributed amount
         uint256 totalAssetsFull = repaymentAmount; // Full amount for epoch
         uint256 totalSupply = debtToken.totalSupply(currentEpoch);
         uint256 vaultBalance = debtToken.getCurrentBalance(debtToken.vault());

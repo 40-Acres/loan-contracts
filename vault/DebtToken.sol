@@ -12,6 +12,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+
+interface IDynamicFeesVault {
+    function decreaseTotalLoanedAssets(uint256 amount) external;
+}
+
 /**
  * @title DebtToken
  * @notice Abstract contract for debt tokens
@@ -246,7 +251,7 @@ contract DebtToken {
         return totalAssetsPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)];
     }
 
-    function totalAssets(uint256 epoch) public view returns (uint256) {
+    function totalAssetsUnlocked(uint256 epoch) public view returns (uint256) {
         // disburse assets evenly over the epoch via block.timestamp
         uint256 currentTimestamp = block.timestamp;
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(currentTimestamp);
@@ -259,6 +264,19 @@ contract DebtToken {
             return assetsPerSecond * (currentTimestamp - epoch);
         }
         return totalAssetsPerEpoch[epoch];
+    }
+
+
+    function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
+        earned(address(this), vault);
+
+        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        return tokenClaimedPerEpoch[vault][address(this)][_epoch];
+    }
+
+    function debtRepaidThisEpoch() public returns (uint256) {
+        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        return totalAssetsUnlocked(_epoch) - lenderPremiumUnlockedThisEpoch();
     }
 
     function earned(address _token, address _owner) internal returns (uint256) {
@@ -366,7 +384,7 @@ contract DebtToken {
     }
 
 
-    function mint(address _to, uint256 _amount) external {
+    function mint(address _to, uint256 _amount) virtual external {
         if (msg.sender != vault) revert NotAuthorized();
         if (_amount == 0) revert ZeroAmount();
         _mint(_to, _amount);
@@ -401,25 +419,13 @@ contract DebtToken {
             _writeCheckpoint(vault, newVaultBalance);
         }
     }
-
-    /**
-     * @dev Internal conversion function (from assets to shares) with support for rounding direction.
-     */
-    function _convertToShares(uint256 assets, Math.Rounding rounding) internal view virtual returns (uint256) {
-        return _convertToShares(assets, rounding, ProtocolTimeLibrary.epochStart(block.timestamp));
-    }
-
-
-    function _convertToShares(uint256 assets, Math.Rounding rounding, uint256 epoch) internal view virtual returns (uint256) {
-        return assets.mulDiv(totalSupply(epoch) + 10 ** _decimalsOffset(), totalAssets(epoch) + 1, rounding);
-    }
     
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view virtual returns (uint256) {
         return _convertToAssets(shares, rounding, ProtocolTimeLibrary.epochStart(block.timestamp));
     }
     
     function _convertToAssets(uint256 shares, Math.Rounding rounding, uint256 epoch) internal view virtual returns (uint256) {
-        return shares.mulDiv(totalAssets(epoch) + 1, totalSupply(epoch) + 10 ** _decimalsOffset(), rounding);
+        return shares.mulDiv(totalAssetsUnlocked(epoch) + 1, totalSupply(epoch) + 10 ** _decimalsOffset(), rounding);
     }
 
     function _decimalsOffset() internal view virtual returns (uint8) {
