@@ -232,8 +232,18 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      */
     function _updateUserDebtBalance(address borrower) internal {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        $.debtBalance[borrower] -= $.debtToken.earned(address(this), borrower);
+        uint256 earned = $.debtToken.earned(address(this), borrower);
+
+        // if earned is more than the debt balance, give user the difference via minting vault shares
+        if (earned > $.debtBalance[borrower]) {
+            uint256 difference = earned - $.debtBalance[borrower];
+            _mint(borrower, difference);
+            earned -= difference;
+        }
+
+        $.debtBalance[borrower] = earned;
     }
+    
     /**
      * @dev Override _deposit to automatically update settlement checkpoint and rebalance
      * @dev This ensures totalAssets() is accurate in real-time and vault ratio is maintained when users deposit
