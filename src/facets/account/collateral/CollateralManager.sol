@@ -138,8 +138,8 @@ library CollateralManager {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         return collateralManagerData.unpaidFees;
     }
-
-    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external  returns (uint256 loanAmount) {
+//DEON CHECK THIS
+    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
@@ -153,8 +153,9 @@ library CollateralManager {
             collateralManagerData.undercollateralizedDebt += amount - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
-        uint256 originationFee = loanContract.borrowFromPortfolio(amount);
-        return amount - originationFee;
+        originationFee = loanContract.borrowFromPortfolio(amount);
+        loanAmount = amount - originationFee;
+        return (loanAmount, originationFee);
     }
 
     function migrateDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {

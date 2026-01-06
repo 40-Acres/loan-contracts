@@ -21,6 +21,10 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
     error NotOwnerOfToken();
     error NotOwnerOfPortfolioAccount();
 
+ 
+    event CollateralAdded(uint256 indexed tokenId, address indexed owner);
+    event CollateralRemoved(uint256 indexed tokenId, address indexed owner);
+
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
@@ -39,6 +43,8 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         }
         // add the collateral to the collateral manager
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        
+        emit CollateralAdded(tokenId, portfolioOwner);
     }
 
 
@@ -58,6 +64,8 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+        
+        emit CollateralRemoved(tokenId, portfolioOwner);
     }
 
     function getMaxLoan() public view returns (uint256, uint256) {

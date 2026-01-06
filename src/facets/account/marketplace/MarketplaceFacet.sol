@@ -31,6 +31,12 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
     event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
     event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
+    
+    event ListingCreated(uint256 indexed tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address indexed owner, address allowedBuyer);
+    event ListingCancelled(uint256 indexed tokenId, address indexed owner);
+    event PurchaseFinalized(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 debtAmount, uint256 unpaidFees);
+    event DebtTransferredToBuyer(uint256 indexed tokenId, address indexed buyer, uint256 debtAmount, uint256 unpaidFees, address indexed seller);
+    event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
 
     function marketplace() external view returns (address) {
         return _marketplace;
@@ -47,10 +53,16 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
         require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+        //DEON CHECK THIS
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit ListingCreated(tokenId, price, paymentToken, debtAttached, expiresAt, owner, allowedBuyer);
     }
 
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.removeListing(tokenId);
+        //DEON CHECK THIS
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit ListingCancelled(tokenId, owner);
     }
 
     /**
@@ -206,6 +218,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         if (actualDebtAmount > 0) {
             CollateralManager.addDebtFromMarketplace(address(_portfolioAccountConfig), actualDebtAmount, unpaidFeesToTransfer);
         }
+        
+        emit PurchaseFinalized(tokenId, seller, address(this), actualDebtAmount, unpaidFeesToTransfer);
     }
 
     /**
@@ -235,6 +249,10 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Remove collateral from seller's collateral manager
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         CollateralManager.enforceCollateralRequirements();
+        
+        //DEON CHECK THIS
+        address sellerOwner = _portfolioFactory.ownerOf(address(this));
+        emit DebtTransferredToBuyer(tokenId, buyer, debtAmount, unpaidFees, sellerOwner);
     }
 
 
@@ -302,5 +320,7 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
+        
+        emit MarketplaceListingBought(tokenId, buyer, listing.price, listing.debtAttached, portfolioOwner);
     }
 }

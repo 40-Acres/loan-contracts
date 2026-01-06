@@ -19,6 +19,9 @@ contract VotingEscrowFacet is AccessControl {
     IVotingEscrow public immutable _votingEscrow;
     IVoter public immutable _voter;
 
+    event LockIncreased(uint256 indexed tokenId, uint256 amount, address indexed owner);
+    event LockCreated(uint256 indexed tokenId, uint256 amount, address indexed owner);
+
     constructor(address portfolioFactory, address accountConfigStorage, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
         require(accountConfigStorage != address(0));
@@ -35,6 +38,7 @@ contract VotingEscrowFacet is AccessControl {
         IERC20(_votingEscrow.token()).transferFrom(from, address(this), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
         CollateralManager.updateLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
+        emit LockIncreased(tokenId, amount, from);
     }
 
     function createLock(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 tokenId) {
@@ -44,6 +48,7 @@ contract VotingEscrowFacet is AccessControl {
         IERC20(_votingEscrow.token()).approve(address(_votingEscrow), amount);
         tokenId = _votingEscrow.createLock(amount, 4 *365 days);
         CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
+        emit LockCreated(tokenId, amount, from);
     }
     
 }
