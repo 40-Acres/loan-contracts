@@ -25,7 +25,7 @@ contract LendingFacet is AccessControl {
     error NotPortfolioOwner();
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
-    event BorrowedTo(uint256 amount, uint256 amountAfterFees, address indexed owner, address indexed to);
+    event BorrowedTo(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner, address indexed to);
     event Paid(uint256 amount, address indexed owner);
     event TopUpSet(bool topUpEnabled, address indexed owner);
     event ToppedUp(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
@@ -58,9 +58,9 @@ contract LendingFacet is AccessControl {
         require(portfolioOwner == _portfolioFactory.ownerOf(to), "not the same owner for to adress and current portfolio");
 
 
-        (uint256 amountAfterFees, ) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
         IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
-        emit BorrowedTo(amount, amountAfterFees, portfolioOwner, to);
+        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
     function pay(uint256 amount) public  {
