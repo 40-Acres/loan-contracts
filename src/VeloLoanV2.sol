@@ -26,6 +26,6 @@ contract VeloLoan is Loan {
      * @return The address of the ODOS Router contract.
      */
     function odosRouter() public override pure returns (address) {
-        return 0xCa423977156BB05b13A2BA3b76Bc5419E2fE9680; // ODOS Router address
+        return 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05; // ODOS Router address
     }
 }
