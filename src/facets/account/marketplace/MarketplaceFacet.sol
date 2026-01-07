@@ -165,33 +165,27 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         require(_portfolioFactory.isPortfolio(seller), "Seller must be a portfolio account");
         require(seller != address(this), "Cannot purchase from self");
         
-        // Calculate debt amount - use debtAmount if provided, otherwise use seller's total debt
-        uint256 actualDebtAmount = debtAmount;
-        if (actualDebtAmount == 0) {
-            // If debtAmount is 0, use seller's total debt
-            actualDebtAmount = CollateralFacet(seller).getTotalDebt();
-        }
         
         // Calculate proportional unpaid fees if there's debt to transfer
         uint256 unpaidFeesToTransfer = 0;
-        if (actualDebtAmount > 0) {
+        if (debtAmount > 0) {
             // Get seller's total debt and unpaid fees
             uint256 sellerTotalDebt = CollateralFacet(seller).getTotalDebt();
             uint256 sellerUnpaidFees = CollateralFacet(seller).getUnpaidFees();
             
             // Cap debt amount to seller's actual total debt
-            if (actualDebtAmount > sellerTotalDebt) {
-                actualDebtAmount = sellerTotalDebt;
+            if (debtAmount > sellerTotalDebt) {
+                debtAmount = sellerTotalDebt;
             }
             
             // Calculate proportional unpaid fees
             if (sellerUnpaidFees > 0 && sellerTotalDebt > 0) {
-                unpaidFeesToTransfer = (sellerUnpaidFees * actualDebtAmount) / sellerTotalDebt;
+                unpaidFeesToTransfer = (sellerUnpaidFees * debtAmount) / sellerTotalDebt;
             }
             
             // Transfer debt away from seller by calling seller's MarketplaceFacet
             // This must happen before NFT transfer since transferDebtToBuyer checks token ownership
-            IMarketplaceFacet(seller).transferDebtToBuyer(tokenId, address(this), actualDebtAmount, unpaidFeesToTransfer);
+            IMarketplaceFacet(seller).transferDebtToBuyer(tokenId, address(this), debtAmount, unpaidFeesToTransfer);
         }
         
         // Transfer NFT from seller to this portfolio account (buyer)
@@ -203,8 +197,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Add debt to buyer's account AFTER adding collateral
         // Use addDebtFromMarketplace which updates undercollateralized debt tracking
-        if (actualDebtAmount > 0) {
-            CollateralManager.addDebtFromMarketplace(address(_portfolioAccountConfig), actualDebtAmount, unpaidFeesToTransfer);
+        if (debtAmount > 0) {
+            CollateralManager.addDebtFromMarketplace(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
         }
     }
 
