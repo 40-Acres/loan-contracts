@@ -59,15 +59,19 @@ contract LendingFacet is AccessControl {
         IERC20(address(_lendingToken)).transfer(to, amountAfterFees);
     }
 
-    function pay(uint256 amount) public  {
+    function pay(uint256 amount) public {
         // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
 
         // transfer the funds from the from address to the portfolio account then pay the loan
         IERC20(address(_lendingToken)).transferFrom(from, address(this), amount);
         IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), amount);
-        CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
+        uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
         IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), 0);
+        // refund excess to the from address
+        if(excess > 0) {
+            IERC20(address(_lendingToken)).transfer(from, excess);
+        }
     }
 
     function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {

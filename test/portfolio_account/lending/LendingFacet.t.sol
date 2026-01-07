@@ -750,4 +750,38 @@ contract LendingFacetTest is Test, Setup {
         vm.startPrank(address(_portfolioManager));
         facet.borrowTo(_portfolioAccount, 100);
     }
+
+    function testPayExcess() public {
+        // Setup: add collateral and borrow
+        addCollateralViaMulticall(_tokenId);
+        uint256 borrowAmount = 1e6;
+        deal(address(_asset), _vault, 7e6);
+        borrowViaMulticall(borrowAmount);
+        
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount);
+        _assertDebtSynced(_tokenId);
+
+        // Pay more than the debt
+        uint256 excess = 100;
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 payAmount = totalDebt + excess;
+        
+        // Fund user with enough tokens
+        deal(address(_asset), _user, payAmount);
+        
+        uint256 balanceBefore = _asset.balanceOf(_user);
+        
+        // Approve the portfolio account to spend the payment amount
+        vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, payAmount);
+        
+        // Call pay function
+        pay(_portfolioAccount, payAmount);
+        vm.stopPrank();
+        
+        uint256 balanceAfter = _asset.balanceOf(_user);
+
+        // Verify the excess was refunded
+        assertEq(balanceAfter, balanceBefore - totalDebt);
+    }
 }
