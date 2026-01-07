@@ -10,7 +10,6 @@ import {AccessControl} from "../utils/AccessControl.sol";
 import {UserLendingConfig} from "./UserLendingConfig.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-
 /**
  * @title LendingFacet
  * @dev Facet for borrowing against collateral in portfolio accounts.
@@ -41,18 +40,23 @@ contract LendingFacet is AccessControl {
      * @dev Borrow funds to a specific address within the 40acres ecosystem
      * @param to The address to borrow funds to
      * @param amount The amount of funds to borrow
-     * @notice O
+     * @notice Borrow funds to a specific address within the 40acres ecosystem
      */
     function borrowTo(address to, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        // verify with portfolio manager that the to address is part of 40acres
-        require(PortfolioManager(address(_portfolioFactory.portfolioManager())).isPortfolioOwner(to), "To address is not part of 40acres");
-        address portfolioOwner = PortfolioFactory(address(_portfolioFactory.portfolioManager())).ownerOf(to);
-        // require owner of to address to be the portfolio owner
-        require(portfolioOwner == _portfolioFactory.ownerOf(to), "not the same owner for to adress and current portfolio");
+        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
+        // 1. Verify existence and get the specific factory for the 'to' portfolio
+        require(manager.isPortfolioRegistered(to), "To address is not part of 40acres");
+        address toFactoryAddress = manager.getFactoryForPortfolio(to);
+
+        // 2. Get the owner from the correct factory
+        address portfolioOwner = PortfolioFactory(toFactoryAddress).ownerOf(to);
+
+        // 3. Verify ownership matches the current portfolio's owner
+        require(portfolioOwner == _portfolioFactory.ownerOf(address(this)), "not the same owner for to address and current portfolio");
 
 
         uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
-        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
+        IERC20(address(_lendingToken)).transfer(to, amountAfterFees);
     }
 
     function pay(uint256 amount) public  {

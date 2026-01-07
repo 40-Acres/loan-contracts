@@ -84,6 +84,28 @@ contract LendingFacetTest is Test, Setup {
     }
 
 
+    function testBorrowToWithCollateral() public {
+        // Add collateral first
+        addCollateralViaMulticall(_tokenId);
+        
+        uint256 borrowAmount = 1e6; // 1 USDC
+        
+        // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
+        deal(address(_asset), vault, vaultBalance);
+        
+        // Borrow against collateral
+        borrowViaMulticall(borrowAmount);
+        
+        // Check debt is tracked (borrowFromPortfolio doesn't add origination fee)
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount);
+        
+        // Verify CollateralManager tracks debt
+        _assertDebtSynced(_tokenId);
+    }
+
     function testBorrowMaxLoanTwice() public {
         address loanContract = _portfolioAccountConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
@@ -646,5 +668,86 @@ contract LendingFacetTest is Test, Setup {
         uint256 debtAfterSecond = CollateralFacet(_portfolioAccount).getTotalDebt();
         uint256 expectedDebt = maxLoan1 + maxLoan2;
         assertEq(debtAfterSecond, expectedDebt, "Debt should be sum of both topUps");
+    }
+
+
+
+    function testPoC_BorrowTo_LogicCrash_Direct() public {
+        // Deploy a fresh LendingFacet to test logic directly
+        LendingFacet facet = new LendingFacet(
+            address(_portfolioFactory),
+            address(_portfolioAccountConfig),
+            address(_asset)
+        );
+
+        //  Create a dummy "to" address
+        address to = makeAddr("receiver");
+
+      // Mock the isPortfolioOwner call to pass the first require
+        vm.mockCall(
+            address(_portfolioManager),
+            abi.encodeWithSignature("isPortfolioOwner(address)", to),
+            abi.encode(true)
+        );
+
+        // Mock getFactoryForPortfolio to return the portfolio factory
+        vm.mockCall(
+            address(_portfolioManager),
+            abi.encodeWithSignature("getFactoryForPortfolio(address)", to),
+            abi.encode(address(_portfolioFactory))
+        );
+
+        // mock ownerOf for the facet contract address (address(this) in the facet)
+        vm.mockCall(
+            address(_portfolioFactory),
+            abi.encodeWithSignature("ownerOf(address)", address(facet)),
+            abi.encode(address(0))
+        );
+        vm.startPrank(address(_portfolioManager));
+
+        // Expect Revert
+        deal(address(_asset), _vault, 1000);
+        vm.expectRevert("To address is not part of 40acres"); 
+        facet.borrowTo(to, 100);
+    }
+
+
+    function testPoC_BorrowTo_Logic_Direct() public {
+        // Deploy a fresh LendingFacet to test logic directly
+        LendingFacet facet = new LendingFacet(
+            address(_portfolioFactory),
+            address(_portfolioAccountConfig),
+            address(_asset)
+        );
+
+        //  Create a dummy "to" address
+        address to = _portfolioAccount;
+
+        // Mock the isPortfolioRegistered call to pass the first require
+        vm.mockCall(
+            address(_portfolioManager),
+            abi.encodeWithSignature("isPortfolioRegistered(address)", to),
+            abi.encode(true)
+        );
+
+        // Mock getFactoryForPortfolio to return the portfolio factory
+        vm.mockCall(
+            address(_portfolioManager),
+            abi.encodeWithSignature("getFactoryForPortfolio(address)", to),
+            abi.encode(address(_portfolioFactory))
+        );
+
+        // mock ownerOf for the facet contract address (address(this) in the facet)
+        vm.mockCall(
+            address(_portfolioFactory),
+            abi.encodeWithSignature("ownerOf(address)", address(facet)),
+            abi.encode(address(_user))
+        );
+
+        // Fund the facet contract with tokens so it can transfer them
+        deal(address(_asset), address(_vault), 1000);
+
+        vm.startPrank(address(_portfolioManager));
+        facet.borrowTo(_portfolioAccount, 100);
     }
 }
