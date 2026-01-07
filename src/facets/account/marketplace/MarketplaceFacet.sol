@@ -273,20 +273,19 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Excess always goes to seller - buyer agreed to pay the listing price
         uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        if(totalDebt > 0) {
-            // Pay down debt with listing price, transfer excess to seller
+        if(totalDebt == 0) {
+            // No debt, transfer full listing price to seller
+            paymentToken.transfer(portfolioOwner, listing.price);
+        } else if (listing.debtAttached == 0) { 
+            // no debt attached, pay down debt with listing price transfer excess to seller
             uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), listing.price);
             if(excess > 0) {
                 paymentToken.transfer(portfolioOwner, excess);
             }
         } else {
-            // No debt, transfer full listing price to seller
-            paymentToken.transfer(portfolioOwner, listing.price);
-        }
-
-        // if there is debt attached, pay down the debt
-        if(listing.debtAttached > 0) {
+            // Debt attached, transfer full listing price to seller, debt will be transferred separately
             paymentToken.transferFrom(buyer, address(this), listing.debtAttached);
+            paymentToken.transfer(portfolioOwner, listing.price);
             uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), listing.debtAttached);
             if(excess > 0) {
                 paymentToken.transfer(buyer, excess);
