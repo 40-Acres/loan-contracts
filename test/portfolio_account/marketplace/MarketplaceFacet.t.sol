@@ -953,7 +953,7 @@ contract MarketplaceFacetTest is Test, Setup {
         assertGt(totalDebt, 0, "Should have debt");
         
         // Attach partial debt to listing
-        uint256 debtAttached = totalDebt / 2;
+        uint256 debtAttached = totalDebt;
         
         // Create listing with debt attached
         makeListingViaMulticall(
@@ -997,6 +997,72 @@ contract MarketplaceFacetTest is Test, Setup {
         // Buyer pays listing price + debt attached, but may get excess back if overpayment
         assertGe(totalPaid, LISTING_PRICE, "Buyer should pay at least listing price");
         assertLe(totalPaid, LISTING_PRICE + debtAttached, "Buyer should not pay more than price + debt attached");
+    }
+
+    function testBuyMarketplaceListingWithDebtAttachedCorrectPayment() public {
+        // This test ensures the bug is fixed where:
+        // - Seller has initial debt of 100 USDC
+        // - Listing: Price = 150 USDC, Debt Attached = 100 USDC
+        // - Expected: Buyer pays 250 total. Seller gets 150 cash. Debt is cleared.
+        // - Bug: Listing price was used to pay debt, then debtAttached was also used, causing double payment
+        
+        // Borrow to create initial debt
+        uint256 initialDebt = 100e6; // 100 USDC
+        borrowViaMulticall(initialDebt);
+        
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(totalDebt, initialDebt, "Should have 100 USDC debt");
+        
+        // Create listing: Price = 150 USDC, Debt Attached = 100 USDC
+        uint256 listingPrice = 150e6; // 150 USDC
+        uint256 debtAttached = 100e6; // 100 USDC
+        makeListingViaMulticall(
+            _tokenId,
+            listingPrice,
+            address(_usdc),
+            debtAttached,
+            0,
+            address(0)
+        );
+        
+        // Create a non-portfolio buyer
+        address nonPortfolioBuyer = address(0x9999);
+        // Buyer needs to pay: listing price + debt attached = 250 USDC
+        deal(address(_usdc), nonPortfolioBuyer, listingPrice + debtAttached);
+        
+        IERC20 usdc = IERC20(_usdc);
+        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
+        uint256 buyerBalanceBefore = usdc.balanceOf(nonPortfolioBuyer);
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+        
+        assertEq(debtBefore, initialDebt, "Debt should be 100 USDC before purchase");
+        
+        // Buy the listing
+        vm.startPrank(nonPortfolioBuyer);
+        usdc.approve(_portfolioAccount, listingPrice + debtAttached);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+        
+        // Verify NFT transferred to buyer
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), nonPortfolioBuyer, "NFT should be transferred to buyer");
+        
+        // Verify debt is cleared (should be 0)
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, 0, "Debt should be cleared after purchase");
+        
+        // Verify seller received full listing price (150 USDC)
+        uint256 sellerBalanceAfter = usdc.balanceOf(_user);
+        uint256 sellerReceived = sellerBalanceAfter - sellerBalanceBefore;
+        assertEq(sellerReceived, listingPrice, "Seller should receive full listing price (150 USDC)");
+        
+        // Verify buyer paid exactly 250 USDC total (150 price + 100 debt)
+        uint256 buyerBalanceAfter = usdc.balanceOf(nonPortfolioBuyer);
+        uint256 buyerPaid = buyerBalanceBefore - buyerBalanceAfter;
+        assertEq(buyerPaid, listingPrice + debtAttached, "Buyer should pay exactly 250 USDC (150 price + 100 debt)");
+        
+        // Verify no excess was refunded (buyer should pay exactly 250, no more, no less)
+        // This ensures debt was paid correctly without double payment
+        assertEq(buyerPaid, 250e6, "Buyer should pay exactly 250 USDC with no refund");
     }
 
     function testRevertBuyMarketplaceListingExpired() public {
