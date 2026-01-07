@@ -100,7 +100,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
         //DEON CHECK THIS
         // I've stolen that from the VotingEscrowFacet, i assume it works but i'm not sure.
         // if msg.sender is portfolio manager, use the portfolio owner as the owner address, otherwise use the caller
-        address owner = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
+        address owner = _portfolioFactory.ownerOf(address(this));
         _voter.vote(tokenId, pools, weights);
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
         emit Voted(tokenId, pools, weights, owner);
@@ -137,10 +137,8 @@ contract VotingFacet is IVotingFacet, AccessControl {
             require(_isElligibleForManualVoting(tokenId));
         }
         UserVotingConfig.setVotingMode(tokenId, setToManualVoting);
-        //DEON CHECK THIS
-        // I've stolen that from the VotingEscrowFacet, i assume it works but i'm not sure.
-        // if msg.sender is portfolio manager, use the portfolio owner as the owner address, otherwise use the caller
-        address owner = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
+        
+        address owner = _portfolioFactory.ownerOf(address(this));
         emit VotingModeSet(tokenId, setToManualVoting, owner);
     }
 
