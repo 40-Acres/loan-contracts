@@ -46,6 +46,10 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
         require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
+        // if user has debt, require the payment token to be the same as the debt token
+        if(debtAttached > 0) {
+            require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
+        }
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
     }
 
@@ -265,6 +269,10 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Buyer pays listing price, seller receives it (minus debt paid)
         // Excess always goes to seller - buyer agreed to pay the listing price
         uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
+
+        if(totalDebt > 0) {
+            require(listing.paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
+        }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         if(totalDebt == 0) {
             // No debt, transfer full listing price to seller
