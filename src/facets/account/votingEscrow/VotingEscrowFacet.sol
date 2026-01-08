@@ -21,6 +21,7 @@ contract VotingEscrowFacet is AccessControl {
 
     event LockIncreased(uint256 indexed tokenId, uint256 amount, address indexed owner);
     event LockCreated(uint256 indexed tokenId, uint256 amount, address indexed owner);
+    event LockMerged(uint256 indexed from, uint256 indexed to, uint256 weightIncrease, address indexed owner);
 
     constructor(address portfolioFactory, address accountConfigStorage, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
@@ -50,6 +51,17 @@ contract VotingEscrowFacet is AccessControl {
         CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
         emit LockCreated(tokenId, amount, from);
     }
-    
-}
 
+    function merge(uint256 from, uint256 to) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        require(_votingEscrow.ownerOf(to) == address(this));
+        require(_votingEscrow.ownerOf(from) == msg.sender);
+        address borrower = _portfolioFactory.ownerOf(address(this));
+        require(borrower == msg.sender);
+        uint256 beginningBalance = _votingEscrow.locked(to).amount;
+        _votingEscrow.merge(from, to);
+        uint256 weightIncrease = _votingEscrow.locked(to).amount - beginningBalance;
+        CollateralManager.updateLockedCollateral(address(_accountConfigStorage), to, address(_votingEscrow));
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit LockMerged(from, to, weightIncrease, owner);
+    }   
+}
