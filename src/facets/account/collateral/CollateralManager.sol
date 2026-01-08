@@ -329,15 +329,15 @@ library CollateralManager {
 
 
     /**
-     * @dev Add debt from marketplace purchase
+     * @dev Add debt
      * @param amount The amount of debt to add
      * @param unpaidFees The unpaid fees to add
-     * @notice This is used when transferring debt in marketplace purchases
+     * @notice This is used when adding debt from marketplace purchases or other sources
      */
-    function addDebtFromMarketplace(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
+    function addDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        (uint256 maxLoan,) = getMaxLoan(portfolioAccountConfig);
-        require(amount <= maxLoan, "Amount exceeds max loan");
+        (,uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        require(amount <= maxLoanIgnoreSupply, "Amount exceeds max loan ignore supply");
         // Add debt and unpaid fees
         collateralManagerData.debt += amount;
         collateralManagerData.unpaidFees += unpaidFees;

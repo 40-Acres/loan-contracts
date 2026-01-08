@@ -196,9 +196,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
         
         // Add debt to buyer's account AFTER adding collateral
-        // Use addDebtFromMarketplace which updates undercollateralized debt tracking
         if (debtAmount > 0) {
-            CollateralManager.addDebtFromMarketplace(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
+            CollateralManager.addDebt(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
         }
     }
 
