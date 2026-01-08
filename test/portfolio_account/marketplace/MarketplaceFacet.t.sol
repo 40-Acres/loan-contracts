@@ -14,6 +14,7 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
+import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
 contract MarketplaceFacetTest is Test, Setup {
     PortfolioMarketplace public portfolioMarketplace;
@@ -478,6 +479,9 @@ contract MarketplaceFacetTest is Test, Setup {
     }
 
     function testRevertPurchaseListingWouldCauseUndercollateralization() public {
+        address deployer = _portfolioManager.owner();
+        
+        // Step 1: Seller has two NFTs with max loans
         // Get a second token ID
         uint256 tokenId2 = 84298;
         
@@ -493,51 +497,62 @@ contract MarketplaceFacetTest is Test, Setup {
         
         // Get max loan with both tokens
         (, uint256 maxLoanIgnoreSupplyWithBoth) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        assertGt(maxLoanIgnoreSupplyWithBoth, 0, "Seller should have collateral limit");
         
-        // Borrow close to max loan (use 90% to ensure we're close to the limit)
-        uint256 borrowAmount = (maxLoanIgnoreSupplyWithBoth * 90) / 100;
-        borrowViaMulticall(borrowAmount);
+        // Fund vault for borrowing
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = IERC20(_usdc).balanceOf(vault);
+        uint256 neededVaultBalance = (maxLoanIgnoreSupplyWithBoth * 10000) / 8000;
+        if (vaultBalance < neededVaultBalance) {
+            deal(address(_usdc), vault, neededVaultBalance);
+        }
         
-        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
-        assertGt(totalDebt, 0, "Should have debt");
+        // Seller borrows max loan
+        uint256 sellerBorrowAmount = maxLoanIgnoreSupplyWithBoth;
+        borrowViaMulticall(sellerBorrowAmount);
         
-        // Get collateral amounts
-        uint256 collateral1 = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId);
+        uint256 sellerTotalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(sellerTotalDebt, sellerBorrowAmount, "Seller should have borrowed amount");
+        
+        // Step 2: Lower rewards rate first (before listing)
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(10000); // Lower rate: 1%
+        vm.stopPrank();
+        
+        // Calculate what maxLoanIgnoreSupply would be with only tokenId2 after rate decrease
         uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
-        
-        // Calculate what maxLoanIgnoreSupply would be with only tokenId2
-        // Formula: maxLoanIgnoreSupply = (collateral * rewardsRate * multiplier) / (1e12 * 1e6)
-        // From Setup: rewardsRate = 10000, multiplier = 100
-        uint256 rewardsRate = 10000;
-        uint256 multiplier = 100;
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
         uint256 maxLoanIgnoreSupplyWithToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
         
-        // We want to attach a small amount of debt so that:
-        // remainingDebt = totalDebt - debtAttached > maxLoanIgnoreSupplyWithToken2Only
-        // This ensures undercollateralization after the sale
-        
-        // Calculate minimum debt to attach to avoid undercollateralization
-        // We want: totalDebt - debtAttached > maxLoanIgnoreSupplyWithToken2Only
+        // Calculate debt to attach so that remaining debt > maxLoan with tokenId2 only
+        // We want: remainingDebt = totalDebt - debtAttached > maxLoanIgnoreSupplyWithToken2Only
         // So: debtAttached < totalDebt - maxLoanIgnoreSupplyWithToken2Only
-        // To cause undercollateralization, we attach less than this
-        
-        uint256 minDebtToAttachToAvoidUndercollateralization = totalDebt > maxLoanIgnoreSupplyWithToken2Only 
-            ? totalDebt - maxLoanIgnoreSupplyWithToken2Only 
+        // To ensure undercollateralization, attach less than needed
+        uint256 maxDebtToAttachToAvoidUndercollateralization = sellerTotalDebt > maxLoanIgnoreSupplyWithToken2Only
+            ? sellerTotalDebt - maxLoanIgnoreSupplyWithToken2Only
             : 0;
         
-        // Attach a small amount of debt (less than needed to avoid undercollateralization)
-        // This ensures remaining debt will exceed maxLoan with only tokenId2
-        uint256 debtAttached = minDebtToAttachToAvoidUndercollateralization > 0
-            ? minDebtToAttachToAvoidUndercollateralization / 2  // Attach half of what's needed
-            : totalDebt / 10; // If already undercollateralized, attach small amount
+        // Attach less than the maximum to cause undercollateralization
+        uint256 debtAttached = maxDebtToAttachToAvoidUndercollateralization > 0
+            ? maxDebtToAttachToAvoidUndercollateralization / 2  // Attach half of what's needed
+            : sellerTotalDebt / 10; // If already undercollateralized, attach small amount
+        
+        // Ensure debtAttached is at least 1
+        if (debtAttached == 0) {
+            debtAttached = 1;
+        }
+        
+        uint256 remainingDebtAfterSale = sellerTotalDebt - debtAttached;
         
         // Verify the scenario: after sale, remaining debt should exceed maxLoan with tokenId2 only
-        uint256 remainingDebtAfterSale = totalDebt - debtAttached;
         require(
             remainingDebtAfterSale > maxLoanIgnoreSupplyWithToken2Only,
             "Test setup: This scenario would not cause undercollateralization"
         );
         
+        // Step 3: List for sale with debt attached
         makeListingViaMulticall(
             _tokenId,
             LISTING_PRICE,
@@ -547,16 +562,14 @@ contract MarketplaceFacetTest is Test, Setup {
             address(0)
         );
         
-        // Try to purchase - should revert because it would cause undercollateralization
+        // Step 4: Buyer tries to buy - should revert because seller would be undercollateralized after sale
+        IERC20 usdc = IERC20(_usdc);
         vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
+        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
         
         // The purchase should revert when enforceCollateralRequirements is called
-        // This happens at the end of processPayment after removing collateral
-        // It will revert with UndercollateralizedDebt error
-        // Since we can't predict the exact debt amount, we use expectRevert() to match any revert
+        // This happens after removing collateral from seller
         vm.expectRevert();
-        
         portfolioMarketplace.purchaseListing(
             _portfolioAccount,
             _tokenId,
@@ -565,83 +578,40 @@ contract MarketplaceFacetTest is Test, Setup {
         );
         vm.stopPrank();
         
-        // Now update the listing to pay down enough debt to avoid undercollateralization
-        // Cancel the current listing
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            MarketplaceFacet.cancelListing.selector,
-            _tokenId
-        );
-        _portfolioManager.multicall(calldatas, portfolioFactories);
+        // Step 5: Increase rewards rate back - now purchase should succeed
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(50000); // Increase rate back to 5%
         vm.stopPrank();
         
-        // Calculate debtAttached that would avoid undercollateralization
-        // We need: totalDebt - debtAttached <= maxLoanIgnoreSupplyWithToken2Only
-        // So: debtAttached >= totalDebt - maxLoanIgnoreSupplyWithToken2Only
-        // To be safe, we'll pay down enough debt to leave a comfortable margin
-        // Pay down enough to leave remaining debt well below maxLoan with tokenId2 only
-        uint256 targetRemainingDebt = (maxLoanIgnoreSupplyWithToken2Only * 80) / 100; // Leave 20% margin
-        uint256 sufficientDebtAttached = totalDebt > targetRemainingDebt
-            ? totalDebt - targetRemainingDebt
-            : totalDebt; // If already safe, pay all debt
-        
-        // Ensure we don't exceed total debt
-        if (sufficientDebtAttached > totalDebt) {
-            sufficientDebtAttached = totalDebt;
-        }
-        
-        // Use a higher listing price to ensure it covers the debt payment
-        // The listing price should be at least the debt amount plus some extra for the seller
-        uint256 sufficientListingPrice = sufficientDebtAttached > LISTING_PRICE
-            ? sufficientDebtAttached + 100e6  // Add 100 USDC buffer
-            : LISTING_PRICE;
-        
-        // Ensure buyer has enough USDC for the purchase
-        uint256 buyerBalance = IERC20(_usdc).balanceOf(buyer);
-        if (buyerBalance < sufficientListingPrice) {
-            deal(address(_usdc), buyer, sufficientListingPrice);
-        }
-        
-        // Create new listing with sufficient debt attached
-        makeListingViaMulticall(
-            _tokenId,
-            sufficientListingPrice,
-            address(_usdc),
-            sufficientDebtAttached,
-            0,
-            address(0)
+        // Verify that with higher rate, seller would not be undercollateralized
+        uint256 newMaxLoanIgnoreSupplyWithToken2Only = (((collateral2 * 50000) / 1000000) * multiplier) / 1e12;
+        require(
+            remainingDebtAfterSale <= newMaxLoanIgnoreSupplyWithToken2Only,
+            "Test setup: With higher rate, seller should not be undercollateralized"
         );
         
-        // Purchase should now succeed
+        // Now the purchase should succeed
         vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), sufficientListingPrice);
-        
+        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
         portfolioMarketplace.purchaseListing(
             _portfolioAccount,
             _tokenId,
             address(_usdc),
-            sufficientListingPrice
+            LISTING_PRICE
         );
         vm.stopPrank();
         
-        // Get buyer's portfolio account
-        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
-        
         // Verify NFT was transferred to buyer's portfolio account
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerPortfolio, "NFT should be transferred to buyer's portfolio");
         
-        // Verify debt was reduced
-        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
-        assertLt(debtAfter, totalDebt, "Debt should be reduced");
+        // Verify seller's debt was reduced
+        uint256 sellerDebtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(sellerDebtAfter, remainingDebtAfterSale, "Seller debt should be reduced by debtAttached");
         
         // Verify listing is removed
         UserMarketplaceModule.Listing memory listing = IMarketplaceFacet(_portfolioAccount).getListing(_tokenId);
         assertEq(listing.owner, address(0), "Listing should be removed");
-
-        assertGt(debtAfter, 0, "Debt should be greater than 0");
     }
 
     function testPurchaseListingTransfersDebtAndUnpaidFees() public {
@@ -1480,5 +1450,76 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 expectedSellerAmount = testPrice - expectedProtocolFee;
         assertEq(sellerReceived, expectedSellerAmount, "Seller should receive payment minus protocol fee");
     }
-}
 
+
+    function testVulnerabilityAddDebtFromMarketplaceUndercollateralizedDebtNotTracked() public {
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
+        address deployer = address(0x40FecA5f7156030b78200450852792ea93f7c6cd); 
+        
+        // Step 1: Set rewards rate HIGH
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(50000); // High rate: 5%
+        vm.stopPrank();
+        
+        // Step 2: Seller takes max loan
+        (, uint256 sellerMaxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        assertGt(sellerMaxLoanIgnoreSupply, 0, "Seller should have collateral limit");
+        
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        uint256 vaultBalance = IERC20(_usdc).balanceOf(vault);
+        uint256 neededVaultBalance = (sellerMaxLoanIgnoreSupply * 10000) / 8000; 
+        if (vaultBalance < neededVaultBalance) {
+            deal(address(_usdc), vault, neededVaultBalance);
+        }
+        
+        // Seller borrows max loan
+        uint256 sellerBorrowAmount = sellerMaxLoanIgnoreSupply;
+        borrowViaMulticall(sellerBorrowAmount);
+        
+        uint256 sellerTotalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(sellerTotalDebt, sellerBorrowAmount, "Seller should have borrowed amount");
+        
+        // Step 3: Seller lists NFT with debt attached
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            sellerTotalDebt, // Attach all debt
+            0,
+            address(0)
+        );
+        
+        // Step 4: Decrease rewards rate (reduces collateral value)
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(10000); // Lower rate: 1%
+        vm.stopPrank();
+        
+        uint256 sellerTokenCollateral = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId);
+        uint256 buyerCurrentCollateral = CollateralFacet(buyerPortfolio).getTotalLockedCollateral();
+        uint256 buyerNewCollateral = buyerCurrentCollateral + sellerTokenCollateral;
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        uint256 buyerNewMaxLoanIgnoreSupply = (((buyerNewCollateral * rewardsRate) / 1000000) * multiplier) / 1e12;
+        
+        console.log("Buyer new maxLoanIgnoreSupply (after NFT, with lower rate):", buyerNewMaxLoanIgnoreSupply);
+        console.log("Debt to transfer:", sellerTotalDebt);
+        
+        // Verify that debt exceeds buyer's new collateral limit
+        assertGt(sellerTotalDebt, buyerNewMaxLoanIgnoreSupply, "Debt should exceed buyer's collateral limit after rate decrease");
+        
+        IERC20 usdc = IERC20(_usdc);
+        vm.startPrank(buyer);
+        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
+        
+        // Step 5: Buyer tries to buy NFT via portfolio manager multicall - should REVERT
+        vm.expectRevert();
+        portfolioMarketplace.purchaseListing(
+            _portfolioAccount,
+            _tokenId,
+            address(_usdc),
+            LISTING_PRICE
+        );
+        vm.stopPrank();
+    }
+}
