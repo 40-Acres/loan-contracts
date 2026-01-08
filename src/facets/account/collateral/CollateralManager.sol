@@ -336,12 +336,11 @@ library CollateralManager {
      */
     function addDebtFromMarketplace(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        (uint256 maxLoan,) = getMaxLoan(portfolioAccountConfig);
+        require(amount <= maxLoan, "Amount exceeds max loan");
         // Add debt and unpaid fees
         collateralManagerData.debt += amount;
         collateralManagerData.unpaidFees += unpaidFees;
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 
     /**
