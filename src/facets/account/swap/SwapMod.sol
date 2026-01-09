@@ -15,9 +15,6 @@ library SwapMod {
 
     function swap(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) public returns (uint256 amount) {
         // if no minimum output amount, set within an acceptable range
-        if(minimumOutputAmount == 0) {
-            minimumOutputAmount = 1000;
-        }
         uint256 balanceBefore = IERC20(outputToken).balanceOf(address(this));
         if(!SwapConfig(swapConfig).isApprovedSwapTarget(swapTarget)) {
             revert NotApprovedSwapTarget(swapTarget);
