@@ -185,7 +185,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         
         // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](7);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](9);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
         rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
@@ -193,6 +193,8 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
         rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
         rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
+        rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
     }
     
@@ -256,7 +258,6 @@ contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
         SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig));
         bytes4[] memory swapSelectors = new bytes4[](2);
         swapSelectors[0] = SwapFacet.swap.selector;
-        swapSelectors[1] = SwapFacet.userSwap.selector;
         // Check if facet already exists
         address oldSwapFacet = facetRegistry.getFacetForSelector(swapSelectors[0]);
         if (oldSwapFacet == address(0)) {
