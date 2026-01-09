@@ -83,13 +83,13 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 rewardsOptionPercentage = getRewardsOptionPercentage();
         if(rewardsOptionPercentage > 0) {
             if(rewardsOption == UserRewardsConfig.RewardsOption.IncreaseCollateral) {
-                remaining = _increaseCollateral(tokenId, rewardsOptionPercentage, asset, rewardsAmount, swapTarget, swapData);
+                remaining -= _increaseCollateral(tokenId, rewardsOptionPercentage, asset, rewardsAmount, swapTarget, swapData);
             }
             if(rewardsOption == UserRewardsConfig.RewardsOption.InvestToVault) {
-                remaining = _investToVault(rewardsAmount, rewardsOptionPercentage, asset, swapTarget, swapData);
+                remaining -= _investToVault(rewardsAmount, rewardsOptionPercentage, asset, swapTarget, swapData);
             }
             if(rewardsOption == UserRewardsConfig.RewardsOption.PayToRecipient) {
-                remaining = _payToRecipient(rewardsAmount, rewardsOptionPercentage, asset);
+                remaining -= _payToRecipient(rewardsAmount, rewardsOptionPercentage, asset);
             }
         }
 
@@ -191,7 +191,7 @@ contract RewardsProcessingFacet is AccessControl {
         UserRewardsConfig.setRecipient(recipient);
     }
 
-    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, bytes memory swapData) internal returns (uint256 remaining) {
+    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, bytes memory swapData) internal returns (uint256 amountInvested) {
         address vaultAsset = _vault.asset();
         uint256 rewardsAmountToInvest = rewardsAmount * percentage / 100;
         uint256 actualAmountToInvest = rewardsAmountToInvest;
@@ -216,26 +216,26 @@ contract RewardsProcessingFacet is AccessControl {
         // Clear approval after use
         IERC20(vaultAsset).approve(address(_vault), 0);
         
-        return rewardsAmount - amountToDeposit;
+        return amountToDeposit;
     }
 
 
-    function _payToRecipient(uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 remaining) {
-        // if fail to transfer, keep remaining to original amount so it will process to remaining funds as normal
+    function _payToRecipient(uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
+        // if fail to transfer, keep amountPaid to 0 so it will process to remaining funds as normal
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
         require(recipient != address(0));
         try IERC20(asset).transfer(recipient, amountToPay) returns (bool success) {
             if(!success) {
-                return rewardsAmount;
+                return 0;
             }
         } catch {
-            return rewardsAmount;
+            return 0;
         }
-        return rewardsAmount - amountToPay;
+        return amountToPay;
     }
 
-    function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, bytes memory swapData) internal returns (uint256 remaining) {
+    function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, bytes memory swapData) internal returns (uint256 amountUsed) {
         address lockedAsset = _votingEscrow.token();
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         if(rewardsToken == lockedAsset) {
@@ -255,7 +255,6 @@ contract RewardsProcessingFacet is AccessControl {
         SwapMod.swap(address(_swapConfig), swapTarget, swapData, rewardsToken, amountToSwap, lockedAsset, 0);
         // Clear approval after swap
         IERC20(rewardsToken).approve(swapTarget, 0);
-        remaining = rewardsAmount - amountToSwap;
 
         uint256 endingLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         uint256 increaseAmount = endingLockedAssetBalance - beginningLockedAssetBalance;
@@ -266,7 +265,7 @@ contract RewardsProcessingFacet is AccessControl {
         IERC20(lockedAsset).approve(address(_votingEscrow), 0);
         CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
 
-        return remaining;
+        return amountToSwap;
     }
 
     function _payZeroBalanceFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
