@@ -47,13 +47,9 @@ contract RewardsProcessingFacet is AccessControl {
         _vault = IERC4626(vault);
     }
 
-    function processRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
-        emit RewardsProcessed(_currentEpochStart(), rewardsAmount, _portfolioFactory.ownerOf(address(this)), address(asset));
-        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
-        address loanContract = _portfolioAccountConfig.getLoanContract();
-        require(loanContract != address(0));
-        
+    function processRewards(uint256 tokenId, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
         address asset = getRewardsToken();
+        emit RewardsProcessed(_currentEpochStart(), rewardsAmount, _portfolioFactory.ownerOf(address(this)), address(asset));
         require(IERC20(asset).balanceOf(address(this)) >= rewardsAmount && rewardsAmount > 0);
 
         // if increase percentage is set, swap the rewards amount to the asset and increase the collateral
@@ -86,6 +82,7 @@ contract RewardsProcessingFacet is AccessControl {
         }
 
         // if have no debt, process zero balance rewards
+        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
         if(totalDebt == 0) {
             _processZeroBalanceRewards(rewardsAmount, remaining, asset, true);
         } else {
