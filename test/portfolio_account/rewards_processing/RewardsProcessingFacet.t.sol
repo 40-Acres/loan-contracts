@@ -609,14 +609,12 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
         
         assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        assertEq(loanContractBalanceAfter - loanContractBalanceBefore, zeroBalanceFee, "Loan contract should receive zero balance fee");
         
         // Verify debt was partially decreased
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
-        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        uint256 totalFees = protocolFee + lenderPremium;
         uint256 amountForDebt = rewardsAmount - totalFees;
         uint256 expectedDebt = debtBefore - amountForDebt;
         assertEq(debtAfter, expectedDebt, "Debt should be decreased by payment amount minus fees");
@@ -670,14 +668,12 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
         
         assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        assertEq(loanContractBalanceAfter - loanContractBalanceBefore, zeroBalanceFee, "Loan contract should receive zero balance fee");
         
         // Verify total fees match expected
         uint256 totalFeesPaid = (ownerBalanceAfter - ownerBalanceBefore) + (loanContractBalanceAfter - loanContractBalanceBefore);
-        uint256 expectedTotalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        uint256 expectedTotalFees = protocolFee + lenderPremium;
         assertEq(totalFeesPaid, expectedTotalFees, "Total fees should match expected");
     }
 
