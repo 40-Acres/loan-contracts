@@ -158,7 +158,7 @@ contract RewardsProcessingFacet is AccessControl {
         }
 
         // whatever is remaining, send to recipient
-        address recipient = UserRewardsConfig.getRecipient();
+        address recipient = _getRecipient();
         require(recipient != address(0));
         IERC20(asset).transfer(recipient, remaining);
     }
