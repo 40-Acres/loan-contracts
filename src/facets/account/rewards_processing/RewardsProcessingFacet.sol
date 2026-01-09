@@ -118,7 +118,6 @@ contract RewardsProcessingFacet is AccessControl {
         // Calculate fees based on original rewards amount
         uint256 protocolFee = _payProtocolFee(rewardsAmount, asset);
         uint256 lenderPremium = _payLenderPremium(rewardsAmount, asset);
-        uint256 zeroBalanceFee = _payZeroBalanceFee(rewardsAmount, asset);
         uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
         
         // Ensure we have enough balance to pay fees
