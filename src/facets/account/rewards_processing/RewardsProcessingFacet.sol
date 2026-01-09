@@ -216,7 +216,8 @@ contract RewardsProcessingFacet is AccessControl {
         // Clear approval after use
         IERC20(vaultAsset).approve(address(_vault), 0);
         
-        return rewardsAmountUsed;
+        // if the asset is the vault asset, return the amount to deposit, otherwise return the rewards amount used
+        return asset == vaultAsset ? amountToDeposit : rewardsAmountUsed;
     }
 
 
