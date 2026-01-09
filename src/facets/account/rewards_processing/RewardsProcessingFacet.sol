@@ -191,15 +191,15 @@ contract RewardsProcessingFacet is AccessControl {
         UserRewardsConfig.setRecipient(recipient);
     }
 
-    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountInvested) {
+    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
         address vaultAsset = _vault.asset();
-        uint256 rewardsAmountToInvest = rewardsAmount * percentage / 100;
-        uint256 actualAmountToInvest = rewardsAmountToInvest;
+        uint256 rewardsAmountUsed = rewardsAmount * percentage / 100;
+        uint256 actualAmountToInvest = rewardsAmountUsed;
         
         if(asset != vaultAsset) {
             // swap the asset to the vault asset
-            IERC20(asset).approve(swapTarget, rewardsAmountToInvest);
-            actualAmountToInvest = SwapMod.swap(address(_swapConfig), swapTarget, swapData, asset, rewardsAmountToInvest, vaultAsset, minimumOutputAmount);
+            IERC20(asset).approve(swapTarget, rewardsAmountUsed);
+            actualAmountToInvest = SwapMod.swap(address(_swapConfig), swapTarget, swapData, asset, rewardsAmountUsed, vaultAsset, minimumOutputAmount);
             // Clear approval after swap
             IERC20(asset).approve(swapTarget, 0);
         }
@@ -216,7 +216,7 @@ contract RewardsProcessingFacet is AccessControl {
         // Clear approval after use
         IERC20(vaultAsset).approve(address(_vault), 0);
         
-        return amountToDeposit;
+        return rewardsAmountUsed;
     }
 
 
