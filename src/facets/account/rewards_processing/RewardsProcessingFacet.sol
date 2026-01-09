@@ -33,15 +33,16 @@ contract RewardsProcessingFacet is AccessControl {
     event ZeroBalanceFeePaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
     event LenderPremiumPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
     event RewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 rewardsAmount, address user, address asset);
-    
+    event LoanPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event PaidToRecipient(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed recipient, address asset, address indexed owner);
+    event InvestedToVault(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event ZeroBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 remainingAmount, address indexed recipient, address asset, address indexed owner);
+    
     event RewardsOptionSet(UserRewardsConfig.RewardsOption rewardsOption, address indexed owner);
     event RewardsTokenSet(address rewardsToken, address indexed owner);
     event RewardsOptionPercentageSet(uint256 percentage, address indexed owner);
     event RecipientSet(address recipient, address indexed owner);
-    event InvestedToVault(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event CollateralIncreased(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed owner);
-    event PaidToRecipient(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed recipient, address asset, address indexed owner);
     
     constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
         require(portfolioFactory != address(0));
@@ -141,6 +142,7 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amountForDebt);
         // Clear approval after use
         IERC20(asset).approve(loanContract, 0);
+        emit LoanPaid(_currentEpochStart(), tokenId, amountForDebt, _portfolioFactory.ownerOf(address(this)), address(asset));
         return excess;
     }
 
