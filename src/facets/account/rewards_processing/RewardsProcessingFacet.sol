@@ -47,7 +47,7 @@ contract RewardsProcessingFacet is AccessControl {
         _vault = IERC4626(vault);
     }
 
-    function processRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
+    function processRewards(uint256 tokenId, uint256 rewardsAmount, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
         emit RewardsProcessed(_currentEpochStart(), rewardsAmount, _portfolioFactory.ownerOf(address(this)), address(asset));
         uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
         address loanContract = _portfolioAccountConfig.getLoanContract();
@@ -83,10 +83,10 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 rewardsOptionPercentage = getRewardsOptionPercentage();
         if(rewardsOptionPercentage > 0) {
             if(rewardsOption == UserRewardsConfig.RewardsOption.IncreaseCollateral) {
-                remaining -= _increaseCollateral(tokenId, rewardsOptionPercentage, asset, rewardsAmount, swapTarget, swapData);
+                remaining -= _increaseCollateral(tokenId, rewardsOptionPercentage, asset, rewardsAmount, swapTarget, minimumOutputAmount, swapData);
             }
             if(rewardsOption == UserRewardsConfig.RewardsOption.InvestToVault) {
-                remaining -= _investToVault(rewardsAmount, rewardsOptionPercentage, asset, swapTarget, swapData);
+                remaining -= _investToVault(rewardsAmount, rewardsOptionPercentage, asset, swapTarget, minimumOutputAmount, swapData);
             }
             if(rewardsOption == UserRewardsConfig.RewardsOption.PayToRecipient) {
                 remaining -= _payToRecipient(rewardsAmount, rewardsOptionPercentage, asset);
@@ -191,7 +191,7 @@ contract RewardsProcessingFacet is AccessControl {
         UserRewardsConfig.setRecipient(recipient);
     }
 
-    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, bytes memory swapData) internal returns (uint256 amountInvested) {
+    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountInvested) {
         address vaultAsset = _vault.asset();
         uint256 rewardsAmountToInvest = rewardsAmount * percentage / 100;
         uint256 actualAmountToInvest = rewardsAmountToInvest;
@@ -199,7 +199,7 @@ contract RewardsProcessingFacet is AccessControl {
         if(asset != vaultAsset) {
             // swap the asset to the vault asset
             IERC20(asset).approve(swapTarget, rewardsAmountToInvest);
-            actualAmountToInvest = SwapMod.swap(address(_swapConfig), swapTarget, swapData, asset, rewardsAmountToInvest, vaultAsset, 0);
+            actualAmountToInvest = SwapMod.swap(address(_swapConfig), swapTarget, swapData, asset, rewardsAmountToInvest, vaultAsset, minimumOutputAmount);
             // Clear approval after swap
             IERC20(asset).approve(swapTarget, 0);
         }
@@ -235,7 +235,7 @@ contract RewardsProcessingFacet is AccessControl {
         return amountToPay;
     }
 
-    function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, bytes memory swapData) internal returns (uint256 amountUsed) {
+    function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
         address lockedAsset = _votingEscrow.token();
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         if(rewardsToken == lockedAsset) {
@@ -252,7 +252,7 @@ contract RewardsProcessingFacet is AccessControl {
         // swap the rewards amount to the locked asset
         uint256 amountToSwap = rewardsAmount * increasePercentage / 100;
         IERC20(rewardsToken).approve(swapTarget, amountToSwap);
-        SwapMod.swap(address(_swapConfig), swapTarget, swapData, rewardsToken, amountToSwap, lockedAsset, 0);
+        SwapMod.swap(address(_swapConfig), swapTarget, swapData, rewardsToken, amountToSwap, lockedAsset, minimumOutputAmount);
         // Clear approval after swap
         IERC20(rewardsToken).approve(swapTarget, 0);
 
