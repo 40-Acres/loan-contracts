@@ -824,7 +824,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.stopPrank();
     }
 
-    function testProcessRewardsFailsWithZeroRewardsToken() public {
+    function testProcessRewardsShouldFallbackToVaultAssetIfNoRewardsTokenSet() public {
         setupRewards();
         
         // Set rewards token to zero using the facet's setter through multicall
@@ -839,9 +839,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
-        // This should fail when processing zero balance rewards
+        // Process rewards should fallback to vault asset if no rewards token set
         vm.startPrank(_authorizedCaller);
-        vm.expectRevert();
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
