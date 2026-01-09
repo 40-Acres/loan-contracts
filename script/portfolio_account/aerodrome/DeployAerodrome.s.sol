@@ -135,9 +135,10 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         // Get PortfolioFactory from PortfolioManager
         
         VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](2);
+        bytes4[] memory votingEscrowSelectors = new bytes4[](3);
         votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
         _registerFacet(FacetRegistry(0x91Efe5d0c6B4b43480338d1A40778C047cE41066), address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
         
         // Deploy SwapFacet
@@ -347,9 +348,10 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
 
         VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig),  VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](2);
+        bytes4[] memory votingEscrowSelectors = new bytes4[](3);
         votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy CollateralFacet
