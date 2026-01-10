@@ -35,8 +35,10 @@ contract BridgeFacet is AccessControl {
     function bridge() external  {
         uint32 minFinalityThreshold = 2000;
         uint256 maxFee = _usdc.balanceOf(address(this)) / 10000;
+        uint256 amount = _usdc.balanceOf(address(this));
+        _usdc.approve(address(_tokenMessenger), amount);
         _tokenMessenger.depositForBurn(
-            _usdc.balanceOf(address(this)), 
+            amount,
             _destinationDomain, bytes32(uint256(uint160(address(this)))), 
             address(_usdc), 
             bytes32(uint256(uint160(address(this)))), 
