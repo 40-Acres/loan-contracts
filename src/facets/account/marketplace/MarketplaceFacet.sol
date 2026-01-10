@@ -29,9 +29,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         _marketplace = marketplace;
     }
 
-    event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
-    event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
-
+    event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
+    
     function marketplace() external view returns (address) {
         return _marketplace;
     }
@@ -112,10 +111,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
         // take fees from the payment amount
         uint256 protocolFee = (paymentAmount * PortfolioMarketplace(address(_marketplace)).protocolFee()) / 10000;
-        emit ProtocolFeeTaken(tokenId, msg.sender, protocolFee);
         paymentToken.transferFrom(msg.sender, PortfolioMarketplace(address(_marketplace)).feeRecipient(), protocolFee);
 
-        emit PaymentProcessed(tokenId, msg.sender, paymentAmount, protocolFee);
         paymentAmount = paymentAmount - protocolFee;
         paymentToken.transferFrom(msg.sender, address(this), paymentAmount);
         
@@ -236,13 +233,13 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
 
     /**
-     * @notice Buy a 40 Acres listing
+     * @notice Buy a 40 Acres listing from an external buyer (not a portfolio account)
      * @param tokenId The token ID being purchased
-     * @param buyer The buyer's portfolio account address
+     * @param buyer The buyer's address
      */
     function buyMarketplaceListing(uint256 tokenId, address buyer) public {
-        require(buyer != address(this), "Buyer cannot be the portfolio account");
-        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not in portfolio");
+        require(buyer != address(this), "Buyer cannot be this contract");
+        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not owned by this contract");
         require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
         require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
         
@@ -302,5 +299,7 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
+
+        emit MarketplaceListingBought(tokenId, buyer, listing.price, listing.debtAttached, portfolioOwner);
     }
 }
