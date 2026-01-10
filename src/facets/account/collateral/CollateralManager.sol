@@ -282,11 +282,6 @@ library CollateralManager {
             maxLoan = vaultAvailableSupply;
         }
 
-        // Ensure the loan amount does not exceed the vault's current balance
-        if (maxLoan > vaultBalance) {
-            maxLoan = vaultBalance;
-        }
-
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
