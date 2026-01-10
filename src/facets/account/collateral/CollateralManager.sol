@@ -185,7 +185,7 @@ library CollateralManager {
         loanContract.payFromPortfolio(balancePayment, feesToPay);
         IERC20(loanContract._asset()).approve(address(loanContract), 0);
         
-        collateralManagerData.debt -= balancePayment;
+        collateralManagerData.debt -= (balancePayment - feesToPay);
         collateralManagerData.unpaidFees -= feesToPay;
         
 
