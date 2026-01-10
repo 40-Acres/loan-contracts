@@ -150,7 +150,7 @@ contract RewardsProcessingFacet is AccessControl {
         return excess;
     }
 
-    function _processZeroBalanceRewards(uint256 rewardsAmount, uint256 remaining, address asset, bool takeFees) internal {
+    function _processZeroBalanceRewards(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset, bool takeFees) internal {
         address asset = getRewardsToken();
 
         // send the zero balance fee to the treasury
@@ -250,7 +250,7 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
 
-    function _payToRecipient(uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
+    function _payToRecipient(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
         // if fail to transfer, keep amountPaid to 0 so it will process to remaining funds as normal
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();

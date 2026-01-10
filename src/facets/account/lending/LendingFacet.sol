@@ -63,7 +63,7 @@ contract LendingFacet is AccessControl {
 
 
 
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
         IERC20(address(_lendingToken)).transfer(to, amountAfterFees);
         emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
@@ -78,7 +78,7 @@ contract LendingFacet is AccessControl {
         uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
         IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), 0);
 
-        emit Paid(amount, from - excess);
+        emit Paid(amount-excess, from);
         // refund excess to the from address
         if(excess > 0) {
             IERC20(address(_lendingToken)).transfer(from, excess);

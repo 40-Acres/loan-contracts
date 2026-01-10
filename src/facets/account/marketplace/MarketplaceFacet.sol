@@ -215,7 +215,7 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
             CollateralManager.addDebt(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
         }
         
-        emit PurchaseFinalized(tokenId, seller, address(this), actualDebtAmount, unpaidFeesToTransfer);
+        emit PurchaseFinalized(tokenId, seller, address(this), debtAmount, unpaidFeesToTransfer);
     }
 
     /**
