@@ -13,9 +13,9 @@ contract SuperchainClaimingFacet is ClaimingFacet {
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public override {
         // get tx.origin weth balance
-        uint256 preWethBalance = IERC20(address(0x4200000000000000000000000000000000000006)).balanceOf(tx.origin);
+        uint256 preWethBalance = IERC20(address(0x4200000000000000000000000000000000000006)).balanceOf(msg.sender);
         super.claimFees(fees, tokens, tokenId);
-        uint256 postWethBalance = IERC20(address(0x4200000000000000000000000000000000000006)).balanceOf(tx.origin);
+        uint256 postWethBalance = IERC20(address(0x4200000000000000000000000000000000000006)).balanceOf(msg.sender);
 
         // any difference balance should be sent from this address
         uint256 difference = preWethBalance - postWethBalance;
@@ -25,7 +25,7 @@ contract SuperchainClaimingFacet is ClaimingFacet {
             if(difference > portfolioWethBalance) {
                 difference = portfolioWethBalance;
             }
-            IERC20(address(0x4200000000000000000000000000000000000006)).transfer(tx.origin, difference);
+            IERC20(address(0x4200000000000000000000000000000000000006)).transfer(msg.sender, difference);
         }
     }
 }

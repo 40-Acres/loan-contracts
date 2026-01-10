@@ -55,7 +55,7 @@ contract RewardsProcessingFacet is AccessControl {
         // if increase percentage is set, swap the rewards amount to the asset and increase the collateral
         uint256 remaining = rewardsAmount;
 
-        // send gas reclamation to the tx.origin
+        // send gas reclamation to the msg.sender (authorized caller)
         if(gasReclamation > 0) {
             // amount of gas is capped at 5% of the rewards amount
             uint256 gasReclamationCap = rewardsAmount * 5 / 100;
@@ -63,7 +63,7 @@ contract RewardsProcessingFacet is AccessControl {
                 gasReclamation = gasReclamationCap;
             }
             emit GasReclamationPaid(_currentEpochStart(), gasReclamation, _portfolioFactory.ownerOf(address(this)), address(asset));
-            IERC20(asset).transfer(tx.origin, gasReclamation);
+            IERC20(asset).transfer(msg.sender, gasReclamation);
             remaining -= gasReclamation;
         }
 
