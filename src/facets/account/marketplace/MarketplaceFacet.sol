@@ -231,13 +231,13 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
 
     /**
-     * @notice Buy a 40 Acres listing
+     * @notice Buy a 40 Acres listing from an external buyer (not a portfolio account)
      * @param tokenId The token ID being purchased
-     * @param buyer The buyer's portfolio account address
+     * @param buyer The buyer's address
      */
     function buyMarketplaceListing(uint256 tokenId, address buyer) public {
-        require(buyer != address(this), "Buyer cannot be the portfolio account");
-        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not in portfolio");
+        require(buyer != address(this), "Buyer cannot be this contract");
+        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not owned by this contract");
         require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
         require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
         
@@ -297,5 +297,7 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
+
+        emit MarketplaceListingBought(tokenId, buyer, listing.price, listing.debtAttached, portfolioOwner);
     }
 }
