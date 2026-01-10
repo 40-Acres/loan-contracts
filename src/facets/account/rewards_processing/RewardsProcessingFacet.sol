@@ -134,11 +134,8 @@ contract RewardsProcessingFacet is AccessControl {
         // Amount available for debt payment (after fees)
         uint256 amountForDebt = availableAmount - totalFees;
         
-        // Approve loan contract to transfer funds for debt payment
-        IERC20(asset).approve(loanContract, amountForDebt);
         uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amountForDebt);
-        // Clear approval after use
-        IERC20(asset).approve(loanContract, 0);
+
         return excess;
     }
 
