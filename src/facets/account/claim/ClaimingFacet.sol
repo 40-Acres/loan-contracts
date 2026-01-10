@@ -14,6 +14,7 @@ import {UserClaimingConfig} from "./UserClaimingConfig.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
+import {SwapMod} from "../swap/SwapMod.sol";
 /**
  * @title ClaimingFacet
  * @dev Facet that interfaces with voting escrow NFTs
@@ -73,6 +74,7 @@ contract ClaimingFacet is AccessControl {
             revert("Launchpad token not set");
         }
 
+        uint256 launchpadTokenBalanceBefore = IERC20(launchpadToken).balanceOf(address(this));
         // claim fees for launchpad token
         _voter.claimFees(fees, tokens, tokenId);
 
@@ -94,15 +96,13 @@ contract ClaimingFacet is AccessControl {
             require(tradeContract != address(0));
             require(tradeData.length > 0);
             require(expectedOutputAmount > 0);
-            IERC20(launchpadToken).approve(address(tradeContract), IERC20(launchpadToken).balanceOf(address(this)));
-            (bool success, ) = tradeContract.call(tradeData);
-            require(success);
-            require(address(_vault) != address(0), "Vault not set");
-            address loanContract = _portfolioAccountConfig.getLoanContract();
             address outputToken = _vault.asset();
-            uint256 outputAmount = IERC20(outputToken).balanceOf(address(this));
-            require(outputAmount >= expectedOutputAmount, "Output amount is less than expected");
-            IERC20(launchpadToken).approve(address(tradeContract), 0);
+            // Calculate the actual amount of launchpad token received after claiming fees
+            uint256 launchpadTokenBalanceAfter = IERC20(launchpadToken).balanceOf(address(this));
+            uint256 launchpadTokenAmountToSwap = launchpadTokenBalanceAfter - launchpadTokenBalanceBefore;
+            require(launchpadTokenAmountToSwap > 0, "No launchpad token to swap");
+            uint256 outputAmount = SwapMod.swap(address(_swapConfig), tradeContract, tradeData, launchpadToken, launchpadTokenAmountToSwap, outputToken, expectedOutputAmount);
+            require(address(_vault) != address(0), "Vault not set");
 
             // get treasury fee and lender premium
             (uint256 lenderPremium, uint256 treasuryFee) = _loanConfig.getActiveRates();
@@ -112,6 +112,7 @@ contract ClaimingFacet is AccessControl {
 
             uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
             uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;
+            address loanContract = _portfolioAccountConfig.getLoanContract();
             IERC20(outputToken).transfer(ILoan(loanContract).owner(), treasuryFeeAmount);
             IERC20(outputToken).transfer(address(_vault), lenderPremiumAmount);
         }
