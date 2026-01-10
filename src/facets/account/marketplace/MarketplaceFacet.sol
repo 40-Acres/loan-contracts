@@ -29,9 +29,6 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         _marketplace = marketplace;
     }
 
-    event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
-    event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
-
     function marketplace() external view returns (address) {
         return _marketplace;
     }
@@ -112,10 +109,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
         // take fees from the payment amount
         uint256 protocolFee = (paymentAmount * PortfolioMarketplace(address(_marketplace)).protocolFee()) / 10000;
-        emit ProtocolFeeTaken(tokenId, msg.sender, protocolFee);
         paymentToken.transferFrom(msg.sender, PortfolioMarketplace(address(_marketplace)).feeRecipient(), protocolFee);
 
-        emit PaymentProcessed(tokenId, msg.sender, paymentAmount, protocolFee);
         paymentAmount = paymentAmount - protocolFee;
         paymentToken.transferFrom(msg.sender, address(this), paymentAmount);
         
