@@ -208,15 +208,15 @@ contract MigrationWithUnpaidFeesTest is Test {
         uint256 portfolioDebtAfter = CollateralFacet(portfolioAccount).getTotalDebt();
         console.log("Portfolio Debt After Payment:", portfolioDebtAfter);
         
-        // Debt should be reduced by the payment amount (fees are separate)
-        // Since paymentAmount equals initialBalance, debt should be fully paid (0)
-        uint256 expectedDebtAfter = initialBalance >= paymentAmount ? initialBalance - paymentAmount : 0;
-        assertEq(portfolioDebtAfter, expectedDebtAfter, "Portfolio debt should be reduced correctly");
+        // Calculate expected debt reduction
+        uint256 debtReduction = paymentAmount - expectedFeesPaid;
+        uint256 expectedDebtAfter = initialBalance > debtReduction ? initialBalance - debtReduction : 0;
+        assertEq(portfolioDebtAfter, expectedDebtAfter, "Portfolio debt should be reduced by (paymentAmount - expectedFeesPaid)");
         
         // Verify unpaid fees were reduced
         uint256 portfolioUnpaidFeesAfter = CollateralFacet(portfolioAccount).getUnpaidFees();
-        uint256 expectedUnpaidFeesAfter = initialUnpaidFees > maxFees ? initialUnpaidFees - maxFees : 0;
-        assertEq(portfolioUnpaidFeesAfter, expectedUnpaidFeesAfter, "Unpaid fees should be reduced");
+        uint256 expectedUnpaidFeesAfter = initialUnpaidFees > expectedFeesPaid ? initialUnpaidFees - expectedFeesPaid : 0;
+        assertEq(portfolioUnpaidFeesAfter, expectedUnpaidFeesAfter, "Unpaid fees should be reduced by expectedFeesPaid");
     }
     
     /**

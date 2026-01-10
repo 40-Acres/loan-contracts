@@ -216,9 +216,10 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         uint256 unpaidFeesAfterFirst = CollateralFacet(portfolioAccount).getUnpaidFees();
         assertEq(unpaidFeesAfterFirst, initialUnpaidFees - firstPaymentAmount, "Unpaid fees should be reduced by first payment");
         
-        // Verify debt was reduced (unpaid fees are part of total debt, so paying fees reduces debt)
+        // Verify debt was reduced: debt is only reduced by (balancePayment - feesToPay)
+        // Since firstPaymentAmount all goes to fees, debt reduction = (firstPaymentAmount - firstPaymentAmount) = 0
         uint256 debtAfterFirst = CollateralFacet(portfolioAccount).getTotalDebt();
-        assertEq(debtAfterFirst, initialBalance - firstPaymentAmount, "Debt should be reduced by payment amount since fees are part of total debt");
+        assertEq(debtAfterFirst, initialBalance, "Debt should not be reduced since all payment went to fees");
         
         // ========== SECOND PAYMENT: Remaining fees + a few cents ==========
         // This payment should cover remaining fees (to owner) and a small amount to vault
@@ -271,12 +272,13 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         uint256 unpaidFeesAfterSecond = CollateralFacet(portfolioAccount).getUnpaidFees();
         assertEq(unpaidFeesAfterSecond, 0, "All unpaid fees should be paid");
         
-        // Verify debt was reduced by both payments (fees are part of total debt)
-        // First payment: firstPaymentAmount, Second payment: remainingFees + fewCents
-        // Total reduction = firstPaymentAmount + remainingFees + fewCents = initialUnpaidFees + fewCents
+        // Verify debt was reduced: debt is only reduced by (balancePayment - feesToPay)
+        // First payment: debt reduction = (firstPaymentAmount - firstPaymentAmount) = 0 (all went to fees)
+        // Second payment: debt reduction = (secondPaymentAmount - remainingFees) = fewCents
+        // Total debt reduction = fewCents
         uint256 debtAfterSecond = CollateralFacet(portfolioAccount).getTotalDebt();
-        uint256 expectedDebtAfterSecond = initialBalance - firstPaymentAmount - secondPaymentAmount;
-        assertEq(debtAfterSecond, expectedDebtAfterSecond, "Debt should be reduced by total of both payments");
+        uint256 expectedDebtAfterSecond = initialBalance - fewCents;
+        assertEq(debtAfterSecond, expectedDebtAfterSecond, "Debt should be reduced only by the portion that went to vault (fewCents)");
         
         // Total fees paid should equal initial unpaid fees
         uint256 totalFeesPaid = feesPaidInFirstPayment + feesPaidInSecondPayment;

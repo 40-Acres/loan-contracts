@@ -186,7 +186,7 @@ library CollateralManager {
         loanContract.payFromPortfolio(balancePayment, feesToPay);
         IERC20(loanContract._asset()).approve(address(loanContract), 0);
         
-        collateralManagerData.debt -= balancePayment;
+        collateralManagerData.debt -= (balancePayment - feesToPay);
         collateralManagerData.unpaidFees -= feesToPay;
         
 
@@ -283,11 +283,6 @@ library CollateralManager {
             maxLoan = vaultAvailableSupply;
         }
 
-        // Ensure the loan amount does not exceed the vault's current balance
-        if (maxLoan > vaultBalance) {
-            maxLoan = vaultBalance;
-        }
-
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
@@ -330,19 +325,18 @@ library CollateralManager {
 
 
     /**
-     * @dev Add debt from marketplace purchase
+     * @dev Add debt
      * @param amount The amount of debt to add
      * @param unpaidFees The unpaid fees to add
-     * @notice This is used when transferring debt in marketplace purchases
+     * @notice This is used when adding debt from marketplace purchases or other sources
      */
-    function addDebtFromMarketplace(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
+    function addDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        (,uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        require(amount <= maxLoanIgnoreSupply, "Amount exceeds max loan ignore supply");
         // Add debt and unpaid fees
         collateralManagerData.debt += amount;
         collateralManagerData.unpaidFees += unpaidFees;
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 
     /**

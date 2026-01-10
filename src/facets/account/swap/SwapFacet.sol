@@ -43,5 +43,6 @@ contract SwapFacet is AccessControl {
         amount = SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount);
         return amount;
     }
+
 }
 

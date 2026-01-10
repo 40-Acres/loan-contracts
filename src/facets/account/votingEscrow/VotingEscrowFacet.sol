@@ -37,6 +37,7 @@ contract VotingEscrowFacet is AccessControl {
         // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
         IERC20(_votingEscrow.token()).transferFrom(from, address(this), amount);
+        IERC20(_votingEscrow.token()).approve(address(_votingEscrow), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
         CollateralManager.updateLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
         emit LockIncreased(tokenId, amount, from);

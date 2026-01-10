@@ -127,9 +127,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
-            address(0), // asset will be determined from config
+            rewardsAmount, // asset will be determined from config
             address(0), // no swap
+            0, // minimum output amount
             new bytes(0),
             0 // gas reclamation
         );
@@ -178,7 +178,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0, // minimum output amount
             new bytes(0),
             0 // gas reclamation
         );
@@ -244,8 +244,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            rewardsToken,
             address(mockRouter),
+            0,
             swapData,
             0 // gas reclamation
         );
@@ -271,6 +271,68 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 remainingRewards = rewardsAmount - amountToSwap - feeAmount;
         assertEq(portfolioRewardsAfter, 0, "Portfolio should have processed all rewards");
         assertEq(recipientBalanceAfter, recipientBalanceBefore + remainingRewards, "Recipient should receive remaining rewards minus fee");
+    }
+
+
+    function testProcessRewardsRevertSlippage() public {
+        setupRewards();
+        
+        // Set increase percentage
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
+            20
+        );
+        calldatas[1] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.IncreaseCollateral
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+        
+        // Fund mock router with locked asset
+        deal(lockedAsset, address(mockRouter), 200e18);
+        
+        uint256 portfolioRewardsBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        
+        // Create swap data
+        uint256 amountToSwap = rewardsAmount * 20 / 100; // 20% of rewards
+        uint256 expectedLockedAssetOut = 200e18; // Expected output from swap
+        
+        bytes memory swapData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwap.selector,
+            rewardsToken,
+            lockedAsset,
+            amountToSwap,
+            expectedLockedAssetOut,
+            _portfolioAccount
+        );
+        
+        // Pre-approve for swap
+        vm.prank(_portfolioAccount);
+        IERC20(rewardsToken).approve(address(mockRouter), amountToSwap);
+        
+        // Check the voting escrow's locked amount before processing
+        IVotingEscrow.LockedBalance memory lockedBefore = IVotingEscrow(_ve).locked(_tokenId);
+        uint256 lockedAmountBefore = uint256(uint128(lockedBefore.amount));
+        uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
+        
+        // Process rewards
+        vm.startPrank(_authorizedCaller);
+        vm.expectRevert("Slippage exceeded");
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(mockRouter),
+            10000e18,
+            swapData,
+            0 // gas reclamation
+        );
+        vm.stopPrank();
     }
 
     function testProcessRewardsActiveLoan() public {
@@ -307,9 +369,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
-            address(0), // asset will be determined from loan contract
+            rewardsAmount, // asset will be determined from loan contract
             address(0), // no swap
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -366,7 +428,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -467,8 +529,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            loanAsset,
             address(mockRouter),
+            0,
             swapData,
             0 // gas reclamation
         );
@@ -527,7 +589,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -539,14 +601,12 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
         
         assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        assertEq(loanContractBalanceAfter - loanContractBalanceBefore, zeroBalanceFee, "Loan contract should receive zero balance fee");
         
         // Verify debt was partially decreased
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
-        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        uint256 totalFees = protocolFee + lenderPremium;
         uint256 amountForDebt = rewardsAmount - totalFees;
         uint256 expectedDebt = debtBefore - amountForDebt;
         assertEq(debtAfter, expectedDebt, "Debt should be decreased by payment amount minus fees");
@@ -587,7 +647,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -599,14 +659,12 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
         
         assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        assertEq(loanContractBalanceAfter - loanContractBalanceBefore, zeroBalanceFee, "Loan contract should receive zero balance fee");
         
         // Verify total fees match expected
         uint256 totalFeesPaid = (ownerBalanceAfter - ownerBalanceBefore) + (loanContractBalanceAfter - loanContractBalanceBefore);
-        uint256 expectedTotalFees = protocolFee + lenderPremium + zeroBalanceFee;
+        uint256 expectedTotalFees = protocolFee + lenderPremium;
         assertEq(totalFeesPaid, expectedTotalFees, "Total fees should match expected");
     }
 
@@ -733,7 +791,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -748,14 +806,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
         vm.stopPrank();
     }
 
-    function testProcessRewardsFailsWithZeroRewardsToken() public {
+    function testProcessRewardsShouldFallbackToVaultAssetIfNoRewardsTokenSet() public {
         setupRewards();
         
         // Set rewards token to zero using the facet's setter through multicall
@@ -770,14 +828,13 @@ contract RewardsProcessingFacetTest is Test, Setup {
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
-        // This should fail when processing zero balance rewards
+        // Process rewards should fallback to vault asset if no rewards token set
         vm.startPrank(_authorizedCaller);
-        vm.expectRevert();
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -800,7 +857,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             gasReclamationAmount
         );
@@ -842,7 +899,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             gasReclamationAmount // Will be capped at 5%
         );
@@ -901,7 +958,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             gasReclamationAmount
         );
@@ -989,7 +1046,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -1056,7 +1113,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
