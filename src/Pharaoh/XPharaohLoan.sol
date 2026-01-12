@@ -31,6 +31,14 @@ import {PharaohLoanV2} from "./PharaohLoanV2.sol";
 import {IUSDC} from "../interfaces/IUSDC.sol";
 import {IXLoan} from "../interfaces/IXLoan.sol";
 
+interface IXPharaohLegacyClaimFacet {
+    function xPharProcessLegacyRewards(
+        address[] calldata gauges,
+        address[][] calldata tokens,
+        bytes calldata tradeData
+    ) external;
+}
+
 contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage, IXLoan {
     IXVoter internal _voter;
     IERC20 public _vaultAsset;
@@ -494,6 +502,49 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
         return totalRewards;
     }
 
+    /**
+     * @notice Claims legacy incentives and applies them to the loan like a standard claim.
+     */
+    function claimLegacy(
+        address[] calldata fees,
+        address[][] calldata tokens,
+        bytes calldata tradeData,
+        uint256 totalRewards
+    ) public virtual returns (uint256) {
+        require(isPortfolio(msg.sender));
+        LoanInfo storage loan = _loanDetails[msg.sender];
+
+        if (loan.borrower == address(0)) {
+            return 0;
+        }
+
+        if (loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.DoNothing) {
+            return 0;
+        }
+
+        _processLegacyRewards(fees, tokens, tradeData);
+        uint256 rewardsAmount = _vaultAsset.balanceOf(address(this));
+        address rewardToken = address(_vaultAsset);
+
+        if (loan.balance == 0 && loan.zeroBalanceOption == ZeroBalanceOption.PayToOwner) {
+            rewardToken = loan.preferredToken != address(0) && isApprovedToken(loan.preferredToken)
+                ? loan.preferredToken
+                : address(_vaultAsset);
+            rewardsAmount = IERC20(rewardToken).balanceOf(address(this));
+        }
+
+        require(rewardsAmount > 0);
+        emit RewardsClaimed(currentEpochStart(), totalRewards, loan.borrower, 0, address(rewardToken));
+
+        if (loan.balance == 0) {
+            _handleZeroBalanceClaim(loan, rewardsAmount, totalRewards);
+        } else {
+            _handleActiveLoanClaim(loan, totalRewards, rewardsAmount);
+        }
+
+        return totalRewards;
+    }
+
 
 
     /**
@@ -505,6 +556,13 @@ contract XPharaohLoan is Initializable, UUPSUpgradeable, Ownable2StepUpgradeable
      */
     function _processRewards(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData) internal virtual {
         IXPharFacet(address(msg.sender)).xPharProcessRewards(fees, tokens, tradeData);
+    }
+
+    function _processLegacyRewards(address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData)
+        internal
+        virtual
+    {
+        IXPharaohLegacyClaimFacet(address(msg.sender)).xPharProcessLegacyRewards(fees, tokens, tradeData);
     }
 
     /**
