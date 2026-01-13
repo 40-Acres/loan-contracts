@@ -58,14 +58,12 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
             require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
         }
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit ListingCreated(tokenId, price, paymentToken, debtAttached, expiresAt, owner, allowedBuyer);
     }
 
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.removeListing(tokenId);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit ListingCancelled(tokenId, owner);
     }
@@ -246,7 +244,6 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         CollateralManager.enforceCollateralRequirements();
         
-        //DEON CHECK THIS
         address sellerOwner = _portfolioFactory.ownerOf(address(this));
         emit DebtTransferredToBuyer(tokenId, buyer, debtAmount, unpaidFees, sellerOwner);
     }

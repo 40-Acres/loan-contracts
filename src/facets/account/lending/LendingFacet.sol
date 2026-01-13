@@ -87,7 +87,6 @@ contract LendingFacet is AccessControl {
 
     function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserLendingConfig.setTopUp(topUpEnabled);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit TopUpSet(topUpEnabled, owner);
     }

@@ -290,19 +290,21 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
     }
 
     function upgradeFacets() internal {
-        PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+        // PortfolioManager portfolioManager = PortfeolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+        
         
         PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8);
         address portfolioFactory = address(0xfeEB5C58786617230095a008164b096e3205EAF2);
-        address votingConfig = address(portfolioAccountConfig.getVoteConfig());
-        address loanConfig = address(portfolioAccountConfig.getLoanConfig());
-        address swapConfig = address(0x65E36a992e49F7E6296850b62E7C00F1d8f8c485);
+    //     address votingConfig = address(portfolioAccountConfig.getVoteConfig());
+    //     address loanConfig = address(portfolioAccountConfig.getLoanConfig());
+           SwapConfig swapConfig = SwapConfig(0x3646C436f18f0e2E38E10D1A147f901a96BD4390);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
+            // swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
         Vault vault = Vault(ILoan(portfolioAccountConfig.getLoanContract())._vault());
 
 
-        // Deploy RewardsProcessingFacet
+    //     // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](9);
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
@@ -316,56 +318,56 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
-        // Deploy LendingFacet
-        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
-        bytes4[] memory lendingSelectors = new bytes4[](4);
-        lendingSelectors[0] = LendingFacet.borrow.selector;
-        lendingSelectors[1] = LendingFacet.pay.selector;
-        lendingSelectors[2] = LendingFacet.setTopUp.selector;
-        lendingSelectors[3] = LendingFacet.topUp.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
+    //     // Deploy LendingFacet
+    //     LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+    //     bytes4[] memory lendingSelectors = new bytes4[](4);
+    //     lendingSelectors[0] = LendingFacet.borrow.selector;
+    //     lendingSelectors[1] = LendingFacet.pay.selector;
+    //     lendingSelectors[2] = LendingFacet.setTopUp.selector;
+    //     lendingSelectors[3] = LendingFacet.topUp.selector;
+    //     _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
-        // Deploy MarketplaceFacet
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
-        marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
-        marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-
-
-
-        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
-        bytes4[] memory votingSelectors = new bytes4[](5);
-        votingSelectors[0] = VotingFacet.vote.selector;
-        votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
-        votingSelectors[2] = VotingFacet.setVotingMode.selector;
-        votingSelectors[3] = VotingFacet.isManualVoting.selector;
-        votingSelectors[4] = VotingFacet.defaultVote.selector;
-        _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
-
-        // Deploy VotingEscrowFacet
+    //     // Deploy MarketplaceFacet
+    //     PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
+    //     MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+    //     bytes4[] memory marketplaceSelectors = new bytes4[](7);
+    //     marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
+    //     marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
+    //     marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
+    //     marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
+    //     marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
 
 
 
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig),  VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](3);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+    //     VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
+    //     bytes4[] memory votingSelectors = new bytes4[](5);
+    //     votingSelectors[0] = VotingFacet.vote.selector;
+    //     votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
+    //     votingSelectors[2] = VotingFacet.setVotingMode.selector;
+    //     votingSelectors[3] = VotingFacet.isManualVoting.selector;
+    //     votingSelectors[4] = VotingFacet.defaultVote.selector;
+    //     _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
-        // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](9);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
+    //     // Deploy VotingEscrowFacet
+
+
+
+    //     VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig),  VOTING_ESCROW, VOTER);
+    //     bytes4[] memory votingEscrowSelectors = new bytes4[](3);
+    //     votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+    //     votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+    //     votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+    //     _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+
+    //     // Deploy CollateralFacet
+    //     CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+    //     bytes4[] memory collateralSelectors = new bytes4[](9);
+    //     collateralSelectors[0] = CollateralFacet.addCollateral.selector;
+    //     collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
+    //     collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
+    //     collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
+    //     collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
+    //     collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
     }
     
     /**

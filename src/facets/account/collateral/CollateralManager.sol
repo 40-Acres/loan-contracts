@@ -138,7 +138,7 @@ library CollateralManager {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         return collateralManagerData.unpaidFees;
     }
-//DEON CHECK THIS
+    
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());

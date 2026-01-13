@@ -175,7 +175,6 @@ contract RewardsProcessingFacet is AccessControl {
 
     function setRewardsOption(UserRewardsConfig.RewardsOption rewardsOption) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRewardsOption(rewardsOption);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit RewardsOptionSet(rewardsOption, owner);
     }
@@ -200,21 +199,18 @@ contract RewardsProcessingFacet is AccessControl {
 
     function setRewardsToken(address rewardsToken) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRewardsToken(rewardsToken);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit RewardsTokenSet(rewardsToken, owner);
     }
 
     function setRewardsOptionPercentage(uint256 rewardsOptionPercentage) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRewardsOptionPercentage(rewardsOptionPercentage);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit RewardsOptionPercentageSet(rewardsOptionPercentage, owner);
     }
 
     function setRecipient(address recipient) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRecipient(recipient);
-        //DEON CHECK THIS
         address owner = _portfolioFactory.ownerOf(address(this));
         emit RecipientSet(recipient, owner);
     }
@@ -301,11 +297,13 @@ contract RewardsProcessingFacet is AccessControl {
         return amountToSwap;
     }
 
-    function swapToRewardsToken(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, uint256 minimumOutputAmount) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
-        address rewardsToken = getRewardsToken();
+    function swapToRewardsToken(address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, uint256 minimumOutputAmount) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
+        if(inputToken == CollateralFacet(address(this)).getCollateralToken()) {
+            revert("Input token cannot be collateral token");
+        }
+         address rewardsToken = getRewardsToken();
         require(inputToken != rewardsToken, "Input token cannot be rewards token");
-        require(swapTarget == rewardsToken, "Output token must be rewards token");
-        return SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, rewardsToken, minimumOutputAmount);
+        return SwapMod.swap(address(_swapConfig), swapTarget, swapData, inputToken, inputAmount, rewardsToken, minimumOutputAmount);
     }
 
     function _payZeroBalanceFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
