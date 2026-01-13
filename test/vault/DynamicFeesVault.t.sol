@@ -8,6 +8,7 @@ import {ProtocolTimeLibrary} from "../../src/libraries/ProtocolTimeLibrary.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IPortfolioFactory} from "../../src/interfaces/IPortfolioFactory.sol";
 
 /**
  * @title MockERC20
@@ -27,11 +28,56 @@ contract MockERC20 is ERC20 {
  * @title MockPortfolioFactory
  * @notice Mock portfolio factory for testing
  */
-contract MockPortfolioFactory {
+contract MockPortfolioFactory is IPortfolioFactory {
     mapping(address => bool) public isPortfolio;
 
     function setPortfolio(address portfolio, bool value) external {
         isPortfolio[portfolio] = value;
+    }
+
+    // Required by interface but not used in this mock
+    function facetRegistry() external pure override returns (address) {
+        return address(0);
+    }
+
+    function portfolioManager() external pure override returns (address) {
+        return address(0);
+    }
+
+    function portfolios(address) external pure override returns (address) {
+        return address(0);
+    }
+
+    function owners(address) external pure override returns (address) {
+        return address(0);
+    }
+
+    function createAccount(address) external pure override returns (address) {
+        return address(0);
+    }
+
+    function getRegistryVersion() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function ownerOf(address) external pure override returns (address) {
+        return address(0);
+    }
+
+    function portfolioOf(address) external pure override returns (address) {
+        return address(0);
+    }
+
+    function getAllPortfolios() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function getPortfoliosLength() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getPortfolio(uint256) external pure override returns (address) {
+        return address(0);
     }
 }
 
@@ -133,7 +179,6 @@ contract DynamicFeesVaultTest is Test {
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
             address(asset),
-            address(0),
             "Test Vault",
             "TV",
             address(portfolioFactory)
@@ -148,6 +193,10 @@ contract DynamicFeesVaultTest is Test {
 
         // Transfer ownership
         vault.transferOwnership(owner);
+
+        // Set up addresses as portfolios for testing
+        portfolioFactory.setPortfolio(address(debtToken), true);
+        portfolioFactory.setPortfolio(user2, true);
 
         // Setup asset balances
         asset.mint(address(this), INITIAL_BALANCE * 2);

@@ -45,7 +45,7 @@ contract MockDebtToken is DebtToken {
      * @notice Override to return the local vault ratio variable
      * @return The vault ratio in basis points
      */
-    function getVaultRatioBps() public view override returns (uint256) {
+    function getVaultRatioBps(uint256 utilizationPercent) public view override returns (uint256) {
         return _vaultRatioBps;
     }
 

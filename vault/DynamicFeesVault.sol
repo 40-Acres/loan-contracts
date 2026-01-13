@@ -18,7 +18,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _disableInitializers();
     }
 
-    function initialize(address asset, address loan, string memory name, string memory symbol, address portfolioFactory) public initializer {
+    function initialize(address asset, string memory name, string memory symbol, address portfolioFactory) public initializer {
         __ERC4626_init(ERC20(asset));
         __ERC20_init(name, symbol);
         __UUPSUpgradeable_init();
@@ -200,8 +200,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.totalLoanedAssets -= amount;
     }
 
-    function borrow(uint256 amount) public {
+    function borrow(uint256 amount) onlyPortfolio public {
         _updateUserDebtBalance(msg.sender);
+        // only allow borrowing if the utilization percent is less than 80%
+        require(getUtilizationPercent() < 8000, "Utilization exceeds 80%");
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         IERC20(asset()).transfer(msg.sender, amount);
         $.debtBalance[msg.sender] += amount;
@@ -218,7 +220,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.debtBalance[msg.sender] -= amountToRepay;
     }
 
-    function payWithRewards(uint256 amount) public {
+    function repayWithRewards(uint256 amount) public {
         _updateUserDebtBalance(msg.sender);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
 
@@ -227,21 +229,25 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     /**
      * @notice Updates the debt balance of a user
-     * @dev This function updates the debt balance of a user by calling the _updateUserDebtBalance function
+     * @dev This function updates the debt balance of a user by accounting for earned rewards
+     * @dev If earned rewards exceed the debt balance, the user receives the excess as vault shares
+     * @dev Otherwise, the debt balance remains unchanged (preserving the borrowed amount)
      * @param borrower The address of the borrower
      */
     function _updateUserDebtBalance(address borrower) internal {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         uint256 earned = $.debtToken.earned(address(this), borrower);
+        uint256 currentDebtBalance = $.debtBalance[borrower];
 
         // if earned is more than the debt balance, give user the difference via minting vault shares
-        if (earned > $.debtBalance[borrower]) {
-            uint256 difference = earned - $.debtBalance[borrower];
+        // and set debt balance to 0 (debt is fully paid off by rewards)
+        if (earned > currentDebtBalance) {
+            uint256 difference = earned - currentDebtBalance;
             _mint(borrower, difference);
-            earned -= difference;
+            $.debtBalance[borrower] = 0;
         }
-
-        $.debtBalance[borrower] = earned;
+        // Otherwise, debt balance remains unchanged (earned rewards don't fully cover the debt)
+        // The debt balance will be reduced when the user calls repay()
     }
     
     /**
@@ -291,5 +297,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function debtToken() public view returns (DebtToken) {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         return $.debtToken;
+    }
+
+    function getUtilizationPercent() public view returns (uint256) {
+        // assets borrowed / (total assets - assets borrowed)
+        return (totalLoanedAssets() * 10000) / (totalAssets() - totalLoanedAssets());
     }
 }

@@ -90,6 +90,8 @@ contract DebtToken {
 
     mapping(uint256 => uint256) public totalAssetsPerEpoch;
 
+    uint256 public constant PRECISION = 1e18;
+
 
     constructor(address _vault, address _debtToken) {
         vault = _vault;
@@ -396,7 +398,10 @@ contract DebtToken {
     }
 
     function _rebalance() internal {
-        uint256 ratio = getVaultRatioBps();
+        uint256 supply = totalSupply();
+        if (supply == 0) return; // Nothing to rebalance if there's no supply yet
+        uint256 utilizationPercent = totalAssets() * 10000 / supply;
+        uint256 ratio = getVaultRatioBps(utilizationPercent);
         if (ratio > 0 && ratio < 10000) {
             uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
             uint256 vaultBalance = _getCurrentBalance(vault);
@@ -441,9 +446,38 @@ contract DebtToken {
     
     /**
      * @notice Gets the vault ratio in basis points
-     * @return The vault ratio in basis points (e.g., 8000 = 80%), which means the vault should hold 80% of the total supply
+     * @param utilizationPercent The utilization rate in basis points (e.g., 8000 = 80%)
+     * @return rate The vault ratio in basis points (e.g., 8000 = 80%), which means the vault should hold 80% of the total supply
      */
-    function getVaultRatioBps() public view virtual returns (uint256) {
-        return 2000; // default to 80%
+    function getVaultRatioBps(uint256 utilizationPercent) public view virtual returns (uint256 rate) {        
+        require(utilizationPercent <= 100, "Utilization exceeds 100%");
+        
+        if (utilizationPercent <= 10) {
+            // 0-10%: Quadratic curve from 5 to 20
+            uint256 t = (utilizationPercent * PRECISION) / 10;
+            rate = 5 + (15 * t * t) / (PRECISION * PRECISION);
+        } 
+        else if (utilizationPercent <= 70) {
+            // 10-70%: Flat at 20
+            rate = 20;
+        } 
+        else if (utilizationPercent <= 90) {
+            // 70-90%: Gradual quadratic curve from 20 to 40
+            uint256 segment = utilizationPercent - 70;
+            uint256 t = (segment * PRECISION) / 20;
+            rate = 20 + (20 * t * t) / (PRECISION * PRECISION);
+        } 
+        else {
+            // 90-100%: Steep quadratic curve from 40 to 95
+            uint256 segment = utilizationPercent - 90;
+            uint256 t = (segment * PRECISION) / 10;
+            rate = 40 + (55 * t * t) / (PRECISION * PRECISION);
+        }
+        
+        return rate;
+    }
+
+    function getUtilizationPercent() public view virtual returns (uint256) {
+        revert("Not implemented");
     }
 }
