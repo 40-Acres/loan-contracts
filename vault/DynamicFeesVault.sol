@@ -11,6 +11,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {DebtToken} from "./DebtToken.sol";
 import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
+import {console} from "forge-std/console.sol";
 
 contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
     address public _debtToken;
@@ -201,6 +202,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     function borrow(uint256 amount) onlyPortfolio public {
+        _updateSettlementCheckpoint();
         _updateUserDebtBalance(msg.sender);
         // only allow borrowing if the utilization percent is less than 80%
         require(getUtilizationPercent() < 8000, "Utilization exceeds 80%");
@@ -208,9 +210,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         IERC20(asset()).transfer(msg.sender, amount);
         $.debtBalance[msg.sender] += amount;
         $.totalLoanedAssets += amount;
+        _updateUserDebtBalance(msg.sender);
     }
 
     function repay(uint256 amount) public {
+        _updateSettlementCheckpoint();
         _updateUserDebtBalance(msg.sender);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         uint256 debtBalance = $.debtBalance[msg.sender];
@@ -218,13 +222,37 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         IERC20(asset()).transferFrom(msg.sender, address(this), amountToRepay);
         $.totalLoanedAssets -= amountToRepay;
         $.debtBalance[msg.sender] -= amountToRepay;
+        _updateUserDebtBalance(msg.sender);
     }
 
     function repayWithRewards(uint256 amount) public {
-        _updateUserDebtBalance(msg.sender);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
 
+        // Update settlement checkpoint to sync totalLoanedAssets with current repayments
+        _updateSettlementCheckpoint();
+        
+        // Transfer assets from user to vault
+        IERC20(asset()).transferFrom(msg.sender, address(this), amount);
+        
+        // Update user debt balance first to get current earned rewards
+        _updateUserDebtBalance(msg.sender);
+        
+        // Mint debt tokens (this adds to totalAssetsPerEpoch and creates a new checkpoint)
         $.debtToken.mint(msg.sender, amount);
+        
+        // Get the earned rewards after minting (this updates tokenClaimedPerEpoch based on new balance)
+        uint256 earned = $.debtToken.earned(address(this), msg.sender);
+        uint256 currentDebtBalance = $.debtBalance[msg.sender];
+        
+        // Use earned rewards to reduce debt balance (up to the debt balance)
+        if (earned > 0 && currentDebtBalance > 0) {
+            uint256 amountToReduce = earned < currentDebtBalance ? earned : currentDebtBalance;
+            $.debtBalance[msg.sender] -= amountToReduce;
+            $.totalLoanedAssets -= amountToReduce;
+        }
+        
+        // Update user debt balance again to handle any excess rewards (if earned > debt balance)
+        _updateUserDebtBalance(msg.sender);
     }
 
     /**
@@ -248,6 +276,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         }
         // Otherwise, debt balance remains unchanged (earned rewards don't fully cover the debt)
         // The debt balance will be reduced when the user calls repay()
+        $.debtToken.rebalance();
     }
     
     /**
@@ -300,7 +329,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     function getUtilizationPercent() public view returns (uint256) {
-        // assets borrowed / (total assets - assets borrowed)
-        return (totalLoanedAssets() * 10000) / (totalAssets() - totalLoanedAssets());
+        // assets borrowed / total assets (in basis points, where 10000 = 100%)
+        uint256 total = totalAssets();
+        if (total == 0) return 0;
+        uint256 loaned = totalLoanedAssets();
+        uint256 utilization = (loaned * 10000) / total;
+        return utilization;
     }
 }

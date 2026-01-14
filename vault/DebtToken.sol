@@ -15,6 +15,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 interface IDynamicFeesVault {
     function decreaseTotalLoanedAssets(uint256 amount) external;
+    function getUtilizationPercent() external view returns (uint256);
 }
 
 /**
@@ -50,7 +51,6 @@ contract DebtToken {
 
     address public authorized;
 
-    mapping(address => mapping(uint256 => uint256)) public tokenRewardsPerEpoch;
 
 
     mapping(address => mapping(address => mapping(uint256 => uint256)))
@@ -394,14 +394,15 @@ contract DebtToken {
     }
 
     function rebalance() external {
+        if (msg.sender != vault) revert NotAuthorized();
         _rebalance();
     }
 
     function _rebalance() internal {
         uint256 supply = totalSupply();
         if (supply == 0) return; // Nothing to rebalance if there's no supply yet
-        uint256 utilizationPercent = totalAssets() * 10000 / supply;
-        uint256 ratio = getVaultRatioBps(utilizationPercent);
+        uint256 utilizationBps = IDynamicFeesVault(vault).getUtilizationPercent();
+        uint256 ratio = getVaultRatioBps(utilizationBps);
         if (ratio > 0 && ratio < 10000) {
             uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
             uint256 vaultBalance = _getCurrentBalance(vault);
@@ -446,32 +447,32 @@ contract DebtToken {
     
     /**
      * @notice Gets the vault ratio in basis points
-     * @param utilizationPercent The utilization rate in basis points (e.g., 8000 = 80%)
+     * @param utilizationBps The utilization rate in basis points (e.g., 8000 = 80%)
      * @return rate The vault ratio in basis points (e.g., 8000 = 80%), which means the vault should hold 80% of the total supply
      */
-    function getVaultRatioBps(uint256 utilizationPercent) public view virtual returns (uint256 rate) {        
-        require(utilizationPercent <= 100, "Utilization exceeds 100%");
+    function getVaultRatioBps(uint256 utilizationBps) public view virtual returns (uint256 rate) {        
+        require(utilizationBps <= 10000, "Utilization exceeds 100%");
         
-        if (utilizationPercent <= 10) {
-            // 0-10%: Quadratic curve from 5 to 20
-            uint256 t = (utilizationPercent * PRECISION) / 10;
-            rate = 5 + (15 * t * t) / (PRECISION * PRECISION);
+        if (utilizationBps <= 1000) {
+            // 0-10%: Quadratic curve from 500 to 2000 bps (5% to 20%)
+            uint256 t = (utilizationBps * PRECISION) / 1000;
+            rate = 500 + (1500 * t * t) / (PRECISION * PRECISION);
         } 
-        else if (utilizationPercent <= 70) {
-            // 10-70%: Flat at 20
-            rate = 20;
+        else if (utilizationBps <= 7000) {
+            // 10-70%: Flat at 2000 bps (20%)
+            rate = 2000;
         } 
-        else if (utilizationPercent <= 90) {
-            // 70-90%: Gradual quadratic curve from 20 to 40
-            uint256 segment = utilizationPercent - 70;
-            uint256 t = (segment * PRECISION) / 20;
-            rate = 20 + (20 * t * t) / (PRECISION * PRECISION);
+        else if (utilizationBps <= 9000) {
+            // 70-90%: Gradual quadratic curve from 2000 to 4000 bps (20% to 40%)
+            uint256 segment = utilizationBps - 7000;
+            uint256 t = (segment * PRECISION) / 2000;
+            rate = 2000 + (2000 * t * t) / (PRECISION * PRECISION);
         } 
         else {
-            // 90-100%: Steep quadratic curve from 40 to 95
-            uint256 segment = utilizationPercent - 90;
-            uint256 t = (segment * PRECISION) / 10;
-            rate = 40 + (55 * t * t) / (PRECISION * PRECISION);
+            // 90-100%: Steep quadratic curve from 4000 to 9500 bps (40% to 95%)
+            uint256 segment = utilizationBps - 9000;
+            uint256 t = (segment * PRECISION) / 1000;
+            rate = 4000 + (5500 * t * t) / (PRECISION * PRECISION);
         }
         
         return rate;
