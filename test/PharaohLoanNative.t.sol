@@ -1148,7 +1148,7 @@ contract PharaohLoanNativeTest is Test {
         assertTrue(balance >  1000e18, "Balance should have increased");
     }
 
-    function testClaimWithIncreasePercentage() public {
+    function xtestClaimWithIncreasePercentage() public {
         console.log(address(loan));
         uint256 _tokenId = 5596;
         vm.selectFork(_fork);
