@@ -206,6 +206,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         vault.borrow(400e6);
         vm.stopPrank();
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
 
         uint256 utilizationPercent = vault.getUtilizationPercent();
         assertEq(utilizationPercent, 4000, "Utilization should be 40%");
@@ -218,7 +219,7 @@ contract DynamicFeesVaultTest is Test {
         assertEq(rate, 2000, "Ratio should be 20%");
 
         // warp to beginning of this epoch
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp));
+        vm.warp(timestamp);
 
         // pay 200e6 with rewards
         vm.startPrank(user1);
@@ -227,11 +228,16 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(200e6);
         vm.stopPrank();
 
+        uint256 feeRatio = vault.debtToken().getCurrentVaultRatioBps();
+        assertEq(feeRatio, 2000, "Fee ratio should be 20%");
+
         uint256 utilizationPercent2 = vault.getUtilizationPercent();
         assertEq(utilizationPercent2, 4000, "Utilization should still be 40% since no time has passed in epoch");
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        console.log("FAST FORWARD TO NEXT EPOCH", timestamp);
+        vm.warp(timestamp);
 
         // at the end of epoch the user balance should be 160e6 less, and vault should gain 40e6
-        vm.warp(ProtocolTimeLibrary.epochNext(block.timestamp));
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
@@ -239,7 +245,15 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(200e6);
         vm.stopPrank();
 
+
         assertEq(vault.totalLoanedAssets(), 240e6, "Total loaned assets should be 240e6");
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        console.log("FAST FORWARD TO NEXT EPOCH", timestamp);
+        vm.warp(timestamp);
+        
+        // pay 0 to refresh rewards
+        vault.updateUserDebtBalance(user1);
+        assertEq(vault.totalLoanedAssets(), 40e6, "Total loaned assets should be 40e6");
 
 
     }
