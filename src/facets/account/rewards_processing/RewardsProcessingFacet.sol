@@ -306,6 +306,31 @@ contract RewardsProcessingFacet is AccessControl {
         return SwapMod.swap(address(_swapConfig), swapTarget, swapData, inputToken, inputAmount, rewardsToken, minimumOutputAmount);
     }
 
+
+    function swapToRewardsTokenMultiple(address[] memory swapTargets, bytes[] memory swapDatas, address[] memory inputTokens, uint256[] memory inputAmounts, uint256[] memory minimumOutputAmounts) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
+        for(uint256 i = 0; i < swapTargets.length; i++) {
+            if(inputTokens[i] == CollateralFacet(address(this)).getCollateralToken()) {
+                revert("Input token cannot be collateral token");
+            }
+            address rewardsToken = getRewardsToken();
+            require(inputTokens[i] != rewardsToken, "Input token cannot be rewards token");
+            try SwapMod.swap(
+                address(_swapConfig),
+                swapTargets[i],
+                swapDatas[i],
+                inputTokens[i],
+                inputAmounts[i],
+                rewardsToken,
+                minimumOutputAmounts[i]
+            ) returns (uint256 swappedAmount) {
+                amount += swappedAmount;
+            } catch {
+                continue;
+            }
+        }
+        return amount;
+    }
+
     function _payZeroBalanceFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
         IERC20(asset).transfer(_portfolioAccountConfig.getLoanContract(), zeroBalanceFee);
