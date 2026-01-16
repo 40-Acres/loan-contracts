@@ -239,6 +239,7 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
      */
     function buyMarketplaceListing(uint256 tokenId, address buyer) public {
         require(buyer != address(this), "Buyer cannot be this contract");
+        require(msg.sender == buyer, "Caller must be buyer");
         require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not owned by this contract");
         require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
         require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
