@@ -54,11 +54,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Get current lender premium (earned income) - view-safe version
         uint256 lenderPremiumCurrentEpoch = _getLenderPremiumUnlockedThisEpochView();
         DebtToken debtToken = _getDynamicFeesVaultStorage().debtToken;
-        console.log("totalAssetsPerEpoch", debtToken.totalAssetsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp)));
-        console.log("totalSupply", debtToken.totalSupply(ProtocolTimeLibrary.epochStart(block.timestamp)));
-        console.log("adjustedTotalLoanedAssets", adjustedTotalLoanedAssets);
-        console.log("lenderPremiumCurrentEpoch", lenderPremiumCurrentEpoch);
-        console.log("total", IERC20(asset()).balanceOf(address(this)) + adjustedTotalLoanedAssets - debtToken.totalAssetsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp)) + lenderPremiumCurrentEpoch);
         return IERC20(asset()).balanceOf(address(this)) + adjustedTotalLoanedAssets - debtToken.totalAssetsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp)) + lenderPremiumCurrentEpoch;
     }
     // named storage slot for the dynamic fees vault
@@ -91,15 +86,18 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Read directly from storage to avoid side effects in view functions
         // Note: This may be slightly stale for the current epoch if earned() hasn't been called recently
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        (uint256 balance,,) = $.debtToken.checkpoints(address(this), currentEpoch);
-        return balance;
+        DebtToken debtToken = $.debtToken;
+        
+        return debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
     }
 
     function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
-        // // This version calls earned() to update state - use in non-view contexts
-        // DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        // (uint256 balance,,) = $.debtToken.checkpoints(address(this), currentEpoch);
-        return 0;
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        DebtToken debtToken = $.debtToken;
+        // Call earned to ensure tokenClaimedPerEpoch is up to date for current epoch
+        debtToken.earned(address(debtToken), address(this));
+        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        return debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
     }
 
     function assetsUnlockedThisEpoch() public view returns (uint256) {
@@ -263,10 +261,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         // claimDebtRewards calls earned() which already prevents double-counting via tokenClaimedPerEpoch
         // It only returns new rewards that haven't been claimed yet for each epoch
-        uint256 earned = $.debtToken.claimDebtRewards(borrower);
+        uint256 earned = $.debtToken.getReward(borrower);
         uint256 currentDebtBalance = $.debtBalance[borrower];
 
-        console.log("earned for itme", earned);
+        console.log("=========e111111 arned for itme", earned);
         
         // if earned is more than the debt balance, give user the difference via minting vault shares
         // and set debt balance to 0 (debt is fully paid off by rewards)
@@ -344,9 +342,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         if (total == 0) return 0;
         uint256 loaned = totalLoanedAssets();
         uint256 utilization = (loaned * 10000) / total;
-        console.log("total", total);
-        console.log("loaned", loaned);
-        console.log("utilization", utilization);
         return utilization;
     }
 }

@@ -47,6 +47,11 @@ contract DebtToken {
         uint256 amount
     );
 
+    /* 
+     * @notice Mapping of the last notification timestamp for the vault.
+     */
+    mapping(address => uint256) public lastNotify;
+
     uint256 public constant DURATION = 7 days;
 
     address public authorized;
@@ -57,7 +62,6 @@ contract DebtToken {
     struct Checkpoint {
         uint256 timestamp;
         uint256 _balances;
-        uint256 alreadyClaimed;
     }
 
     address public loanContract;
@@ -73,6 +77,7 @@ contract DebtToken {
     uint256 public supplyNumCheckpoints;
 
     
+    mapping(address => mapping(uint256 => uint256)) public tokenClaimedPerEpoch;
 
     mapping(uint256 => uint256) public totalSupplyPerEpoch;
 
@@ -198,29 +203,24 @@ contract DebtToken {
             ) ==
             ProtocolTimeLibrary.epochStart(_timestamp)
         ) {
-            uint256 alreadyClaimed = checkpoints[_owner][_nCheckPoints - 1].alreadyClaimed;
             checkpoints[_owner][_nCheckPoints - 1] = Checkpoint(
                 _timestamp,
-                _balance,
-                alreadyClaimed
+                _balance
             );
         } else {
-            uint256 alreadyClaimed = checkpoints[_owner][_nCheckPoints - 1].alreadyClaimed;   
             checkpoints[_owner][_nCheckPoints] = Checkpoint(
                 _timestamp,
-                _balance,
-                alreadyClaimed
+                _balance
             );
             numCheckpoints[_owner] = _nCheckPoints + 1;
         }
     }
 
+
     function _writeSupplyCheckpoint() internal {
         uint256 _nCheckPoints = supplyNumCheckpoints;
         uint256 _timestamp = block.timestamp;
 
-        // Overwrite checkpoint if we're in the same epoch (since totalSupply is recalculated from scratch on each rebalance)
-        // Create new checkpoint only when entering a new epoch (clean slate for new epoch)
         if (
             _nCheckPoints > 0 &&
             ProtocolTimeLibrary.epochStart(
@@ -242,7 +242,6 @@ contract DebtToken {
     }
 
     function totalSupply() public view returns (uint256) {
-        console.log("+++++totalSupply", totalSupplyPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)]);
         return totalSupplyPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)];
     }
 
@@ -255,144 +254,154 @@ contract DebtToken {
         return totalAssetsPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)];
     }
 
+    function totalAssets(uint256 epoch) public view returns (uint256) {
+        return totalAssetsPerEpoch[epoch];
+    }
+
     function totalAssetsUnlocked(uint256 epoch) public view returns (uint256) {
+        epoch = ProtocolTimeLibrary.epochStart(epoch);
         // disburse assets evenly over the epoch via block.timestamp
         uint256 currentTimestamp = block.timestamp;
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(currentTimestamp);
+        // Only prorate for the current epoch; for past epochs, return full assets
         if(currentEpoch == epoch) {
             uint256 assets = totalAssetsPerEpoch[epoch];
             uint256 duration = ProtocolTimeLibrary.epochNext(epoch) - epoch;
             // Calculate assets per second (duration is in seconds)
             uint256 assetsPerSecond = assets / duration;
             // Return the proportion of assets that have been distributed up to now
-            return assetsPerSecond * (currentTimestamp - epoch);
+            uint256 prorated = assetsPerSecond * (currentTimestamp - epoch);
+            return prorated;
         }
+        // For past epochs, return the full assets
         return totalAssetsPerEpoch[epoch];
     }
 
 
-    function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
-        earned(address(this), vault);
-
-        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        return checkpoints[vault][_epoch].alreadyClaimed;
+    function getReward(address _owner) external returns (uint256) {
+        require(msg.sender == vault, "Only vault can get rewards");
+        return _getReward(_owner);
     }
 
-    function debtRepaidThisEpoch() public returns (uint256) {
-        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        return totalAssetsUnlocked(_epoch) - lenderPremiumUnlockedThisEpoch();
-    }
-
-    function earned(address _token, address _owner) internal returns (uint256) {
-        if (numCheckpoints[_owner] == 0) {
+    function _getReward(address _owner) internal returns (uint256) {
+        if (lastNotify[address(this)] == 0) {
             return 0;
         }
-
-        uint256 reward = 0;
-        uint256 _currTs = ProtocolTimeLibrary.epochStart(
-            lastEarn[_token][_owner]
-        ); // take epoch last claimed in as starting point
-        uint256 _index = getPriorBalanceIndex(_owner, _currTs);
-        Checkpoint memory cp0 = checkpoints[_owner][_index];
-
-        console.log("lastEarn[_token][_owner]", lastEarn[_token][_owner]);
-        console.log("numCheckpoints[_owner]", numCheckpoints[_owner]);
-        console.log("checkpoints[_owner][0].timestamp", checkpoints[_owner][0].timestamp);
-        // accounts for case where lastEarn is before first checkpoint
-        _currTs = ProtocolTimeLibrary.epochStart(Math.max(
-            _currTs,
-            ProtocolTimeLibrary.epochStart(cp0.timestamp)
-        ));
-
-        // get epochs between current epoch and first checkpoint in same epoch as last claim
-        uint256 numEpochs = (ProtocolTimeLibrary.epochStart(block.timestamp) -
-            _currTs) / DURATION;
-
-        console.log("numEpochs", numEpochs);
-
-        if (numEpochs > 0) {
-            for (uint256 i = 0; i < numEpochs; i++) {
-                console.log("currTs", _currTs);
-                // get index of checkpoint at the start of this epoch
-                _index = getPriorBalanceIndex(_owner, _currTs);
-                // get checkpoint in this epoch
-                cp0 = checkpoints[_owner][_index];
-                
-                // Ensure we're using a checkpoint from this epoch or earlier (not from a future epoch)
-                // If checkpoint is from a future epoch, skip this epoch (shouldn't happen, but safety check)
-                if (ProtocolTimeLibrary.epochStart(cp0.timestamp) > _currTs) {
-                    _currTs += DURATION;
-                    continue;
-                }
-                
-                // Calculate the reward for this epoch: convert balance (shares) to assets
-                // Use the balance at the start of the epoch (cp0._balances represents shares at that time)
-                // epochReward represents the total asset value the user is entitled to for this epoch
-                // based on their share balance and the assets unlocked in this epoch
-                uint256 epochReward = _convertToAssets(cp0._balances, Math.Rounding.Floor, _currTs);
-                console.log("cp0._balances", cp0._balances);
-                console.log("cp0.timestamp", cp0.timestamp);
-                console.log("epochReward", epochReward);
-                console.log("checkpoints[_owner][_currTs].alreadyClaimed", checkpoints[_owner][_currTs].alreadyClaimed);
-
-                
-                // Get what was already claimed for this epoch
-                uint256 alreadyClaimed = checkpoints[_owner][_currTs].alreadyClaimed;
-                console.log("alreadyClaimed", alreadyClaimed);  
-                console.log("epochReward", epochReward);
-                
-                // Calculate the incremental reward for this epoch
-                // If this is the first time calculating for this epoch, newReward = epochReward
-                // If we're recalculating (e.g., because time passed and totalAssetsUnlocked increased),
-                // newReward = the incremental increase
-                uint256 newReward = epochReward > alreadyClaimed ? epochReward - alreadyClaimed : 0;
-                console.log("newReward", newReward);
-                console.log("----------------");
-                
-                // If we had previously calculated rewards for this epoch, subtract the old value
-                // to avoid double counting, then add the new total
-                if (alreadyClaimed > 0) {
-                    reward -= alreadyClaimed;
-                }
-                
-                // Update the claimed amount for this epoch to the new total
-                // This tracks the cumulative reward entitlement for this epoch
-                checkpoints[_owner][_currTs].alreadyClaimed = epochReward;
-                
-                console.log("epochReward", epochReward);
-                console.log("alreadyClaimed", alreadyClaimed);
-                console.log("newReward", newReward);
-                // Add the new total reward (we already subtracted the old value above if needed)
-                reward += epochReward;
-                
-                _currTs += DURATION;
-            }
-        }
-
-        return reward;
-    }
-
-    function claimDebtRewards(address _owner) external returns (uint256) {
-        require(msg.sender == vault, "Only vault can claim debt rewards");
-        return _claimDebtRewards(_owner);
-    }
-
-    function _claimDebtRewards(address _owner) internal returns (uint256) {
-        
         // Calculate earned rewards (this updates tokenClaimedPerEpoch for each epoch)
-        // earned() will calculate from lastEarn to now, and update tokenClaimedPerEpoch
-        // If lastEarn is 0, it will calculate from the first checkpoint
         uint256 _reward = earned(address(this), _owner);
-        
-        console.log("_____", _reward);
         
         // Update lastEarn to current timestamp to prevent double-counting in future calls
         // This ensures that the next time earned() is called, it will only calculate rewards
         // from this point forward, not from the old lastEarn timestamp
         lastEarn[address(this)][_owner] = block.timestamp;
 
-        emit ClaimRewards(_owner, address(this), _reward);
         return _reward;
+    }
+
+    
+    function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
+        // Call earned to update tokenClaimedPerEpoch for the current epoch
+        earned(address(this), vault);
+
+        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        return tokenClaimedPerEpoch[vault][_epoch];
+    }
+
+
+    function debtRepaidThisEpoch() public returns (uint256) {
+        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        return totalAssetsUnlocked(_epoch) - lenderPremiumUnlockedThisEpoch();
+    }
+
+    function earned(address _token, address _owner) public returns (uint256) {
+        if (numCheckpoints[_owner] == 0) {
+            return 0;
+        }
+
+        uint256 reward = 0;
+        uint256 _supply = 1;
+        uint256 _lastEarnValue = lastEarn[_token][_owner];
+        uint256 _currTs = ProtocolTimeLibrary.epochStart(
+            _lastEarnValue
+        ); // take epoch last claimed in as starting point
+        uint256 _index = getPriorBalanceIndex(_owner, _currTs);
+        Checkpoint memory cp0 = checkpoints[_owner][_index];
+
+        // accounts for case where lastEarn is before first checkpoint
+        _currTs = Math.max(
+            _currTs,
+            ProtocolTimeLibrary.epochStart(cp0.timestamp)
+        );
+
+        // get epochs between current epoch and first checkpoint in same epoch as last claim
+        // Include the current epoch if we're in it
+        uint256 currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 numEpochs = 0;
+        if (currentEpochStart >= _currTs) {
+            // Calculate number of epochs to process, including the current epoch
+            numEpochs = ((currentEpochStart - _currTs) / DURATION) + 1;
+        }
+
+        if (numEpochs > 0) {
+            for (uint256 i = 0; i < numEpochs; i++) {
+                // Use _currTs (the epoch we're processing)
+                uint256 epoch = _currTs;
+                // Use the totalSupply for this epoch directly, not from checkpoints
+                // The supply for an epoch is set during rebalancing and stored in totalSupplyPerEpoch
+                _supply = Math.max(totalSupply(epoch), 1);
+                // For reward calculation, use full assets for the epoch, not prorated
+                // totalAssetsUnlocked prorates for current epoch, but we want full assets for rewards
+                uint256 assetsUnlocked = totalAssetsPerEpoch[epoch];
+                
+                // Skip epochs with no assets (nothing to reward)
+                if (assetsUnlocked == 0) {
+                    _currTs += DURATION;
+                    continue;
+                }
+                
+                // Get the balance at the START of this epoch (before any mints in this epoch)
+                // This represents the balance that earned rewards throughout the epoch
+                uint256 queryTimestamp = _currTs > 0 ? _currTs - 1 : _currTs;
+                _index = getPriorBalanceIndex(_owner, queryTimestamp);
+                // Ensure index is valid
+                uint256 nCheckpoints = numCheckpoints[_owner];
+                if (_index >= nCheckpoints) {
+                    _currTs += DURATION;
+                    continue;
+                }
+                // get checkpoint at the start of this epoch (or from previous epoch)
+                cp0 = checkpoints[_owner][_index];
+                
+                // Ensure the checkpoint is from before the start of this epoch
+                // We want the balance BEFORE any mints in this epoch
+                uint256 cpEpoch = ProtocolTimeLibrary.epochStart(cp0.timestamp);
+                // If checkpoint is from this epoch or later, we need one from before
+                while (cpEpoch >= _currTs && _index > 0) {
+                    _index = _index - 1;
+                    cp0 = checkpoints[_owner][_index];
+                    cpEpoch = ProtocolTimeLibrary.epochStart(cp0.timestamp);
+                }
+                // If still from this epoch or later, skip this epoch (no valid checkpoint before epoch start)
+                if (cpEpoch >= _currTs) {
+                    _currTs += DURATION;
+                    continue;
+                }
+                
+                uint256 epochReward = (cp0._balances * assetsUnlocked) / _supply;
+                uint256 alreadyClaimed = tokenClaimedPerEpoch[_owner][epoch];
+                uint256 newReward = epochReward > alreadyClaimed ? epochReward - alreadyClaimed : 0;
+                
+                
+                // Update tokenClaimedPerEpoch with the total reward for this epoch (not incremental)
+                tokenClaimedPerEpoch[_owner][epoch] = epochReward;
+                
+                // Add only the new reward to the running total
+                reward += newReward;
+                _currTs += DURATION;
+            }
+        }
+
+        return reward;
     }
 
     /**
@@ -412,9 +421,10 @@ contract DebtToken {
 
         uint256 newBalance = currentBalance + _amount;
 
+        lastNotify[address(this)] = block.timestamp;
+
         // Update balance checkpoint
         _writeCheckpoint(_to, newBalance);
-        console.log("WRITING SUPPLY CHECKPOINT", _to, newBalance);
 
         _rebalance();
 
@@ -437,15 +447,11 @@ contract DebtToken {
         uint256 supply = totalSupply();
         uint256 utilizationBps = IDynamicFeesVault(vault).getUtilizationPercent();
         uint256 ratio = getVaultRatioBps(utilizationBps);
-        console.log("+++++ratio", ratio);
         if (ratio > 0 && ratio < 10000) {
             uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
 
             // Now calculate the new vault balance to maintain the ratio
             uint256 newVaultBalance = (totalAssetsPerEpoch[currentEpoch] * ratio) / (10000 - ratio);
-            console.log("+++++newVaultBalance", newVaultBalance);
-            console.log("totalAssetsPerEpoch[currentEpoch]", totalAssetsPerEpoch[currentEpoch]);
-            console.log("ratio", ratio);
             totalSupplyPerEpoch[currentEpoch] = totalAssetsPerEpoch[currentEpoch] + newVaultBalance;
             _writeCheckpoint(vault, newVaultBalance);
             _writeSupplyCheckpoint();
@@ -458,7 +464,6 @@ contract DebtToken {
     
     function _convertToAssets(uint256 shares, Math.Rounding rounding, uint256 epoch) internal view virtual returns (uint256) {
         uint256 epochSupply = totalSupply(epoch);
-        console.log("epoch", epoch);
         // If totalSupply is 0, there's no supply in this epoch, so rewards should be 0
         if (epochSupply == 0) {
             return 0;
@@ -468,9 +473,8 @@ contract DebtToken {
         // - Full assets for past epochs
         // - Prorated assets for current epoch (based on elapsed time)
         uint256 assetsUnlocked = totalAssetsUnlocked(epoch);
-        console.log("++++totalAssetsUnlocked(epoch)", assetsUnlocked);
-        console.log("epochSupply", epochSupply);
-        return shares.mulDiv(assetsUnlocked + 1, epochSupply + 10 ** _decimalsOffset(), rounding);
+        // Use standard mulDiv without offsets - we already handle epochSupply == 0 case above
+        return shares.mulDiv(assetsUnlocked, epochSupply, rounding);
     }
 
     function _decimalsOffset() internal view virtual returns (uint8) {

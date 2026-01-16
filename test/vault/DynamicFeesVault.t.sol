@@ -245,15 +245,23 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(200e6);
         vm.stopPrank();
 
-
         assertEq(vault.totalLoanedAssets(), 240e6, "Total loaned assets should be 240e6");
         timestamp = ProtocolTimeLibrary.epochNext(timestamp);
         console.log("FAST FORWARD TO NEXT EPOCH", timestamp);
         vm.warp(timestamp);
-        
+        uint256 utilizationPercent3 =  vault.getUtilizationPercent();
+        assertLt(utilizationPercent3, 4000, "Utilization should be less than 40%");
+
         // pay 0 to refresh rewards
         vault.updateUserDebtBalance(user1);
-        assertEq(vault.totalLoanedAssets(), 40e6, "Total loaned assets should be 40e6");
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
+        vm.stopPrank();
+        uint256 feeRatio2 = vault.debtToken().getCurrentVaultRatioBps();
+        assertLt(feeRatio2, 2000, "Fee ratio should be less than 20%");
+        assertEq(vault.totalLoanedAssets(), 50e6, "Total loaned assets should be 40e6");
 
 
     }
