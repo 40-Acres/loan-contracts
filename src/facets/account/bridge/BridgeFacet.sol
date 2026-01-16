@@ -41,7 +41,7 @@ contract BridgeFacet is AccessControl {
             amount,
             _destinationDomain, bytes32(uint256(uint160(address(this)))), 
             address(_usdc), 
-            bytes32(uint256(uint160(address(this)))), 
+            bytes32(uint256(uint160(address(0)))),
             maxFee, 
             minFinalityThreshold
         );
