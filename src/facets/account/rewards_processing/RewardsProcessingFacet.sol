@@ -275,12 +275,15 @@ contract RewardsProcessingFacet is AccessControl {
         return amountToSwap;
     }
 
-    function swapToRewardsToken(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, uint256 minimumOutputAmount) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
+    function swapToRewardsToken(address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, uint256 minimumOutputAmount) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
+        if(inputToken == CollateralFacet(address(this)).getCollateralToken()) {
+            revert("Input token cannot be collateral token");
+        }
         address rewardsToken = getRewardsToken();
         require(inputToken != rewardsToken, "Input token cannot be rewards token");
-        require(swapTarget == rewardsToken, "Output token must be rewards token");
-        return SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, rewardsToken, minimumOutputAmount);
+        return SwapMod.swap(address(_swapConfig), swapTarget, swapData, inputToken, inputAmount, rewardsToken, minimumOutputAmount);
     }
+
 
     function _payZeroBalanceFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
