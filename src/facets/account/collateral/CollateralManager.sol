@@ -149,9 +149,10 @@ library CollateralManager {
         if (amount > maxLoan) {
             collateralManagerData.overSuppliedVaultDebt += amount - maxLoan;
         }
-        // if the amount is greater than the max loan ignore supply (collateral-based), add to undercollateralized debt
-        if(amount > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += amount - maxLoanIgnoreSupply;
+
+        uint256 projectedTotalDebt = collateralManagerData.debt + amount;
+        if (projectedTotalDebt > maxLoanIgnoreSupply) {
+            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
         uint256 originationFee = loanContract.borrowFromPortfolio(amount);
