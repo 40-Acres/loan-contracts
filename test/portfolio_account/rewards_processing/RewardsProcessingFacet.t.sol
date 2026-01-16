@@ -127,7 +127,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount, // asset will be determined from config
+            rewardsAmount,
+            address(0), // asset will be determined from config
             address(0), // no swap
             0, // minimum output amount
             new bytes(0),
@@ -177,6 +178,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0, // minimum output amount
             new bytes(0),
@@ -244,6 +246,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            rewardsToken,
             address(mockRouter),
             0,
             swapData,
@@ -327,6 +330,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            rewardsToken,
             address(mockRouter),
             10000e18,
             swapData,
@@ -369,7 +373,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount, // asset will be determined from loan contract
+            rewardsAmount,
+            address(0), // asset will be determined from loan contract
             address(0), // no swap
             0,
             new bytes(0),
@@ -427,6 +432,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
@@ -529,6 +535,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            loanAsset,
             address(mockRouter),
             0,
             swapData,
@@ -589,6 +596,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
+            address(0),
             0,
             new bytes(0),
             0 // gas reclamation
@@ -646,6 +654,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
@@ -791,6 +800,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
+            address(0),
             0,
             new bytes(0),
             0 // gas reclamation
@@ -806,6 +816,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
+            address(0),
             0,
             new bytes(0),
             0 // gas reclamation
@@ -813,7 +824,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.stopPrank();
     }
 
-    function testProcessRewardsShouldFallbackToVaultAssetIfNoRewardsTokenSet() public {
+    function testProcessRewardsFailsWithZeroRewardsToken() public {
         setupRewards();
         
         // Set rewards token to zero using the facet's setter through multicall
@@ -828,11 +839,13 @@ contract RewardsProcessingFacetTest is Test, Setup {
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
-        // Process rewards should fallback to vault asset if no rewards token set
+        // This should fail when processing zero balance rewards
         vm.startPrank(_authorizedCaller);
+        vm.expectRevert();
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
@@ -856,6 +869,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
@@ -898,6 +912,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
@@ -957,6 +972,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
@@ -1046,6 +1062,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
+            address(0),
             0,
             new bytes(0),
             0 // gas reclamation
@@ -1112,6 +1129,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
+            address(0),
             address(0),
             0,
             new bytes(0),
