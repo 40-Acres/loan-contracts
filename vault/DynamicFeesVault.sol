@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.27;
 
@@ -102,7 +102,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function assetsUnlockedThisEpoch() public view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        return $.debtToken.totalAssetsUnlocked(ProtocolTimeLibrary.epochStart(block.timestamp));
+        return $.debtToken.totalAssets(ProtocolTimeLibrary.epochStart(block.timestamp));
     }
 
     function debtRepaidThisEpoch() public view returns (uint256) {
@@ -128,7 +128,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         
         // Calculate principal repaid for epochs from start to current (inclusive)
         for (uint256 epoch = startEpoch; epoch <= currentEpoch; epoch += ProtocolTimeLibrary.WEEK) {
-            uint256 assetsUnlocked = $.debtToken.totalAssetsUnlocked(epoch);
+            uint256 assetsUnlocked = $.debtToken.totalAssets(epoch);
             if (assetsUnlocked == 0) continue;
             
             uint256 lenderPremium;
@@ -194,6 +194,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.debtBalance[msg.sender] += amount;
         $.totalLoanedAssets += amount;
         _updateUserDebtBalance(msg.sender);
+        _updateSettlementCheckpoint();
     }
 
     function repay(uint256 amount) public {
@@ -206,6 +207,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.totalLoanedAssets -= amountToRepay;
         $.debtBalance[msg.sender] -= amountToRepay;
         _updateUserDebtBalance(msg.sender);
+        _updateSettlementCheckpoint();
     }
 
     function repayWithRewards(uint256 amount) public {
@@ -224,6 +226,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // This will reduce debtBalance and totalLoanedAssets appropriately
         // If earned > debtBalance, the excess will be minted as vault shares
         _updateUserDebtBalance(msg.sender);
+        _updateSettlementCheckpoint();
     }
 
     function updateUserDebtBalance(address borrower) public {

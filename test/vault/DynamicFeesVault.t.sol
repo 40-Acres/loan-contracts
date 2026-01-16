@@ -203,10 +203,14 @@ contract DynamicFeesVaultTest is Test {
     }
 
     function testBorrowAndRepayWithRewards() public {
+
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        // warp to beginning of this epoch
+        console.log("WARPING TO BEGINNING OF EPOCH", timestamp);
+        vm.warp(timestamp);
         vm.startPrank(user1);
         vault.borrow(400e6);
         vm.stopPrank();
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
 
         uint256 utilizationPercent = vault.getUtilizationPercent();
         assertEq(utilizationPercent, 4000, "Utilization should be 40%");
@@ -217,9 +221,6 @@ contract DynamicFeesVaultTest is Test {
 
         uint256 rate = vault.debtToken().getVaultRatioBps(utilizationPercent);
         assertEq(rate, 2000, "Ratio should be 20%");
-
-        // warp to beginning of this epoch
-        vm.warp(timestamp);
 
         // pay 200e6 with rewards
         vm.startPrank(user1);
