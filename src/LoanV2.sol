@@ -1287,6 +1287,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
         IMigrationFacet(portfolio).migrate(tokenId, loan.unpaidFees);   // migrate the loan to the portfolio with unpaid fees
+        delete _loanDetails[tokenId];
     }
 
 
