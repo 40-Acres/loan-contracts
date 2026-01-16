@@ -154,32 +154,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      */
     function _updateSettlementCheckpoint() internal {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        
-        // Calculate current principal repaid
-        uint256 currentPrincipalRepaid = _getPrincipalRepaidUpToNow();
-        
-        // Calculate how much principal has been repaid since the last checkpoint
-        uint256 principalRepaidSinceCheckpoint = currentPrincipalRepaid >= $.principalRepaidAtCheckpoint
-            ? currentPrincipalRepaid - $.principalRepaidAtCheckpoint
-            : 0;
-        
-        // Update totalLoanedAssets by subtracting principal repaid since checkpoint
-        // If totalLoanedAssets < principalRepaidSinceCheckpoint, this indicates an accounting error
-        // We should still update to prevent the error from compounding, but log it
-        if (principalRepaidSinceCheckpoint > 0) {
-            if ($.totalLoanedAssets >= principalRepaidSinceCheckpoint) {
-                $.totalLoanedAssets -= principalRepaidSinceCheckpoint;
-            } else {
-                // Accounting error: principal repaid exceeds totalLoanedAssets
-                // Set to 0 to prevent underflow, but this indicates a serious issue
-                $.totalLoanedAssets = 0;
-            }
-        }
-        
-        // Update checkpoint
-        $.settlementCheckpointEpoch = currentEpoch;
-        $.principalRepaidAtCheckpoint = currentPrincipalRepaid;
+        uint256 earned = $.debtToken.getReward(address(this));
+        $.totalLoanedAssets -= earned;
+        $.settlementCheckpointEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        console.log("totalLoanedAssets", $.totalLoanedAssets);
+        console.log("earned", earned);
     }
     
     /**
@@ -271,11 +250,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         if (earned > currentDebtBalance) {
             uint256 difference = earned - currentDebtBalance;
             _mint(borrower, difference);
+            console.log("minted", difference);
+            console.log("debt balance", $.debtBalance[borrower]);
             $.debtBalance[borrower] = 0;
-            $.totalLoanedAssets -= currentDebtBalance;
+            console.log("totalLoanedAssets", $.totalLoanedAssets);
+            console.log("currentDebtBalance", currentDebtBalance);
         } else if (earned > 0) {
             $.debtBalance[borrower] -= earned;
-            $.totalLoanedAssets -= earned;
         }
 
         console.log("totalLoanedAssets", $.totalLoanedAssets);

@@ -284,12 +284,9 @@ contract DebtToken {
     }
 
     function _getReward(address _owner) internal returns (uint256) {
-        if (lastNotify[address(this)] == 0) {
-            return 0;
-        }
         // Calculate earned rewards (this updates tokenClaimedPerEpoch for each epoch)
         uint256 _reward = earned(address(this), _owner);
-        
+        console.log("reward", _reward);
         // Update lastEarn to current timestamp to prevent double-counting in future calls
         // This ensures that the next time earned() is called, it will only calculate rewards
         // from this point forward, not from the old lastEarn timestamp
@@ -314,10 +311,13 @@ contract DebtToken {
     }
 
     function earned(address _token, address _owner) public returns (uint256) {
+        console.log("earned", _owner);
+        console.log("vault", vault);
         if (numCheckpoints[_owner] == 0) {
+            console.log("no checkpoints", _owner);
             return 0;
         }
-
+        console.log("checkpoints", numCheckpoints[_owner]);
         uint256 reward = 0;
         uint256 _supply = 1;
         uint256 _lastEarnValue = lastEarn[_token][_owner];
@@ -351,8 +351,9 @@ contract DebtToken {
                 _supply = Math.max(totalSupply(epoch), 1);
                 // For reward calculation, use full assets for the epoch, not prorated
                 // totalAssetsUnlocked prorates for current epoch, but we want full assets for rewards
-                uint256 assetsUnlocked = totalAssetsPerEpoch[epoch];
+                uint256 assetsUnlocked = totalAssetsUnlocked(epoch);
                 
+                console.log("assetsUnlocked", assetsUnlocked);
                 // Skip epochs with no assets (nothing to reward)
                 if (assetsUnlocked == 0) {
                     _currTs += DURATION;
