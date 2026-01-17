@@ -3,8 +3,10 @@ pragma solidity ^0.8.28;
 
 import {ClaimingFacet} from "./ClaimingFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract SuperchainClaimingFacet is ClaimingFacet {
+    using SafeERC20 for IERC20;
     address public immutable _weth;
 
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault, address weth)
@@ -28,7 +30,7 @@ contract SuperchainClaimingFacet is ClaimingFacet {
             if(difference > portfolioWethBalance) {
                 difference = portfolioWethBalance;
             }
-            IERC20(_weth).transfer(msg.sender, difference);
+            IERC20(_weth).safeTransfer(msg.sender, difference);
         }
     }
 }
