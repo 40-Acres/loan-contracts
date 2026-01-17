@@ -22,6 +22,7 @@ contract BridgeFacet is AccessControl {
 
     error NotApprovedBridge(address bridgeContract);
     
+    
     constructor(address portfolioFactory, address portfolioAccountConfig, address usdc) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
@@ -31,11 +32,8 @@ contract BridgeFacet is AccessControl {
         _destinationDomain = 2; // Optimism Mainnet https://developers.circle.com/cctp/cctp-supported-blockchains
     }
 
-    // @dev Intentionally public - can be called by anyone to bridge tokens
-    function bridge() external  {
+    function bridge(uint256 amount, uint256 maxFee) external  onlyAuthorizedCaller(_portfolioFactory) {
         uint32 minFinalityThreshold = 2000;
-        uint256 maxFee = _usdc.balanceOf(address(this)) / 10000;
-        uint256 amount = _usdc.balanceOf(address(this));
         _usdc.approve(address(_tokenMessenger), amount);
         _tokenMessenger.depositForBurn(
             amount,
