@@ -40,6 +40,7 @@ contract Setup is Test {
     IERC20 public _asset = IERC20(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
     IERC20 public _aero = IERC20(0x940181a94A35A4569E4529A3CDfB74e38FD98631);
     IVotingEscrow public _ve = IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
+    address public _tokenMessenger = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     address FORTY_ACRES_DEPLOYER = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     address public _aeroFactory = address(0x420DD381b31aEf6683db6B902084cB0FFECe40Da);
     address public _usdc = address(0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
@@ -84,7 +85,7 @@ contract Setup is Test {
         LoanV2(address(_loanContract)).upgradeToAndCall(address(loanV2), new bytes(0));
         
         _vault = address(vault);
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), address(swapConfig), address(_loanContract), address(_usdc), _vault);
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), _tokenMessenger, address(swapConfig), address(_loanContract), address(_usdc), _vault);
         vm.stopPrank();
 
         // create a portfolio account

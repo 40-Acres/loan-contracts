@@ -16,29 +16,31 @@ import {ITokenMessenger} from "../../../interfaces/ITokenMessenger.sol";
 contract BridgeFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
-    ITokenMessenger public immutable _tokenMessenger = ITokenMessenger(0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d);
-    IERC20 public immutable _usdc;
+    ITokenMessenger public immutable _tokenMessenger;
+    IERC20 public immutable _token;
     uint32 public immutable _destinationDomain;
 
     error NotApprovedBridge(address bridgeContract);
     
     
-    constructor(address portfolioFactory, address portfolioAccountConfig, address usdc) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address token, address tokenMessenger) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
+        require(tokenMessenger != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
-        _usdc = IERC20(usdc);
+        _token = IERC20(token);
         _destinationDomain = 2; // Optimism Mainnet https://developers.circle.com/cctp/cctp-supported-blockchains
+        _tokenMessenger = ITokenMessenger(tokenMessenger);
     }
 
     function bridge(uint256 amount, uint256 maxFee) external  onlyAuthorizedCaller(_portfolioFactory) {
         uint32 minFinalityThreshold = 2000;
-        _usdc.approve(address(_tokenMessenger), amount);
+        _token.approve(address(_tokenMessenger), amount);
         _tokenMessenger.depositForBurn(
             amount,
             _destinationDomain, bytes32(uint256(uint160(address(this)))), 
-            address(_usdc), 
+            address(_token), 
             bytes32(uint256(uint160(address(0)))),
             maxFee, 
             minFinalityThreshold

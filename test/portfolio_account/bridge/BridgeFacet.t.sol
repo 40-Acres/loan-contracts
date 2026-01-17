@@ -58,7 +58,8 @@ contract BridgeFacetTest is Test {
         bridgeDeployer.deploy(
             address(_portfolioFactory),
             address(_portfolioAccountConfig),
-            INK_USDC
+            INK_USDC,
+            TOKEN_MESSENGER
         );
         
         // Get the deployed BridgeFacet address from the registry
@@ -85,7 +86,8 @@ contract BridgeFacetTest is Test {
     function testBridgeFacetDeployment() public {
         assertEq(address(_bridgeFacet._portfolioFactory()), address(_portfolioFactory));
         assertEq(address(_bridgeFacet._portfolioAccountConfig()), address(_portfolioAccountConfig));
-        assertEq(address(_bridgeFacet._usdc()), INK_USDC);
+        assertEq(address(_bridgeFacet._token()), INK_USDC);
+        assertEq(address(_bridgeFacet._tokenMessenger()), TOKEN_MESSENGER);
         assertEq(_bridgeFacet._destinationDomain(), 2); // Optimism Mainnet
     }
 

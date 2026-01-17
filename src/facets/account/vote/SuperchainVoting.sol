@@ -15,7 +15,7 @@ import {IRootVotingRewardsFactory} from "../../../interfaces/IRootVotingRewardsF
  * @dev Facet that interfaces with superchain voting
  */
 contract SuperchainVotingFacet is VotingFacet {
-    IERC20 public immutable _weth = IERC20(0x4200000000000000000000000000000000000006);
+    IERC20 public immutable _weth;
     address public immutable RootMessageBridge = 0xF278761576f45472bdD721EACA19317cE159c011;
     address public immutable ROOT_VOTING_REWARDS_FACTORY = address(0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F);
 
@@ -23,10 +23,12 @@ contract SuperchainVotingFacet is VotingFacet {
 
     error MinimumWethBalanceNotMet();
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter)
+    constructor(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address weth)
         VotingFacet(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter) 
     {
+        require(weth != address(0));
         _superchainVotingConfig = SuperchainVotingConfig(address(votingConfig));
+        _weth = IERC20(weth);
     }
 
     function vote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) public override onlyPortfolioManagerMulticall(_portfolioFactory) {

@@ -94,6 +94,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
             address(0), // rewardsDistributor - not needed
             address(loanConfig),
             address(usdc),
+            address(0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d),
             address(swapConfig), // swapConfig
             BASE_LOAN_CONTRACT, // loanContract
             address(usdc), // lendingToken
