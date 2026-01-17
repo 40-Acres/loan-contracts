@@ -43,7 +43,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     address internal _rateCalculator; // deprecated
     address public _vault;
 
-    bool internal _paused;
+    bool internal _paused; // deprecated, set rewardsRate or multiplier to 0 to pause loans
     uint256 public _outstandingCapital;
     uint256 public  _multiplier; // rewards rate multiplier
 
