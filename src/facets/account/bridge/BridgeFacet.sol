@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
-import {BridgeConfigStorage} from "./BridgeConfigStorage.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ITokenMessenger} from "../../../interfaces/ITokenMessenger.sol";
