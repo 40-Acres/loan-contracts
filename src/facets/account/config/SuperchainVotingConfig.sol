@@ -36,7 +36,7 @@ contract SuperchainVotingConfig is VotingConfig {
     /**
      * @dev Set superchain pool
      */
-    function setSuperchainPool(address pool, bool approved, uint256 chainId) external onlyOwners {
+    function setSuperchainPool(address pool, bool approved, uint256 chainId) external onlyOwner {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.superchainPools[pool] = approved;
         superchainVotingStorage.superchainPoolChainId[pool] = chainId;

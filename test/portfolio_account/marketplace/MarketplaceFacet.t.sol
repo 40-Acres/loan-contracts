@@ -72,6 +72,19 @@ contract MarketplaceFacetTest is Test, Setup {
         vm.stopPrank();
     }
 
+    function removeCollateralViaMulticall(uint256 tokenId) internal {
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            CollateralFacet.removeCollateral.selector,
+            tokenId
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
     // Helper function to create listing via PortfolioManager multicall
     function makeListingViaMulticall(
         uint256 tokenId,
@@ -858,6 +871,20 @@ contract MarketplaceFacetTest is Test, Setup {
         // Verify collateral is removed from seller
         uint256 collateral = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId);
         assertEq(collateral, 0, "Collateral should be removed from seller");
+    }
+
+    function testCannotRemoveCollateralWhenListed() public {
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(CollateralFacet.ListingActive.selector, _tokenId));
+        removeCollateralViaMulticall(_tokenId);
     }
 
     function testBuyMarketplaceListingWithDebt() public {
