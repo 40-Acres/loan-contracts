@@ -149,6 +149,38 @@ contract LendingFacetTest is Test, Setup {
         borrowViaMulticall(1e6);
     }
 
+    function testBorrowRequiresMinimumCollateral() public {
+        // Add collateral first
+        addCollateralViaMulticall(_tokenId);
+
+        // Fund vault so borrow can succeed once minimum collateral is met
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 1000000e6);
+
+        // Capture current locked collateral and max loan
+        uint256 totalLockedCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        require(totalLockedCollateral > 0, "Must have locked collateral for this test");
+        (uint256 maxLoan, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        require(maxLoan > 0, "Must have available max loan for this test");
+
+        // Set minimum collateral above current locked amount and expect revert
+        vm.startPrank(_owner);
+        _portfolioAccountConfig.setMinimumCollateral(totalLockedCollateral + 1);
+        vm.stopPrank();
+
+        vm.expectRevert("Minimum collateral not met");
+        borrowViaMulticall(maxLoan);
+
+        // Set minimum collateral to current locked amount and allow borrow
+        vm.startPrank(_owner);
+        _portfolioAccountConfig.setMinimumCollateral(totalLockedCollateral);
+        vm.stopPrank();
+
+        borrowViaMulticall(maxLoan);
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), maxLoan);
+    }
+
     function testPayLoan() public {
         // Setup: add collateral and borrow
         addCollateralViaMulticall(_tokenId);

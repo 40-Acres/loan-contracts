@@ -6,4 +6,5 @@ interface ICollateralFacet {
     function getUnpaidFees() external view returns (uint256);
     function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply);
     function enforceCollateralRequirements() external view returns (bool success);
+    function getTotalLockedCollateral() external view returns (uint256);
 }
