@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IXLoan} from "../../interfaces/IXLoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
@@ -24,6 +25,7 @@ interface PharaohMigrator {
  * @title XPharaohFacet
  */
 contract XPharaohFacet {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
     IERC4626 public immutable _phar33 = IERC4626(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
@@ -53,7 +55,7 @@ contract XPharaohFacet {
 
         IERC20(lockedAsset).approve(address(_phar33), amount);
         uint256 assets = _phar33.deposit(amount, address(this));
-        _phar33.transfer(msg.sender, assets);
+        IERC20(address(_phar33)).safeTransfer(msg.sender, assets);
     }
 
     function xPharIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -63,7 +65,7 @@ contract XPharaohFacet {
 
     function xPharIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        _phar33.transferFrom(msg.sender, address(this), amount);
+        IERC20(address(_phar33)).safeTransferFrom(msg.sender, address(this), amount);
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
@@ -72,7 +74,7 @@ contract XPharaohFacet {
 
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
 
-        _phar33.transferFrom(msg.sender, address(this), collateralAmount);
+        IERC20(address(_phar33)).safeTransferFrom(msg.sender, address(this), collateralAmount);
 
         _phar33.approve(_voteModule, collateralAmount);
         uint256 assets = _phar33.redeem(collateralAmount, address(this), address(this));
@@ -156,11 +158,11 @@ contract XPharaohFacet {
         if(preferredToken != address(0)) {
             uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
             if(preferredTokenBalance > beginningPreferredTokenBalance) {
-                IERC20(preferredToken).transfer(address(msg.sender), preferredTokenBalance - beginningPreferredTokenBalance);
+                IERC20(preferredToken).safeTransfer(address(msg.sender), preferredTokenBalance - beginningPreferredTokenBalance);
             }
         }
         if(IERC20(vaultAsset).balanceOf(address(this)) > beginningAssetBalance) {
-            IERC20(vaultAsset).transfer(address(msg.sender), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
+            IERC20(vaultAsset).safeTransfer(address(msg.sender), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
         }
     }
 

@@ -9,6 +9,7 @@ import {IRewardsDistributor} from "../../../interfaces/IRewardsDistributor.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {LoanConfig} from "../config/LoanConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {UserClaimingConfig} from "./UserClaimingConfig.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -20,6 +21,7 @@ import {SwapMod} from "../swap/SwapMod.sol";
  * @dev Facet that interfaces with voting escrow NFTs
  */
 contract ClaimingFacet is AccessControl {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
@@ -113,13 +115,13 @@ contract ClaimingFacet is AccessControl {
             uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
             uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;
             address loanContract = _portfolioAccountConfig.getLoanContract();
-            IERC20(outputToken).transfer(ILoan(loanContract).owner(), treasuryFeeAmount);
-            IERC20(outputToken).transfer(address(_vault), lenderPremiumAmount);
+            IERC20(outputToken).safeTransfer(ILoan(loanContract).owner(), treasuryFeeAmount);
+            IERC20(outputToken).safeTransfer(address(_vault), lenderPremiumAmount);
         }
 
         // send remaining launchpad token to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        IERC20(launchpadToken).transfer(portfolioOwner, IERC20(launchpadToken).balanceOf(address(this)));
+        IERC20(launchpadToken).safeTransfer(portfolioOwner, IERC20(launchpadToken).balanceOf(address(this)));
     }
 }
 

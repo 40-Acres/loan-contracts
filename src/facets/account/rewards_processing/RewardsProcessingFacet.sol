@@ -8,6 +8,7 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IRewardsDistributor} from "../../../interfaces/IRewardsDistributor.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {UserRewardsConfig} from "./UserRewardsConfig.sol";
@@ -21,6 +22,7 @@ import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
  * @dev Facet that processes rewards for a portfolio account
  */
 contract RewardsProcessingFacet is AccessControl {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     SwapConfig public immutable _swapConfig;
@@ -63,7 +65,7 @@ contract RewardsProcessingFacet is AccessControl {
                 gasReclamation = gasReclamationCap;
             }
             emit GasReclamationPaid(_currentEpochStart(), gasReclamation, _portfolioFactory.ownerOf(address(this)), address(asset));
-            IERC20(asset).transfer(msg.sender, gasReclamation);
+            IERC20(asset).safeTransfer(msg.sender, gasReclamation);
             remaining -= gasReclamation;
         }
 
@@ -157,7 +159,7 @@ contract RewardsProcessingFacet is AccessControl {
         // whatever is remaining, send to recipient
         address recipient = _getRecipient();
         require(recipient != address(0));
-        IERC20(asset).transfer(recipient, remaining);
+        IERC20(asset).safeTransfer(recipient, remaining);
     }
 
     function setRewardsOption(UserRewardsConfig.RewardsOption rewardsOption) external onlyPortfolioManagerMulticall(_portfolioFactory) {
@@ -229,14 +231,20 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
         require(recipient != address(0));
-        try IERC20(asset).transfer(recipient, amountToPay) returns (bool success) {
-            if(!success) {
-                return 0;
-            }
+        try this._safeTransfer(asset, recipient, amountToPay) {
         } catch {
             return 0;
         }
         return amountToPay;
+    }
+
+    modifier onlySelf() {
+        require(msg.sender == address(this), "Only self");
+        _;
+    }
+
+    function _safeTransfer(address asset, address recipient, uint256 amount) external onlySelf {
+        IERC20(asset).safeTransfer(recipient, amount);
     }
 
     function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
@@ -284,21 +292,21 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _payZeroBalanceFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
-        IERC20(asset).transfer(_portfolioAccountConfig.getLoanContract(), zeroBalanceFee);
+        IERC20(asset).safeTransfer(_portfolioAccountConfig.getLoanContract(), zeroBalanceFee);
         emit ZeroBalanceFeePaid(_currentEpochStart(), zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return zeroBalanceFee;
     }
 
     function _payLenderPremium(uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 lenderPremium = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
-        IERC20(asset).transfer(_portfolioAccountConfig.getVault(), lenderPremium);
+        IERC20(asset).safeTransfer(_portfolioAccountConfig.getVault(), lenderPremium);
         emit LenderPremiumPaid(_currentEpochStart(), lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
     }
 
     function _payProtocolFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 protocolFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
-        IERC20(asset).transfer(_portfolioAccountConfig.owner(), protocolFee);
+        IERC20(asset).safeTransfer(_portfolioAccountConfig.owner(), protocolFee);
         emit ProtocolFeePaid(_currentEpochStart(), protocolFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return protocolFee;
     }
