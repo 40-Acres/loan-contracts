@@ -60,7 +60,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         
         // Deploy and register SuperchainVotingFacet
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_superchainVotingConfig), address(_ve), address(_voter));
+        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_superchainVotingConfig), address(_ve), address(_voter), address(weth));
         vm.stopPrank();
         
         // Ensure authorized caller is set after deployment (must be done as owner)
@@ -282,7 +282,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         SuperchainVotingConfig superchainVotingConfig = SuperchainVotingConfig(address(superchainVotingConfigProxy));
         votingConfig = VotingConfig(address(superchainVotingConfigProxy));
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter));
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter), address(weth));
 
         // Deploy CollateralFacet which is required for enforceCollateral() call after multicall
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
