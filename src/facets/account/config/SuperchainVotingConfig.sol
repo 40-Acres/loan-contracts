@@ -33,6 +33,7 @@ contract SuperchainVotingConfig is VotingConfig {
             superchainVotingStorage.slot := position
         }
     }
+    
     /**
      * @dev Set superchain pool
      */
