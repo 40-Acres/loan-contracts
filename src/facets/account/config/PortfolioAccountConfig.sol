@@ -101,4 +101,8 @@ contract PortfolioAccountConfig is Initializable, Ownable2StepUpgradeable, UUPSU
         PortfolioAccountConfigData storage collateralStorage = _getPortfolioAccountConfig();
         return collateralStorage.minimumCollateral;
     }
+
+    function getVault() public view returns (address) {
+        return ILoan(getLoanContract())._vault();
+    }
 }

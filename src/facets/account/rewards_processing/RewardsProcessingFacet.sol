@@ -291,7 +291,7 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _payLenderPremium(uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 lenderPremium = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
-        IERC20(asset).transfer(_portfolioAccountConfig.owner(), lenderPremium);
+        IERC20(asset).transfer(_portfolioAccountConfig.getVault(), lenderPremium);
         emit LenderPremiumPaid(_currentEpochStart(), lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
     }
