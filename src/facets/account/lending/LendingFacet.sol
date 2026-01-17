@@ -10,6 +10,7 @@ import {AccessControl} from "../utils/AccessControl.sol";
 import {UserLendingConfig} from "./UserLendingConfig.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
+import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 /**
  * @title LendingFacet
  * @dev Facet for borrowing against collateral in portfolio accounts.
@@ -31,6 +32,10 @@ contract LendingFacet is AccessControl {
     }
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        uint256 minimumCollateral = _portfolioAccountConfig.getMinimumCollateral();
+        if(minimumCollateral > 0) {
+            require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
+        }
         uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
