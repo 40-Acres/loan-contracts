@@ -34,8 +34,9 @@ contract VotingEscrowFacet is AccessControl {
     function increaseLock(uint256 tokenId, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
-        IERC20(_votingEscrow.token()).safeTransferFrom(from, address(this), amount);
-        IERC20(_votingEscrow.token()).approve(address(_votingEscrow), amount);
+        IERC20 votingEscrow = IERC20(_votingEscrow.token());
+        votingEscrow.safeTransferFrom(from, address(this), amount);
+        votingEscrow.approve(address(_votingEscrow), amount);
         _votingEscrow.increaseAmount(tokenId, amount);
         CollateralManager.updateLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
     }
@@ -43,8 +44,9 @@ contract VotingEscrowFacet is AccessControl {
     function createLock(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 tokenId) {
         // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
-        IERC20(_votingEscrow.token()).safeTransferFrom(from, address(this), amount);
-        IERC20(_votingEscrow.token()).approve(address(_votingEscrow), amount);
+        IERC20 votingEscrow = IERC20(_votingEscrow.token());
+        votingEscrow.safeTransferFrom(from, address(this), amount);
+        votingEscrow.approve(address(_votingEscrow), amount);
         tokenId = _votingEscrow.createLock(amount, 4 *365 days);
         CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
     }

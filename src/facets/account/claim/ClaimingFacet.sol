@@ -48,9 +48,10 @@ contract ClaimingFacet is AccessControl {
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
         // do not claim launchpad token in this method
+        address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
-                if(tokens[i][j] == UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId)) { 
+                if(tokens[i][j] == launchpadToken) { 
                     return;
                 }
             }
@@ -71,12 +72,12 @@ contract ClaimingFacet is AccessControl {
     }
 
     function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external onlyAuthorizedCaller(_portfolioFactory) {
-        address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
-        if(launchpadToken == address(0)) {
+        IERC20 launchpadToken = IERC20(UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId));
+        if(address(launchpadToken) == address(0)) {
             revert("Launchpad token not set");
         }
 
-        uint256 launchpadTokenBalanceBefore = IERC20(launchpadToken).balanceOf(address(this));
+        uint256 launchpadTokenBalanceBefore = launchpadToken.balanceOf(address(this));
         // claim fees for launchpad token
         _voter.claimFees(fees, tokens, tokenId);
 
@@ -98,13 +99,14 @@ contract ClaimingFacet is AccessControl {
             require(tradeContract != address(0));
             require(tradeData.length > 0);
             require(expectedOutputAmount > 0);
-            address outputToken = _vault.asset();
+            IERC4626 vault = _vault;
+            address outputToken = vault.asset();
             // Calculate the actual amount of launchpad token received after claiming fees
-            uint256 launchpadTokenBalanceAfter = IERC20(launchpadToken).balanceOf(address(this));
+            uint256 launchpadTokenBalanceAfter = launchpadToken.balanceOf(address(this));
             uint256 launchpadTokenAmountToSwap = launchpadTokenBalanceAfter - launchpadTokenBalanceBefore;
             require(launchpadTokenAmountToSwap > 0, "No launchpad token to swap");
-            uint256 outputAmount = SwapMod.swap(address(_swapConfig), tradeContract, tradeData, launchpadToken, launchpadTokenAmountToSwap, outputToken, expectedOutputAmount);
-            require(address(_vault) != address(0), "Vault not set");
+            uint256 outputAmount = SwapMod.swap(address(_swapConfig), tradeContract, tradeData, address(launchpadToken), launchpadTokenAmountToSwap, outputToken, expectedOutputAmount);
+            require(address(vault) != address(0), "Vault not set");
 
             // get treasury fee and lender premium
             (uint256 lenderPremium, uint256 treasuryFee) = _loanConfig.getActiveRates();
@@ -116,12 +118,12 @@ contract ClaimingFacet is AccessControl {
             uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;
             address loanContract = _portfolioAccountConfig.getLoanContract();
             IERC20(outputToken).safeTransfer(ILoan(loanContract).owner(), treasuryFeeAmount);
-            IERC20(outputToken).safeTransfer(address(_vault), lenderPremiumAmount);
+            IERC20(outputToken).safeTransfer(address(vault), lenderPremiumAmount);
         }
 
         // send remaining launchpad token to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        IERC20(launchpadToken).safeTransfer(portfolioOwner, IERC20(launchpadToken).balanceOf(address(this)));
+        launchpadToken.safeTransfer(portfolioOwner, launchpadToken.balanceOf(address(this)));
     }
 }
 
