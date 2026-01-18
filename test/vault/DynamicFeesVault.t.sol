@@ -137,25 +137,27 @@ contract DynamicFeesVaultTest is Test {
 
     function testBorrow() public {
         vm.startPrank(user1);
-        vault.borrow(800e6);
+        // Borrow 79% to stay under 80% utilization limit
+        vault.borrow(790e6);
         vm.stopPrank();
 
         uint256 utilizationPercent = vault.getUtilizationPercent();
-        assertLt(utilizationPercent, 800e6, "Utilization should be less than 80%");
+        assertLt(utilizationPercent, 8000, "Utilization should be less than 80%");
     }
 
     function testBorrowAndRepay() public {
         vm.startPrank(user1);
-        vault.borrow(800e6);
+        // Borrow 79% to stay under 80% utilization limit
+        vault.borrow(790e6);
         vm.stopPrank();
 
         uint256 utilizationPercent = vault.getUtilizationPercent();
-        assertLt(utilizationPercent, 800e6, "Utilization should be less than 80%");
+        assertLt(utilizationPercent, 8000, "Utilization should be less than 80%");
 
         vm.startPrank(user1);
-        deal(address(usdc), user1, 800e6);
-        usdc.approve(address(vault), 800e6);
-        vault.repay(800e6);
+        deal(address(usdc), user1, 790e6);
+        usdc.approve(address(vault), 790e6);
+        vault.repay(790e6);
         vm.stopPrank();
 
         uint256 utilizationPercent2 = vault.getUtilizationPercent();
@@ -175,20 +177,21 @@ contract DynamicFeesVaultTest is Test {
 
     function testBorrowAndRepayAndDepositAndWithdraw() public {
         vm.startPrank(user1);
-        vault.borrow(800e6);
+        // Borrow 79% to stay under 80% utilization limit
+        vault.borrow(790e6);
         vm.stopPrank();
 
         uint256 utilizationPercent = vault.getUtilizationPercent();
-        assertLt(utilizationPercent, 800e6, "Utilization should be less than 80%");
+        assertLt(utilizationPercent, 8000, "Utilization should be less than 80%");
         vm.startPrank(user1);
-        deal(address(usdc), user1, 800e6);
-        usdc.approve(address(vault), 800e6);
-        vault.repay(800e6);
+        deal(address(usdc), user1, 790e6);
+        usdc.approve(address(vault), 790e6);
+        vault.repay(790e6);
         vm.stopPrank();
 
         uint256 utilizationPercent2 = vault.getUtilizationPercent();
         assertEq(utilizationPercent2, 0, "Utilization should be 0% 3");
-        
+
         vm.startPrank(user1);
         deal(address(usdc), user1, 800e6);
         usdc.approve(address(vault), 800e6);
@@ -196,8 +199,8 @@ contract DynamicFeesVaultTest is Test {
         vm.stopPrank();
 
         uint256 utilizationPercent3 = vault.getUtilizationPercent();
-        assertLt(utilizationPercent3, 800e6, "Utilization should be less than 80%");
-        
+        assertLt(utilizationPercent3, 8000, "Utilization should be less than 80%");
+
         vm.startPrank(user1);
         vault.withdraw(800e6, user1, user1);
         vm.stopPrank();
@@ -378,13 +381,12 @@ contract DynamicFeesVaultTest is Test {
     }
 
     // ============ Utilization Limit Tests ============
-    // NOTE: The utilization check happens BEFORE state update, so it checks
-    // current utilization, not post-borrow utilization. This means you can't
-    // borrow if current utilization is >= 80%, but you CAN borrow any amount
-    // if current utilization is < 80%.
+    // NOTE: The utilization check happens AFTER calculating post-borrow state,
+    // so it checks post-borrow utilization. This means you can't borrow any amount
+    // that would push utilization to or above 80%.
 
     function testCannotBorrowWhenUtilizationAt80Percent() public {
-        // First borrow to get to exactly 80% utilization
+        // First borrow to get close to 80% utilization
         vm.prank(user1);
         vault.borrow(799e6);
 
@@ -392,13 +394,9 @@ contract DynamicFeesVaultTest is Test {
         uint256 utilization = vault.getUtilizationPercent();
         assertLt(utilization, 8000, "Utilization should be under 80%");
 
-        // Borrow 1 more to push to 80%
+        // Any borrow that would push to or above 80% should fail (post-borrow check)
         vm.prank(user1);
-        vault.borrow(1e6);
-
-        // Now at 80%, any further borrow should fail
-        vm.prank(user1);
-        vm.expectRevert("Utilization exceeds 80%");
+        vm.expectRevert("Borrow would exceed 80% utilization");
         vault.borrow(1e6);
     }
 

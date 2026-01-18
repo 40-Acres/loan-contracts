@@ -48,7 +48,8 @@ contract DebtToken {
 
 
     uint256 public constant DURATION = 7 days;
-    
+    uint256 public constant MAX_EPOCH_ITERATIONS = 52; // ~1 year of weeks
+
     struct Checkpoint {
         uint256 _epoch;
         uint256 _balances;
@@ -207,13 +208,12 @@ contract DebtToken {
         uint256 currentTimestamp = block.timestamp;
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(currentTimestamp);
         // Only prorate for the current epoch; for past epochs, return full assets
-        if(currentEpoch == epoch) {
+        if (currentEpoch == epoch) {
             uint256 assets = totalAssetsPerEpoch[epoch];
             uint256 duration = ProtocolTimeLibrary.epochNext(epoch) - epoch;
-            // Calculate assets per second (duration is in seconds)
-            uint256 assetsPerSecond = assets / duration;
-            // Return the proportion of assets that have been distributed up to now
-            uint256 prorated = assetsPerSecond * (currentTimestamp - epoch);
+            uint256 elapsed = currentTimestamp - epoch;
+            // Multiply before divide to avoid precision loss
+            uint256 prorated = (assets * elapsed) / duration;
             return prorated;
         }
         // For past epochs, return the full assets
@@ -228,14 +228,14 @@ contract DebtToken {
 
     function _getReward(address _owner) internal returns (uint256) {
         // Calculate earned rewards (this updates tokenClaimedPerEpoch for each epoch)
-        uint256 _reward = earned(address(this), _owner);
+        uint256 _reward = earned(_owner);
 
         return _reward;
     }
 
     function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
         // Call earned to update tokenClaimedPerEpoch for the current epoch
-        earned(address(this), vault);
+        earned(vault);
 
         uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         return tokenClaimedPerEpoch[vault][_epoch];
@@ -247,7 +247,10 @@ contract DebtToken {
         return totalAssets(_epoch) - lenderPremiumUnlockedThisEpoch();
     }
 
-    function earned(address _token, address _owner) public returns (uint256) {
+    /// @notice Calculate earned rewards for an owner
+    /// @param _owner The address to calculate rewards for
+    /// @return The amount of rewards earned
+    function earned(address _owner) public returns (uint256) {
         if (numCheckpoints[_owner] == 0) {
             return 0;
         }
@@ -269,6 +272,11 @@ contract DebtToken {
         uint256 numEpochs = 0;
         if (currentEpochStart >= _currTs) {
             numEpochs = ((currentEpochStart - _currTs) / DURATION) + 1;
+        }
+
+        // Limit iterations to prevent DOS attacks from stale checkpoints
+        if (numEpochs > MAX_EPOCH_ITERATIONS) {
+            numEpochs = MAX_EPOCH_ITERATIONS;
         }
 
         if (numEpochs > 0) {

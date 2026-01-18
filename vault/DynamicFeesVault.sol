@@ -13,7 +13,9 @@ import {DebtToken} from "./DebtToken.sol";
 import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
 
 contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
-    address public _debtToken;
+    /// @notice Maximum number of epochs to iterate through in loops to prevent DOS
+    uint256 public constant MAX_EPOCH_ITERATIONS = 52; // ~1 year of weeks
+
     constructor() {
         _disableInitializers();
     }
@@ -94,7 +96,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         DebtToken debtToken = $.debtToken;
         // Call earned to ensure tokenClaimedPerEpoch is up to date for current epoch
-        debtToken.earned(address(debtToken), address(this));
+        debtToken.earned(address(this));
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         return debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
     }
@@ -126,7 +128,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 startEpoch = checkpointEpoch > 0 ? checkpointEpoch : currentEpoch;
         
         // Calculate principal repaid for epochs from start to current (inclusive)
-        for (uint256 epoch = startEpoch; epoch <= currentEpoch; epoch += ProtocolTimeLibrary.WEEK) {
+        // Limit iterations to prevent DOS attacks from stale checkpoints
+        uint256 iterations = 0;
+        for (uint256 epoch = startEpoch; epoch <= currentEpoch && iterations < MAX_EPOCH_ITERATIONS; epoch += ProtocolTimeLibrary.WEEK) {
+            iterations++;
             uint256 assetsUnlocked = $.debtToken.totalAssets(epoch);
             if (assetsUnlocked == 0) continue;
             
@@ -197,9 +202,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function borrow(uint256 amount) onlyPortfolio public {
         _updateSettlementCheckpoint();
         _updateUserDebtBalance(msg.sender);
-        // only allow borrowing if the utilization percent is less than 80%
-        require(getUtilizationPercent() < 8000, "Utilization exceeds 80%");
+
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+
+        // Check post-borrow utilization to prevent pushing utilization above 80%
+        uint256 total = totalAssets();
+        uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
+        uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
+        require(postBorrowUtilization < 8000, "Borrow would exceed 80% utilization");
+
         IERC20(asset()).transfer(msg.sender, amount);
         $.debtBalance[msg.sender] += amount;
         $.totalLoanedAssets += amount;
@@ -240,7 +251,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     function updateUserDebtBalance(address borrower) public {
+        _updateSettlementCheckpoint();
         _updateUserDebtBalance(borrower);
+        _updateSettlementCheckpoint();
+    }
+
+    /// @notice Get the current debt balance for a borrower
+    /// @param borrower The address of the borrower
+    /// @return The current debt balance
+    function getDebtBalance(address borrower) public view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.debtBalance[borrower];
     }
     /**
      * @notice Updates the debt balance of a user
