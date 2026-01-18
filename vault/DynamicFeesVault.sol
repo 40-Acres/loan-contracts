@@ -16,6 +16,20 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     /// @notice Maximum number of epochs to iterate through in loops to prevent DOS
     uint256 public constant MAX_EPOCH_ITERATIONS = 52; // ~1 year of weeks
 
+    // ============ Events ============
+    event Synced(uint256 indexed epoch, uint256 totalLoanedAssets, uint256 principalRepaid);
+    event Paused(address indexed pauser);
+    event Unpaused(address indexed owner);
+    event PauserAdded(address indexed pauser);
+    event PauserRemoved(address indexed pauser);
+    event DebtBalanceUpdated(address indexed borrower, uint256 oldBalance, uint256 newBalance, uint256 rewardsApplied);
+
+    // ============ Errors ============
+    error ContractPaused();
+    error NotPauser();
+    error AlreadyPauser();
+    error NotAPauser();
+
     constructor() {
         _disableInitializers();
     }
@@ -26,8 +40,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         __UUPSUpgradeable_init();
         __Ownable2Step_init();
         _transferOwnership(msg.sender);
-        _getDynamicFeesVaultStorage().portfolioFactory = portfolioFactory;
-        _getDynamicFeesVaultStorage().debtToken = new DebtToken(address(this), asset);
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        $.portfolioFactory = portfolioFactory;
+        $.debtToken = new DebtToken(address(this));
     }
 
     function totalLoanedAssets() public view returns (uint256) {
@@ -54,8 +69,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         
         // Get current lender premium (earned income) - view-safe version
         uint256 lenderPremiumCurrentEpoch = _getLenderPremiumUnlockedThisEpochView();
-        DebtToken debtToken = _getDynamicFeesVaultStorage().debtToken;
-        return IERC20(asset()).balanceOf(address(this)) + adjustedTotalLoanedAssets - debtToken.totalAssetsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp)) + lenderPremiumCurrentEpoch;
+        DebtToken _debtToken = _getDynamicFeesVaultStorage().debtToken;
+        return IERC20(asset()).balanceOf(address(this)) + adjustedTotalLoanedAssets - _debtToken.totalAssetsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp)) + lenderPremiumCurrentEpoch;
     }
     // named storage slot for the dynamic fees vault
     bytes32 private constant DYNAMIC_FEES_VAULT_STORAGE_POSITION = keccak256("dynamic.fees.vault");
@@ -67,6 +82,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 principalRepaidAtCheckpoint; // cumulative principal repaid at the checkpoint
         address portfolioFactory; // portfolio factory address
         DebtToken debtToken; // debt token address
+        bool paused; // whether the vault is paused
+        mapping(address => bool) pausers; // addresses that can pause the vault
     }
 
     function _getDynamicFeesVaultStorage() private pure returns (DynamicFeesVaultStorage storage $) {
@@ -87,18 +104,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Read directly from storage to avoid side effects in view functions
         // Note: This may be slightly stale for the current epoch if earned() hasn't been called recently
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        DebtToken debtToken = $.debtToken;
-        
-        return debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
+
+        return $.debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
     }
 
     function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        DebtToken debtToken = $.debtToken;
         // Call earned to ensure tokenClaimedPerEpoch is up to date for current epoch
-        debtToken.earned(address(this));
+        $.debtToken.earned(address(this));
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        return debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
+        return $.debtToken.tokenClaimedPerEpoch(address(this), currentEpoch);
     }
 
     function assetsUnlockedThisEpoch() public view returns (uint256) {
@@ -199,7 +214,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.totalLoanedAssets -= amount;
     }
 
-    function borrow(uint256 amount) onlyPortfolio public {
+    function borrow(uint256 amount) external onlyPortfolio whenNotPaused {
         _updateSettlementCheckpoint();
         _updateUserDebtBalance(msg.sender);
 
@@ -218,7 +233,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _updateSettlementCheckpoint();
     }
 
-    function repay(uint256 amount) public {
+    function repay(uint256 amount) external whenNotPaused {
         _updateSettlementCheckpoint();
         _updateUserDebtBalance(msg.sender);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
@@ -231,7 +246,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _updateSettlementCheckpoint();
     }
 
-    function repayWithRewards(uint256 amount) public {
+    function repayWithRewards(uint256 amount) external whenNotPaused {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
 
         // Update settlement checkpoint to sync totalLoanedAssets with current repayments
@@ -257,12 +272,90 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     /**
-     * @notice Updates the vault's settlement checkpoint without affecting any user's debt balance
+     * @notice Syncs the vault's settlement checkpoint without affecting any user's debt balance
      * @dev This syncs totalLoanedAssets with actual repayments from vested rewards
      * @dev Useful for keeping vault state accurate for view functions and triggering settlements
      */
-    function update() public {
+    function sync() public {
         _updateSettlementCheckpoint();
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        emit Synced(
+            ProtocolTimeLibrary.epochStart(block.timestamp),
+            $.totalLoanedAssets,
+            $.principalRepaidAtCheckpoint
+        );
+    }
+
+    // ============ Pause Mechanism ============
+
+    /**
+     * @notice Pauses the vault - can be called by authorized pausers
+     * @dev Only affects borrow, repay, repayWithRewards, deposit, and withdraw
+     */
+    function pause() external {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        if (!$.pausers[msg.sender] && msg.sender != owner()) revert NotPauser();
+        $.paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /**
+     * @notice Unpauses the vault - can only be called by owner
+     */
+    function unpause() external onlyOwner {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        $.paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    /**
+     * @notice Adds an address as an authorized pauser
+     * @param pauser The address to add as a pauser
+     */
+    function addPauser(address pauser) external onlyOwner {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        if ($.pausers[pauser]) revert AlreadyPauser();
+        $.pausers[pauser] = true;
+        emit PauserAdded(pauser);
+    }
+
+    /**
+     * @notice Removes an address from authorized pausers
+     * @param pauser The address to remove as a pauser
+     */
+    function removePauser(address pauser) external onlyOwner {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        if (!$.pausers[pauser]) revert NotAPauser();
+        $.pausers[pauser] = false;
+        emit PauserRemoved(pauser);
+    }
+
+    /**
+     * @notice Checks if an address is an authorized pauser
+     * @param account The address to check
+     * @return True if the address is a pauser
+     */
+    function isPauser(address account) public view returns (bool) {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.pausers[account];
+    }
+
+    /**
+     * @notice Returns whether the vault is currently paused
+     * @return True if paused
+     */
+    function paused() public view returns (bool) {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.paused;
+    }
+
+    /**
+     * @dev Modifier to make a function callable only when the contract is not paused
+     */
+    modifier whenNotPaused() {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        if ($.paused) revert ContractPaused();
+        _;
     }
 
     /// @notice Get the current debt balance for a borrower
@@ -284,7 +377,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // claimDebtRewards calls earned() which already prevents double-counting via tokenClaimedPerEpoch
         // It only returns new rewards that haven't been claimed yet for each epoch
         uint256 earned = $.debtToken.getReward(borrower);
-        uint256 currentDebtBalance = $.debtBalance[borrower];
+        uint256 oldDebtBalance = $.debtBalance[borrower];
 
         // NOTE: We do NOT reduce totalLoanedAssets here because _updateSettlementCheckpoint()
         // already handles the global accounting by calculating (totalAssets - lenderPremium).
@@ -292,12 +385,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         // if earned is more than the debt balance, give user the difference via minting vault shares
         // and set debt balance to 0 (debt is fully paid off by rewards)
-        if (earned > currentDebtBalance) {
-            uint256 difference = earned - currentDebtBalance;
+        if (earned > oldDebtBalance) {
+            uint256 difference = earned - oldDebtBalance;
             _mint(borrower, difference);
             $.debtBalance[borrower] = 0;
         } else if (earned > 0) {
             $.debtBalance[borrower] -= earned;
+        }
+
+        // Emit event if debt balance changed
+        if (earned > 0) {
+            emit DebtBalanceUpdated(borrower, oldDebtBalance, $.debtBalance[borrower], earned);
         }
 
         // Otherwise, debt balance remains unchanged (earned rewards don't fully cover the debt)
@@ -310,14 +408,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @dev This ensures totalAssets() is accurate in real-time and vault ratio is maintained when users deposit
      */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        if ($.paused) revert ContractPaused();
+
         // Update settlement checkpoint to sync totalLoanedAssets with current repayments (real-time)
         _updateSettlementCheckpoint();
         
         // Call parent implementation
         super._deposit(caller, receiver, assets, shares);
-        
+
         // Rebalance DebtToken to maintain vault ratio after deposit
-        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         $.debtToken.rebalance();
     }
 
@@ -328,16 +428,18 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function _withdraw(
         address caller,
         address receiver,
-        address owner,
+        address _owner,
         uint256 assets,
         uint256 shares
     ) internal virtual override {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        if ($.paused) revert ContractPaused();
+
         // Update settlement checkpoint to sync totalLoanedAssets with current repayments (real-time)
         _updateSettlementCheckpoint();
         
         // Call parent implementation
-        super._withdraw(caller, receiver, owner, assets, shares);
+        super._withdraw(caller, receiver, _owner, assets, shares);
         
         // Rebalance DebtToken to maintain vault ratio after withdrawal
         $.debtToken.rebalance();

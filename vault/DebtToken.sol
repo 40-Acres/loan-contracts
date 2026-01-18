@@ -78,9 +78,8 @@ contract DebtToken {
     // token claimed per epoch
     mapping(address => mapping(uint256 => uint256)) public tokenClaimedPerEpoch;
 
-    constructor(address _vault, address _debtToken) {
+    constructor(address _vault) {
         vault = _vault;
-        // debtToken = _debtToken;
     }
 
     /**
@@ -362,7 +361,6 @@ contract DebtToken {
     }
 
     function _rebalance() internal {
-        uint256 supply = totalSupply();
         uint256 utilizationBps = IDynamicFeesVault(vault).getUtilizationPercent();
         uint256 ratio = getVaultRatioBps(utilizationBps);
         if (ratio > 0 && ratio < 10000) {
