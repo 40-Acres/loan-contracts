@@ -51,8 +51,11 @@ contract RewardsProcessingFacet is AccessControl {
 
     function processRewards(uint256 tokenId, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
         address asset = getRewardsToken();
-        emit RewardsProcessed(_currentEpochStart(), rewardsAmount, _portfolioFactory.ownerOf(address(this)), address(asset));
-        require(IERC20(asset).balanceOf(address(this)) >= rewardsAmount && rewardsAmount > 0);
+        uint256 epochStart = _currentEpochStart();
+        address owner = _portfolioFactory.ownerOf(address(this));
+        IERC20 assetToken = IERC20(asset);
+        emit RewardsProcessed(epochStart, rewardsAmount, owner, address(asset));
+        require(assetToken.balanceOf(address(this)) >= rewardsAmount && rewardsAmount > 0);
 
         // if increase percentage is set, swap the rewards amount to the asset and increase the collateral
         uint256 remaining = rewardsAmount;
@@ -64,8 +67,8 @@ contract RewardsProcessingFacet is AccessControl {
             if(gasReclamation > gasReclamationCap) {
                 gasReclamation = gasReclamationCap;
             }
-            emit GasReclamationPaid(_currentEpochStart(), gasReclamation, _portfolioFactory.ownerOf(address(this)), address(asset));
-            IERC20(asset).safeTransfer(msg.sender, gasReclamation);
+            emit GasReclamationPaid(epochStart, gasReclamation, owner, address(asset));
+            assetToken.safeTransfer(msg.sender, gasReclamation);
             remaining -= gasReclamation;
         }
 
@@ -93,10 +96,11 @@ contract RewardsProcessingFacet is AccessControl {
             // Deposit to vault if any funds remain, this ensure if any owners are blacklisted the lender does not lose funds
             if(remaining > 0) {
                 // if any funds remain, deposit to vault
-                IERC20(asset).approve(address(_vault), remaining);
-                _vault.deposit(remaining, _portfolioFactory.ownerOf(address(this)));
+                address vaultAddress = address(_vault);
+                assetToken.approve(vaultAddress, remaining);
+                _vault.deposit(remaining, owner);
                 // Clear approval after use
-                IERC20(asset).approve(address(_vault), 0);
+                assetToken.approve(vaultAddress, 0);
             }
         }
     }
@@ -112,12 +116,13 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(loanContract != address(0));
+        address vaultAsset = _vault.asset();
         
         if(totalDebt > 0) {
-            return _vault.asset();
+            return vaultAsset;
         }
-
-        return UserRewardsConfig.getRewardsToken() != address(0) ? UserRewardsConfig.getRewardsToken() : _vault.asset();
+        address rewardsToken = UserRewardsConfig.getRewardsToken();
+        return rewardsToken != address(0) ? rewardsToken : vaultAsset;
     }
 
     function _processActiveLoanRewards(uint256 rewardsAmount, uint256 availableAmount, address asset) internal returns (uint256 remaining) {
@@ -142,8 +147,6 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _processZeroBalanceRewards(uint256 rewardsAmount, uint256 remaining, address asset, bool takeFees) internal {
-        address asset = getRewardsToken();
-
         // send the zero balance fee to the treasury
         if(takeFees) {
             uint256 zeroBalanceFee = _payZeroBalanceFee(rewardsAmount, asset);
@@ -197,7 +200,8 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
-        address vaultAsset = _vault.asset();
+        IERC4626 vault = _vault;
+        address vaultAsset = vault.asset();
         uint256 rewardsAmountUsed = rewardsAmount * percentage / 100;
         uint256 actualAmountToInvest = rewardsAmountUsed;
         
@@ -210,16 +214,18 @@ contract RewardsProcessingFacet is AccessControl {
         }
 
         // Get the actual vault asset balance (after swap if applicable)
-        uint256 vaultAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
+        IERC20 vaultAssetToken = IERC20(vaultAsset);
+        uint256 vaultAssetBalance = vaultAssetToken.balanceOf(address(this));
         // Use the minimum of calculated amount and actual balance to avoid over-depositing
         uint256 amountToDeposit = vaultAssetBalance < actualAmountToInvest ? vaultAssetBalance : actualAmountToInvest;
         
         // deposit the asset to the vault
-        IERC20(vaultAsset).approve(address(_vault), amountToDeposit);
+        address vaultAddress = address(vault);
+        vaultAssetToken.approve(vaultAddress, amountToDeposit);
         address recipient = _portfolioFactory.ownerOf(address(this));
-        _vault.deposit(amountToDeposit, recipient);
+        vault.deposit(amountToDeposit, recipient);
         // Clear approval after use
-        IERC20(vaultAsset).approve(address(_vault), 0);
+        vaultAssetToken.approve(vaultAddress, 0);
         
         // if the asset is the vault asset, return the amount to deposit, otherwise return the rewards amount used
         return asset == vaultAsset ? amountToDeposit : rewardsAmountUsed;
