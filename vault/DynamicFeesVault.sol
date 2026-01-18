@@ -256,6 +256,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _updateSettlementCheckpoint();
     }
 
+    /**
+     * @notice Updates the vault's settlement checkpoint without affecting any user's debt balance
+     * @dev This syncs totalLoanedAssets with actual repayments from vested rewards
+     * @dev Useful for keeping vault state accurate for view functions and triggering settlements
+     */
+    function update() public {
+        _updateSettlementCheckpoint();
+    }
+
     /// @notice Get the current debt balance for a borrower
     /// @param borrower The address of the borrower
     /// @return The current debt balance

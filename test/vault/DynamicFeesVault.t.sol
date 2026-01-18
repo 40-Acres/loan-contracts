@@ -743,4 +743,437 @@ contract DynamicFeesVaultTest is Test {
         vm.expectRevert();
         vault.withdraw(601e6, address(this), address(this));
     }
+
+    // ============ Multi-User Rewards with Early Repayment Tests ============
+
+    function testMultipleUsersRepayWithRewardsEarlyRepayerGetsShares() public {
+        address user2 = address(0x3);
+        address user3 = address(0x4);
+
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // User1 borrows 50e6 (small loan, will repay early with excess)
+        vm.prank(user1);
+        vault.borrow(50e6);
+
+        // User2 borrows 200e6
+        vm.prank(user2);
+        vault.borrow(200e6);
+
+        // User3 borrows 200e6
+        vm.prank(user3);
+        vault.borrow(200e6);
+
+        // Total loaned: 450e6, utilization: 45%
+        assertEq(vault.totalLoanedAssets(), 450e6, "Total loaned should be 450e6");
+        uint256 utilization = vault.getUtilizationPercent();
+        assertEq(utilization, 4500, "Utilization should be 45%");
+
+        // All users repay with rewards in same epoch
+        // User1 repays with 200e6 (way more than their 50e6 debt)
+        // At 45% utilization, vault ratio is 20%, so user1 earns 80% of 200e6 = 160e6
+        // Since debt is only 50e6, user1 should get 110e6 as vault shares
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
+        vm.stopPrank();
+
+        // User2 repays with 100e6
+        vm.startPrank(user2);
+        deal(address(usdc), user2, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // User3 repays with 100e6
+        vm.startPrank(user3);
+        deal(address(usdc), user3, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Record user1 shares before epoch change
+        uint256 user1SharesBefore = vault.balanceOf(user1);
+        console.log("User1 shares before epoch change:", user1SharesBefore);
+
+        // Fast forward to next epoch to settle rewards
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        vm.warp(timestamp);
+
+        // Update user1's debt balance to trigger reward settlement
+        // This is when excess rewards are converted to vault shares
+        vault.updateUserDebtBalance(user1);
+
+        uint256 user1SharesAfter = vault.balanceOf(user1);
+        console.log("User1 shares after settlement:", user1SharesAfter);
+
+        // User1 deposited 200e6 in rewards, at 45% utilization vault ratio is 20%
+        // So user1 earns 80% of 200e6 = 160e6 towards their 50e6 debt
+        // That leaves 110e6 excess which should be minted as vault shares
+        assertGt(user1SharesAfter, user1SharesBefore, "User1 should receive shares for excess rewards");
+
+        // User1's debt should be 0
+        assertEq(vault.getDebtBalance(user1), 0, "User1 debt should be fully paid");
+
+        // Update and check user2's debt (should still have debt remaining)
+        vault.updateUserDebtBalance(user2);
+        uint256 user2Debt = vault.getDebtBalance(user2);
+        assertGt(user2Debt, 0, "User2 should still have debt");
+        assertLt(user2Debt, 200e6, "User2 debt should be reduced by rewards");
+
+        // Update and check user3's debt
+        vault.updateUserDebtBalance(user3);
+        uint256 user3Debt = vault.getDebtBalance(user3);
+        assertGt(user3Debt, 0, "User3 should still have debt");
+        assertLt(user3Debt, 200e6, "User3 debt should be reduced by rewards");
+
+        console.log("User1 shares gained:", user1SharesAfter - user1SharesBefore);
+        console.log("User2 remaining debt:", user2Debt);
+        console.log("User3 remaining debt:", user3Debt);
+    }
+
+    // ============ 100% Utilization with Daily Fee Ratio Tests ============
+
+    function testHighUtilizationWithWithdrawalAndDailyFeeRatioCheck() public {
+        address depositor = address(this);
+        address borrower = user1;
+
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // Initial state: depositor has 1000e6 in vault
+        // Vault currently has 1000e6 from setUp()
+
+        // Borrower takes a loan for ~80% utilization
+        vm.prank(borrower);
+        vault.borrow(799e6); // Just under 80% to pass the check
+
+        uint256 initialDebt = vault.getDebtBalance(borrower);
+        assertEq(initialDebt, 799e6, "Initial debt should be 799e6");
+
+        uint256 utilization = vault.getUtilizationPercent();
+        assertGe(utilization, 7900, "Utilization should be ~79.9%");
+        assertLt(utilization, 8000, "Utilization should be under 80%");
+
+        console.log("Post-borrow utilization:", utilization);
+        console.log("Initial borrower debt:", initialDebt);
+
+        // Depositor withdraws some funds to push utilization to ~90%
+        // At 90% utilization, fee ratio should be 40% (4000 bps)
+        vault.withdraw(112e6, depositor, depositor);
+
+        uint256 utilizationAfterWithdraw = vault.getUtilizationPercent();
+        console.log("Post-withdraw utilization:", utilizationAfterWithdraw);
+
+        // Should be around 90% utilization now
+        assertGe(utilizationAfterWithdraw, 8900, "Utilization should be >=89%");
+        assertLe(utilizationAfterWithdraw, 9100, "Utilization should be <=91%");
+
+        // Check fee ratio at high utilization
+        uint256 feeRatio = vault.debtToken().getCurrentVaultRatioBps();
+        console.log("Fee ratio at high utilization:", feeRatio);
+
+        // At ~90% utilization, fee ratio should be ~40% (4000 bps)
+        assertGe(feeRatio, 3800, "Fee ratio should be >=38% at ~90% utilization");
+        assertLe(feeRatio, 4200, "Fee ratio should be <=42%");
+
+        // Now borrower starts repaying with rewards over the week
+        // Check fee ratio and debt daily as utilization changes
+        uint256 dailyRewardAmount = 50e6;
+        uint256 totalRewardsDeposited = 0;
+        uint256 previousDebt = initialDebt;
+
+        // Track cumulative expected debt reduction
+        // At the fee ratio, borrower keeps (100% - feeRatio) of rewards
+        // e.g., at 40% fee ratio, borrower gets 60% of rewards towards debt
+
+        for (uint256 day = 1; day <= 7; day++) {
+            // Advance 1 day
+            vm.warp(timestamp + (day * 1 days));
+
+            // Get current state before repayment
+            uint256 currentUtilization = vault.getUtilizationPercent();
+            uint256 currentFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+            uint256 expectedFeeRatio = vault.debtToken().getVaultRatioBps(currentUtilization);
+
+            // Update user debt balance to apply vested rewards
+            // Rewards vest linearly over the epoch, so debt decreases over time
+            vault.updateUserDebtBalance(borrower);
+            uint256 currentDebt = vault.getDebtBalance(borrower);
+
+            console.log("--- Day", day, "---");
+            console.log("  Utilization:", currentUtilization);
+            console.log("  Fee ratio:", currentFeeRatio);
+            console.log("  Borrower debt:", currentDebt);
+
+            // Fee ratio should match the expected ratio for current utilization
+            assertEq(currentFeeRatio, expectedFeeRatio, "Fee ratio should match utilization-based rate");
+
+            // Debt should be decreasing or stable as rewards vest
+            // (It may not decrease every day if no new rewards have vested yet)
+            assertLe(currentDebt, previousDebt, "Debt should not increase");
+
+            // Borrower repays with rewards
+            vm.startPrank(borrower);
+            deal(address(usdc), borrower, dailyRewardAmount);
+            usdc.approve(address(vault), dailyRewardAmount);
+            vault.repayWithRewards(dailyRewardAmount);
+            vm.stopPrank();
+
+            totalRewardsDeposited += dailyRewardAmount;
+            previousDebt = currentDebt;
+        }
+
+        console.log("Total rewards deposited:", totalRewardsDeposited);
+
+        // Fast forward to next epoch to settle all rewards
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        vm.warp(timestamp);
+
+        // Trigger final settlement
+        vault.updateUserDebtBalance(borrower);
+
+        uint256 finalUtilization = vault.getUtilizationPercent();
+        uint256 finalFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+        uint256 finalDebt = vault.getDebtBalance(borrower);
+
+        console.log("--- After epoch settlement ---");
+        console.log("  Final utilization:", finalUtilization);
+        console.log("  Final fee ratio:", finalFeeRatio);
+        console.log("  Final borrower debt:", finalDebt);
+
+        // Utilization should have decreased from rewards
+        assertLt(finalUtilization, utilizationAfterWithdraw, "Utilization should decrease after repayments");
+
+        // Fee ratio should match the new utilization
+        uint256 expectedFinalRatio = vault.debtToken().getVaultRatioBps(finalUtilization);
+        assertEq(finalFeeRatio, expectedFinalRatio, "Final fee ratio should match utilization");
+
+        // Debt should be reduced
+        assertLe(finalDebt, initialDebt, "Debt should not increase");
+
+        // Calculate actual debt reduction
+        uint256 debtReduction = initialDebt - finalDebt;
+        console.log("  Total debt reduction:", debtReduction);
+
+        // Verify the debt reduction is at least some portion of rewards
+        // Borrower should receive roughly 60-80% of rewards (depending on varying fee ratio)
+        uint256 minExpectedReduction = (totalRewardsDeposited * 50) / 100; // At least 50%
+        assertGe(debtReduction, minExpectedReduction, "Debt reduction should be at least 50% of rewards");
+
+        // If debt went to 0, check if user received vault shares for excess
+        if (finalDebt == 0) {
+            uint256 borrowerShares = vault.balanceOf(borrower);
+            console.log("  Borrower vault shares:", borrowerShares);
+            // Borrower should have received shares if rewards exceeded debt
+            if (debtReduction < initialDebt) {
+                // This shouldn't happen - if debt is 0, debtReduction should equal initialDebt
+                revert("Inconsistent state: debt is 0 but debtReduction < initialDebt");
+            }
+            // The excess rewards beyond debt become vault shares
+            // earned = borrower's share of rewards, if earned > debt, excess becomes shares
+        }
+    }
+
+    function testHighUtilizationSingleRewardPaymentDailyDebtCheck() public {
+        address depositor = address(this);
+        address borrower = user1;
+
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // Borrower takes a loan for ~80% utilization
+        vm.prank(borrower);
+        vault.borrow(799e6);
+
+        uint256 initialDebt = vault.getDebtBalance(borrower);
+        assertEq(initialDebt, 799e6, "Initial debt should be 799e6");
+
+        console.log("Initial borrower debt:", initialDebt);
+
+        // Depositor withdraws almost all liquid funds to push utilization to ~100%
+        // After borrow: 799e6 loaned, 1000e6 total, 201e6 liquid
+        // Withdraw 200e6 to leave only 1e6 liquid -> utilization = 799/800 = 99.875%
+        uint256 liquidBalance = usdc.balanceOf(address(vault));
+        console.log("Liquid balance before withdraw:", liquidBalance);
+        vault.withdraw(liquidBalance - 1e6, depositor, depositor);
+
+        uint256 utilizationAfterWithdraw = vault.getUtilizationPercent();
+        console.log("Post-withdraw utilization:", utilizationAfterWithdraw);
+        assertGe(utilizationAfterWithdraw, 9900, "Utilization should be >=99%");
+
+        // Get initial fee ratio at ~100% utilization (should be close to 95%)
+        uint256 initialFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+        console.log("Initial fee ratio:", initialFeeRatio);
+        assertGe(initialFeeRatio, 9000, "Fee ratio should be >=90% at ~100% utilization");
+
+        // Borrower repays with ALL rewards at the beginning of the week (single payment)
+        uint256 totalRewardAmount = 350e6;
+        vm.startPrank(borrower);
+        deal(address(usdc), borrower, totalRewardAmount);
+        usdc.approve(address(vault), totalRewardAmount);
+        vault.repayWithRewards(totalRewardAmount);
+        vm.stopPrank();
+
+        console.log("Rewards deposited at start of epoch:", totalRewardAmount);
+        console.log("");
+
+        // Track debt each day as rewards vest linearly over the epoch
+        uint256 previousDebt = initialDebt;
+
+        for (uint256 day = 0; day <= 7; day++) {
+            // Warp to this day of the epoch
+            vm.warp(timestamp + (day * 1 days));
+
+            // Update vault state to sync settlement checkpoint, then update user's debt
+            vault.update();
+            vault.updateUserDebtBalance(borrower);
+
+            uint256 currentDebt = vault.getDebtBalance(borrower);
+            uint256 currentUtilization = vault.getUtilizationPercent();
+            uint256 currentFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+
+            // Calculate how much of the epoch has passed (for reference)
+            uint256 epochProgress = (day * 100) / 7; // percentage
+
+            console.log("--- Day", day, "---");
+            console.log("  Epoch progress:", epochProgress, "%");
+            console.log("  Utilization:", currentUtilization);
+            console.log("  Fee ratio:", currentFeeRatio);
+            console.log("  Borrower debt:", currentDebt);
+
+            if (day > 0) {
+                uint256 debtReduction = previousDebt > currentDebt ? previousDebt - currentDebt : 0;
+                console.log("  Debt reduced since yesterday:", debtReduction);
+            }
+
+            // Fee ratio should match the expected ratio for current utilization
+            uint256 expectedFeeRatio = vault.debtToken().getVaultRatioBps(currentUtilization);
+            assertEq(currentFeeRatio, expectedFeeRatio, "Fee ratio should match utilization-based rate");
+
+            // Debt should be decreasing or stable as rewards vest
+            assertLe(currentDebt, previousDebt, "Debt should not increase");
+
+            // After day 0, debt should start decreasing as rewards vest
+            if (day >= 2) {
+                assertLt(currentDebt, initialDebt, "Debt should be less than initial after rewards vest");
+            }
+
+            previousDebt = currentDebt;
+        }
+
+        // Fast forward to next epoch to fully settle
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        vm.warp(timestamp);
+
+        // Final settlement - update vault first, then user's debt
+        vault.update();
+        vault.updateUserDebtBalance(borrower);
+
+        uint256 finalDebt = vault.getDebtBalance(borrower);
+        uint256 finalUtilization = vault.getUtilizationPercent();
+        uint256 finalFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+
+        console.log("");
+        console.log("--- After epoch settlement ---");
+        console.log("  Final utilization:", finalUtilization);
+        console.log("  Final fee ratio:", finalFeeRatio);
+        console.log("  Final borrower debt:", finalDebt);
+
+        uint256 totalDebtReduction = initialDebt - finalDebt;
+        console.log("  Total debt reduction:", totalDebtReduction);
+
+        // Calculate borrower's effective share of rewards
+        uint256 borrowerSharePercent = (totalDebtReduction * 100) / totalRewardAmount;
+        console.log("  Borrower received", borrowerSharePercent, "% of rewards toward debt");
+
+        // Verify debt was reduced
+        assertLt(finalDebt, initialDebt, "Debt should be reduced");
+
+        // At ~90% initial utilization (~40% fee), borrower should get ~60% of rewards
+        // As utilization drops, borrower gets more (up to 80% at 20% fee)
+        // So borrower should receive roughly 50-75% of rewards toward debt
+        uint256 minExpectedReduction = (totalRewardAmount * 45) / 100; // At least 45%
+        assertGe(totalDebtReduction, minExpectedReduction, "Debt reduction should be at least 45% of rewards");
+
+        // Verify fee ratio dropped as utilization decreased
+        assertLt(finalFeeRatio, initialFeeRatio, "Fee ratio should decrease as utilization drops");
+    }
+
+    function testFeeRatioProgressionOverEpoch() public {
+        // Test that verifies fee ratio correctly tracks utilization as it decreases
+        address depositor = address(this);
+        address borrower = user1;
+
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // Setup: Start with 500e6 total assets
+        vault.withdraw(500e6, depositor, depositor);
+        assertEq(vault.totalAssets(), 500e6, "Total assets should be 500e6");
+
+        // Borrow to get 60% utilization
+        vm.prank(borrower);
+        vault.borrow(300e6); // 60% utilization
+
+        uint256 initialUtilization = vault.getUtilizationPercent();
+        console.log("Initial utilization:", initialUtilization);
+        assertEq(initialUtilization, 6000, "Should be 60%");
+
+        // At 60% utilization, fee ratio should be 20% (flat segment 10-70%)
+        uint256 initialFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+        assertEq(initialFeeRatio, 2000, "Fee ratio should be 20% at 60% utilization");
+
+        // Record utilization and fee ratio at each daily checkpoint
+        uint256[] memory dailyUtilizations = new uint256[](7);
+        uint256[] memory dailyFeeRatios = new uint256[](7);
+
+        for (uint256 day = 0; day < 7; day++) {
+            // Move forward in time (but stay in same epoch)
+            vm.warp(timestamp + (day * 1 days));
+
+            dailyUtilizations[day] = vault.getUtilizationPercent();
+            dailyFeeRatios[day] = vault.debtToken().getCurrentVaultRatioBps();
+
+            console.log("Day", day);
+            console.log("  Utilization:", dailyUtilizations[day]);
+            console.log("  Fee ratio:", dailyFeeRatios[day]);
+
+            // Verify fee ratio matches expected for utilization
+            uint256 expected = vault.debtToken().getVaultRatioBps(dailyUtilizations[day]);
+            assertEq(dailyFeeRatios[day], expected, "Fee ratio should match utilization curve");
+
+            // Borrower repays with rewards to gradually add assets to vault
+            vm.startPrank(borrower);
+            deal(address(usdc), borrower, 30e6);
+            usdc.approve(address(vault), 30e6);
+            vault.repayWithRewards(30e6);
+            vm.stopPrank();
+        }
+
+        // Move to next epoch and settle
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        vm.warp(timestamp);
+        vault.updateUserDebtBalance(borrower);
+
+        uint256 finalUtilization = vault.getUtilizationPercent();
+        uint256 finalFeeRatio = vault.debtToken().getCurrentVaultRatioBps();
+
+        console.log("Final utilization:", finalUtilization);
+        console.log("Final fee ratio:", finalFeeRatio);
+
+        // Utilization should have decreased (debt reduced, assets increased)
+        assertLt(finalUtilization, initialUtilization, "Utilization should decrease after epoch");
+
+        // Fee ratio should match the new utilization
+        uint256 expectedFinal = vault.debtToken().getVaultRatioBps(finalUtilization);
+        assertEq(finalFeeRatio, expectedFinal, "Final fee ratio should match utilization");
+
+        // Borrower's debt should be reduced
+        uint256 finalDebt = vault.getDebtBalance(borrower);
+        assertLt(finalDebt, 300e6, "Debt should be reduced");
+        console.log("Final debt:", finalDebt);
+    }
 }
