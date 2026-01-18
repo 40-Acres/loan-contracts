@@ -9,6 +9,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPortfolioFactory} from "../../src/interfaces/IPortfolioFactory.sol";
 import {ProtocolTimeLibrary} from "../../src/libraries/ProtocolTimeLibrary.sol";
+import {IFeeCalculator} from "../../vault/IFeeCalculator.sol";
+import {FeeCalculator} from "../../vault/FeeCalculator.sol";
 
 /**
  * @title MockUSDC
@@ -130,6 +132,11 @@ contract DynamicFeesVaultTest is Test {
         vault.transferOwnership(owner);
         vm.prank(owner);
         vault.acceptOwnership();
+
+        // Also transfer DebtToken ownership (it was initialized with msg.sender as owner)
+        debtToken.transferOwnership(owner);
+        vm.prank(owner);
+        debtToken.acceptOwnership();
 
         // Deposit assets into vault so it has funds to borrow from
         usdc.approve(address(vault), 1000e6);
@@ -1649,5 +1656,217 @@ contract DynamicFeesVaultTest is Test {
 
         // Reductions should be equal (or very close due to rounding)
         assertApproxEqAbs(user1Reduction, user2Reduction, 1e6, "Both users should have similar debt reduction");
+    }
+
+    // ============ DebtToken Upgradeability Tests ============
+
+    function testDebtTokenIsProxy() public {
+        // Verify the debtToken is a proxy by checking it has the expected functions
+        address feeCalc = debtToken.feeCalculator();
+        assertNotEq(feeCalc, address(0), "Fee calculator should be set");
+
+        // Verify the vault function works through the proxy
+        assertEq(debtToken.vault(), address(vault), "Vault should be set correctly");
+    }
+
+    function testFeeCalculatorAddressExposed() public {
+        // Verify we can get the fee calculator from both debtToken and vault
+        address feeCalcFromDebtToken = debtToken.feeCalculator();
+        address feeCalcFromVault = vault.feeCalculator();
+
+        assertEq(feeCalcFromDebtToken, feeCalcFromVault, "Fee calculator addresses should match");
+        assertNotEq(feeCalcFromVault, address(0), "Fee calculator should not be zero address");
+    }
+
+    function testOnlyOwnerCanSetFeeCalculator() public {
+        // Create a new fee calculator
+        FeeCalculator newFeeCalc = new FeeCalculator();
+
+        // Non-owner should not be able to set fee calculator
+        vm.prank(user1);
+        vm.expectRevert();
+        debtToken.setFeeCalculator(address(newFeeCalc));
+
+        // Owner should be able to set fee calculator
+        vm.prank(owner);
+        debtToken.setFeeCalculator(address(newFeeCalc));
+
+        assertEq(debtToken.feeCalculator(), address(newFeeCalc), "Fee calculator should be updated");
+    }
+
+    function testSwapFeeCalculator() public {
+        // Create a flat fee calculator that always returns 50% fee
+        FlatFeeCalculator flatFeeCalc = new FlatFeeCalculator(5000);
+
+        // Get current fee ratio at 50% utilization (should be 20% = 2000 bps)
+        uint256 rateBefore = debtToken.getVaultRatioBps(5000);
+        assertEq(rateBefore, 2000, "Fee should be 20% at 50% utilization");
+
+        // Swap to flat fee calculator
+        vm.prank(owner);
+        debtToken.setFeeCalculator(address(flatFeeCalc));
+
+        // Fee should now be 50% regardless of utilization
+        uint256 rateAfter = debtToken.getVaultRatioBps(5000);
+        assertEq(rateAfter, 5000, "Fee should now be 50%");
+
+        // Test at different utilization levels - all should return 50%
+        assertEq(debtToken.getVaultRatioBps(1000), 5000, "Fee at 10% utilization should be 50%");
+        assertEq(debtToken.getVaultRatioBps(9000), 5000, "Fee at 90% utilization should be 50%");
+    }
+
+    function testFeeCalculatorSwapAffectsRebalance() public {
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // User1 borrows to create some utilization
+        vm.prank(user1);
+        vault.borrow(500e6); // 50% utilization
+
+        // Repay with rewards using original fee calculator
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Record vault's current ratio at this utilization
+        uint256 currentUtilization = vault.getUtilizationPercent();
+        uint256 ratioBefore = debtToken.getVaultRatioBps(currentUtilization);
+
+        // Swap to a different fee calculator (higher fees)
+        HighFeeCalculator highFeeCalc = new HighFeeCalculator();
+        vm.prank(owner);
+        debtToken.setFeeCalculator(address(highFeeCalc));
+
+        // Now the ratio should be different
+        uint256 ratioAfter = debtToken.getVaultRatioBps(currentUtilization);
+        assertGt(ratioAfter, ratioBefore, "High fee calculator should return higher rate");
+
+        // Repay with more rewards - should use new fee curve
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // The rebalance should have used the new fee calculator
+        // This is verified by the fact that the transaction succeeded
+        // and the getCurrentVaultRatioBps reflects the new calculator
+        assertEq(
+            debtToken.getCurrentVaultRatioBps(),
+            highFeeCalc.getVaultRatioBps(vault.getUtilizationPercent()),
+            "Current vault ratio should match high fee calculator"
+        );
+    }
+
+    function testCannotSetZeroAddressFeeCalculator() public {
+        vm.prank(owner);
+        vm.expectRevert();
+        debtToken.setFeeCalculator(address(0));
+    }
+
+    function testFeeCalculatorUpdatedEvent() public {
+        FeeCalculator newFeeCalc = new FeeCalculator();
+        address oldCalc = debtToken.feeCalculator();
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, false);
+        emit DebtToken.FeeCalculatorUpdated(oldCalc, address(newFeeCalc));
+        debtToken.setFeeCalculator(address(newFeeCalc));
+    }
+
+    function testDebtTokenUpgrade() public {
+        // Deploy a new DebtToken implementation (same code, simulating an upgrade)
+        DebtToken newImpl = new DebtToken();
+
+        // Non-owner cannot upgrade
+        vm.prank(user1);
+        vm.expectRevert();
+        debtToken.upgradeToAndCall(address(newImpl), "");
+
+        // Get state before upgrade
+        address vaultBefore = debtToken.vault();
+        address feeCalcBefore = debtToken.feeCalculator();
+
+        // Owner can upgrade
+        vm.prank(owner);
+        debtToken.upgradeToAndCall(address(newImpl), "");
+
+        // State should be preserved after upgrade
+        assertEq(debtToken.vault(), vaultBefore, "Vault should be preserved after upgrade");
+        assertEq(debtToken.feeCalculator(), feeCalcBefore, "Fee calculator should be preserved after upgrade");
+    }
+
+    function testDebtTokenUpgradeWithStatePreservation() public {
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // Create some state - user borrows and repays with rewards
+        vm.prank(user1);
+        vault.borrow(200e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Move to next epoch to vest rewards
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        vm.warp(timestamp);
+
+        // Record state before upgrade
+        uint256 totalSupplyBefore = debtToken.totalSupply();
+        uint256 numCheckpointsBefore = debtToken.numCheckpoints(user1);
+        uint256 supplyNumCheckpointsBefore = debtToken.supplyNumCheckpoints();
+
+        // Upgrade DebtToken
+        DebtToken newImpl = new DebtToken();
+        vm.prank(owner);
+        debtToken.upgradeToAndCall(address(newImpl), "");
+
+        // All state should be preserved
+        assertEq(debtToken.totalSupply(), totalSupplyBefore, "Total supply should be preserved");
+        assertEq(debtToken.numCheckpoints(user1), numCheckpointsBefore, "User checkpoints should be preserved");
+        assertEq(debtToken.supplyNumCheckpoints(), supplyNumCheckpointsBefore, "Supply checkpoints should be preserved");
+
+        // Vault operations should still work after upgrade
+        vault.updateUserDebtBalance(user1);
+        uint256 debt = vault.getDebtBalance(user1);
+        assertLt(debt, 200e6, "Debt should be reduced after reward settlement");
+    }
+}
+
+// ============ Test Helper Contracts ============
+
+/**
+ * @title FlatFeeCalculator
+ * @notice Test fee calculator that returns a flat fee regardless of utilization
+ */
+contract FlatFeeCalculator is IFeeCalculator {
+    uint256 public immutable flatRate;
+
+    constructor(uint256 _flatRate) {
+        flatRate = _flatRate;
+    }
+
+    function getVaultRatioBps(uint256) external view override returns (uint256) {
+        return flatRate;
+    }
+}
+
+/**
+ * @title HighFeeCalculator
+ * @notice Test fee calculator that returns higher fees than default
+ */
+contract HighFeeCalculator is IFeeCalculator {
+    function getVaultRatioBps(uint256 utilizationBps) external pure override returns (uint256) {
+        // Always return at least 60% fee, scaling up to 95%
+        if (utilizationBps <= 5000) {
+            return 6000;
+        } else {
+            return 6000 + (utilizationBps - 5000) * 7 / 10; // 60% to 95%
+        }
     }
 }

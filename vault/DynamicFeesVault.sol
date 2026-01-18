@@ -9,7 +9,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ProtocolTimeLibrary } from "../src/libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DebtToken} from "./DebtToken.sol";
+import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
 
 contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
@@ -42,7 +44,22 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _transferOwnership(msg.sender);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         $.portfolioFactory = portfolioFactory;
-        $.debtToken = new DebtToken(address(this));
+
+        // Deploy the default fee calculator
+        FeeCalculator feeCalc = new FeeCalculator();
+
+        // Deploy DebtToken implementation
+        DebtToken debtTokenImpl = new DebtToken();
+
+        // Deploy DebtToken proxy and initialize it
+        bytes memory initData = abi.encodeWithSelector(
+            DebtToken.initialize.selector,
+            address(this),      // vault
+            address(feeCalc),   // feeCalculator
+            msg.sender          // owner (same as vault owner)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(debtTokenImpl), initData);
+        $.debtToken = DebtToken(address(proxy));
     }
 
     function totalLoanedAssets() public view returns (uint256) {
@@ -454,6 +471,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function debtToken() public view returns (DebtToken) {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         return $.debtToken;
+    }
+
+    /**
+     * @notice Returns the current fee calculator address used by the DebtToken
+     * @return The fee calculator contract address
+     */
+    function feeCalculator() public view returns (address) {
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        return $.debtToken.feeCalculator();
     }
 
     function getUtilizationPercent() public view returns (uint256) {
