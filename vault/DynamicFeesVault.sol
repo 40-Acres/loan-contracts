@@ -11,7 +11,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {DebtToken} from "./DebtToken.sol";
 import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
-import {console} from "forge-std/console.sol";
 
 contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
     address public _debtToken;
@@ -113,16 +112,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @notice Gets the cumulative principal repaid up to the current moment in time
      * @dev Calculates principal repaid from checkpoint to now, including prorated current epoch
      * @dev If checkpoint is 0 (uninitialized), calculates from current epoch only
+     * @dev NOTE: Protocol should not operate in epoch 0 - always start from epoch 1 or later
      * @return The total principal amount repaid up to now
      */
     function _getPrincipalRepaidUpToNow() internal view returns (uint256) {
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
         uint256 checkpointEpoch = $.settlementCheckpointEpoch;
-        address debtTokenAddress = address($.debtToken);
         uint256 totalPrincipalRepaid = 0;
-        
-        // If checkpoint is 0, we only calculate current epoch (will be synced on first update)
+
+        // If checkpoint is 0 (uninitialized), calculate from current epoch only
         // Otherwise, calculate from checkpoint epoch to current epoch (inclusive)
         uint256 startEpoch = checkpointEpoch > 0 ? checkpointEpoch : currentEpoch;
         
@@ -137,8 +136,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
                 // Note: This may be slightly stale if earned() hasn't been called recently
                 lenderPremium = _getLenderPremiumUnlockedThisEpochView();
             } else {
-                // For past epochs, get the final claimed amount
-                // lenderPremium = $.debtToken.tokenClaimedPerEpoch(address(this), debtTokenAddress, epoch);
+                // For past epochs, use the final claimed amount for the vault
+                lenderPremium = $.debtToken.tokenClaimedPerEpoch(address(this), epoch);
             }
             
             uint256 principalRepaid = assetsUnlocked > lenderPremium ? assetsUnlocked - lenderPremium : 0;
@@ -154,11 +153,22 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      */
     function _updateSettlementCheckpoint() internal {
         DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
-        uint256 earned = $.debtToken.getReward(address(this));
-        $.totalLoanedAssets -= earned;
+        // Update vault rewards to ensure tokenClaimedPerEpoch is up to date
+        $.debtToken.getReward(address(this));
+
+        uint256 currentPrincipalRepaid = _getPrincipalRepaidUpToNow();
+        uint256 principalRepaidSinceCheckpoint = currentPrincipalRepaid >= $.principalRepaidAtCheckpoint
+            ? currentPrincipalRepaid - $.principalRepaidAtCheckpoint
+            : 0;
+
+        if (principalRepaidSinceCheckpoint > 0) {
+            $.totalLoanedAssets = $.totalLoanedAssets > principalRepaidSinceCheckpoint
+                ? $.totalLoanedAssets - principalRepaidSinceCheckpoint
+                : 0;
+        }
+
+        $.principalRepaidAtCheckpoint = currentPrincipalRepaid;
         $.settlementCheckpointEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        console.log("totalLoanedAssets", $.totalLoanedAssets);
-        console.log("earned", earned);
     }
     
     /**
@@ -215,15 +225,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         // Update settlement checkpoint to sync totalLoanedAssets with current repayments
         _updateSettlementCheckpoint();
-        
+
         // Transfer assets from user to vault
         IERC20(asset()).transferFrom(msg.sender, address(this), amount);
-        
-        // Mint debt tokens (this adds to totalAssetsPerEpoch and creates a new checkpoint)
+
+        // Mint debt tokens (this adds to totalAssetsPerEpoch and triggers rebalance)
+        // The lender/borrower split is based on current utilization at time of deposit
         $.debtToken.mint(msg.sender, amount);
-        
+
         // Update user debt balance to apply earned rewards to debt
-        // This will reduce debtBalance and totalLoanedAssets appropriately
         // If earned > debtBalance, the excess will be minted as vault shares
         _updateUserDebtBalance(msg.sender);
         _updateSettlementCheckpoint();
@@ -246,26 +256,20 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 earned = $.debtToken.getReward(borrower);
         uint256 currentDebtBalance = $.debtBalance[borrower];
 
-        console.log("=========e111111 arned for itme", earned);
-        
+        // NOTE: We do NOT reduce totalLoanedAssets here because _updateSettlementCheckpoint()
+        // already handles the global accounting by calculating (totalAssets - lenderPremium).
+        // This function only updates the individual user's debt balance.
+
         // if earned is more than the debt balance, give user the difference via minting vault shares
         // and set debt balance to 0 (debt is fully paid off by rewards)
         if (earned > currentDebtBalance) {
             uint256 difference = earned - currentDebtBalance;
             _mint(borrower, difference);
-            console.log("minted", difference);
-            console.log("debt balance", $.debtBalance[borrower]);
             $.debtBalance[borrower] = 0;
-            console.log("totalLoanedAssets", $.totalLoanedAssets);
-            console.log("currentDebtBalance", currentDebtBalance);
         } else if (earned > 0) {
             $.debtBalance[borrower] -= earned;
         }
 
-        console.log("totalLoanedAssets", $.totalLoanedAssets);
-        console.log("debtBalance", $.debtBalance[borrower]);
-        console.log("earned", earned);
-        console.log("currentDebtBalance", currentDebtBalance);
         // Otherwise, debt balance remains unchanged (earned rewards don't fully cover the debt)
         // The debt balance will be reduced when the user calls repay()
         $.debtToken.rebalance();
@@ -324,8 +328,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // assets borrowed / total assets (in basis points, where 10000 = 100%)
         uint256 total = totalAssets();
         if (total == 0) return 0;
-        uint256 loaned = totalLoanedAssets();
-        uint256 utilization = (loaned * 10000) / total;
+        DynamicFeesVaultStorage storage $ = _getDynamicFeesVaultStorage();
+        uint256 utilization = ($.totalLoanedAssets * 10000) / total;
         return utilization;
     }
 }

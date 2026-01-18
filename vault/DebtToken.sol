@@ -11,7 +11,6 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {console} from "forge-std/console.sol";
 
 interface IDynamicFeesVault {
     function decreaseTotalLoanedAssets(uint256 amount) external;
@@ -249,107 +248,71 @@ contract DebtToken {
     }
 
     function earned(address _token, address _owner) public returns (uint256) {
-        console.log("====checking earned for", _owner);
-        console.log("vault", vault);
         if (numCheckpoints[_owner] == 0) {
-            console.log("no checkpoints", _owner);
             return 0;
         }
-        console.log("checkpoints", numCheckpoints[_owner]);
+
         uint256 reward = 0;
         uint256 _supply = 1;
-        uint256 _currTs = ProtocolTimeLibrary.epochStart(
-            block.timestamp
-        ); // take epoch last claimed in as starting point
+        uint256 _currTs = ProtocolTimeLibrary.epochStart(block.timestamp);
         uint256 _index = getPriorBalanceIndex(_owner, _currTs);
         Checkpoint memory cp0 = checkpoints[_owner][_index];
 
         // accounts for case where lastEarn is before first checkpoint
-        _currTs = Math.max(
-            _currTs,
-            ProtocolTimeLibrary.epochStart(cp0._epoch)
-        );
+        _currTs = Math.max(_currTs, ProtocolTimeLibrary.epochStart(cp0._epoch));
 
         // get epochs between current epoch and first checkpoint in same epoch as last claim
-        // Include the current epoch if we're in it
         uint256 currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-        if(_currTs >= DURATION) {
+        if (_currTs >= DURATION) {
             _currTs = _currTs - DURATION;
         }
         uint256 numEpochs = 0;
         if (currentEpochStart >= _currTs) {
-            // Calculate number of epochs to process, including the current epoch
             numEpochs = ((currentEpochStart - _currTs) / DURATION) + 1;
         }
 
         if (numEpochs > 0) {
             for (uint256 i = 0; i < numEpochs; i++) {
-                console.log("processing epoch", _currTs);
-                console.log("currnt timestamp", block.timestamp);
-                // Use _currTs (the epoch we're processing)
                 uint256 epoch = _currTs;
-                // Use the totalSupply for this epoch directly, not from checkpoints
-                // The supply for an epoch is set during rebalancing and stored in totalSupplyPerEpoch
                 _supply = Math.max(totalSupply(epoch), 1);
-                // For reward calculation, use full assets for the epoch, not prorated
-                // totalAssetsUnlocked prorates for current epoch, but we want full assets for rewards
                 uint256 assetsUnlocked = totalAssets(epoch);
-                
-                console.log("assetsUnlocked", assetsUnlocked);
-                console.log("total assets per epoch", totalAssetsPerEpoch[epoch]);
-                // Skip epochs with no assets (nothing to reward)
+
+                // Skip epochs with no assets
                 if (assetsUnlocked == 0) {
                     _currTs += DURATION;
                     continue;
                 }
-                
+
                 // Get the balance at the START of this epoch (before any mints in this epoch)
-                // This resents the balance that earned rewards throughout the epoch
                 uint256 queryTimestamp = _currTs > 0 ? _currTs - 1 : _currTs;
                 _index = getPriorBalanceIndex(_owner, queryTimestamp);
-                // Ensure index is valid
+
                 uint256 nCheckpoints = numCheckpoints[_owner];
                 if (_index >= nCheckpoints) {
                     _currTs += DURATION;
                     continue;
                 }
-                // get checkpoint at the start of this epoch (or from previous epoch)
+
                 cp0 = checkpoints[_owner][_index];
-                
+
                 // Ensure the checkpoint is from before the start of this epoch
-                // We want the balance BEFORE any mints in this epoch
                 uint256 cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
-                // If checkpoint is from this epoch or later, we need one from before
                 while (cpEpoch >= _currTs && _index > 0) {
                     _index = _index - 1;
                     cp0 = checkpoints[_owner][_index];
                     cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
                 }
-                // // If still from this epoch or later, skip this epoch (no valid checkpoint before epoch start)
-                // if (cpEpoch > _currTs) {
-                //     _currTs += DURATION;
-                //     continue;
-                // }
-                
+
                 uint256 epochReward = (cp0._balances * assetsUnlocked) / _supply;
                 uint256 alreadyClaimed = tokenClaimedPerEpoch[_owner][epoch];
                 uint256 newReward = epochReward > alreadyClaimed ? epochReward - alreadyClaimed : 0;
-                
-                console.log("epochReward", epochReward);
-                console.log("alreadyClaimed", alreadyClaimed);
-                console.log("newReward", newReward);
-                // Update tokenClaimedPerEpoch with the total reward for this epoch (not incremental)
+
                 tokenClaimedPerEpoch[_owner][epoch] = epochReward;
-                console.log("tokenClaimedPerEpoch", tokenClaimedPerEpoch[_owner][epoch]);
-                
-                // Add only the new reward to the running total
                 reward += newReward;
                 _currTs += DURATION;
             }
         }
 
-        console.log("reward", reward);
-        console.log("--okenClaimedPerEpoch", tokenClaimedPerEpoch[_owner][_currTs]);
         return reward;
     }
 
