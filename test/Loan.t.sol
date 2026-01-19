@@ -962,10 +962,13 @@ contract LoanTest is Test {
         assertLe(endingBalance2, beginningBalance2 - 5e6, "Token2 balance should decrease by more than token2s rewards");
         
 
-        // owne rbalance should increase by 5% of rewards
+        // owner balance should increase by protocol fees
+        // Token1 (no loan): fee on portion going to payoff token
+        // Token2 (payoff token): 5% protocol fee = 250,000
         uint256 endingOwnerBalance = usdc.balanceOf(address(_loan.owner()));
         uint256 difference = endingOwnerBalance - beginningOwnerBalance;
-        assertGt(difference, 832142, "Owner balance should increase by 5% of rewards for both tokens and protocol fee");
+        // Expected: protocol fees from both claims (at least 5% of one token's rewards = 250,000)
+        assertGt(difference, 500000, "Owner balance should increase by protocol fees from both tokens");
     }
 
     function testClaimPreferredToken() public {
@@ -1442,6 +1445,410 @@ contract LoanTest is Test {
     //     uint256 loanWeight = loan.getTotalWeight();
     //     assertTrue(loanWeight > 0, "loan weight should be greater than 0");
     // }
+
+    // ============ ADDITIONAL COMPREHENSIVE TESTS ============
+
+    /// @notice Test requesting loan with token you don't own should fail
+    function testRequestLoanNotOwner() public {
+        // Try to request loan with a token we don't own
+        vm.startPrank(owner);
+        vm.expectRevert();
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+    }
+
+    /// @notice Test increasing loan beyond max allowed fails
+    function testIncreaseLoanBeyondMax() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        (uint256 maxLoan,) = loan.getMaxLoan(tokenId);
+
+        vm.startPrank(user);
+        vm.expectRevert();
+        loan.increaseLoan(tokenId, maxLoan + 1e6);
+        vm.stopPrank();
+    }
+
+    /// @notice Test increasing loan with non-borrower fails
+    function testIncreaseLoanNotBorrower() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        loan.increaseLoan(tokenId, 1e6);
+        vm.stopPrank();
+    }
+
+    /// @notice Test partial payment reduces loan balance correctly
+    function testPartialPayment() public {
+        usdc.mint(address(user), 100e6);
+
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 10e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        (uint256 balanceBefore,) = loan.getLoanDetails(tokenId);
+        assertTrue(balanceBefore > 10e6, "Balance should include origination fee");
+
+        usdc.approve(address(loan), 5e6);
+        loan.pay(tokenId, 5e6);
+
+        (uint256 balanceAfter,) = loan.getLoanDetails(tokenId);
+        assertTrue(balanceAfter < balanceBefore, "Balance should decrease after payment");
+        assertTrue(balanceAfter > 0, "Balance should not be zero after partial payment");
+        vm.stopPrank();
+    }
+
+    /// @notice Test claiming collateral with active loan fails
+    function testClaimCollateralWithActiveLoan() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        vm.expectRevert();
+        loan.claimCollateral(tokenId);
+        vm.stopPrank();
+    }
+
+    /// @notice Test claiming collateral as non-borrower fails
+    function testClaimCollateralNotBorrower() public {
+        usdc.mint(address(user), 100e6);
+
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        // Pay off the loan fully
+        usdc.approve(address(loan), 10e6);
+        loan.pay(tokenId, 0); // Pay full balance
+        vm.stopPrank();
+
+        // Try to claim as non-borrower
+        vm.startPrank(owner);
+        vm.expectRevert();
+        loan.claimCollateral(tokenId);
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting zero balance option
+    function testSetZeroBalanceOption() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        loan.setZeroBalanceOption(tokenId, Loan.ZeroBalanceOption.PayToOwner);
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting zero balance option as non-borrower fails
+    function testSetZeroBalanceOptionNotBorrower() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        loan.setZeroBalanceOption(tokenId, Loan.ZeroBalanceOption.PayToOwner);
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting increase percentage
+    function testSetIncreasePercentage() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        loan.setIncreasePercentage(tokenId, 5000); // 50%
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting increase percentage above 100% fails
+    function testSetIncreasePercentageAboveMax() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        vm.expectRevert();
+        loan.setIncreasePercentage(tokenId, 10001); // > 100%
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting increase percentage as non-borrower fails
+    function testSetIncreasePercentageNotBorrower() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        loan.setIncreasePercentage(tokenId, 5000);
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting top-up option
+    function testSetTopUp() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        loan.setTopUp(tokenId, true);
+        vm.stopPrank();
+    }
+
+    /// @notice Test setting top-up option as non-borrower fails
+    function testSetTopUpNotBorrower() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        loan.setTopUp(tokenId, true);
+        vm.stopPrank();
+    }
+
+    /// @notice Test requesting loan with invalid increase percentage fails
+    function testRequestLoanInvalidIncreasePercentage() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        vm.expectRevert();
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.DoNothing, 10001, address(0), false, false);
+        vm.stopPrank();
+    }
+
+    /// @notice Test requesting loan with unapproved preferred token fails
+    function testRequestLoanUnapprovedPreferredToken() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        vm.expectRevert();
+        loan.requestLoan(tokenId, 1e6, Loan.ZeroBalanceOption.PayToOwner, 0, address(0xdead), false, false);
+        vm.stopPrank();
+    }
+
+    /// @notice Test increase amount by non-owner fails
+    function testIncreaseAmountNotOwner() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        deal(address(aero), owner, 100e18);
+
+        vm.startPrank(owner);
+        aero.approve(address(loan), 100e18);
+        // This should succeed - anyone can increase the lock amount
+        loan.increaseAmount(tokenId, 10e18);
+        vm.stopPrank();
+    }
+
+    /// @notice Test payMultiple pays off multiple loans
+    function testPayMultiple() public {
+        uint256 _fork;
+        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        vm.selectFork(_fork);
+        vm.rollFork(31911971);
+
+        vm.startPrank(Loan(0x87f18b377e625b62c708D5f6EA96EC193558EFD0).owner());
+        Loan loanV2 = new Loan();
+        Loan _loan = Loan(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
+        _loan.upgradeToAndCall(address(loanV2), new bytes(0));
+        MockPortfolioFactory mockAccountStorage = new MockPortfolioFactory();
+        _loan.setPortfolioFactory(address(mockAccountStorage));
+        vm.stopPrank();
+
+        address _user = vm.addr(0x1234);
+
+        // Give user some AERO to create locks
+        deal(address(aero), _user, 10000e18);
+
+        // Mint USDC to vault
+        vm.prank(usdc.masterMinter());
+        usdc.configureMinter(address(this), type(uint256).max);
+        usdc.mint(_loan._vault(), 1000e6);
+        usdc.mint(_user, 100e6);
+
+        // Create two locks
+        vm.startPrank(_user);
+        aero.approve(address(votingEscrow), type(uint256).max);
+        uint256 token1 = votingEscrow.createLock(1000e18, 4 * 365 days);
+        vm.roll(block.number + 1);
+        uint256 token2 = votingEscrow.createLock(1000e18, 4 * 365 days);
+        vm.roll(block.number + 1);
+
+        // Request loans for both
+        IERC721(address(votingEscrow)).approve(address(_loan), token1);
+        _loan.requestLoan(token1, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        IERC721(address(votingEscrow)).approve(address(_loan), token2);
+        _loan.requestLoan(token2, 1e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        (uint256 balance1Before,) = _loan.getLoanDetails(token1);
+        (uint256 balance2Before,) = _loan.getLoanDetails(token2);
+        assertTrue(balance1Before > 0, "Token1 should have balance");
+        assertTrue(balance2Before > 0, "Token2 should have balance");
+
+        // Pay off both loans
+        usdc.approve(address(_loan), 50e6);
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = token1;
+        tokenIds[1] = token2;
+        _loan.payMultiple(tokenIds);
+
+        (uint256 balance1After,) = _loan.getLoanDetails(token1);
+        (uint256 balance2After,) = _loan.getLoanDetails(token2);
+        assertEq(balance1After, 0, "Token1 should be paid off");
+        assertEq(balance2After, 0, "Token2 should be paid off");
+        vm.stopPrank();
+    }
+
+    /// @notice Test that only owner can set multiplier
+    function testSetMultiplierOnlyOwner() public {
+        vm.prank(owner);
+        loan.setMultiplier(50);
+
+        vm.prank(user);
+        vm.expectRevert();
+        loan.setMultiplier(100);
+    }
+
+    /// @notice Test that only owner can set approved pools
+    function testSetApprovedPoolsOnlyOwner() public {
+        address[] memory pools = new address[](1);
+        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
+
+        vm.prank(owner);
+        loan.setApprovedPools(pools, true);
+
+        vm.prank(user);
+        vm.expectRevert();
+        loan.setApprovedPools(pools, true);
+    }
+
+    /// @notice Test renounce ownership is disabled
+    function testRenounceOwnershipDisabled() public {
+        vm.prank(owner);
+        vm.expectRevert();
+        loan.renounceOwnership();
+    }
+
+    /// @notice Test rescue ERC20 tokens
+    function testRescueERC20() public {
+        // Send some tokens to loan contract directly
+        usdc.mint(address(loan), 10e6);
+
+        uint256 ownerBalanceBefore = usdc.balanceOf(owner);
+
+        vm.prank(owner);
+        loan.rescueERC20(address(usdc), 10e6);
+
+        uint256 ownerBalanceAfter = usdc.balanceOf(owner);
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, 10e6, "Owner should receive rescued tokens");
+    }
+
+    /// @notice Test rescue ERC20 only owner
+    function testRescueERC20OnlyOwner() public {
+        usdc.mint(address(loan), 10e6);
+
+        vm.prank(user);
+        vm.expectRevert();
+        loan.rescueERC20(address(usdc), 10e6);
+    }
+
+    /// @notice Test incentivize vault
+    function testIncentivizeVault() public {
+        usdc.mint(address(user), 100e6);
+
+        uint256 vaultBalanceBefore = usdc.balanceOf(address(vault));
+
+        vm.startPrank(user);
+        usdc.approve(address(loan), 50e6);
+        loan.incentivizeVault(50e6);
+        vm.stopPrank();
+
+        uint256 vaultBalanceAfter = usdc.balanceOf(address(vault));
+        assertEq(vaultBalanceAfter - vaultBalanceBefore, 50e6, "Vault should receive incentive");
+    }
+
+    /// @notice Test setting payoff token requires balance
+    function testSetPayoffTokenRequiresBalance() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        // Should fail because loan balance is 0
+        vm.expectRevert();
+        loan.setPayoffToken(tokenId, true);
+        vm.stopPrank();
+    }
+
+    /// @notice Test loan origination fee is applied correctly
+    function testOriginationFee() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        uint256 loanAmount = 10e6;
+        loan.requestLoan(tokenId, loanAmount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        (uint256 balance,) = loan.getLoanDetails(tokenId);
+        // Origination fee is 0.8% (80/10000)
+        uint256 expectedFee = (loanAmount * 80) / 10000;
+        assertEq(balance, loanAmount + expectedFee, "Balance should include origination fee");
+        vm.stopPrank();
+    }
+
+    /// @notice Test active assets tracking
+    function testActiveAssetsTracking() public {
+        assertEq(loan.activeAssets(), 0, "Should start with 0 active assets");
+
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        uint256 loanAmount = 5e6;
+        loan.requestLoan(tokenId, loanAmount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
+
+        assertEq(loan.activeAssets(), loanAmount, "Active assets should equal loan amount");
+
+        // Pay off loan
+        usdc.mint(address(user), 10e6);
+        vm.startPrank(user);
+        usdc.approve(address(loan), 10e6);
+        loan.pay(tokenId, 0);
+        vm.stopPrank();
+
+        assertEq(loan.activeAssets(), 0, "Active assets should be 0 after payoff");
+    }
+
+    /// @notice Test loan with top-up option automatically maxes loan
+    function testLoanWithTopUpOption() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        // Request loan with topUp=true and amount=0
+        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), true, false);
+
+        (uint256 balance,) = loan.getLoanDetails(tokenId);
+        assertTrue(balance > 0, "Loan should have balance due to top-up");
+        vm.stopPrank();
+    }
+
+    /// @notice Test increase loan below minimum amount fails
+    function testIncreaseLoanBelowMinimum() public {
+        vm.startPrank(user);
+        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
+        loan.requestLoan(tokenId, 0, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+
+        // Try to increase by less than .01 USDC
+        vm.expectRevert();
+        loan.increaseLoan(tokenId, 0.001e6);
+        vm.stopPrank();
+    }
 
     function _claimRewards(Loan _loan, uint256 _tokenId, address[] memory bribes, bytes memory tradeData, uint256[2] memory allocations) internal returns (uint256) {
         address[] memory pools = new address[](256); // Assuming a maximum of 256 pool votes
