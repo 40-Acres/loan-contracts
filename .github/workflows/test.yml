@@ -59,3 +59,6 @@ jobs:
           # Fork PRs will run with public RPC endpoints or skip forked tests
           ETH_RPC_URL: ${{ secrets.ETH_RPC_URL }}
           AVAX_RPC_URL: ${{ secrets.AVAX_RPC_URL }}
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+          LINEA_RPC_URL: ${{ secrets.LINEA_RPC_URL }}
+          OP_RPC_URL: ${{ secrets.OP_RPC_URL }}
