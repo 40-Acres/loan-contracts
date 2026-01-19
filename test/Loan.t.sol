@@ -910,9 +910,12 @@ contract LoanTest is Test {
         (uint256 beginningBalance2,) = _loan.getLoanDetails(tokenId2);
 
         console.log("beginning balance2: ", beginningBalance2);
-        // Each token earns 100e6 USDC
+        // Each token earns 5e6 USDC
         uint256 rewardsPerToken = 5e6;
-        
+
+        // Get initial rewardsPerEpoch
+        uint256 beginningRewardsPerEpoch = _loan.lastEpochReward();
+
         // Claim token1 (not payoff token)
         address[] memory bribes = new address[](0);
         bytes memory data1 = abi.encodeWithSelector(
@@ -926,6 +929,24 @@ contract LoanTest is Test {
         uint256[2] memory allocations1 = [uint256(rewardsPerToken), uint256(0)];
         _claimRewards(_loan, tokenId1, bribes, data1, allocations1);
 
+        // Token1 has no loan but payoff token is set, so rewards go to pay off token2's loan
+        uint256 vaultAfterToken1 = usdc.balanceOf(_loan._vault());
+        assertGt(
+            vaultAfterToken1,
+            beginningVaultBalance,
+            "Vault balance should increase since token1's rewards pay off token2's loan"
+        );
+        (uint256 midBalance1,) = _loan.getLoanDetails(tokenId1);
+        assertEq(midBalance1, beginningBalance1, "Token1 balance should stay 0 (has no loan)");
+
+        // Token2's loan balance should decrease after token1's claim (since token1's rewards pay off token2)
+        (uint256 midBalance2,) = _loan.getLoanDetails(tokenId2);
+        assertLt(midBalance2, beginningBalance2, "Token2 balance should decrease from token1's rewards");
+
+        // rewardsPerEpoch should not change when claiming a token with no loan
+        uint256 midRewardsPerEpoch = _loan.lastEpochReward();
+        assertEq(midRewardsPerEpoch, beginningRewardsPerEpoch, "rewardsPerEpoch should not change for token with no loan");
+
         // Claim token2 (payoff token)
         bytes memory data2 = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwap.selector,
@@ -937,20 +958,6 @@ contract LoanTest is Test {
         );
         uint256[2] memory allocations2 = [uint256(rewardsPerToken), uint256(0)];
         _claimRewards(_loan, tokenId2, bribes, data2, allocations2);
-
-        // Calculate expected distributions based on fee eligible amounts
-        // For token1: feeEligible = min(100e6, balance1 + balance2)
-        // For token2: feeEligible = min(100e6, balance2) since payoffToken is token2 itself
-        uint256 feeEligibleToken1 = rewardsPerToken;
-        if (rewardsPerToken > beginningBalance1 + beginningBalance2) {
-            feeEligibleToken1 = beginningBalance1 + beginningBalance2;
-        }
-        
-        uint256 feeEligibleToken2 = rewardsPerToken;
-        if (rewardsPerToken > beginningBalance2) {
-            feeEligibleToken2 = beginningBalance2;
-        }
-        
         
         // Verify token balances
         (uint256 endingBalance1,) = _loan.getLoanDetails(tokenId1);
@@ -969,6 +976,12 @@ contract LoanTest is Test {
         uint256 difference = endingOwnerBalance - beginningOwnerBalance;
         // Expected: protocol fees from both claims (at least 5% of one token's rewards = 250,000)
         assertGt(difference, 500000, "Owner balance should increase by protocol fees from both tokens");
+
+
+
+        // rewardsPerEpoch should not change when claiming a token with no loan
+        uint256 endingRewardsPerEpoch = _loan.lastEpochReward();
+        assertGt(endingRewardsPerEpoch, beginningRewardsPerEpoch, "rewardsPerEpoch should increase for token with loan");
     }
 
     function testClaimPreferredToken() public {
