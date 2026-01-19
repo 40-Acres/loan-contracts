@@ -187,7 +187,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         
         // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](9);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
         rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
@@ -197,6 +197,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
         rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
         rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
     }
     
@@ -306,7 +307,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
     //     // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](9);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsOption.selector;
         rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
@@ -316,6 +317,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
         rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
         rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
     //     // Deploy LendingFacet
