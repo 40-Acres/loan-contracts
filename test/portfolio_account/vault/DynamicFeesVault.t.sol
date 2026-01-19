@@ -2,14 +2,14 @@
 pragma solidity ^0.8.27;
 
 import {Test, console} from "forge-std/Test.sol";
-import {DynamicFeesVault} from "../../src/facets/account/vault/DynamicFeesVault.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IPortfolioFactory} from "../../src/interfaces/IPortfolioFactory.sol";
-import {ProtocolTimeLibrary} from "../../src/libraries/ProtocolTimeLibrary.sol";
-import {FeeCalculator} from "../../src/facets/account/vault/FeeCalculator.sol";
-import {IFeeCalculator} from "../../src/facets/account/vault/IFeeCalculator.sol";
+import {IPortfolioFactory} from "../../../src/interfaces/IPortfolioFactory.sol";
+import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
+import {FeeCalculator} from "../../../src/facets/account/vault/FeeCalculator.sol";
+import {IFeeCalculator} from "../../../src/facets/account/vault/IFeeCalculator.sol";
 
 /**
  * @title MockUSDC
