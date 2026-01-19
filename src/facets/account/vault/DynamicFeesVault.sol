@@ -7,13 +7,14 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ProtocolTimeLibrary} from "../src/libraries/ProtocolTimeLibrary.sol";
+import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
-import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
+import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
+import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 
 /**
  * @title DynamicFeesVault
@@ -21,7 +22,7 @@ import {IPortfolioFactory} from "../src/interfaces/IPortfolioFactory.sol";
  * @dev Combines vault functionality with debt token accounting for reward distribution
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
-contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
+contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ILendingPool {
     using Math for uint256;
     using SafeERC20 for IERC20;
 
@@ -565,6 +566,87 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _mintReward(msg.sender, amount);
         _updateUserDebtBalance(msg.sender);
         _updateSettlementCheckpoint();
+    }
+
+    // ============ ILendingPool Implementation ============
+    /**
+     * @notice Borrow funds from the vault on behalf of a portfolio account
+     * @param amount The amount to borrow
+     * @return originationFee Always returns 0 for DynamicFeesVault (no origination fees)
+     */
+    function borrowFromPortfolio(uint256 amount) external onlyPortfolio whenNotPaused returns (uint256 originationFee) {
+        _updateSettlementCheckpoint();
+        _updateUserDebtBalance(msg.sender);
+
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        uint256 total = totalAssets();
+        uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
+        uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
+        require(postBorrowUtilization < 8000, "Borrow would exceed 80% utilization");
+
+        IERC20(asset()).safeTransfer(msg.sender, amount);
+        $.debtBalance[msg.sender] += amount;
+        $.totalLoanedAssets += amount;
+        _updateUserDebtBalance(msg.sender);
+        _updateSettlementCheckpoint();
+
+        return 0; // No origination fee for DynamicFeesVault
+    }
+
+    /**
+     * @notice Repay funds to the vault from a portfolio account
+     * @param totalPayment The total payment amount
+     * @param feesToPay The portion of payment that goes to protocol fees (sent to owner)
+     */
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused {
+        _updateSettlementCheckpoint();
+        _updateUserDebtBalance(msg.sender);
+
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        // Handle unpaid fees first - transfer to protocol owner
+        if (feesToPay > 0) {
+            IERC20(asset()).safeTransferFrom(msg.sender, owner(), feesToPay);
+        }
+
+        // Transfer remaining amount to vault (principal repayment)
+        uint256 balanceToPay = totalPayment - feesToPay;
+        if (balanceToPay > 0) {
+            uint256 userDebtBalance = $.debtBalance[msg.sender];
+            uint256 amountToRepay = userDebtBalance < balanceToPay ? userDebtBalance : balanceToPay;
+
+            IERC20(asset()).safeTransferFrom(msg.sender, address(this), amountToRepay);
+            $.totalLoanedAssets -= amountToRepay;
+            $.debtBalance[msg.sender] -= amountToRepay;
+        }
+
+        _updateUserDebtBalance(msg.sender);
+        _updateSettlementCheckpoint();
+    }
+
+    /**
+     * @notice Get the lending asset address
+     * @return The address of the lending asset (same as ERC4626 asset)
+     */
+    function lendingAsset() external view returns (address) {
+        return asset();
+    }
+
+    /**
+     * @notice Get the vault address (this contract is both lending pool and vault)
+     * @return The vault address (address(this))
+     */
+    function lendingVault() external view returns (address) {
+        return address(this);
+    }
+
+    /**
+     * @notice Get the total outstanding loaned assets
+     * @return The total amount of assets currently loaned out
+     */
+    function activeAssets() external view returns (uint256) {
+        return _getStorage().totalLoanedAssets;
     }
 
     function updateUserDebtBalance(address borrower) public {

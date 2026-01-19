@@ -922,6 +922,22 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return _outstandingCapital;
     }
 
+    /**
+     * @notice Get the lending asset address (ILendingPool implementation)
+     * @return The address of the lending asset
+     */
+    function lendingAsset() external view returns (address) {
+        return address(_asset);
+    }
+
+    /**
+     * @notice Get the vault address (ILendingPool implementation)
+     * @return The vault address
+     */
+    function lendingVault() external view returns (address) {
+        return _vault;
+    }
+
 
     /**
      * @notice Retrieves the rewards for the current epoch.
