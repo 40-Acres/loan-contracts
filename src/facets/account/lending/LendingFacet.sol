@@ -73,9 +73,7 @@ contract LendingFacet is AccessControl {
 
         // transfer the funds from the from address to the portfolio account then pay the loan
         _lendingToken.safeTransferFrom(from, address(this), amount);
-        _lendingToken.approve(loanContract, amount);
         uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
-        _lendingToken.approve(loanContract, 0);
         // refund excess to the from address
         if(excess > 0) {
             _lendingToken.safeTransfer(from, excess);
