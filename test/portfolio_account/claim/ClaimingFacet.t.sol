@@ -177,7 +177,7 @@ contract ClaimingFacetTest is Test, Setup {
         // Set up launchpad token voting
         vm.startPrank(_owner);
         _votingConfig.setLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[0], claimingToken);
-        _swapConfig.approveSwapTarget(address(mockRouter));
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
         
         // user votes on launchpad token pool with receiveToken = true

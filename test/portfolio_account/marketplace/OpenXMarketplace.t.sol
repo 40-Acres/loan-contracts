@@ -120,7 +120,7 @@ contract OpenXMarketplaceTest is Test, Setup {
         
         // Approve the mock router as a swap target (requires owner)
         vm.startPrank(_owner);
-        _swapConfig.approveSwapTarget(address(mockRouter));
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
 
         // Fund user with USDC (input token for swap) and currency (for buyOpenXListing approval)

@@ -70,7 +70,7 @@ contract LendingFacet is AccessControl {
 
         (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
         _lendingToken.safeTransfer(to, amountAfterFees);
-        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to
+        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
     function pay(uint256 amount) public {
