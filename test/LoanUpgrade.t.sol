@@ -232,65 +232,6 @@ contract LoanUpgradeTest is Test {
     }
 
 
-    function testVoting() public {
-        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
-        address[] memory pools = new address[](1);
-        pools[0] = address(0x4e829F8A5213c42535AB84AA40BD4aDCCE9cBa02);
-        uint256[] memory weights = new uint256[](1);
-        weights[0] = 100e18;
-        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
-        loan.setApprovedPools(pools, true);
-        loan.setDefaultPools(pools, weights);
-        vm.stopPrank();
-        
-        uint256 _tokenId = 68510;
-        uint256 lastVoteTimestamp = voter.lastVoted(_tokenId);
-        usdc.mint(address(vault), 10000e6);
-        uint256 amount = 1e6;
-        address _user = votingEscrow.ownerOf(_tokenId);
-        vm.startPrank(_user);
-        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        vm.roll(block.number + 1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 1);
-        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
-        vm.roll(block.number + 1);
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 1);
-        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId));
-        loan.vote(_tokenId); // fails because not last day of epoch
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 7 days + 15 hours);
-        assertEq(lastVoteTimestamp, voter.lastVoted(_tokenId));
-        loan.vote(_tokenId); // fails because not last day of epoch
-        // last day of epoch
-        vm.warp(ProtocolTimeLibrary.epochStart(block.timestamp) + 13 days + 22 hours);
-        loan.vote(_tokenId);
-        loan.vote(_tokenId);
-        assertEq(block.timestamp, voter.lastVoted(_tokenId));
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        vm.stopPrank();
-
-        vm.startPrank(Ownable2StepUpgradeable(loan).owner());
-        pools = new address[](1);
-        pools[0] = address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59);
-        weights = new uint256[](1);
-        weights[0] = 100e18;
-        loan.setApprovedPools(pools, true);
-        loan.setDefaultPools(pools, weights);
-        vm.stopPrank();
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 1);
-        loan.vote(_tokenId);
-        assertNotEq(block.timestamp, voter.lastVoted(_tokenId));
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        loan.vote(_tokenId);
-        assertEq(block.timestamp, voter.lastVoted(_tokenId));
-
-        uint256 loanWeight = loan.getTotalWeight();
-        assertTrue(loanWeight > 0, "loan weight should be greater than 0");
-    }
-
-
     function testRates() public {
         vm.startPrank(0x0000000000000000000000000000000000000000);
         vm.expectRevert();

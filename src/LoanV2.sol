@@ -485,10 +485,16 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      */
     function _handleZeroBalance(uint256 tokenId, uint256 remaining, uint256 totalRewards, bool wasActiveLoan) internal {
         LoanInfo storage loan = _loanDetails[tokenId];
+        
+        bool usePayoffToken = userUsesPayoffToken(loan.borrower) &&  getUserPayoffToken(loan.borrower) != 0;
         // InvestToVault: invest the amount to the vault on behalf of the borrower
         // In the rare event a user may be blacklisted from  USDC, we invest to vault directly for the borrower to avoid any issues.
         // The user may withdraw their investment later if they are unblacklisted.
-        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan) {
+        if (loan.zeroBalanceOption == ZeroBalanceOption.InvestToVault || wasActiveLoan || usePayoffToken) {
+            remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
+            if(remaining == 0) {
+                return;
+            }
             remaining -= _payZeroBalanceFee(loan.borrower, tokenId, remaining, totalRewards, address(_asset));
             _asset.approve(_vault, remaining);
             IERC4626(_vault).deposit(remaining, loan.borrower);
@@ -578,7 +584,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
 
         // Handle zero balance case
-        if (loan.balance == 0 && (!userUsesPayoffToken(loan.borrower) || getUserPayoffToken(loan.borrower) == 0)) {
+        if (loan.balance == 0) {
             _handleZeroBalanceClaim(loan, rewardsAmount, allocations[0], aeroAmount);
         } else {
             // Handle active loan case

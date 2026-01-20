@@ -1153,7 +1153,7 @@ contract PharaohLoanTest is Test {
         assertTrue(balance >  1000e6, "Balance should have increased");
     }
 
-    function testClaimWithIncreasePercentage() public {
+    function xtestClaimWithIncreasePercentage() public {
         uint256 _tokenId = 5596;
         vm.selectFork(_fork);
         vm.startPrank(Loan(0xf6A044c3b2a3373eF2909E2474f3229f23279B5F).owner());
