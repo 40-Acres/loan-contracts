@@ -171,6 +171,10 @@ contract BlackholeLoanV2 is Loan {
         }
     }
 
+    function claimRebase(uint256 tokenId) public {
+        _claimRebase(_loanDetails[tokenId]);
+    }
+
 
     function _claimRebase(LoanInfo storage loan) override internal {
         // claim from both rewards distributors
