@@ -59,14 +59,12 @@ contract VotingEscrowFacet is AccessControl {
 
     function merge(uint256 from, uint256 to) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(_votingEscrow.ownerOf(to) == address(this));
-        require(_votingEscrow.ownerOf(from) == msg.sender);
-        address borrower = _portfolioFactory.ownerOf(address(this));
-        require(borrower == msg.sender);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        require(_votingEscrow.ownerOf(from) == owner);
         int128 beginningBalance = _votingEscrow.locked(to).amount;
         _votingEscrow.merge(from, to);
         int128 weightIncrease = _votingEscrow.locked(to).amount - beginningBalance;
         CollateralManager.updateLockedCollateral(address(_accountConfigStorage), to, address(_votingEscrow));
-        address owner = _portfolioFactory.ownerOf(address(this));
         emit LockMerged(from, to, uint256(uint128(weightIncrease)), owner);
     }   
 }

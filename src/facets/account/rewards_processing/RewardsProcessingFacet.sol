@@ -268,21 +268,12 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
         require(recipient != address(0));
-        try this._safeTransfer(asset, recipient, amountToPay) {
-        } catch {
+        bool success = IERC20(asset).trySafeTransfer(recipient, amountToPay);
+        if(!success) {
             return 0;
         }
         emit PaidToRecipient(_currentEpochStart(), tokenId, amountToPay, recipient, asset, _portfolioFactory.ownerOf(address(this)));
         return amountToPay;
-    }
-
-    modifier onlySelf() {
-        require(msg.sender == address(this), "Only self");
-        _;
-    }
-
-    function _safeTransfer(address asset, address recipient, uint256 amount) external onlySelf {
-        IERC20(asset).safeTransfer(recipient, amount);
     }
 
     function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
@@ -296,7 +287,7 @@ contract RewardsProcessingFacet is AccessControl {
             IERC20(lockedAsset).approve(address(_votingEscrow), 0);
             CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
             emit CollateralIncreased(_currentEpochStart(), tokenId, amountToUse, _portfolioFactory.ownerOf(address(this)));
-            return rewardsAmount - amountToUse;
+            return amountToUse;
         }
 
         require(swapTarget != address(0), "Swap target must be provided");
