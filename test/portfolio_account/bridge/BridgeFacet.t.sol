@@ -27,6 +27,7 @@ contract BridgeFacetTest is Test {
     address public constant INK_USDC = 0x2D270e6886d130D724215A266106e6832161EAEd;
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     address public constant USDC_SOURCE = 0xd3abC2b515345E47D41C0A1Cd64F8493B80d1ad6;
+    address public _authorizedCaller = address(0xaaaaa);
     address public _user = address(0x1234);
     address public _portfolioAccount;
     uint256 public constant BRIDGE_AMOUNT = 100e6; // 100 USDC
@@ -57,13 +58,16 @@ contract BridgeFacetTest is Test {
         bridgeDeployer.deploy(
             address(_portfolioFactory),
             address(_portfolioAccountConfig),
-            INK_USDC
+            INK_USDC,
+            TOKEN_MESSENGER
         );
         
         // Get the deployed BridgeFacet address from the registry
         bytes4 bridgeSelector = BridgeFacet.bridge.selector;
         address bridgeFacetAddress = _facetRegistry.getFacetForSelector(bridgeSelector);
         _bridgeFacet = BridgeFacet(bridgeFacetAddress);
+
+        _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
         
         vm.stopPrank();
         
@@ -82,7 +86,8 @@ contract BridgeFacetTest is Test {
     function testBridgeFacetDeployment() public {
         assertEq(address(_bridgeFacet._portfolioFactory()), address(_portfolioFactory));
         assertEq(address(_bridgeFacet._portfolioAccountConfig()), address(_portfolioAccountConfig));
-        assertEq(address(_bridgeFacet._usdc()), INK_USDC);
+        assertEq(address(_bridgeFacet._token()), INK_USDC);
+        assertEq(address(_bridgeFacet._tokenMessenger()), TOKEN_MESSENGER);
         assertEq(_bridgeFacet._destinationDomain(), 2); // Optimism Mainnet
     }
 
@@ -90,8 +95,8 @@ contract BridgeFacetTest is Test {
         uint256 balanceBefore = _usdc.balanceOf(_portfolioAccount);
         assertEq(balanceBefore, BRIDGE_AMOUNT);
         
-        vm.prank(_user);
-        BridgeFacet(_portfolioAccount).bridge();
+        vm.prank(_authorizedCaller);
+        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0);
         
         // Verify USDC was transferred/burned by TokenMessenger
         uint256 balanceAfter = _usdc.balanceOf(_portfolioAccount);

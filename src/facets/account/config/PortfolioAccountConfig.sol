@@ -32,6 +32,7 @@ contract PortfolioAccountConfig is Initializable, Ownable2StepUpgradeable, UUPSU
         address loanContract;
         address voteConfig;
         LoanConfig loanConfig;
+        uint256 minimumCollateral;
     }
 
     // Named storage slot for account data
@@ -89,5 +90,19 @@ contract PortfolioAccountConfig is Initializable, Ownable2StepUpgradeable, UUPSU
 
     function getDebtToken() public view returns (address) {
         return address(ILoan(getLoanContract())._asset());
+    }
+
+    function setMinimumCollateral(uint256 minimumCollateral) public onlyOwner {
+        PortfolioAccountConfigData storage collateralStorage = _getPortfolioAccountConfig();
+        collateralStorage.minimumCollateral = minimumCollateral;
+    }
+
+    function getMinimumCollateral() public view returns (uint256) {
+        PortfolioAccountConfigData storage collateralStorage = _getPortfolioAccountConfig();
+        return collateralStorage.minimumCollateral;
+    }
+
+    function getVault() public view returns (address) {
+        return ILoan(getLoanContract())._vault();
     }
 }

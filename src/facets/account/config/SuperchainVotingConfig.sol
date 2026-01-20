@@ -35,10 +35,11 @@ contract SuperchainVotingConfig is VotingConfig {
             superchainVotingStorage.slot := position
         }
     }
+    
     /**
      * @dev Set superchain pool
      */
-    function setSuperchainPool(address pool, bool approved, uint256 chainId) external {
+    function setSuperchainPool(address pool, bool approved, uint256 chainId) external onlyOwner {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.superchainPools[pool] = approved;
         superchainVotingStorage.superchainPoolChainId[pool] = chainId;
@@ -70,7 +71,7 @@ contract SuperchainVotingConfig is VotingConfig {
         return superchainVotingStorage.superchainPoolsList.at(index);
     }
     
-    function setMinimumWethBalance(uint256 minimumWethBalance) external {
+    function setMinimumWethBalance(uint256 minimumWethBalance) external onlyOwner {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.minimumWethBalance = minimumWethBalance;
     }

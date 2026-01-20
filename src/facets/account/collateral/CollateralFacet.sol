@@ -8,6 +8,7 @@ import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "./ICollateralFacet.sol";
 /**
@@ -20,6 +21,7 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
 
     error NotOwnerOfToken();
     error NotOwnerOfPortfolioAccount();
+    error ListingActive(uint256 tokenId);
 
  
     event CollateralAdded(uint256 indexed tokenId, address indexed owner);
@@ -61,6 +63,10 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
     }
 
     function removeCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
+        if (listing.owner != address(0)) {
+            revert ListingActive(tokenId);
+        }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));

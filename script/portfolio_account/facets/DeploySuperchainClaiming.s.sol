@@ -21,18 +21,19 @@ contract DeploySuperchainClaiming is AccountFacetsDeploy {
         address LOAN_CONFIG = vm.envAddress("LOAN_CONFIG");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
         address VAULT = vm.envAddress("VAULT");
+        address WETH = vm.envAddress("WETH");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG, VAULT);
+        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG, VAULT, WETH);
         
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainClaimingFacet", false);
         
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault) external returns (SuperchainClaimingFacet) {
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault, address weth) external returns (SuperchainClaimingFacet) {
         
-        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
+        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault, weth);
         bytes4[] memory selectors = getSelectorsForFacet();
         registerFacet(portfolioFactory, address(facet), selectors, "SuperchainClaimingFacet", true);
         

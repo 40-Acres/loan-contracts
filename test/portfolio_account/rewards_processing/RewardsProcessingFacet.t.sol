@@ -581,7 +581,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceBefore = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
         
         // Process rewards - should partially pay down debt
         vm.startPrank(_authorizedCaller);
@@ -597,17 +597,22 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Verify fees were paid
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceAfter = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceAfter = IERC20(loanAsset).balanceOf(vault);
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
         
-        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee, "Owner should receive protocol fee");
+
+        // Lender premium should be routed to the vault along with the debt payment
+        uint256 totalFees = protocolFee + lenderPremium;
+        uint256 amountForDebt = rewardsAmount - totalFees;
+        uint256 balancePayment = debtBefore > amountForDebt ? amountForDebt : debtBefore;
+        uint256 expectedVaultIncrease = balancePayment + lenderPremium;
+        assertEq(vaultBalanceAfter - vaultBalanceBefore, expectedVaultIncrease, "Vault should receive lender premium and debt payment");
         
         // Verify debt was partially decreased
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
-        uint256 totalFees = protocolFee + lenderPremium;
-        uint256 amountForDebt = rewardsAmount - totalFees;
         uint256 expectedDebt = debtBefore - amountForDebt;
         assertEq(debtAfter, expectedDebt, "Debt should be decreased by payment amount minus fees");
         assertGt(debtAfter, 0, "Debt should still exist after partial payment");
@@ -639,7 +644,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceBefore = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
         
         // Process rewards
         vm.startPrank(_authorizedCaller);
@@ -655,17 +660,13 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Verify all fees are calculated and paid correctly
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceAfter = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceAfter = IERC20(loanAsset).balanceOf(vault);
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
         
-        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        
-        // Verify total fees match expected
-        uint256 totalFeesPaid = (ownerBalanceAfter - ownerBalanceBefore) + (loanContractBalanceAfter - loanContractBalanceBefore);
-        uint256 expectedTotalFees = protocolFee + lenderPremium;
-        assertEq(totalFeesPaid, expectedTotalFees, "Total fees should match expected");
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee, "Owner should receive protocol fee");
+        assertGe(vaultBalanceAfter - vaultBalanceBefore, lenderPremium, "Vault should receive at least lender premium");
     }
 
     function testGetRewardsOptionPercentage() public {
@@ -1018,24 +1019,24 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Calculate minimum rewards needed: rewards = debt / (1 - totalFeeRate / 10000)
         // Using fixed point math: rewards = (debt * 10000) / (10000 - totalFeeRate)
-        uint256 rewardsAmount = 100e6;
+        uint256 rewards = 100e6;
         if (actualDebtBefore > 0 && totalFeeRate < 10000) {
             uint256 minRewardsNeeded = (actualDebtBefore * 10000) / (10000 - totalFeeRate);
-            if (rewardsAmount < minRewardsNeeded) {
-                rewardsAmount = minRewardsNeeded;
+            if (rewards < minRewardsNeeded) {
+                rewards = minRewardsNeeded;
             }
         }
         
         // Calculate fees based on final rewards amount
-        uint256 protocolFee = (rewardsAmount * treasuryFeeRate) / 10000;
-        uint256 lenderPremium = (rewardsAmount * lenderPremiumRate) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * zeroBalanceFeeRate) / 10000;
+        uint256 protocolFee = (rewards * treasuryFeeRate) / 10000;
+        uint256 lenderPremium = (rewards * lenderPremiumRate) / 10000;
+        uint256 zeroBalanceFee = (rewards * zeroBalanceFeeRate) / 10000;
         
         address minter = IUSDC(loanAsset).masterMinter();
         vm.startPrank(minter);
         IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
         vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+        IUSDC(loanAsset).mint(_portfolioAccount, rewards);
 
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
@@ -1044,7 +1045,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
+            rewards,
             address(0),
             0,
             new bytes(0),
@@ -1057,14 +1058,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertEq(debtAfter, 0, "Debt should be fully paid");
 
         // Recalculate fees based on actual rewards amount used (may have been increased)
-        protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
-        lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        protocolFee = (rewards * _loanConfig.getTreasuryFee()) / 10000;
+        lenderPremium = (rewards * _loanConfig.getLenderPremium()) / 10000;
+        zeroBalanceFee = (rewards * _loanConfig.getZeroBalanceFee()) / 10000;
 
-        // Verify owner received correct protocol fee and lender premium
+        // Verify owner received correct protocol fee
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
         uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
-        assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+        assertEq(ownerReceived, protocolFee, "Owner should receive protocol fee");
 
         // Verify outstanding capital decreased by the amount paid
         uint256 outstandingCapitalAfter = ILoan(_loanContract).activeAssets();
@@ -1092,18 +1093,18 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund the portfolio account with 500 USDC for rewards (increased to avoid rounding issues)
-        uint256 rewardsAmount = 500e6;
+        uint256 rewards = 500e6;
         address minter = IUSDC(loanAsset).masterMinter();
         vm.startPrank(minter);
         IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
         vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+        IUSDC(loanAsset).mint(_portfolioAccount, rewards);
 
         address owner = _portfolioAccountConfig.owner();
-        address recipient = address(0x1234); // From setUp
+        address recipientAddress = address(0x1234); // From setUp
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
-        uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipient);
+        uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipientAddress);
         uint256 portfolioOwnerVaultSharesBefore = IERC20(vault).balanceOf(portfolioOwner);
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
 
@@ -1111,7 +1112,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
+            rewards,
             address(0),
             0,
             new bytes(0),
@@ -1124,19 +1125,19 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertEq(debtAfter, 0, "Debt should be fully paid");
 
         // Calculate expected amounts
-        uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
-        uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        uint256 protocolFee = (rewards * _loanConfig.getTreasuryFee()) / 10000;
+        uint256 lenderPremium = (rewards * _loanConfig.getLenderPremium()) / 10000;
+        uint256 zeroBalanceFee = (rewards * _loanConfig.getZeroBalanceFee()) / 10000;
         uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
         // Use actual debt (may be less than borrowAmount if capped)
         uint256 actualDebt = debtBefore;
         uint256 amountForDebt = actualDebt; // Actual debt used
-        uint256 remainingAfterDebt = rewardsAmount - totalFees - amountForDebt;
+        uint256 remainingAfterDebt = rewards - totalFees - amountForDebt;
 
-        // Verify owner received protocol fee and lender premium
+        // Verify owner received protocol fee
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
         uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
-        assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+        assertEq(ownerReceived, protocolFee, "Owner should receive protocol fee");
 
         // Verify portfolio owner received vault shares (not recipient)
         // Note: zero balance fee was already paid in _processActiveLoanRewards, so remaining goes to portfolio owner as vault shares
@@ -1145,7 +1146,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertGt(portfolioOwnerVaultSharesReceived, 0, "Portfolio owner should receive vault shares");
         
         // Verify recipient did NOT receive the loan asset
-        uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
+        uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipientAddress);
         uint256 recipientReceived = recipientBalanceAfter - recipientBalanceBefore;
         assertEq(recipientReceived, 0, "Recipient should not receive loan asset");
 

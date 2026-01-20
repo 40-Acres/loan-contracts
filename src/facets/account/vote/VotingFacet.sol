@@ -111,6 +111,10 @@ contract VotingFacet is IVotingFacet, AccessControl {
         return UserVotingConfig.getDelegatedVoter(tokenId);
     }
 
+    function setDelegatedVoter(uint256 tokenId, address delegatedVoter) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserVotingConfig.setDelegatedVoter(tokenId, delegatedVoter);
+    }
+
     function setVotingMode(uint256 tokenId, bool setToManualVoting) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         if(setToManualVoting) {
             require(_isElligibleForManualVoting(tokenId));

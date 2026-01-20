@@ -33,6 +33,7 @@ import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
 contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
+    address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO
     address public constant VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5; // Aerodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // Aerodrome RewardsDistributor
@@ -85,7 +86,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         // This allows calls to be broadcast from deployer account
         
         // Deploy BridgeFacet
-        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER);
         bytes4[] memory bridgeSelectors = new bytes4[](1);
         bridgeSelectors[0] = BridgeFacet.bridge.selector;
         _registerFacet(facetRegistry, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
@@ -222,6 +223,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
 
 contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
+    address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     bytes32 public constant SALT = keccak256(abi.encodePacked("aerodrome-usdc"));
     
     PortfolioManager public _portfolioManager;
@@ -246,7 +248,7 @@ contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
         // This allows calls to be broadcast from deployer account
         
         // Deploy BridgeFacet
-        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER);
         bytes4[] memory bridgeSelectors = new bytes4[](1);
         bridgeSelectors[0] = BridgeFacet.bridge.selector;
         // Check if facet already exists
