@@ -448,7 +448,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
      * - If the `_rewardsDistributor.claim` function fails, the function will
      *   silently catch the error and return without making any changes.
      */
-    function _claimRebase(LoanInfo storage loan) internal {
+    function _claimRebase(LoanInfo storage loan) virtual internal {
         uint256 claimable = _rewardsDistributor.claimable(loan.tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(loan.tokenId) {

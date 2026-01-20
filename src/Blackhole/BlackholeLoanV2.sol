@@ -171,6 +171,21 @@ contract BlackholeLoanV2 is Loan {
         }
     }
 
+
+    function _claimRebase(LoanInfo storage loan) override internal {
+        // claim from both rewards distributors
+        address[] memory rewardsDistributors = new address[](2);
+        rewardsDistributors[0] = address(_rewardsDistributor);
+        rewardsDistributors[1] = address(0x7c7BD86BaF240dB3DbCc3f7a22B35c5bAa83bA28);
+        for (uint256 i = 0; i < rewardsDistributors.length; i++) {
+            uint256 claimable =  IRewardsDistributor(rewardsDistributors[i]).claimable(loan.tokenId);
+            if (claimable > 0) {
+                IRewardsDistributor(rewardsDistributors[i]).claim(loan.tokenId);
+                addTotalWeight(claimable);
+                loan.weight += claimable;
+            }
+        }
+    }
     /**
      * @notice Processes rewards for a specific loan.
      * @dev This function handles the claiming and processing of rewards.
