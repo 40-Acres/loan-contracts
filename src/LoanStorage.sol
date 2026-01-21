@@ -34,12 +34,27 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
 
     /* Rate Methods */
 
+    /// @dev Get the total weight for the loan contract
+    function getTotalWeight() public view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._totalWeights;
+
+    }
+
+    /// @dev Add total weight for the loan contract
+    function addTotalWeight(uint256 weights) internal  {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        $._totalWeights += weights;
+        $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
+    }
+
     /// @dev Subtract total weight for the loan contract
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
         $._totalWeights -= weights;
         $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
     }
+
 
     /// @dev Check if the token is approved for the loan contract
     function isApprovedToken(address token) public view virtual returns (bool) {
@@ -83,6 +98,11 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     function userUsesPayoffToken(address user) public view virtual returns (bool) {
         LoanStorageStruct storage $ = _getLoanStorage();
         return $._userPayoffTokenOption[user];
+    }
+
+    function _getTotalWeightPerEpoch(uint256 epoch) internal view virtual returns (uint256) {
+        LoanStorageStruct storage $ = _getLoanStorage();
+        return $._totalWeightPerEpoch[epoch];
     }
 
     function setMinimumLocked(uint256 minimumLocked) public onlyOwner {
