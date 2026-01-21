@@ -36,10 +36,11 @@ contract OpDeploy is Script {
         weights[2] = 25e18;
         weights[3] = 25e18;
         console.log(Ownable2StepUpgradeable(loan).owner());
+        LoanV2(address(proxy)).upgradeToAndCall(address(new LoanV2()), new bytes(0));
         LoanV2(address(proxy)).setRewardsRate(743);
         LoanV2(address(proxy)).setMultiplier(10);
+        LoanV2(address(proxy)).setApprovedPools(pools, true);
         LoanV2(address(proxy)).setDefaultPools(pools, weights);
-        LoanV2(address(proxy)).upgradeToAndCall(address(new LoanV2()), new bytes(0));
         return (LoanV2(address(proxy)), vault);
     }
 }
