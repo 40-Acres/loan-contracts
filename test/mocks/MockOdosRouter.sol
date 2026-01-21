@@ -9,8 +9,25 @@ contract MockOdosRouterRL is Test {
     
     function initMock(address _testContract) external { testContract = _testContract; }
     function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, address receiver) external returns (bool) {
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        deal(tokenOut, receiver, amountOut);
+        if(amountIn > 0) {
+            IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        }
+        if(amountOut > 0) {
+            uint256 balance = IERC20(tokenOut).balanceOf(receiver);
+            deal(tokenOut, receiver, amountOut + balance);
+        }
+        return true;
+    }
+
+    function executeSwapMultiOutput(address token1, address token2, uint256 amount1, uint256 amount2, address receiver) external returns (bool) {
+        if(amount1 > 0) {
+            uint256 balance = IERC20(token1).balanceOf(receiver);
+            deal(token1, receiver, amount1 + balance);
+        }
+        if(amount2 > 0) {
+            uint256 balance = IERC20(token2).balanceOf(receiver);  
+            deal(token2, receiver, amount2 + balance);
+        }
         return true;
     }
 
