@@ -85,11 +85,11 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         // Deploy all facets directly (no contract instances)
         // This allows calls to be broadcast from deployer account
         
-        // Deploy BridgeFacet
-        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER);
-        bytes4[] memory bridgeSelectors = new bytes4[](1);
-        bridgeSelectors[0] = BridgeFacet.bridge.selector;
-        _registerFacet(facetRegistry, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
+        // // Deploy BridgeFacet
+        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER);
+        // bytes4[] memory bridgeSelectors = new bytes4[](1);
+        // bridgeSelectors[0] = BridgeFacet.bridge.selector;
+        // _registerFacet(facetRegistry, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
         
         // Deploy ClaimingFacet
         ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
@@ -144,9 +144,8 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         
         // Deploy SwapFacet
         SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig));
-        bytes4[] memory swapSelectors = new bytes4[](2);
-        swapSelectors[0] = SwapFacet.swap.selector;
-        swapSelectors[1] = SwapFacet.userSwap.selector;
+        bytes4[] memory swapSelectors = new bytes4[](1);
+        swapSelectors[0] = SwapFacet.userSwap.selector;
         _registerFacet(facetRegistry, address(swapFacet), swapSelectors, "SwapFacet");
         
         // Deploy MigrationFacet

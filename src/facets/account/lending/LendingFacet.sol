@@ -110,4 +110,8 @@ contract LendingFacet is AccessControl {
         _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
         emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
+
+    function getMaxLoan() public view returns (uint256, uint256) {
+        return CollateralFacet(address(this)).getMaxLoan();
+    }
 }

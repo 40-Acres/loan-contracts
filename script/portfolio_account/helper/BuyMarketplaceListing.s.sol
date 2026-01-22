@@ -40,7 +40,7 @@ contract BuyMarketplaceListing is Script {
         address buyer
     ) internal {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
-        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(portfolioManager);
+        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
 
         // Verify seller portfolio exists
         require(factory.isPortfolio(sellerPortfolio), "Seller portfolio does not exist");

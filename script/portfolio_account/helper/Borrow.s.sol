@@ -38,7 +38,7 @@ contract Borrow is Script {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
 
         // Verify the facet is registered
-        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(portfolioManager);
+        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = LendingFacet.borrow.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
@@ -51,7 +51,9 @@ contract Borrow is Script {
         // Check max loan available
         (uint256 maxLoan, ) = CollateralFacet(portfolioAddress).getMaxLoan();
         console.log("Max loan available:", maxLoan);
-        require(amount <= maxLoan, "Requested amount exceeds max loan");
+        if(amount > maxLoan) {
+            amount = maxLoan;
+        }
 
         // Use factory address for multicall
         address[] memory factories = new address[](1);

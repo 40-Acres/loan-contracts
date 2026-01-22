@@ -43,12 +43,14 @@ contract ApprovePool is Script {
     }
 
     /**
-     * @dev Get PortfolioFactory for aerodrome-usdc from PortfolioManager
+     * @dev Get PortfolioFactory from PortfolioManager
+     * @notice Set FACTORY_SALT env var to override (e.g., "aerodrome-usdc-dynamic-fees"). Defaults to "aerodrome-usdc"
      */
     function getAerodromeFactory(PortfolioManager portfolioManager) internal view returns (PortfolioFactory) {
-        bytes32 salt = keccak256(abi.encodePacked("aerodrome-usdc"));
+        string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
+        bytes32 salt = keccak256(abi.encodePacked(factorySalt));
         address factoryAddress = portfolioManager.factoryBySalt(salt);
-        require(factoryAddress != address(0), "Aerodrome factory not found");
+        require(factoryAddress != address(0), string.concat("Factory not found for salt: ", factorySalt));
         return PortfolioFactory(factoryAddress);
     }
 
