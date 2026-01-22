@@ -6,23 +6,31 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {UserLendingConfig} from "./UserLendingConfig.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-
+import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 /**
  * @title LendingFacet
  * @dev Facet for borrowing against collateral in portfolio accounts.
  *      Global debt tracked via CollateralManager, per-loan details from loan contract.
  */
 contract LendingFacet is AccessControl {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IERC20 public immutable _lendingToken;
 
     error NotOwnerOfToken();
     error NotPortfolioOwner();
+
+    event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
+    event BorrowedTo(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner, address indexed to);
+    event Paid(uint256 amount, address indexed owner);
+    event TopUpSet(bool topUpEnabled, address indexed owner);
+    event ToppedUp(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
 
     constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken) {
         require(portfolioFactory != address(0));
@@ -32,42 +40,59 @@ contract LendingFacet is AccessControl {
     }
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
+        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+        uint256 minimumCollateral = _portfolioAccountConfig.getMinimumCollateral();
+        if(minimumCollateral > 0) {
+            require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
+        }
+        emit Borrowed(amount, amountAfterFees, originationFee, portfolioOwner);
     }
 
     /**
      * @dev Borrow funds to a specific address within the 40acres ecosystem
      * @param to The address to borrow funds to
      * @param amount The amount of funds to borrow
-     * @notice O
+     * @notice Borrow funds to a specific address within the 40acres ecosystem
      */
     function borrowTo(address to, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        // verify with portfolio manager that the to address is part of 40acres
-        require(PortfolioManager(address(_portfolioFactory.portfolioManager())).isPortfolioOwner(to), "To address is not part of 40acres");
-        address portfolioOwner = PortfolioFactory(address(_portfolioFactory.portfolioManager())).ownerOf(to);
-        // require owner of to address to be the portfolio owner
-        require(portfolioOwner == _portfolioFactory.ownerOf(to), "not the same owner for to adress and current portfolio");
+        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
+        // 1. Verify existence and get the specific factory for the 'to' portfolio
+        require(manager.isPortfolioRegistered(to), "To address is not part of 40acres");
+        address toFactoryAddress = manager.getFactoryForPortfolio(to);
 
+        // 2. Get the owner from the correct factory
+        address portfolioOwner = PortfolioFactory(toFactoryAddress).ownerOf(to);
 
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
-        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
+        // 3. Verify ownership matches the current portfolio's owner
+        require(portfolioOwner == _portfolioFactory.ownerOf(address(this)), "not the same owner for to address and current portfolio");
+
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        _lendingToken.safeTransfer(to, amountAfterFees);
+        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
-    function pay(uint256 amount) public  {
+    function pay(uint256 amount) public {
         // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
+        address loanContract = address(_portfolioAccountConfig.getLoanContract());
 
         // transfer the funds from the from address to the portfolio account then pay the loan
-        IERC20(address(_lendingToken)).transferFrom(from, address(this), amount);
-        IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), amount);
-        CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
-        IERC20(address(_lendingToken)).approve(address(_portfolioAccountConfig.getLoanContract()), 0);
+        _lendingToken.safeTransferFrom(from, address(this), amount);
+        uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
+
+        emit Paid(amount-excess, from);
+        // refund excess to the from address
+        if(excess > 0) {
+            _lendingToken.safeTransfer(from, excess);
+        }
     }
 
     function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserLendingConfig.setTopUp(topUpEnabled);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit TopUpSet(topUpEnabled, owner);
     }
 
     function topUp() public {
@@ -79,9 +104,10 @@ contract LendingFacet is AccessControl {
         if(maxLoan == 0) {
             return;
         }
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
         // send to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        IERC20(address(_lendingToken)).transfer(portfolioOwner, amountAfterFees);
+        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+        emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
 }

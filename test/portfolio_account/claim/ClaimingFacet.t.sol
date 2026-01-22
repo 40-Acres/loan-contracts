@@ -164,17 +164,6 @@ contract ClaimingFacetTest is Test, Setup {
         
         borrowViaMulticall(borrowAmount);
 
-        // Set up launchpad token voting
-        vm.startPrank(_owner);
-        _votingConfig.setLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[0], claimingToken);
-        vm.stopPrank();
-        
-        // user votes on launchpad token pool with receiveToken = true
-        voteForLaunchpadTokenViaMulticall(_tokenId, pools, weights, true);
-
-        // fast forward to next epoch
-        vm.warp(ProtocolTimeLibrary.epochNext(block.timestamp));
-        vm.roll(block.number + 1);
 
         // Deploy MockOdosRouter
         MockOdosRouterRL mockRouter = new MockOdosRouterRL();
@@ -183,6 +172,20 @@ contract ClaimingFacetTest is Test, Setup {
         IUSDC(_usdc).configureMinter(address(this), type(uint256).max);
         vm.stopPrank();
         IUSDC(_usdc).mint(address(mockRouter), 10000e18);
+
+
+        // Set up launchpad token voting
+        vm.startPrank(_owner);
+        _votingConfig.setLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[0], claimingToken);
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
+        vm.stopPrank();
+        
+        // user votes on launchpad token pool with receiveToken = true
+        voteForLaunchpadTokenViaMulticall(_tokenId, pools, weights, true);
+
+        // fast forward to next epoch
+        vm.warp(ProtocolTimeLibrary.epochNext(block.timestamp));
+        vm.roll(block.number + 1);
 
         uint256 expectedUsdcOutput = 250e6;
 

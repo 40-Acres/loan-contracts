@@ -72,7 +72,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Approve swap target
         vm.startPrank(FORTY_ACRES_DEPLOYER);
-        _swapConfig.approveSwapTarget(address(mockRouter));
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
     }
 
@@ -127,9 +127,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
-            address(0), // asset will be determined from config
+            rewardsAmount, // asset will be determined from config
             address(0), // no swap
+            0, // minimum output amount
             new bytes(0),
             0 // gas reclamation
         );
@@ -178,7 +178,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0, // minimum output amount
             new bytes(0),
             0 // gas reclamation
         );
@@ -244,8 +244,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            rewardsToken,
             address(mockRouter),
+            0,
             swapData,
             0 // gas reclamation
         );
@@ -271,6 +271,68 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 remainingRewards = rewardsAmount - amountToSwap - feeAmount;
         assertEq(portfolioRewardsAfter, 0, "Portfolio should have processed all rewards");
         assertEq(recipientBalanceAfter, recipientBalanceBefore + remainingRewards, "Recipient should receive remaining rewards minus fee");
+    }
+
+
+    function testProcessRewardsRevertSlippage() public {
+        setupRewards();
+        
+        // Set increase percentage
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
+            20
+        );
+        calldatas[1] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setRewardsOption.selector,
+            UserRewardsConfig.RewardsOption.IncreaseCollateral
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+        
+        // Fund mock router with locked asset
+        deal(lockedAsset, address(mockRouter), 200e18);
+        
+        uint256 portfolioRewardsBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        
+        // Create swap data
+        uint256 amountToSwap = rewardsAmount * 20 / 100; // 20% of rewards
+        uint256 expectedLockedAssetOut = 200e18; // Expected output from swap
+        
+        bytes memory swapData = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwap.selector,
+            rewardsToken,
+            lockedAsset,
+            amountToSwap,
+            expectedLockedAssetOut,
+            _portfolioAccount
+        );
+        
+        // Pre-approve for swap
+        vm.prank(_portfolioAccount);
+        IERC20(rewardsToken).approve(address(mockRouter), amountToSwap);
+        
+        // Check the voting escrow's locked amount before processing
+        IVotingEscrow.LockedBalance memory lockedBefore = IVotingEscrow(_ve).locked(_tokenId);
+        uint256 lockedAmountBefore = uint256(uint128(lockedBefore.amount));
+        uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
+        
+        // Process rewards
+        vm.startPrank(_authorizedCaller);
+        vm.expectRevert("Slippage exceeded");
+        rewardsProcessingFacet.processRewards(
+            _tokenId,
+            rewardsAmount,
+            address(mockRouter),
+            10000e18,
+            swapData,
+            0 // gas reclamation
+        );
+        vm.stopPrank();
     }
 
     function testProcessRewardsActiveLoan() public {
@@ -307,9 +369,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
-            address(0), // asset will be determined from loan contract
+            rewardsAmount, // asset will be determined from loan contract
             address(0), // no swap
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -366,7 +428,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -467,8 +529,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            loanAsset,
             address(mockRouter),
+            0,
             swapData,
             0 // gas reclamation
         );
@@ -519,7 +581,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceBefore = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
         
         // Process rewards - should partially pay down debt
         vm.startPrank(_authorizedCaller);
@@ -527,7 +589,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -535,19 +597,22 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Verify fees were paid
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceAfter = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceAfter = IERC20(loanAsset).balanceOf(vault);
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
         
-        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        assertEq(loanContractBalanceAfter - loanContractBalanceBefore, zeroBalanceFee, "Loan contract should receive zero balance fee");
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee, "Owner should receive protocol fee");
+
+        // Lender premium should be routed to the vault along with the debt payment
+        uint256 totalFees = protocolFee + lenderPremium;
+        uint256 amountForDebt = rewardsAmount - totalFees;
+        uint256 balancePayment = debtBefore > amountForDebt ? amountForDebt : debtBefore;
+        uint256 expectedVaultIncrease = balancePayment + lenderPremium;
+        assertEq(vaultBalanceAfter - vaultBalanceBefore, expectedVaultIncrease, "Vault should receive lender premium and debt payment");
         
         // Verify debt was partially decreased
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
-        uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
-        uint256 amountForDebt = rewardsAmount - totalFees;
         uint256 expectedDebt = debtBefore - amountForDebt;
         assertEq(debtAfter, expectedDebt, "Debt should be decreased by payment amount minus fees");
         assertGt(debtAfter, 0, "Debt should still exist after partial payment");
@@ -579,7 +644,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceBefore = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
         
         // Process rewards
         vm.startPrank(_authorizedCaller);
@@ -587,7 +652,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -595,19 +660,13 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Verify all fees are calculated and paid correctly
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
-        uint256 loanContractBalanceAfter = IERC20(loanAsset).balanceOf(_loanContract);
+        uint256 vaultBalanceAfter = IERC20(loanAsset).balanceOf(vault);
         
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
         
-        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
-        assertEq(loanContractBalanceAfter - loanContractBalanceBefore, zeroBalanceFee, "Loan contract should receive zero balance fee");
-        
-        // Verify total fees match expected
-        uint256 totalFeesPaid = (ownerBalanceAfter - ownerBalanceBefore) + (loanContractBalanceAfter - loanContractBalanceBefore);
-        uint256 expectedTotalFees = protocolFee + lenderPremium + zeroBalanceFee;
-        assertEq(totalFeesPaid, expectedTotalFees, "Total fees should match expected");
+        assertEq(ownerBalanceAfter - ownerBalanceBefore, protocolFee, "Owner should receive protocol fee");
+        assertGe(vaultBalanceAfter - vaultBalanceBefore, lenderPremium, "Vault should receive at least lender premium");
     }
 
     function testGetRewardsOptionPercentage() public {
@@ -733,7 +792,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -748,14 +807,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
         vm.stopPrank();
     }
 
-    function testProcessRewardsFailsWithZeroRewardsToken() public {
+    function testProcessRewardsShouldFallbackToVaultAssetIfNoRewardsTokenSet() public {
         setupRewards();
         
         // Set rewards token to zero using the facet's setter through multicall
@@ -770,14 +829,13 @@ contract RewardsProcessingFacetTest is Test, Setup {
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
         
-        // This should fail when processing zero balance rewards
+        // Process rewards should fallback to vault asset if no rewards token set
         vm.startPrank(_authorizedCaller);
-        vm.expectRevert();
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -800,7 +858,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             gasReclamationAmount
         );
@@ -842,7 +900,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             gasReclamationAmount // Will be capped at 5%
         );
@@ -901,7 +959,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
             _tokenId,
             rewardsAmount,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             gasReclamationAmount
         );
@@ -961,24 +1019,24 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Calculate minimum rewards needed: rewards = debt / (1 - totalFeeRate / 10000)
         // Using fixed point math: rewards = (debt * 10000) / (10000 - totalFeeRate)
-        uint256 rewardsAmount = 100e6;
+        uint256 rewards = 100e6;
         if (actualDebtBefore > 0 && totalFeeRate < 10000) {
             uint256 minRewardsNeeded = (actualDebtBefore * 10000) / (10000 - totalFeeRate);
-            if (rewardsAmount < minRewardsNeeded) {
-                rewardsAmount = minRewardsNeeded;
+            if (rewards < minRewardsNeeded) {
+                rewards = minRewardsNeeded;
             }
         }
         
         // Calculate fees based on final rewards amount
-        uint256 protocolFee = (rewardsAmount * treasuryFeeRate) / 10000;
-        uint256 lenderPremium = (rewardsAmount * lenderPremiumRate) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * zeroBalanceFeeRate) / 10000;
+        uint256 protocolFee = (rewards * treasuryFeeRate) / 10000;
+        uint256 lenderPremium = (rewards * lenderPremiumRate) / 10000;
+        uint256 zeroBalanceFee = (rewards * zeroBalanceFeeRate) / 10000;
         
         address minter = IUSDC(loanAsset).masterMinter();
         vm.startPrank(minter);
         IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
         vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+        IUSDC(loanAsset).mint(_portfolioAccount, rewards);
 
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
@@ -987,9 +1045,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
+            rewards,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -1000,14 +1058,14 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertEq(debtAfter, 0, "Debt should be fully paid");
 
         // Recalculate fees based on actual rewards amount used (may have been increased)
-        protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
-        lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        protocolFee = (rewards * _loanConfig.getTreasuryFee()) / 10000;
+        lenderPremium = (rewards * _loanConfig.getLenderPremium()) / 10000;
+        zeroBalanceFee = (rewards * _loanConfig.getZeroBalanceFee()) / 10000;
 
-        // Verify owner received correct protocol fee and lender premium
+        // Verify owner received correct protocol fee
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
         uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
-        assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+        assertEq(ownerReceived, protocolFee, "Owner should receive protocol fee");
 
         // Verify outstanding capital decreased by the amount paid
         uint256 outstandingCapitalAfter = ILoan(_loanContract).activeAssets();
@@ -1035,18 +1093,18 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund the portfolio account with 500 USDC for rewards (increased to avoid rounding issues)
-        uint256 rewardsAmount = 500e6;
+        uint256 rewards = 500e6;
         address minter = IUSDC(loanAsset).masterMinter();
         vm.startPrank(minter);
         IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
         vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
+        IUSDC(loanAsset).mint(_portfolioAccount, rewards);
 
         address owner = _portfolioAccountConfig.owner();
-        address recipient = address(0x1234); // From setUp
+        address recipientAddress = address(0x1234); // From setUp
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
-        uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipient);
+        uint256 recipientBalanceBefore = IERC20(loanAsset).balanceOf(recipientAddress);
         uint256 portfolioOwnerVaultSharesBefore = IERC20(vault).balanceOf(portfolioOwner);
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
 
@@ -1054,9 +1112,9 @@ contract RewardsProcessingFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
-            rewardsAmount,
+            rewards,
             address(0),
-            address(0),
+            0,
             new bytes(0),
             0 // gas reclamation
         );
@@ -1067,19 +1125,19 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertEq(debtAfter, 0, "Debt should be fully paid");
 
         // Calculate expected amounts
-        uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
-        uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
-        uint256 zeroBalanceFee = (rewardsAmount * _loanConfig.getZeroBalanceFee()) / 10000;
+        uint256 protocolFee = (rewards * _loanConfig.getTreasuryFee()) / 10000;
+        uint256 lenderPremium = (rewards * _loanConfig.getLenderPremium()) / 10000;
+        uint256 zeroBalanceFee = (rewards * _loanConfig.getZeroBalanceFee()) / 10000;
         uint256 totalFees = protocolFee + lenderPremium + zeroBalanceFee;
         // Use actual debt (may be less than borrowAmount if capped)
         uint256 actualDebt = debtBefore;
         uint256 amountForDebt = actualDebt; // Actual debt used
-        uint256 remainingAfterDebt = rewardsAmount - totalFees - amountForDebt;
+        uint256 remainingAfterDebt = rewards - totalFees - amountForDebt;
 
-        // Verify owner received protocol fee and lender premium
+        // Verify owner received protocol fee
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
         uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
-        assertEq(ownerReceived, protocolFee + lenderPremium, "Owner should receive protocol fee and lender premium");
+        assertEq(ownerReceived, protocolFee, "Owner should receive protocol fee");
 
         // Verify portfolio owner received vault shares (not recipient)
         // Note: zero balance fee was already paid in _processActiveLoanRewards, so remaining goes to portfolio owner as vault shares
@@ -1088,7 +1146,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         assertGt(portfolioOwnerVaultSharesReceived, 0, "Portfolio owner should receive vault shares");
         
         // Verify recipient did NOT receive the loan asset
-        uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
+        uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipientAddress);
         uint256 recipientReceived = recipientBalanceAfter - recipientBalanceBefore;
         assertEq(recipientReceived, 0, "Recipient should not receive loan asset");
 

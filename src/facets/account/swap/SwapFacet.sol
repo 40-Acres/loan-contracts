@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SwapMod} from "./SwapMod.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 import {AccessControl} from "../../account/utils/AccessControl.sol";
@@ -14,6 +15,7 @@ import {CollateralFacet} from "../collateral/CollateralFacet.sol";
  * @dev Facet that swaps tokens within the portfolio
  */
 contract SwapFacet is AccessControl {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     SwapConfig public immutable _swapConfig;
@@ -42,9 +44,10 @@ contract SwapFacet is AccessControl {
             revert("Input token cannot be collateral token");
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        IERC20(inputToken).transferFrom(portfolioOwner, address(this), inputAmount);
+        IERC20(inputToken).safeTransferFrom(portfolioOwner, address(this), inputAmount);
         amount = SwapMod.swap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount);
         return amount;
     }
+
 }
 

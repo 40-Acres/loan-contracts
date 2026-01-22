@@ -43,7 +43,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     address internal _rateCalculator; // deprecated
     address public _vault;
 
-    bool internal _paused;
+    bool internal _paused; // deprecated, set rewardsRate or multiplier to 0 to pause loans
     uint256 public _outstandingCapital;
     uint256 public  _multiplier; // rewards rate multiplier
 
@@ -1303,6 +1303,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
         IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
         IMigrationFacet(portfolio).migrate(tokenId, loan.unpaidFees);   // migrate the loan to the portfolio with unpaid fees
+        delete _loanDetails[tokenId];
     }
 
 

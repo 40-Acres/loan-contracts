@@ -7,12 +7,14 @@ import {UserMarketplaceModule} from "./UserMarketplaceModule.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IMarketplaceFacet} from "../../../interfaces/IMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../marketplace/PortfolioMarketplace.sol";
 
 contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
@@ -29,9 +31,16 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         _marketplace = marketplace;
     }
 
+
     event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
     event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
-
+    
+    event ListingCreated(uint256 indexed tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address indexed owner, address allowedBuyer);
+    event ListingCancelled(uint256 indexed tokenId, address indexed owner);
+    event PurchaseFinalized(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 debtAmount, uint256 unpaidFees);
+    event DebtTransferredToBuyer(uint256 indexed tokenId, address indexed buyer, uint256 debtAmount, uint256 unpaidFees, address indexed seller);
+    event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
+    
     function marketplace() external view returns (address) {
         return _marketplace;
     }
@@ -44,13 +53,22 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         uint256 expiresAt,
         address allowedBuyer
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
-        require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
+        CollateralFacet collateralFacet = CollateralFacet(address(this));
+        require(collateralFacet.getLockedCollateral(tokenId) > 0, "Token not locked");
+        require(collateralFacet.getOriginTimestamp(tokenId) > 0, "Token not originated");
+        // if user has debt, require the payment token to be the same as the debt token
+        if(debtAttached > 0) {
+            require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
+        }
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit ListingCreated(tokenId, price, paymentToken, debtAttached, expiresAt, owner, allowedBuyer);
     }
 
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.removeListing(tokenId);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit ListingCancelled(tokenId, owner);
     }
 
     /**
@@ -107,34 +125,34 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
 
         // take fees from the payment amount
-        uint256 protocolFee = (paymentAmount * PortfolioMarketplace(address(_marketplace)).protocolFee()) / 10000;
-        emit ProtocolFeeTaken(tokenId, msg.sender, protocolFee);
-        paymentToken.transferFrom(msg.sender, PortfolioMarketplace(address(_marketplace)).feeRecipient(), protocolFee);
+        PortfolioMarketplace market = PortfolioMarketplace(address(_marketplace));
+        uint256 protocolFee = (paymentAmount * market.protocolFee()) / 10000;
+        paymentToken.safeTransferFrom(msg.sender, market.feeRecipient(), protocolFee);
 
-        emit PaymentProcessed(tokenId, msg.sender, paymentAmount, protocolFee);
         paymentAmount = paymentAmount - protocolFee;
-        paymentToken.transferFrom(msg.sender, address(this), paymentAmount);
+        paymentToken.safeTransferFrom(msg.sender, address(this), paymentAmount);
         
         
         // Handle payment based on whether debt is attached
         // - If debtAttached == 0: listing price pays down debt, excess goes to seller
         // - If debtAttached > 0: listing price goes directly to seller, debt will be transferred to buyer
-        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
+        CollateralFacet collateralFacet = CollateralFacet(address(this));
+        uint256 totalDebt = collateralFacet.getTotalDebt();
         if(listing.debtAttached == 0) {
             // No debt attached, so handle payment normally
             if(totalDebt > 0) {
                 // Pay down debt with payment, transfer excess to seller
                 uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), paymentAmount);
                 if(excess > 0) {
-                    paymentToken.transfer(portfolioOwner, excess);
+                    paymentToken.safeTransfer(portfolioOwner, excess);
                 }
             } else {
                 // No debt, transfer full payment to seller
-                paymentToken.transfer(portfolioOwner, paymentAmount);
+                paymentToken.safeTransfer(portfolioOwner, paymentAmount);
             }
         } else {
             // Debt attached - transfer full payment to seller, debt will be transferred separately
-            paymentToken.transfer(portfolioOwner, paymentAmount);
+            paymentToken.safeTransfer(portfolioOwner, paymentAmount);
         }
         
         // Get buyer's portfolio account (buyer parameter is the EOA, but we need to approve the portfolio account)
@@ -165,33 +183,27 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         require(_portfolioFactory.isPortfolio(seller), "Seller must be a portfolio account");
         require(seller != address(this), "Cannot purchase from self");
         
-        // Calculate debt amount - use debtAmount if provided, otherwise use seller's total debt
-        uint256 actualDebtAmount = debtAmount;
-        if (actualDebtAmount == 0) {
-            // If debtAmount is 0, use seller's total debt
-            actualDebtAmount = CollateralFacet(seller).getTotalDebt();
-        }
         
         // Calculate proportional unpaid fees if there's debt to transfer
         uint256 unpaidFeesToTransfer = 0;
-        if (actualDebtAmount > 0) {
+        if (debtAmount > 0) {
             // Get seller's total debt and unpaid fees
             uint256 sellerTotalDebt = CollateralFacet(seller).getTotalDebt();
             uint256 sellerUnpaidFees = CollateralFacet(seller).getUnpaidFees();
             
             // Cap debt amount to seller's actual total debt
-            if (actualDebtAmount > sellerTotalDebt) {
-                actualDebtAmount = sellerTotalDebt;
+            if (debtAmount > sellerTotalDebt) {
+                debtAmount = sellerTotalDebt;
             }
             
             // Calculate proportional unpaid fees
             if (sellerUnpaidFees > 0 && sellerTotalDebt > 0) {
-                unpaidFeesToTransfer = (sellerUnpaidFees * actualDebtAmount) / sellerTotalDebt;
+                unpaidFeesToTransfer = (sellerUnpaidFees * debtAmount) / sellerTotalDebt;
             }
             
             // Transfer debt away from seller by calling seller's MarketplaceFacet
             // This must happen before NFT transfer since transferDebtToBuyer checks token ownership
-            IMarketplaceFacet(seller).transferDebtToBuyer(tokenId, address(this), actualDebtAmount, unpaidFeesToTransfer);
+            IMarketplaceFacet(seller).transferDebtToBuyer(tokenId, address(this), debtAmount, unpaidFeesToTransfer);
         }
         
         // Transfer NFT from seller to this portfolio account (buyer)
@@ -202,10 +214,11 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
         
         // Add debt to buyer's account AFTER adding collateral
-        // Use addDebtFromMarketplace which updates undercollateralized debt tracking
-        if (actualDebtAmount > 0) {
-            CollateralManager.addDebtFromMarketplace(address(_portfolioAccountConfig), actualDebtAmount, unpaidFeesToTransfer);
+        if (debtAmount > 0) {
+            CollateralManager.addDebt(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
         }
+        
+        emit PurchaseFinalized(tokenId, seller, address(this), debtAmount, unpaidFeesToTransfer);
     }
 
     /**
@@ -235,6 +248,9 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Remove collateral from seller's collateral manager
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         CollateralManager.enforceCollateralRequirements();
+        
+        address sellerOwner = _portfolioFactory.ownerOf(address(this));
+        emit DebtTransferredToBuyer(tokenId, buyer, debtAmount, unpaidFees, sellerOwner);
     }
 
 
@@ -245,15 +261,17 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     }
     
     /**
-     * @notice Buy a 40 Acres listing
+     * @notice Buy a 40 Acres listing from an external buyer (not a portfolio account)
      * @param tokenId The token ID being purchased
-     * @param buyer The buyer's portfolio account address
+     * @param buyer The buyer's address
      */
     function buyMarketplaceListing(uint256 tokenId, address buyer) public {
-        require(buyer != address(this), "Buyer cannot be the portfolio account");
-        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not in portfolio");
-        require(CollateralFacet(address(this)).getLockedCollateral(tokenId) > 0, "Token not locked");
-        require(CollateralFacet(address(this)).getOriginTimestamp(tokenId) > 0, "Token not originated");
+        require(buyer != address(this), "Buyer cannot be this contract");
+        require(msg.sender == buyer, "Caller must be buyer");
+        CollateralFacet collateralFacet = CollateralFacet(address(this));
+        require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not owned by this contract");
+        require(collateralFacet.getLockedCollateral(tokenId) > 0, "Token not locked");
+        require(collateralFacet.getOriginTimestamp(tokenId) > 0, "Token not originated");
         
         // Ensure buyer is not a portfolio account
         require(!_portfolioFactory.isPortfolio(buyer), "Buyer cannot be a portfolio account");
@@ -272,30 +290,34 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Transfer payment token from buyer to this portfolio account
         IERC20 paymentToken = IERC20(listing.paymentToken);
-        paymentToken.transferFrom(buyer, address(this), listing.price);
+        paymentToken.safeTransferFrom(buyer, address(this), listing.price);
         
         // Pay down debt if needed
         // Buyer pays listing price, seller receives it (minus debt paid)
         // Excess always goes to seller - buyer agreed to pay the listing price
-        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        uint256 totalDebt = collateralFacet.getTotalDebt();
+
         if(totalDebt > 0) {
-            // Pay down debt with listing price, transfer excess to seller
-            uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), listing.price);
+            require(listing.paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
+        }
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        address configAddress = address(_portfolioAccountConfig);
+        if(totalDebt == 0) {
+            // No debt, transfer full listing price to seller
+            paymentToken.safeTransfer(portfolioOwner, listing.price);
+        } else if (listing.debtAttached == 0) { 
+            // no debt attached, pay down debt with listing price transfer excess to seller
+            uint256 excess = CollateralManager.decreaseTotalDebt(configAddress, listing.price);
             if(excess > 0) {
-                paymentToken.transfer(portfolioOwner, excess);
+                paymentToken.safeTransfer(portfolioOwner, excess);
             }
         } else {
-            // No debt, transfer full listing price to seller
-            paymentToken.transfer(portfolioOwner, listing.price);
-        }
-
-        // if there is debt attached, pay down the debt
-        if(listing.debtAttached > 0) {
-            paymentToken.transferFrom(buyer, address(this), listing.debtAttached);
-            uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), listing.debtAttached);
+            // Debt attached, transfer full listing price to seller, debt will be transferred separately
+            paymentToken.safeTransferFrom(buyer, address(this), listing.debtAttached);
+            paymentToken.safeTransfer(portfolioOwner, listing.price);
+            uint256 excess = CollateralManager.decreaseTotalDebt(configAddress, listing.debtAttached);
             if(excess > 0) {
-                paymentToken.transfer(buyer, excess);
+                paymentToken.safeTransfer(buyer, excess);
             }
         }
         
@@ -308,5 +330,7 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
+
+        emit MarketplaceListingBought(tokenId, buyer, listing.price, listing.debtAttached, portfolioOwner);
     }
 }

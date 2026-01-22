@@ -5,11 +5,14 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /**
  * @title VotingConfig
  */
 contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
     constructor() {
         _disableInitializers();
     }
@@ -31,6 +34,7 @@ contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     struct VotingConfigData {
         mapping(address => bool) approvedPools;
         mapping(uint256 epoch => mapping(address => address)) launchpadPoolTokenForEpoch;
+        EnumerableSet.AddressSet approvedPoolsList;
     }
 
     // Named storage slot for account data
@@ -49,12 +53,32 @@ contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
     function setApprovedPool(address pool, bool approved) public onlyOwner {
         VotingConfigData storage votingStorage = _getVotingConfig();
         votingStorage.approvedPools[pool] = approved;
+        if(approved) {
+            votingStorage.approvedPoolsList.add(pool);
+        } else {
+            votingStorage.approvedPoolsList.remove(pool);
+        }
         emit ApprovedPool(pool, approved);
     }
 
     function isApprovedPool(address pool) public view returns (bool) {
         VotingConfigData storage votingStorage = _getVotingConfig();
         return votingStorage.approvedPools[pool];
+    }
+
+    function getApprovedPoolsList() public view returns (address[] memory) {
+        VotingConfigData storage votingStorage = _getVotingConfig();
+        return votingStorage.approvedPoolsList.values();
+    }
+
+    function getApprovedPoolsListLength() public view returns (uint256) {
+        VotingConfigData storage votingStorage = _getVotingConfig();
+        return votingStorage.approvedPoolsList.length();
+    }
+
+    function getApprovedPoolAtIndex(uint256 index) public view returns (address) {
+        VotingConfigData storage votingStorage = _getVotingConfig();
+        return votingStorage.approvedPoolsList.at(index);
     }
 
     function setLaunchpadPoolTokenForNextEpoch(address pool, address launchpadToken) public onlyOwner {

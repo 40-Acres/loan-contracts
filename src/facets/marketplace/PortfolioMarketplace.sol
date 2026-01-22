@@ -169,7 +169,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             msg.sender,
             portfolioAccount,
             paymentAmount,
-            0
+            (paymentAmount * protocolFeeBps) / 10000
         );
     }
     

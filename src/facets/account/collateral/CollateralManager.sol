@@ -110,6 +110,7 @@ library CollateralManager {
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
+        require(newLockedCollateralInt >= 0, "Locked collateral amount must be greater than 0");
         uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
         if(newLockedCollateral > previousLockedCollateral) {
             uint256 difference = newLockedCollateral - previousLockedCollateral;
@@ -138,8 +139,8 @@ library CollateralManager {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         return collateralManagerData.unpaidFees;
     }
-
-    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external  returns (uint256 loanAmount) {
+    
+    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
@@ -148,13 +149,15 @@ library CollateralManager {
         if (amount > maxLoan) {
             collateralManagerData.overSuppliedVaultDebt += amount - maxLoan;
         }
-        // if the amount is greater than the max loan ignore supply (collateral-based), add to undercollateralized debt
-        if(amount > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += amount - maxLoanIgnoreSupply;
+
+        uint256 projectedTotalDebt = collateralManagerData.debt + amount;
+        if (projectedTotalDebt > maxLoanIgnoreSupply) {
+            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
-        uint256 originationFee = lendingPool.borrowFromPortfolio(amount);
-        return amount - originationFee;
+        originationFee = lendingPool.borrowFromPortfolio(amount);
+        loanAmount = amount - originationFee;
+        return (loanAmount, originationFee);
     }
 
     function migrateDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
@@ -184,8 +187,8 @@ library CollateralManager {
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
         lendingPool.payFromPortfolio(balancePayment, feesToPay);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
-
-        collateralManagerData.debt -= balancePayment;
+        
+        collateralManagerData.debt -= (balancePayment - feesToPay);
         collateralManagerData.unpaidFees -= feesToPay;
 
 
@@ -282,11 +285,6 @@ library CollateralManager {
             maxLoan = vaultAvailableSupply;
         }
 
-        // Ensure the loan amount does not exceed the vault's current balance
-        if (maxLoan > vaultBalance) {
-            maxLoan = vaultBalance;
-        }
-
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
@@ -329,19 +327,18 @@ library CollateralManager {
 
 
     /**
-     * @dev Add debt from marketplace purchase
+     * @dev Add debt
      * @param amount The amount of debt to add
      * @param unpaidFees The unpaid fees to add
-     * @notice This is used when transferring debt in marketplace purchases
+     * @notice This is used when adding debt from marketplace purchases or other sources
      */
-    function addDebtFromMarketplace(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
+    function addDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        (,uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        require(amount <= maxLoanIgnoreSupply, "Amount exceeds max loan ignore supply");
         // Add debt and unpaid fees
         collateralManagerData.debt += amount;
         collateralManagerData.unpaidFees += unpaidFees;
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 
     /**

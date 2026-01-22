@@ -40,6 +40,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
     uint256[] public weights = [100e18];
     address public launchpadToken = address(0x9126236476eFBA9Ad8aB77855c60eB5BF37586Eb);
     IERC20 public weth = IERC20(0x4200000000000000000000000000000000000006);
+    address public tokenMessenger = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     SuperchainVotingConfig public _superchainVotingConfig;
     MockERC20 public mockWeth;
     address public _rootMessageBridge = 0xF278761576f45472bdD721EACA19317cE159c011;
@@ -82,10 +83,10 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         SuperchainVotingConfig superchainVotingConfig = SuperchainVotingConfig(address(superchainVotingConfigProxy));
         votingConfig = VotingConfig(address(superchainVotingConfigProxy));
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter));
+        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter), address(weth));
 
         DeploySuperchainClaiming claimingDeployer = new DeploySuperchainClaiming();
-        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig), address(0)); // vault - will be set later
+        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig), address(0), address(weth)); // vault - will be set later
         
 
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
@@ -228,7 +229,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         // Use WETH address for INK fork (the bridge facet just stores the address, doesn't interact with it in constructor)
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();
         // Note: Using WETH address here since USDC doesn't exist on INK fork, but BridgeFacet constructor only stores the address
-        ink_deployer.deploy(address(ink_portfolioFactory), address(ink_portfolioAccountConfig), address(0x4200000000000000000000000000000000000006));
+        ink_deployer.deploy(address(ink_portfolioFactory), address(ink_portfolioAccountConfig), address(0x4200000000000000000000000000000000000006), tokenMessenger);
         
 
         // user should have a balance on 0x4200000000000000000000000000000000000006 and 0x7f9AdFbd38b669F03d1d11000Bc76b9AaEA28A81 (XVELO)

@@ -29,8 +29,8 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployRewardsProcessingFacet deployRewardsProcessingFacet = new DeployRewardsProcessingFacet();
     DeployMarketplaceFacet deployMarketplaceFacet = new DeployMarketplaceFacet();
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address swapConfig, address loanContract, address lendingToken, address vault) external {
-        deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc);
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address tokenMessenger, address swapConfig, address loanContract, address lendingToken, address vault) external {
+        deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc, tokenMessenger);
         deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
         deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
         deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, lendingToken);
