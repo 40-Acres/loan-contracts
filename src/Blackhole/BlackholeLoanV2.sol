@@ -184,9 +184,11 @@ contract BlackholeLoanV2 is Loan {
         for (uint256 i = 0; i < rewardsDistributors.length; i++) {
             uint256 claimable =  IRewardsDistributor(rewardsDistributors[i]).claimable(loan.tokenId);
             if (claimable > 0) {
-                IRewardsDistributor(rewardsDistributors[i]).claim(loan.tokenId);
-                addTotalWeight(claimable);
-                loan.weight += claimable;
+                try IRewardsDistributor(rewardsDistributors[i]).claim(loan.tokenId) {
+                    addTotalWeight(claimable);
+                    loan.weight += claimable;
+                } catch {
+                }
             }
         }
     }
