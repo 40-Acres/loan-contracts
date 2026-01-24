@@ -134,8 +134,15 @@ library PortfolioHelperUtils {
      * @param factory The PortfolioFactory instance
      * @return vault The vault address for this factory's deployment
      * @notice For DynamicFeesVault deployments (dynamic-fees salt), the vault IS the loan contract
+     * @notice Set VAULT_ADDRESS env var to override automatic vault resolution
      */
     function getVaultFromFactory(Vm vm, PortfolioFactory factory) internal view returns (address) {
+        // Allow explicit vault address override
+        address vaultOverride = vm.envOr("VAULT_ADDRESS", address(0));
+        if (vaultOverride != address(0)) {
+            return vaultOverride;
+        }
+
         PortfolioAccountConfig config = getConfigFromFactory(factory);
         string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
 
@@ -145,7 +152,9 @@ library PortfolioHelperUtils {
         }
 
         // For legacy deployments, get vault from loan contract
-        return config.getVault();
+        address loanContract = config.getLoanContract();
+        require(loanContract != address(0), "LoanContract not set. Set VAULT_ADDRESS env var or configure loanContract in PortfolioAccountConfig.");
+        return ILoanWithVault(loanContract)._vault();
     }
 
     /**
@@ -182,13 +191,23 @@ library PortfolioHelperUtils {
         return false;
     }
 
+    // Base USDC address - used as default debt token
+    address internal constant BASE_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+
     /**
      * @dev Get the debt token (underlying asset) address from the factory's config
      * @param vm The forge-std Vm interface
      * @param factory The PortfolioFactory instance
      * @return The debt token address (e.g., USDC)
+     * @notice Set DEBT_TOKEN env var to override. Defaults to Base USDC if loan contract not configured.
      */
     function getDebtTokenFromFactory(Vm vm, PortfolioFactory factory) internal view returns (address) {
+        // Allow explicit debt token override
+        address debtTokenOverride = vm.envOr("DEBT_TOKEN", address(0));
+        if (debtTokenOverride != address(0)) {
+            return debtTokenOverride;
+        }
+
         PortfolioAccountConfig config = getConfigFromFactory(factory);
         string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
 
@@ -197,12 +216,24 @@ library PortfolioHelperUtils {
             return ILendingPool(config.getLoanContract()).lendingAsset();
         }
 
-        // For legacy deployments
-        return config.getDebtToken();
+        // For legacy deployments, try to get from loan contract, default to USDC
+        address loanContract = config.getLoanContract();
+        if (loanContract == address(0)) {
+            return BASE_USDC;
+        }
+        return ILoanWithAsset(loanContract)._asset();
     }
 }
 
 interface ILendingPool {
     function lendingAsset() external view returns (address);
+}
+
+interface ILoanWithVault {
+    function _vault() external view returns (address);
+}
+
+interface ILoanWithAsset {
+    function _asset() external view returns (address);
 }
 

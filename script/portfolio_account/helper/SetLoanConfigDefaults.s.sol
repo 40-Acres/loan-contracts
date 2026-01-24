@@ -31,6 +31,8 @@ contract SetLoanConfigDefaults is Script {
 
     uint256 public constant DEFAULT_REWARDS_RATE = 2850;
     uint256 public constant DEFAULT_MULTIPLIER = 52;
+    uint256 public constant DEFAULT_TREASURY_FEE = 500;
+    uint256 public constant DEFAULT_ZERO_BALANCE_FEE = 100;
 
     /**
      * @dev Set rewardsRate and multiplier on LoanConfig
@@ -48,11 +50,15 @@ contract SetLoanConfigDefaults is Script {
         // Set the values
         loanConfig.setRewardsRate(rewardsRate);
         loanConfig.setMultiplier(multiplier);
+        loanConfig.setTreasuryFee(DEFAULT_TREASURY_FEE);
+        loanConfig.setZeroBalanceFee(DEFAULT_ZERO_BALANCE_FEE);
 
         console.log("LoanConfig values set successfully!");
         console.log("LoanConfig Address:", address(loanConfig));
         console.log("Rewards Rate:", rewardsRate);
         console.log("Multiplier:", multiplier);
+        console.log("Treasury Fee:", DEFAULT_TREASURY_FEE);
+        console.log("Zero Balance Fee:", DEFAULT_ZERO_BALANCE_FEE);
     }
 
     /**

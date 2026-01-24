@@ -22,6 +22,8 @@ library CollateralManager {
     error InvalidLockedCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    event CollateralAdded(uint256 indexed tokenId, address indexed owner);
+    event CollateralRemoved(uint256 indexed tokenId, address indexed owner);
 
     struct CollateralManagerData {
         mapping(uint256 tokenId => uint256 lockedCollateral) lockedCollaterals;
@@ -79,6 +81,8 @@ library CollateralManager {
         collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
         collateralManagerData.totalLockedCollateral += newLockedCollateral;
         collateralManagerData.originTimestamps[tokenId] = block.timestamp;
+        
+        emit CollateralAdded(tokenId, address(this));
     }
 
 
@@ -96,6 +100,8 @@ library CollateralManager {
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+
+        emit CollateralRemoved(tokenId, address(this));
     }
 
     function updateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {

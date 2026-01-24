@@ -19,7 +19,8 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
  * Environment variables:
  * - PRIVATE_KEY: Private key of the depositor (required)
  * - AMOUNT: Amount of assets to deposit in wei (required for run())
- * - VAULT_ADDRESS: Address of the vault to deposit into (required)
+ * - VAULT_ADDRESS: Override vault address (optional - use for non-dynamic-fees deployments without loanContract set)
+ * - FACTORY_SALT: Factory salt to use (defaults to "aerodrome-usdc")
  *
  * Example:
  * VAULT_ADDRESS=0x... AMOUNT=1000000000 forge script script/portfolio_account/helper/VaultDeposit.s.sol:VaultDeposit --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
@@ -102,3 +103,5 @@ contract VaultDeposit is Script {
 // Example usage:
 // AMOUNT=1000000000 forge script script/portfolio_account/helper/VaultDeposit.s.sol:VaultDeposit --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
 // FACTORY_SALT="aerodrome-usdc-dynamic-fees" AMOUNT=1000000000 forge script script/portfolio_account/helper/VaultDeposit.s.sol:VaultDeposit --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
+// For non-dynamic-fees without loanContract configured:
+// VAULT_ADDRESS=0x... AMOUNT=1000000000 forge script script/portfolio_account/helper/VaultDeposit.s.sol:VaultDeposit --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
