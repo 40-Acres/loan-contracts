@@ -141,7 +141,7 @@ contract Health is Script {
     }
 
     /**
-     * @dev Display protocol health only
+     * @dev Display protocol health and user health (uses PRIVATE_KEY to derive address if available)
      */
     function run() external view {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
@@ -150,11 +150,18 @@ contract Health is Script {
 
         displayProtocolHealth(factory, vault);
 
-        console.log("");
-        console.log("============================================");
-        console.log("Tip: Pass an address to see user health:");
-        console.log("forge script ... --sig \"run(address)\" 0x...");
-        console.log("============================================");
+        // Try to get user address from private key
+        try vm.envUint("PRIVATE_KEY") returns (uint256 privateKey) {
+            address user = vm.addr(privateKey);
+            displayUserHealth(factory, vault, user);
+        } catch {
+            console.log("");
+            console.log("============================================");
+            console.log("Tip: Pass an address to see user health:");
+            console.log("forge script ... --sig \"run(address)\" 0x...");
+            console.log("Or set PRIVATE_KEY env var to use your address.");
+            console.log("============================================");
+        }
     }
 
     /**
