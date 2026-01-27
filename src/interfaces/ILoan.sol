@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-interface ILoan {
+import {ILendingPool} from "./ILendingPool.sol";
+
+interface ILoan is ILendingPool {
     enum ZeroBalanceOption {
         DoNothing,
         InvestToVault,
@@ -52,6 +54,4 @@ function _asset() external view returns (address);
     function claim(uint256 tokenId, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external returns (uint256);
     function handleZeroBalanceLoanPortfolioAccount(uint256 tokenId, address asset, uint256 totalRewards, uint256 rewardsPaidtoOwner, uint256 rewardsInvested, uint256 protocolFee) external;
 
-    function borrowFromPortfolio(uint256 amount) external returns (uint256 originationFee);
-    function payFromPortfolio(uint256 balanceToPay, uint256 unpaidFees) external;
 }

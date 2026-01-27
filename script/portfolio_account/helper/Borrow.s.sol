@@ -38,7 +38,7 @@ contract Borrow is Script {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
 
         // Verify the facet is registered
-        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(portfolioManager);
+        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = LendingFacet.borrow.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
@@ -49,10 +49,20 @@ contract Borrow is Script {
         require(portfolioAddress != address(0), "Portfolio does not exist. Please add collateral first.");
 
         // Check max loan available
-        (uint256 maxLoan, ) = CollateralFacet(portfolioAddress).getMaxLoan();
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = CollateralFacet(portfolioAddress).getMaxLoan();
         console.log("Max loan available:", maxLoan);
-        require(amount <= maxLoan, "Requested amount exceeds max loan");
+        console.log("Max loan ignore supply:", maxLoanIgnoreSupply);
+        uint256 totalLockedCollateral = CollateralFacet(portfolioAddress).getTotalLockedCollateral();
+        console.log("Total locked collateral:", totalLockedCollateral);
+        if(amount > maxLoan) {
+            amount = maxLoan;
+        }
 
+
+        if(amount == 0) {
+            console.log("No amount to borrow");
+            return;
+        }
         // Use factory address for multicall
         address[] memory factories = new address[](1);
         factories[0] = address(factory);
@@ -107,3 +117,6 @@ contract Borrow is Script {
 
 // Example usage:
 // AMOUNT=1000000 forge script script/portfolio_account/helper/Borrow.s.sol:Borrow --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
+
+
+// FACTORY_SALT="aerodrome-usdc-dynamic-fees" AMOUNT=1000000 forge script script/portfolio_account/helper/Borrow.s.sol:Borrow --sig "run()" --rpc-url $BASE_RPC_URL --broadcast

@@ -48,7 +48,7 @@ contract IncreaseLock is Script {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
 
         // Verify the facet is registered
-        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(portfolioManager);
+        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = VotingEscrowFacet.increaseLock.selector;
         address facet = facetRegistry.getFacetForSelector(selector);

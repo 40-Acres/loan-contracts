@@ -46,7 +46,7 @@ contract SetRewardsOption is Script {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
 
         // Verify the facet is registered
-        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(portfolioManager);
+        PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = RewardsProcessingFacet.setRewardsOption.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
