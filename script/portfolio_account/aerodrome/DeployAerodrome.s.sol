@@ -67,7 +67,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
         _loanContract = address(loanProxy);
 
-        portfolioAccountConfig.setLoanContract(address(_loanContract));
+        Loan(address(_loanContract)).setPortfolioFactory(address(portfolioFactory));
 
         // Create vault before deploying facets (needed for ClaimingFacet and RewardsProcessingFacet)
         Vault vaultImplementation = new Vault();
