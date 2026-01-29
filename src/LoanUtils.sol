@@ -31,7 +31,11 @@ library LoanUtils {
         }
 
         // Calculate remaining headroom under LTV
-        uint256 maxLoan = maxLoanIgnoreSupply - currentLoanBalance;
+        uint256 headroom = maxLoanIgnoreSupply - currentLoanBalance;
+
+        // Fee-adjust the headroom to get actual borrowable amount
+        // When user borrows X, balance increases by X + 0.8% fee
+        uint256 maxLoan = (headroom * 10000) / (10000 + 80);
 
         // Ensure the loan amount does not exceed the available vault supply
         uint256 vaultAvailableSupply = maxUtilization - outstandingCapital;
@@ -72,7 +76,11 @@ library LoanUtils {
         }
 
         // Calculate remaining headroom under LTV
-        uint256 maxLoan = maxLoanIgnoreSupply - currentLoanBalance;
+        uint256 headroom = maxLoanIgnoreSupply - currentLoanBalance;
+
+        // Fee-adjust the headroom to get actual borrowable amount
+        // When user borrows X, balance increases by X + 0.8% fee
+        uint256 maxLoan = (headroom * 10000) / (10000 + 80);
 
         // Ensure the loan amount does not exceed the available vault supply
         uint256 vaultAvailableSupply = maxUtilization - outstandingCapital;
