@@ -15,9 +15,12 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
 import {BlackholeDeploy} from "../script/BlackholeDeploy.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
+import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
+import { IRewardsDistributor } from "src/interfaces/IRewardsDistributor.sol";
 import {BlackholeLoanV2 as Loan} from "../src/Blackhole/BlackholeLoanV2.sol";
 import { Loan as Loanv2 } from "../src/LoanV2.sol";
+import { MockOdosRouterRL } from "./mocks/MockOdosRouter.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -69,7 +72,7 @@ contract BlackholeTest is Test {
     function setUp() public {
         fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(69193401);
+        vm.rollFork(76178925);
         
         owner = vm.addr(0x123);
         user = votingEscrow.ownerOf(tokenId);
@@ -108,11 +111,16 @@ contract BlackholeTest is Test {
         usdc.configureMinter(address(this), type(uint256).max);
         usdc.mint(address(voter), 100e6);
         usdc.mint(address(vault), 100e6);
-        vm.stopPrank();
+
+        // Deploy and set up MockOdosRouter
+        address odosRouterAddress = loan.odosRouter();
+        vm.allowCheatcodes(odosRouterAddress);
+        MockOdosRouterRL mockRouter = new MockOdosRouterRL();
+        vm.etch(odosRouterAddress, address(mockRouter).code);
+        MockOdosRouterRL(odosRouterAddress).initMock(address(this));
 
         vm.prank(address(user));
         voter.reset(tokenId);
-        vm.stopPrank();
     }
 
     /**
@@ -215,7 +223,6 @@ contract BlackholeTest is Test {
         vm.prank(usdc.masterMinter());
         usdc.configureMinter(address(this), type(uint256).max);
         usdc.mint(address(user), 100e6);
-        vm.stopPrank();
 
         uint256 amount = 1e6;
 
@@ -232,7 +239,7 @@ contract BlackholeTest is Test {
         loan.setApprovedPools(manualPools, true);
         vm.stopPrank();
         vm.startPrank(user);
-        
+
         uint256[] memory manualWeights = new uint256[](1);
         manualWeights[0] = 100e18;
         uint256[] memory tokenIds = new uint256[](1);
@@ -253,8 +260,7 @@ contract BlackholeTest is Test {
         vm.expectRevert();
         loan.claimCollateral(tokenId);
         loan.pay(tokenId, 0);
-        loan.userVote(tokenIds, manualPools, manualWeights);
-        loan.reset(tokenId);
+        // After loan is paid off, user can claim collateral directly
         loan.claimCollateral(tokenId);
 
         vm.stopPrank();
@@ -368,7 +374,7 @@ contract BlackholeTest is Test {
     }
 
     /**
-     * @dev Test blackhole venft rewards claiming
+     * @dev Test blackhole venft rewards claiming using MockOdosRouter
      */
     function testBlackholeRewardsClaiming() public {
         uint256 _tokenId = 1011;
@@ -378,30 +384,35 @@ contract BlackholeTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
         loan.requestLoan(_tokenId, 0, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
         vm.stopPrank();
-        
+
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
-        
-        // Test rewards claiming with blackhole venft specific data
-        address[] memory bribes = new address[](0);
-        bytes memory data = hex"84a7f3dd040100013f0F8A28AC15b95E7d9D3B6e9422d3D0aE64197f07b200b7284ff130000109fa58228bb791ea355c90da1e4783452b9bd8c309037416b4854b21e46600019d848CF080c46b92B797218835aE7E89e04c15150001cd94a87696fac69edae3a70fe5725307ae1c43f609030a5d18647630686300010D9Fd6dd9b1FF55fB0A9bB0e5f1B6a2D65b741A300016aa38edd7f32a28b7b2c2dc86fc5b0bf2ae615790702bd1c52211bdb0001495B296c3fc52283Fd9565B421386D36F628d55E0001b31f66aa3c1e785363f0875a1b74e27b85fd66c70619c8818127a400000001b97ef9ef8734c71904d8002f8b6bc66dd9c48a6e043b86ca690001E30D0C8532721551a51a9FeC7FB233759964d9e30000000007020509020304010001020046040304010003040146000304010005060146060b0401070801ff00000000000000000000000000000000000000000000000000000d9fd6dd9b1ff55fb0a9bb0e5f1b6a2d65b741a3cd94a87696fac69edae3a70fe5725307ae1c43f6495b296c3fc52283fd9565b421386d36f628d55e6aa38edd7f32a28b7b2c2dc86fc5b0bf2ae615799d848cf080c46b92b797218835ae7e89e04c151509fa58228bb791ea355c90da1e4783452b9bd8c311476e10eb79ddffa6f2585be526d2bd840c3e20b31f66aa3c1e785363f0875a1b74e27b85fd66c7";
-        uint256[2] memory allocations = [uint256(expectedRewards), uint256(0)];
 
-        vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
-        
+        // Use MockOdosRouter - give user 100 USDC after swap
+        uint256 swapOutputAmount = 100e6; // 100 USDC
+        bytes memory data = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwap.selector,
+            address(aero),          // tokenIn
+            address(usdc),          // tokenOut
+            0,                      // amountIn (0 since we're mocking)
+            swapOutputAmount,       // amountOut - 100 USDC
+            address(loan)           // receiver
+        );
+        uint256[2] memory allocations = [swapOutputAmount, uint256(0)];
+
         address[] memory fees = new address[](4);
         fees[0] = 0xB6AC9192ED3F3d476F3e4692F5F87c7ca499bE78;
         fees[1] = 0xBED7aA4f2D9079A103f3927D2cC1736f2AAbFe2e;
         fees[2] = 0x8Df11e38735659922AE7E2c7783576BEbde40b25;
         fees[3] = 0x1718B43eB979F21de34534759A55f50E68D8B202;
-        
+
         address[][] memory tokens = new address[][](4);
-        
+
         // First array
         tokens[0] = new address[](2);
         tokens[0][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
         tokens[0][1] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
-        
+
         // Second array
         tokens[1] = new address[](5);
         tokens[1][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
@@ -409,12 +420,12 @@ contract BlackholeTest is Test {
         tokens[1][2] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
         tokens[1][3] = 0x6Aa38eDd7f32a28b7b2c2dc86fC5b0bF2aE61579;
         tokens[1][4] = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6;
-        
+
         // Third array
         tokens[2] = new address[](2);
         tokens[2][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
         tokens[2][1] = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6;
-        
+
         // Fourth array
         tokens[3] = new address[](5);
         tokens[3][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
@@ -422,10 +433,12 @@ contract BlackholeTest is Test {
         tokens[3][2] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
         tokens[3][3] = 0x6Aa38eDd7f32a28b7b2c2dc86fC5b0bF2aE61579;
         tokens[3][4] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
-        
+
+        vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
         uint256 rewards = loan.claim(_tokenId, fees, tokens, data, allocations);
-        
+
         assertTrue(rewards > 0, "Should claim rewards");
+        assertTrue(rewards >= 95e6, "Should have received close to 100 USDC (minus fees)");
     }
 
     /**
@@ -564,6 +577,101 @@ contract BlackholeTest is Test {
     /**
      * @dev Test blackhole venft with different increase percentages
      */
+    /**
+     * @dev Test claimRebase for NFT 26610 at block 76178925
+     */
+    function testClaimRebase26610() public {
+        uint256 fork2 = vm.createFork(vm.envString("AVAX_RPC_URL"));
+        vm.selectFork(fork2);
+        vm.rollFork(76178925);
+
+        address loanContract = address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558);
+        uint256 _tokenId = 26610;
+
+        // Upgrade to the new loan implementation
+        Loan loanImpl = new Loan();
+        address _owner = Loan(loanContract).owner();
+        vm.startPrank(_owner);
+        Loan(loanContract).upgradeToAndCall(address(loanImpl), new bytes(0));
+        vm.stopPrank();
+
+        // Get loan details - struct order (public getter skips dynamic arrays):
+        // tokenId, balance, borrower, timestamp, outstandingCapital, zeroBalanceOption,
+        // voteTimestamp, claimTimestamp, weight, unpaidFees, preferredToken,
+        // increasePercentage, topUp, optInCommunityRewards
+        (,, address borrower,,,,,,uint256 weight,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        console.log("Borrower:", borrower);
+        console.log("Weight before:", weight);
+
+        // Check claimable rebase from both rewards distributors on Blackhole
+        // The main rewardsDistributor and the second one specified in _claimRebase
+        // Read _rewardsDistributor from storage slot 8 (based on contract layout)
+        bytes32 slot8 = vm.load(loanContract, bytes32(uint256(8)));
+        address rewardsDistributor1 = address(uint160(uint256(slot8)));
+        address rewardsDistributor2 = address(0x7c7BD86BaF240dB3DbCc3f7a22B35c5bAa83bA28);
+
+        console.log("RewardsDistributor1:", rewardsDistributor1);
+        console.log("RewardsDistributor2:", rewardsDistributor2);
+
+        uint256 claimable1;
+        uint256 claimable2;
+
+        try IRewardsDistributor(rewardsDistributor1).claimable(_tokenId) returns (uint256 c) {
+            claimable1 = c;
+            console.log("Claimable from rewardsDistributor1:", claimable1);
+        } catch {
+            console.log("Claimable from rewardsDistributor1: REVERTED");
+        }
+
+        try IRewardsDistributor(rewardsDistributor2).claimable(_tokenId) returns (uint256 c) {
+            claimable2 = c;
+            console.log("Claimable from rewardsDistributor2:", claimable2);
+        } catch {
+            console.log("Claimable from rewardsDistributor2: REVERTED");
+        }
+
+        // Set up mock odos router
+        address odosRouterAddress = Loan(loanContract).odosRouter();
+        vm.allowCheatcodes(odosRouterAddress);
+        MockOdosRouterRL mockRouter = new MockOdosRouterRL();
+        vm.etch(odosRouterAddress, address(mockRouter).code);
+        MockOdosRouterRL(odosRouterAddress).initMock(address(this));
+
+        // Prepare minimal claim data (this will trigger _claimRebase internally)
+        uint256 swapOutputAmount = 1e6; // 1 USDC minimal
+        bytes memory data = abi.encodeWithSelector(
+            MockOdosRouterRL.executeSwap.selector,
+            address(aero),          // tokenIn
+            address(usdc),          // tokenOut
+            0,                      // amountIn
+            swapOutputAmount,       // amountOut
+            loanContract            // receiver
+        );
+        uint256[2] memory allocations = [swapOutputAmount, uint256(0)];
+
+        // Empty fees and tokens for minimal claim
+        address[] memory fees = new address[](0);
+        address[][] memory tokens = new address[][](0);
+
+        // Call claim which internally calls _claimRebase
+        address relayer = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
+        vm.prank(relayer);
+        try Loan(loanContract).claim(_tokenId, fees, tokens, data, allocations) returns (uint256 rewards) {
+            console.log("Claim rewards:", rewards);
+        } catch Error(string memory reason) {
+            console.log("Claim failed with reason:", reason);
+        } catch (bytes memory lowLevelData) {
+            console.log("Claim failed with low-level error");
+            console.logBytes(lowLevelData);
+        }
+
+        // Check weight after
+        (,,,,,,,,uint256 weightAfter,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
+        console.log("Weight after:", weightAfter);
+
+        assertTrue(weightAfter > weight, "Weight should increase after claiming rebase");
+    }
+
     function testSetToManualVoting() public {
         uint256 fork3 = vm.createFork(vm.envString("AVAX_RPC_URL"));
         vm.selectFork(fork3);
