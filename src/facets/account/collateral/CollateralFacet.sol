@@ -23,6 +23,8 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
     error NotOwnerOfPortfolioAccount();
     error ListingActive(uint256 tokenId);
 
+ 
+
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);

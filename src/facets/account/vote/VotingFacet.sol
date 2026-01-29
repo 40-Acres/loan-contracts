@@ -29,6 +29,9 @@ contract VotingFacet is IVotingFacet, AccessControl {
     error PoolsCannotBeEmpty();
     error NotAuthorized();
 
+    event Voted(uint256 indexed tokenId, address[] pools, uint256[] weights, address indexed owner);
+    event VotingModeSet(uint256 indexed tokenId, bool setToManualVoting, address indexed owner);
+
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingConfigStorage, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
@@ -53,13 +56,14 @@ contract VotingFacet is IVotingFacet, AccessControl {
         for(uint256 i = 0; i < pools.length; i++) {
             require(_votingConfig.isApprovedPool(pools[i]), PoolNotApproved(pools[i]));
         }
+        address owner = _portfolioFactory.ownerOf(address(this));
         _voter.vote(tokenId, pools, weights);
+        emit Voted(tokenId, pools, weights, owner);
     }
 
     function defaultVote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) external onlyAuthorizedCaller(_portfolioFactory) {
         // if user did not vote last epoch, set user to automatic voting mode
-        uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenId);
-        if(lastVoted < ProtocolTimeLibrary.epochStart(block.timestamp) - 1 weeks) {
+        if(!_isElligibleForManualVoting(tokenId) && UserVotingConfig.isManualVoting(tokenId)) {
             UserVotingConfig.setVotingMode(tokenId, false);
         }
 
@@ -88,8 +92,10 @@ contract VotingFacet is IVotingFacet, AccessControl {
         for(uint256 i = 0; i < pools.length; i++) {
             require(_votingConfig.isApprovedPool(pools[i]), PoolNotApproved(pools[i]));
         }
+        address owner = _portfolioFactory.ownerOf(address(this));
         _voter.vote(tokenId, pools, weights);
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        emit Voted(tokenId, pools, weights, owner);
     }
 
     function isManualVoting(uint256 tokenId) external view returns (bool) {
@@ -114,6 +120,9 @@ contract VotingFacet is IVotingFacet, AccessControl {
             require(_isElligibleForManualVoting(tokenId));
         }
         UserVotingConfig.setVotingMode(tokenId, setToManualVoting);
+        
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit VotingModeSet(tokenId, setToManualVoting, owner);
     }
 
     function _isElligibleForManualVoting(uint256 tokenId) internal view returns (bool) {

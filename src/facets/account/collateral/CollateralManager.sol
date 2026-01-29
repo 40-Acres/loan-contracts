@@ -5,7 +5,7 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import { LoanUtils } from "../../../LoanUtils.sol";
 import {LoanConfig} from "../config/LoanConfig.sol";
 
-import {ILoan} from "../../../interfaces/ILoan.sol";
+import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
@@ -22,6 +22,8 @@ library CollateralManager {
     error InvalidLockedCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    event CollateralAdded(uint256 indexed tokenId, address indexed owner);
+    event CollateralRemoved(uint256 indexed tokenId, address indexed owner);
 
     struct CollateralManagerData {
         mapping(uint256 tokenId => uint256 lockedCollateral) lockedCollaterals;
@@ -79,6 +81,8 @@ library CollateralManager {
         collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
         collateralManagerData.totalLockedCollateral += newLockedCollateral;
         collateralManagerData.originTimestamps[tokenId] = block.timestamp;
+        
+        emit CollateralAdded(tokenId, address(this));
     }
 
 
@@ -96,6 +100,8 @@ library CollateralManager {
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+
+        emit CollateralRemoved(tokenId, address(this));
     }
 
     function updateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
@@ -139,10 +145,10 @@ library CollateralManager {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         return collateralManagerData.unpaidFees;
     }
-
-    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external  returns (uint256 loanAmount) {
+    
+    function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         // if the amount is greater than the max loan (vault supply constraints), add to bad debt
@@ -155,8 +161,9 @@ library CollateralManager {
             collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
-        uint256 originationFee = loanContract.borrowFromPortfolio(amount);
-        return amount - originationFee;
+        originationFee = lendingPool.borrowFromPortfolio(amount);
+        loanAmount = amount - originationFee;
+        return (loanAmount, originationFee);
     }
 
     function migrateDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
@@ -167,7 +174,7 @@ library CollateralManager {
 
     function decreaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        
+
         // get the total debt to ensure we don't overpay
         uint256 totalDebt = collateralManagerData.debt;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
@@ -178,22 +185,22 @@ library CollateralManager {
         if(collateralManagerData.overSuppliedVaultDebt > 0) {
             collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > balancePayment ? balancePayment : collateralManagerData.overSuppliedVaultDebt;
         }
-        
+
         // for accounts migrated over, unpaid fees must be sent to protocol owner first as a balance payment
-        ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
         uint256 feesToPay = collateralManagerData.unpaidFees > balancePayment ? balancePayment : collateralManagerData.unpaidFees;
 
-        IERC20(loanContract._asset()).approve(address(loanContract), balancePayment);
-        loanContract.payFromPortfolio(balancePayment, feesToPay);
-        IERC20(loanContract._asset()).approve(address(loanContract), 0);
+        IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
+        lendingPool.payFromPortfolio(balancePayment, feesToPay);
+        IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
         
         collateralManagerData.debt -= (balancePayment - feesToPay);
         collateralManagerData.unpaidFees -= feesToPay;
-        
+
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
-        
+
         return excess;
     }
 
@@ -203,16 +210,16 @@ library CollateralManager {
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
 
-        ILoan loanContract = ILoan(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
-        uint256 outstandingCapital = loanContract.activeAssets();
-        
-        address vault = loanContract._vault();
+        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        uint256 outstandingCapital = lendingPool.activeAssets();
+
+        address vault = lendingPool.lendingVault();
         IERC4626 vaultAsset = IERC4626(vault);
-        // Get the underlying asset balance in the vault 
+        // Get the underlying asset balance in the vault
         address underlyingAsset = vaultAsset.asset();
         uint256 vaultBalance = IERC20(underlyingAsset).balanceOf(address(vault));
-        
-        // Get current total debt for the portfolio account 
+
+        // Get current total debt for the portfolio account
         uint256 currentLoanBalance = getTotalDebt();
 
         return getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, vaultBalance, outstandingCapital, currentLoanBalance);

@@ -30,11 +30,21 @@ contract RewardsProcessingFacet is AccessControl {
     IERC4626 public immutable _vault;
 
 
-    event GasReclamationPaid(uint256 epoch, uint256 amount, address user, address asset);
-    event ProtocolFeePaid(uint256 epoch, uint256 amount, address user, address asset);
-    event ZeroBalanceFeePaid(uint256 epoch, uint256 amount, address user, address asset);
-    event LenderPremiumPaid(uint256 epoch, uint256 amount, address user, address asset);
-    event RewardsProcessed(uint256 epoch, uint256 rewardsAmount, address user, address asset);
+    event GasReclamationPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event ProtocolFeePaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event ZeroBalanceFeePaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event LenderPremiumPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event RewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 rewardsAmount, address user, address asset);
+    event LoanPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event PaidToRecipient(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed recipient, address asset, address indexed owner);
+    event InvestedToVault(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
+    event ZeroBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 remainingAmount, address indexed recipient, address asset, address indexed owner);
+    
+    event RewardsOptionSet(UserRewardsConfig.RewardsOption rewardsOption, address indexed owner);
+    event RewardsTokenSet(address rewardsToken, address indexed owner);
+    event RewardsOptionPercentageSet(uint256 percentage, address indexed owner);
+    event RecipientSet(address recipient, address indexed owner);
+    event CollateralIncreased(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed owner);
     
     constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
         require(portfolioFactory != address(0));
@@ -51,58 +61,68 @@ contract RewardsProcessingFacet is AccessControl {
 
     function processRewards(uint256 tokenId, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
         address asset = getRewardsToken();
-        uint256 epochStart = _currentEpochStart();
-        address owner = _portfolioFactory.ownerOf(address(this));
-        IERC20 assetToken = IERC20(asset);
-        emit RewardsProcessed(epochStart, rewardsAmount, owner, address(asset));
-        require(assetToken.balanceOf(address(this)) >= rewardsAmount && rewardsAmount > 0);
+        emit RewardsProcessed(_currentEpochStart(), tokenId, rewardsAmount, _portfolioFactory.ownerOf(address(this)), asset);
+        require(IERC20(asset).balanceOf(address(this)) >= rewardsAmount && rewardsAmount > 0);
 
-        // if increase percentage is set, swap the rewards amount to the asset and increase the collateral
-        uint256 remaining = rewardsAmount;
+        // Handle gas reclamation first, then process remaining rewards
+        uint256 remaining = _handleGasReclamation(tokenId, rewardsAmount, asset, gasReclamation);
 
-        // send gas reclamation to the msg.sender (authorized caller)
+        // Process rewards option if configured
+        remaining = _processRewardsOption(tokenId, rewardsAmount, remaining, asset, swapTarget, minimumOutputAmount, swapData);
+
+        // Process based on debt status
+        _finalizeRewards(tokenId, rewardsAmount, remaining, asset);
+    }
+
+    function _handleGasReclamation(uint256 tokenId, uint256 rewardsAmount, address asset, uint256 gasReclamation) internal returns (uint256 remaining) {
+        remaining = rewardsAmount;
         if(gasReclamation > 0) {
             // amount of gas is capped at 5% of the rewards amount
             uint256 gasReclamationCap = rewardsAmount * 5 / 100;
             if(gasReclamation > gasReclamationCap) {
                 gasReclamation = gasReclamationCap;
             }
-            emit GasReclamationPaid(epochStart, gasReclamation, owner, address(asset));
-            assetToken.safeTransfer(msg.sender, gasReclamation);
+            emit GasReclamationPaid(_currentEpochStart(), tokenId, gasReclamation, _portfolioFactory.ownerOf(address(this)), asset);
+            IERC20(asset).safeTransfer(msg.sender, gasReclamation);
             remaining -= gasReclamation;
         }
+    }
 
-        UserRewardsConfig.RewardsOption rewardsOption = getRewardsOption();
+    function _processRewardsOption(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256) {
         uint256 rewardsOptionPercentage = getRewardsOptionPercentage();
         if(rewardsOptionPercentage > 0) {
+            UserRewardsConfig.RewardsOption rewardsOption = getRewardsOption();
             if(rewardsOption == UserRewardsConfig.RewardsOption.IncreaseCollateral) {
                 remaining -= _increaseCollateral(tokenId, rewardsOptionPercentage, asset, rewardsAmount, swapTarget, minimumOutputAmount, swapData);
-            }
-            if(rewardsOption == UserRewardsConfig.RewardsOption.InvestToVault) {
-                remaining -= _investToVault(rewardsAmount, rewardsOptionPercentage, asset, swapTarget, minimumOutputAmount, swapData);
-            }
-            if(rewardsOption == UserRewardsConfig.RewardsOption.PayToRecipient) {
-                remaining -= _payToRecipient(rewardsAmount, rewardsOptionPercentage, asset);
+            } else if(rewardsOption == UserRewardsConfig.RewardsOption.InvestToVault) {
+                remaining -= _investToVault(tokenId, rewardsAmount, rewardsOptionPercentage, asset, swapTarget, minimumOutputAmount, swapData);
+            } else if(rewardsOption == UserRewardsConfig.RewardsOption.PayToRecipient) {
+                remaining -= _payToRecipient(tokenId, rewardsAmount, rewardsOptionPercentage, asset);
             }
         }
+        return remaining;
+    }
 
+    function _finalizeRewards(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset) internal {
         // if have no debt, process zero balance rewards
-        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
-        if(totalDebt == 0) {
-            _processZeroBalanceRewards(rewardsAmount, remaining, asset, true);
+        if(CollateralFacet(address(this)).getTotalDebt() == 0) {
+            _processZeroBalanceRewards(tokenId, rewardsAmount, remaining, asset, true);
         } else {
-            remaining = _processActiveLoanRewards(rewardsAmount, remaining, asset);
+            remaining = _processActiveLoanRewards(tokenId, rewardsAmount, remaining, asset);
             // If there are funds remaining, debt must be fully paid (remaining > 0 implies debt == 0)
             // Deposit to vault if any funds remain, this ensure if any owners are blacklisted the lender does not lose funds
             if(remaining > 0) {
-                // if any funds remain, deposit to vault
-                address vaultAddress = address(_vault);
-                assetToken.approve(vaultAddress, remaining);
-                _vault.deposit(remaining, owner);
-                // Clear approval after use
-                assetToken.approve(vaultAddress, 0);
+                _depositRemainingToVault(remaining, asset);
             }
         }
+    }
+
+    function _depositRemainingToVault(uint256 amount, address asset) internal {
+        address vaultAddress = address(_vault);
+        IERC20(asset).approve(vaultAddress, amount);
+        _vault.deposit(amount, _portfolioFactory.ownerOf(address(this)));
+        // Clear approval after use
+        IERC20(asset).approve(vaultAddress, 0);
     }
 
 
@@ -125,14 +145,14 @@ contract RewardsProcessingFacet is AccessControl {
         return rewardsToken != address(0) ? rewardsToken : vaultAsset;
     }
 
-    function _processActiveLoanRewards(uint256 rewardsAmount, uint256 availableAmount, address asset) internal returns (uint256 remaining) {
+    function _processActiveLoanRewards(uint256 tokenId, uint256 rewardsAmount, uint256 availableAmount, address asset) internal returns (uint256 remaining) {
         require(IERC20(asset).balanceOf(address(this)) >= availableAmount);
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(loanContract != address(0));
 
         // Calculate fees based on original rewards amount
-        uint256 protocolFee = _payProtocolFee(rewardsAmount, asset);
-        uint256 lenderPremium = _payLenderPremium(rewardsAmount, asset);
+        uint256 protocolFee = _payProtocolFee(tokenId, rewardsAmount, asset);
+        uint256 lenderPremium = _payLenderPremium(tokenId, rewardsAmount, asset);
         uint256 totalFees = protocolFee + lenderPremium;
         
         // Ensure we have enough balance to pay fees
@@ -142,14 +162,15 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 amountForDebt = availableAmount - totalFees;
         
         uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amountForDebt);
+        emit LoanPaid(_currentEpochStart(), tokenId, amountForDebt, _portfolioFactory.ownerOf(address(this)), address(asset));
 
         return excess;
     }
 
-    function _processZeroBalanceRewards(uint256 rewardsAmount, uint256 remaining, address asset, bool takeFees) internal {
+    function _processZeroBalanceRewards(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset, bool takeFees) internal {
         // send the zero balance fee to the treasury
         if(takeFees) {
-            uint256 zeroBalanceFee = _payZeroBalanceFee(rewardsAmount, asset);
+            uint256 zeroBalanceFee = _payZeroBalanceFee(tokenId, rewardsAmount, asset);
             require(remaining >= zeroBalanceFee, "Insufficient balance for zero balance fee");
             remaining -= zeroBalanceFee;
         }
@@ -163,10 +184,13 @@ contract RewardsProcessingFacet is AccessControl {
         address recipient = _getRecipient();
         require(recipient != address(0));
         IERC20(asset).safeTransfer(recipient, remaining);
+        emit ZeroBalanceRewardsProcessed(_currentEpochStart(), tokenId, remaining, recipient, asset, _portfolioFactory.ownerOf(address(this)));
     }
 
     function setRewardsOption(UserRewardsConfig.RewardsOption rewardsOption) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRewardsOption(rewardsOption);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit RewardsOptionSet(rewardsOption, owner);
     }
 
     function getRewardsOption() public view returns (UserRewardsConfig.RewardsOption) {
@@ -189,17 +213,23 @@ contract RewardsProcessingFacet is AccessControl {
 
     function setRewardsToken(address rewardsToken) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRewardsToken(rewardsToken);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit RewardsTokenSet(rewardsToken, owner);
     }
 
     function setRewardsOptionPercentage(uint256 rewardsOptionPercentage) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRewardsOptionPercentage(rewardsOptionPercentage);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit RewardsOptionPercentageSet(rewardsOptionPercentage, owner);
     }
 
     function setRecipient(address recipient) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserRewardsConfig.setRecipient(recipient);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit RecipientSet(recipient, owner);
     }
 
-    function _investToVault(uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
+    function _investToVault(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
         IERC4626 vault = _vault;
         address vaultAsset = vault.asset();
         uint256 rewardsAmountUsed = rewardsAmount * percentage / 100;
@@ -227,12 +257,13 @@ contract RewardsProcessingFacet is AccessControl {
         // Clear approval after use
         vaultAssetToken.approve(vaultAddress, 0);
         
-        // if the asset is the vault asset, return the amount to deposit, otherwise return the rewards amount used
+        // if the asset is the vault asset, return the amount to deposit, otherwise return the rewards amount usedv1
+        emit InvestedToVault(_currentEpochStart(), tokenId, amountToDeposit, asset, recipient);
         return asset == vaultAsset ? amountToDeposit : rewardsAmountUsed;
     }
 
 
-    function _payToRecipient(uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
+    function _payToRecipient(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
         // if fail to transfer, keep amountPaid to 0 so it will process to remaining funds as normal
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
@@ -241,8 +272,10 @@ contract RewardsProcessingFacet is AccessControl {
         if(!success) {
             return 0;
         }
+        emit PaidToRecipient(_currentEpochStart(), tokenId, amountToPay, recipient, asset, _portfolioFactory.ownerOf(address(this)));
         return amountToPay;
     }
+
     function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
         address lockedAsset = _votingEscrow.token();
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
@@ -253,6 +286,7 @@ contract RewardsProcessingFacet is AccessControl {
             _votingEscrow.increaseAmount(tokenId, amountToUse);
             IERC20(lockedAsset).approve(address(_votingEscrow), 0);
             CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+            emit CollateralIncreased(_currentEpochStart(), tokenId, amountToUse, _portfolioFactory.ownerOf(address(this)));
             return amountToUse;
         }
 
@@ -273,6 +307,7 @@ contract RewardsProcessingFacet is AccessControl {
         IERC20(lockedAsset).approve(address(_votingEscrow), 0);
         CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
 
+        emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
         return amountToSwap;
     }
 
@@ -282,28 +317,62 @@ contract RewardsProcessingFacet is AccessControl {
         }
         address rewardsToken = getRewardsToken();
         require(inputToken != rewardsToken, "Input token cannot be rewards token");
-        return SwapMod.swap(address(_swapConfig), swapTarget, swapData, inputToken, inputAmount, rewardsToken, minimumOutputAmount);
+        return SwapMod.swap(
+            address(_swapConfig),
+            swapTarget,
+            swapData,
+            inputToken,
+            inputAmount,
+            rewardsToken,
+            minimumOutputAmount
+        );
     }
 
-
-    function _payZeroBalanceFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
+    function _payZeroBalanceFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
         IERC20(asset).safeTransfer(_portfolioAccountConfig.getLoanContract(), zeroBalanceFee);
-        emit ZeroBalanceFeePaid(_currentEpochStart(), zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
+        emit ZeroBalanceFeePaid(_currentEpochStart(), tokenId, zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return zeroBalanceFee;
     }
+    
+    
+    function swapToRewardsTokenMultiple(address[] memory swapTargets, bytes[] memory swapDatas, address[] memory inputTokens, uint256[] memory inputAmounts, uint256[] memory minimumOutputAmounts) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
+            address rewardsToken = getRewardsToken();
+            for(uint256 i = 0; i < swapTargets.length; i++) {
+            if(inputTokens[i] == CollateralFacet(address(this)).getCollateralToken()) {
+                revert("Input token cannot be collateral token");
+            }
+            require(inputTokens[i] != rewardsToken, "Input token cannot be rewards token");
+            try SwapMod.swap(
+                address(_swapConfig),
+                swapTargets[i],
+                swapDatas[i],
+                inputTokens[i],
+                inputAmounts[i],
+                rewardsToken,
+                minimumOutputAmounts[i]
+            ) returns (uint256 swappedAmount) {
+                amount += swappedAmount;
+            } catch {
+                continue;
+            }
+        }
+        return amount;
+    }
 
-    function _payLenderPremium(uint256 rewardsAmount, address asset) internal returns (uint256) {
+    function _payLenderPremium(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 lenderPremium = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
+
         IERC20(asset).safeTransfer(_portfolioAccountConfig.getVault(), lenderPremium);
-        emit LenderPremiumPaid(_currentEpochStart(), lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
+        emit LenderPremiumPaid(_currentEpochStart(), tokenId, lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
     }
 
-    function _payProtocolFee(uint256 rewardsAmount, address asset) internal returns (uint256) {
+    function _payProtocolFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 protocolFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
+
         IERC20(asset).safeTransfer(_portfolioAccountConfig.owner(), protocolFee);
-        emit ProtocolFeePaid(_currentEpochStart(), protocolFee, _portfolioFactory.ownerOf(address(this)), address(asset));
+        emit ProtocolFeePaid(_currentEpochStart(), tokenId, protocolFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return protocolFee;
     }
 

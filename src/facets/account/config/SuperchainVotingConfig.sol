@@ -5,11 +5,12 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {VotingConfig} from "./VotingConfig.sol";
-
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 /**
  * @title VotingConfig
  */
 contract SuperchainVotingConfig is VotingConfig {
+    using EnumerableSet for EnumerableSet.AddressSet;
     constructor() {
         _disableInitializers();
     }
@@ -19,6 +20,7 @@ contract SuperchainVotingConfig is VotingConfig {
         mapping(address => bool) superchainPools;
         mapping(address => uint256) superchainPoolChainId;
         uint256 minimumWethBalance;
+        EnumerableSet.AddressSet superchainPoolsList;
     }
 
     // Named storage slot for account data
@@ -41,6 +43,11 @@ contract SuperchainVotingConfig is VotingConfig {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.superchainPools[pool] = approved;
         superchainVotingStorage.superchainPoolChainId[pool] = chainId;
+        if(approved) {
+            superchainVotingStorage.superchainPoolsList.add(pool);
+        } else {
+            superchainVotingStorage.superchainPoolsList.remove(pool);
+        }
         super.setApprovedPool(pool, approved);
     }
 
@@ -49,6 +56,21 @@ contract SuperchainVotingConfig is VotingConfig {
         return superchainVotingStorage.superchainPools[pool];
     }
 
+    function getSuperchainPoolsList() public view returns (address[] memory) {
+        SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
+        return superchainVotingStorage.superchainPoolsList.values();
+    }
+
+    function getSuperchainPoolsListLength() public view returns (uint256) {
+        SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
+        return superchainVotingStorage.superchainPoolsList.length();
+    }
+
+    function getSuperchainPoolAtIndex(uint256 index) public view returns (address) {
+        SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
+        return superchainVotingStorage.superchainPoolsList.at(index);
+    }
+    
     function setMinimumWethBalance(uint256 minimumWethBalance) external onlyOwner {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.minimumWethBalance = minimumWethBalance;

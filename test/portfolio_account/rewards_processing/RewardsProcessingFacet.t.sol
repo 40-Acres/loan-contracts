@@ -72,7 +72,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Approve swap target
         vm.startPrank(FORTY_ACRES_DEPLOYER);
-        _swapConfig.approveSwapTarget(address(mockRouter));
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
     }
 

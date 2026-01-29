@@ -43,12 +43,14 @@ contract ApprovePool is Script {
     }
 
     /**
-     * @dev Get PortfolioFactory for aerodrome-usdc from PortfolioManager
+     * @dev Get PortfolioFactory from PortfolioManager
+     * @notice Set FACTORY_SALT env var to override (e.g., "aerodrome-usdc-dynamic-fees"). Defaults to "aerodrome-usdc"
      */
     function getAerodromeFactory(PortfolioManager portfolioManager) internal view returns (PortfolioFactory) {
-        bytes32 salt = keccak256(abi.encodePacked("aerodrome-usdc"));
+        string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
+        bytes32 salt = keccak256(abi.encodePacked(factorySalt));
         address factoryAddress = portfolioManager.factoryBySalt(salt);
-        require(factoryAddress != address(0), "Aerodrome factory not found");
+        require(factoryAddress != address(0), string.concat("Factory not found for salt: ", factorySalt));
         return PortfolioFactory(factoryAddress);
     }
 
@@ -91,7 +93,7 @@ contract ApprovePool is Script {
     function approvePool(address poolAddress, bool approved) internal {
         require(poolAddress != address(0), "Pool address cannot be zero");
         
-        VotingConfig votingConfig = VotingConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
+        VotingConfig votingConfig = VotingConfig(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C);
         console.log("VotingConfig address:", address(votingConfig));
         
         // Check current approval status
@@ -162,5 +164,4 @@ contract ApprovePool is Script {
 }
 
 // Example usage:
-// POOL=0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0 APPROVED=true forge script script/portfolio_account/helper/ApprovePool.s.sol:ApprovePool --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
-
+// POOL=$POOL APPROVED=true forge script script/portfolio_account/helper/ApprovePool.s.sol:ApprovePool --sig "run()" --rpc-url $BASE_RPC_URL --broadcast

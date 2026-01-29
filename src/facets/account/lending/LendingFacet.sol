@@ -26,6 +26,12 @@ contract LendingFacet is AccessControl {
     error NotOwnerOfToken();
     error NotPortfolioOwner();
 
+    event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
+    event BorrowedTo(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner, address indexed to);
+    event Paid(uint256 amount, address indexed owner);
+    event TopUpSet(bool topUpEnabled, address indexed owner);
+    event ToppedUp(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
+
     constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
@@ -34,13 +40,14 @@ contract LendingFacet is AccessControl {
     }
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
         uint256 minimumCollateral = _portfolioAccountConfig.getMinimumCollateral();
         if(minimumCollateral > 0) {
             require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
         }
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+        emit Borrowed(amount, amountAfterFees, originationFee, portfolioOwner);
     }
 
     /**
@@ -61,9 +68,9 @@ contract LendingFacet is AccessControl {
         // 3. Verify ownership matches the current portfolio's owner
         require(portfolioOwner == _portfolioFactory.ownerOf(address(this)), "not the same owner for to address and current portfolio");
 
-
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
         _lendingToken.safeTransfer(to, amountAfterFees);
+        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
     function pay(uint256 amount) public {
@@ -74,6 +81,8 @@ contract LendingFacet is AccessControl {
         // transfer the funds from the from address to the portfolio account then pay the loan
         _lendingToken.safeTransferFrom(from, address(this), amount);
         uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
+
+        emit Paid(amount-excess, from);
         // refund excess to the from address
         if(excess > 0) {
             _lendingToken.safeTransfer(from, excess);
@@ -82,6 +91,8 @@ contract LendingFacet is AccessControl {
 
     function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserLendingConfig.setTopUp(topUpEnabled);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit TopUpSet(topUpEnabled, owner);
     }
 
     function topUp() public {
@@ -93,9 +104,14 @@ contract LendingFacet is AccessControl {
         if(maxLoan == 0) {
             return;
         }
-        uint256 amountAfterFees = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
+        (uint256 amountAfterFees, uint256 originationFee) = CollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
         // send to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+        emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
+    }
+
+    function getMaxLoan() public view returns (uint256, uint256) {
+        return CollateralFacet(address(this)).getMaxLoan();
     }
 }

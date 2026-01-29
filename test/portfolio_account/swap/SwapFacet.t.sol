@@ -78,7 +78,7 @@ contract SwapFacetTest is Test, Setup {
         );
         
         vm.startPrank(FORTY_ACRES_DEPLOYER);
-        _swapConfig.approveSwapTarget(address(mockRouter));
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
         // Execute swap via authorized caller
         vm.startPrank(_authorizedCaller);
@@ -222,7 +222,7 @@ contract SwapFacetTest is Test, Setup {
         );
         
         vm.startPrank(FORTY_ACRES_DEPLOYER);
-        _swapConfig.approveSwapTarget(address(mockRouter));
+        _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
         
         // Attempt to swap collateral token - should fail

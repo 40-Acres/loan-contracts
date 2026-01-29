@@ -27,6 +27,11 @@ import {CollateralFacet} from "../../../src/facets/account/collateral/Collateral
 import {DeployCollateralFacet} from "../../../script/portfolio_account/facets/DeployCollateralFacet.s.sol";
 import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
 
+interface IOwnable {
+    function owner() external view returns (address);
+}
+
+import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
     uint256[] public weights = [100e18];
@@ -291,6 +296,8 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         // Set loan contract address which is required for enforceCollateral() to call getMaxLoan()
         // Use Optimism loan contract address (not Base)
         address loanContract = address(0xf132bD888897254521D13e2c401e109caABa06A7);
+        // Upgrade loan contract to LoanV2
+        LoanV2 loanV2 = new LoanV2();
         portfolioAccountConfig.setLoanContract(loanContract);
         // Mark loan contract as persistent for fork testing
         vm.makePersistent(loanContract);
@@ -299,6 +306,8 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         superchainVotingConfig.setMinimumWethBalance(.001e18);
 
         vm.stopPrank();
+        vm.prank(IOwnable(loanContract).owner());
+        LoanV2(loanContract).upgradeToAndCall(address(loanV2), new bytes(0));
         uint256 tokenId = 5005;
         
         address user = IVotingEscrow(ve).ownerOf(tokenId);

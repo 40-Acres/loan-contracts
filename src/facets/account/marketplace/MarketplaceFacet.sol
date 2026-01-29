@@ -31,6 +31,14 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         _marketplace = marketplace;
     }
 
+
+    event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
+    event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
+    
+    event ListingCreated(uint256 indexed tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address indexed owner, address allowedBuyer);
+    event ListingCancelled(uint256 indexed tokenId, address indexed owner);
+    event PurchaseFinalized(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 debtAmount, uint256 unpaidFees);
+    event DebtTransferredToBuyer(uint256 indexed tokenId, address indexed buyer, uint256 debtAmount, uint256 unpaidFees, address indexed seller);
     event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
     
     function marketplace() external view returns (address) {
@@ -53,10 +61,14 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
             require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
         }
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit ListingCreated(tokenId, price, paymentToken, debtAttached, expiresAt, owner, allowedBuyer);
     }
 
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.removeListing(tokenId);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit ListingCancelled(tokenId, owner);
     }
 
     /**
@@ -205,6 +217,8 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         if (debtAmount > 0) {
             CollateralManager.addDebt(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
         }
+        
+        emit PurchaseFinalized(tokenId, seller, address(this), debtAmount, unpaidFeesToTransfer);
     }
 
     /**
@@ -234,9 +248,18 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Remove collateral from seller's collateral manager
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         CollateralManager.enforceCollateralRequirements();
+        
+        address sellerOwner = _portfolioFactory.ownerOf(address(this));
+        emit DebtTransferredToBuyer(tokenId, buyer, debtAmount, unpaidFees, sellerOwner);
     }
 
 
+    function buyMarketplaceListings(uint256[] calldata tokenIds, address buyer) public {
+        for(uint256 i = 0; i < tokenIds.length; i++) {
+            buyMarketplaceListing(tokenIds[i], buyer);
+        }
+    }
+    
     /**
      * @notice Buy a 40 Acres listing from an external buyer (not a portfolio account)
      * @param tokenId The token ID being purchased
