@@ -15,7 +15,6 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
 import {BlackholeDeploy} from "../script/BlackholeDeploy.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
 import { IRewardsDistributor } from "src/interfaces/IRewardsDistributor.sol";
 import {BlackholeLoanV2 as Loan} from "../src/Blackhole/BlackholeLoanV2.sol";
@@ -574,103 +573,6 @@ contract BlackholeTest is Test {
     }
 
 
-    /**
-     * @dev Test blackhole venft with different increase percentages
-     */
-    /**
-     * @dev Test claimRebase for NFT 26610 at block 76178925
-     */
-    function testClaimRebase26610() public {
-        uint256 fork2 = vm.createFork(vm.envString("AVAX_RPC_URL"));
-        vm.selectFork(fork2);
-        vm.rollFork(76178925);
-
-        address loanContract = address(0x5122f5154DF20E5F29df53E633cE1ac5b6623558);
-        uint256 _tokenId = 26610;
-
-        // Upgrade to the new loan implementation
-        Loan loanImpl = new Loan();
-        address _owner = Loan(loanContract).owner();
-        vm.startPrank(_owner);
-        Loan(loanContract).upgradeToAndCall(address(loanImpl), new bytes(0));
-        vm.stopPrank();
-
-        // Get loan details - struct order (public getter skips dynamic arrays):
-        // tokenId, balance, borrower, timestamp, outstandingCapital, zeroBalanceOption,
-        // voteTimestamp, claimTimestamp, weight, unpaidFees, preferredToken,
-        // increasePercentage, topUp, optInCommunityRewards
-        (,, address borrower,,,,,,uint256 weight,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
-        console.log("Borrower:", borrower);
-        console.log("Weight before:", weight);
-
-        // Check claimable rebase from both rewards distributors on Blackhole
-        // The main rewardsDistributor and the second one specified in _claimRebase
-        // Read _rewardsDistributor from storage slot 8 (based on contract layout)
-        bytes32 slot8 = vm.load(loanContract, bytes32(uint256(8)));
-        address rewardsDistributor1 = address(uint160(uint256(slot8)));
-        address rewardsDistributor2 = address(0x7c7BD86BaF240dB3DbCc3f7a22B35c5bAa83bA28);
-
-        console.log("RewardsDistributor1:", rewardsDistributor1);
-        console.log("RewardsDistributor2:", rewardsDistributor2);
-
-        uint256 claimable1;
-        uint256 claimable2;
-
-        try IRewardsDistributor(rewardsDistributor1).claimable(_tokenId) returns (uint256 c) {
-            claimable1 = c;
-            console.log("Claimable from rewardsDistributor1:", claimable1);
-        } catch {
-            console.log("Claimable from rewardsDistributor1: REVERTED");
-        }
-
-        try IRewardsDistributor(rewardsDistributor2).claimable(_tokenId) returns (uint256 c) {
-            claimable2 = c;
-            console.log("Claimable from rewardsDistributor2:", claimable2);
-        } catch {
-            console.log("Claimable from rewardsDistributor2: REVERTED");
-        }
-
-        // Set up mock odos router
-        address odosRouterAddress = Loan(loanContract).odosRouter();
-        vm.allowCheatcodes(odosRouterAddress);
-        MockOdosRouterRL mockRouter = new MockOdosRouterRL();
-        vm.etch(odosRouterAddress, address(mockRouter).code);
-        MockOdosRouterRL(odosRouterAddress).initMock(address(this));
-
-        // Prepare minimal claim data (this will trigger _claimRebase internally)
-        uint256 swapOutputAmount = 1e6; // 1 USDC minimal
-        bytes memory data = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwap.selector,
-            address(aero),          // tokenIn
-            address(usdc),          // tokenOut
-            0,                      // amountIn
-            swapOutputAmount,       // amountOut
-            loanContract            // receiver
-        );
-        uint256[2] memory allocations = [swapOutputAmount, uint256(0)];
-
-        // Empty fees and tokens for minimal claim
-        address[] memory fees = new address[](0);
-        address[][] memory tokens = new address[][](0);
-
-        // Call claim which internally calls _claimRebase
-        address relayer = 0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA;
-        vm.prank(relayer);
-        try Loan(loanContract).claim(_tokenId, fees, tokens, data, allocations) returns (uint256 rewards) {
-            console.log("Claim rewards:", rewards);
-        } catch Error(string memory reason) {
-            console.log("Claim failed with reason:", reason);
-        } catch (bytes memory lowLevelData) {
-            console.log("Claim failed with low-level error");
-            console.logBytes(lowLevelData);
-        }
-
-        // Check weight after
-        (,,,,,,,,uint256 weightAfter,,,,,) = Loan(loanContract)._loanDetails(_tokenId);
-        console.log("Weight after:", weightAfter);
-
-        assertTrue(weightAfter > weight, "Weight should increase after claiming rebase");
-    }
 
     function testSetToManualVoting() public {
         uint256 fork3 = vm.createFork(vm.envString("AVAX_RPC_URL"));

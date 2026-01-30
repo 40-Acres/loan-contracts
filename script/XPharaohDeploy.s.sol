@@ -14,6 +14,7 @@ import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../src/accounts/PortfolioManager.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
 import {PharaohLoanV2} from "../src/Pharaoh/PharaohLoanV2.sol";
 import {Vault as PharaohVault} from "../src/Pharaoh/PharaohVault.sol";
@@ -89,12 +90,9 @@ contract XPharaohDeploy is Script {
         _supportedTokens[0] = _rex;
         _supportedTokens[1] = _asset;
         supportedTokens = _supportedTokens;
-        FacetRegistry facetRegistry = new FacetRegistry(_deployer);
-
-        // Deploy PortfolioFactory
-
-        PortfolioFactory portfolioFactory = new PortfolioFactory(
-            address(facetRegistry)
+        PortfolioManager portfolioManager = new PortfolioManager(_deployer);
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = portfolioManager.deployFactory(
+            keccak256(abi.encodePacked("xpharaoh-factory"))
         );
 
 
@@ -131,8 +129,6 @@ contract XPharaohDeploy is Script {
         loanSelectors[11] = 0xcc729a8b; // xPharSetTopUp(address,bool)
         loanSelectors[12] = 0x3b07f874; // xPharSetZeroBalanceOption(address,IXLoan.ZeroBalanceOption)
 
-        // Get the FacetRegistry from the PortfolioFactory
-        facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
         address owner = IOwnable(address(facetRegistry)).owner();
         console.log("FacetRegistry owner:", owner);
         vm.stopPrank();

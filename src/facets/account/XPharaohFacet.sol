@@ -33,7 +33,7 @@ contract XPharaohFacet {
     address public immutable _voteModule = 0x34F233F868CdB42446a18562710eE705d66f846b;
     address public immutable _voter = 0x922b9Ca8e2207bfB850B6FF647c054d4b58a2Aa7;
     address public immutable _vePhar = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
-    address public constant _odosRouter = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC;
+    address public constant _odosRouter = 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05;
 
     constructor(address portfolioFactory, address accountConfigStorage) {
         require(portfolioFactory != address(0));

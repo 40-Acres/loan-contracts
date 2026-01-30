@@ -1131,21 +1131,21 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
             }
             return;
         }
-        // // if pools has one element and is the zero address, set to manual voting mode
-        // // if the last voted timestamp is greater than the timestamp of the loan, set the vote timestamp to the last voted timestamp
-        // if(pools.length == 1 && pools[0] == address(0)) {
-        //     for (uint256 i = 0; i < tokenIds.length; i++) {
-        //         uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenIds[i]);
-        //         LoanInfo storage loan = _loanDetails[tokenIds[i]];
-        //         if(lastVoted > loan.timestamp) {
-        //             require(loan.borrower == msg.sender);
-        //             loan.voteTimestamp = lastVoted;
-        //         }
-        //         bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
-        //         require(isActive);
-        //     }
-        //     return;
-        // }
+        // if pools has one element and is the zero address, set to manual voting mode
+        // if the last voted timestamp is greater than the timestamp of the loan, set the vote timestamp to the last voted timestamp
+        if(pools.length == 1 && pools[0] == address(0)) {
+            for (uint256 i = 0; i < tokenIds.length; i++) {
+                uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenIds[i]);
+                LoanInfo storage loan = _loanDetails[tokenIds[i]];
+                if(lastVoted > loan.timestamp) {
+                    require(loan.borrower == msg.sender);
+                    loan.voteTimestamp = lastVoted;
+                }
+                bool isActive = ProtocolTimeLibrary.epochStart(loan.voteTimestamp) > ProtocolTimeLibrary.epochStart(block.timestamp) - 14 days;
+                require(isActive);
+            }
+            return;
+        }
         _validatePoolChoices(pools, weights);
         for (uint256 i = 0; i < tokenIds.length; i++) {
             _vote(tokenIds[i], pools, weights);

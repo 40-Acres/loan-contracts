@@ -75,7 +75,7 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](8);
+        bytes4[] memory selectors = new bytes4[](10);
         selectors[0] = MarketplaceFacet.processPayment.selector;
         selectors[1] = MarketplaceFacet.finalizePurchase.selector;
         selectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
@@ -84,6 +84,8 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
         selectors[5] = MarketplaceFacet.makeListing.selector;
         selectors[6] = MarketplaceFacet.cancelListing.selector;
         selectors[7] = MarketplaceFacet.marketplace.selector;
+        selectors[8] = MarketplaceFacet.getListingNonce.selector;
+        selectors[9] = MarketplaceFacet.isListingValid.selector;
         return selectors;
     }
 }

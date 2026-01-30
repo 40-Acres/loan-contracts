@@ -16,6 +16,20 @@ interface IMarketplaceFacet {
     function getListing(uint256 tokenId) external view returns (UserMarketplaceModule.Listing memory);
 
     /**
+     * @notice Get the current nonce for a token's listing
+     * @param tokenId The token ID
+     * @return nonce The current nonce
+     */
+    function getListingNonce(uint256 tokenId) external view returns (uint256);
+
+    /**
+     * @notice Check if a listing has a valid nonce
+     * @param tokenId The token ID
+     * @return valid True if listing exists and has the current (highest) nonce
+     */
+    function isListingValid(uint256 tokenId) external view returns (bool);
+
+    /**
      * @notice Processes payment from marketplace, pays down debt if needed, and transfers remaining to seller
      * @dev Called by marketplace after taking funds from buyer
      * @param tokenId The ID of the veNFT being sold

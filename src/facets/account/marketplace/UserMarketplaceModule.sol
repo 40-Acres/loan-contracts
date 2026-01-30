@@ -15,16 +15,18 @@ library UserMarketplaceModule
         address owner;
         uint256 tokenId;
         uint256 price;                    // in paymentToken decimals
-        address paymentToken;             
+        address paymentToken;
         uint256 debtAttached;             // debt amount that should be paid from sale proceeds
         uint256 expiresAt;                // 0 = never
         address allowedBuyer;             // (optional) allowed buyer address
+        uint256 nonce;                    // listing nonce - only highest nonce is valid
     }
 
     // Token storage data using named storage slot
     struct UserMarketplaceModuleData {
         mapping(uint256 => Listing) listings; // tokenId => Listing
         uint256 _offerCounter;
+        mapping(uint256 => uint256) listingNonces; // tokenId => current nonce (only highest nonce listing is valid)
     }
 
     // Named storage slot for account data
@@ -42,13 +44,28 @@ library UserMarketplaceModule
 
     function createListing(uint256 tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer) external {
         UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
-        marketplaceConfig.listings[tokenId] = Listing(msg.sender, tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+        // Increment nonce for this tokenId - this invalidates any previous listing
+        uint256 newNonce = marketplaceConfig.listingNonces[tokenId] + 1;
+        marketplaceConfig.listingNonces[tokenId] = newNonce;
+        marketplaceConfig.listings[tokenId] = Listing(msg.sender, tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer, newNonce);
         emit ListingCreated(tokenId, msg.sender, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
     }
 
     function getListing(uint256 tokenId) external view returns (Listing memory) {
         UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
         return marketplaceConfig.listings[tokenId];
+    }
+
+    function getCurrentNonce(uint256 tokenId) external view returns (uint256) {
+        UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
+        return marketplaceConfig.listingNonces[tokenId];
+    }
+
+    function isListingValid(uint256 tokenId) external view returns (bool) {
+        UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
+        Listing memory listing = marketplaceConfig.listings[tokenId];
+        // Listing is valid if it exists and has the current (highest) nonce
+        return listing.owner != address(0) && listing.nonce == marketplaceConfig.listingNonces[tokenId];
     }
 
     function removeListing(uint256 tokenId) external {

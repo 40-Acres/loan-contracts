@@ -104,35 +104,39 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     ) external nonReentrant {
         // Validate portfolio account
         require(portfolioFactory.isPortfolio(portfolioAccount), InvalidPortfolio());
-        
+
         // Get listing from portfolio account
         UserMarketplaceModule.Listing memory listing = this.getListing(portfolioAccount, tokenId);
-        
+
         // Validate listing exists
         if (listing.owner == address(0)) {
             revert InvalidListing();
         }
-        
+
+        // Validate listing has valid nonce (only highest nonce listing is purchasable)
+        if (!IMarketplaceFacet(portfolioAccount).isListingValid(tokenId)) {
+            revert InvalidListing();
+        }
+
         // Validate listing hasn't expired
         if (listing.expiresAt > 0 && listing.expiresAt <= block.timestamp) {
             revert ListingExpired();
         }
-        
+
         // Validate buyer if restricted
         if (listing.allowedBuyer != address(0) && listing.allowedBuyer != msg.sender) {
             revert BuyerNotAllowed();
         }
-        
+
         // Validate payment token matches
         require(paymentToken == listing.paymentToken, "Payment token mismatch");
-        
+
         // Validate payment amount matches listing price
         if (paymentAmount != listing.price) {
             revert PaymentAmountMismatch();
         }
-        
-        // Calculate debt amount BEFORE calling processPayment (which removes listing)
-        // Use debtAttached if specified, otherwise use seller's total debt
+
+        // Get debt amount from listing (nonce ensures we have the correct listing)
         uint256 debtAmount = listing.debtAttached;
         
         // Transfer payment from buyer to this contract

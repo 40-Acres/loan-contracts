@@ -230,13 +230,13 @@ contract MarketplaceFacetTest is Test, Setup {
             LISTING_PRICE
         );
         vm.stopPrank();
-        
+
         // Get buyer's portfolio account
         address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
-        
+
         // Verify NFT transferred to buyer's portfolio account
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerPortfolio, "NFT should be in buyer's portfolio");
-        
+
         // Verify payment distribution
         // Protocol fee is taken first, then processPayment pays down debt, then transfers excess to seller
         uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
@@ -300,7 +300,7 @@ contract MarketplaceFacetTest is Test, Setup {
             LISTING_PRICE
         );
         vm.stopPrank();
-        
+
         // Verify debt is transferred (not paid down)
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debtAfter, 0, "Seller should have no debt after transfer");
@@ -345,10 +345,10 @@ contract MarketplaceFacetTest is Test, Setup {
             LISTING_PRICE
         );
         vm.stopPrank();
-        
+
         // Get buyer's portfolio account
         address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
-        
+
         // Verify NFT transferred to buyer's portfolio account
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerPortfolio, "NFT should be in buyer's portfolio");
     }

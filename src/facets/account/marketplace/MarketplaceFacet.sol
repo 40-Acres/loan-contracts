@@ -81,6 +81,24 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     }
 
     /**
+     * @notice Get the current nonce for a token's listing
+     * @param tokenId The token ID
+     * @return nonce The current nonce
+     */
+    function getListingNonce(uint256 tokenId) external view returns (uint256) {
+        return UserMarketplaceModule.getCurrentNonce(tokenId);
+    }
+
+    /**
+     * @notice Check if a listing has a valid nonce
+     * @param tokenId The token ID
+     * @return valid True if listing exists and has the current (highest) nonce
+     */
+    function isListingValid(uint256 tokenId) external view returns (bool) {
+        return UserMarketplaceModule.isListingValid(tokenId);
+    }
+
+    /**
      * @notice Processes payment from marketplace and approves buyer for NFT transfer
      * @dev Called by marketplace after taking funds from buyer. Buyer must be a portfolio account.
      *      Approves buyer to transfer NFT. Buyer must call finalizePurchase to complete the purchase.
@@ -95,13 +113,16 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     ) external {
         require(msg.sender == _marketplace, "Not marketplace");
         require(buyer != address(0), "Invalid buyer");
-        
+
         // Get listing from user marketplace module
         UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
-        
+
         // Validate listing exists
         require(listing.owner != address(0), "Listing does not exist");
-        
+
+        // Validate listing has valid nonce (only highest nonce listing is purchasable)
+        require(UserMarketplaceModule.isListingValid(tokenId), "Listing nonce invalid");
+
         // Ensure listing hasn't expired (0 = never expires)
         require(listing.expiresAt == 0 || listing.expiresAt > block.timestamp, "Listing expired");
         
@@ -278,16 +299,19 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
         // Get listing from user marketplace module
         UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
-        
+
         // Validate listing exists
         require(listing.owner != address(0), "Listing does not exist");
-        
+
+        // Validate listing has valid nonce (only highest nonce listing is purchasable)
+        require(UserMarketplaceModule.isListingValid(tokenId), "Listing nonce invalid");
+
         // Ensure listing hasn't expired (0 = never expires)
         require(listing.expiresAt == 0 || listing.expiresAt > block.timestamp, "Listing expired");
-        
+
         // Validate buyer if restricted
         require(listing.allowedBuyer == address(0) || listing.allowedBuyer == buyer, "Buyer not allowed");
-        
+
         // Transfer payment token from buyer to this portfolio account
         IERC20 paymentToken = IERC20(listing.paymentToken);
         paymentToken.safeTransferFrom(buyer, address(this), listing.price);
