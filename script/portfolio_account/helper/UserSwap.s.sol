@@ -19,18 +19,17 @@ import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
  * Note: Cannot swap the collateral token (veNFT).
  *
  * Usage:
- * 1. With parameters: forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run(address,address,bytes,address,uint256,address,uint256)" <SWAP_CONFIG> <SWAP_TARGET> <SWAP_DATA> <INPUT_TOKEN> <INPUT_AMOUNT> <OUTPUT_TOKEN> <MIN_OUTPUT> --rpc-url $RPC_URL --broadcast
- * 2. From env vars: SWAP_CONFIG=0x... SWAP_TARGET=0x... SWAP_DATA=0x... INPUT_TOKEN=0x... INPUT_AMOUNT=1000000 OUTPUT_TOKEN=0x... MIN_OUTPUT=900000 forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run()" --rpc-url $RPC_URL --broadcast
+ * 1. With parameters: forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run(address,bytes,address,uint256,address,uint256)" <SWAP_TARGET> <SWAP_DATA> <INPUT_TOKEN> <INPUT_AMOUNT> <OUTPUT_TOKEN> <MIN_OUTPUT> --rpc-url $RPC_URL --broadcast
+ * 2. From env vars: SWAP_TARGET=0x... SWAP_DATA=0x... INPUT_TOKEN=0x... INPUT_AMOUNT=1000000 OUTPUT_TOKEN=0x... MIN_OUTPUT=900000 forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run()" --rpc-url $RPC_URL --broadcast
  *
  * Example:
- * forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run(address,address,bytes,address,uint256,address,uint256)" 0x... 0x... 0x... 0x... 1000000 0x... 900000 --rpc-url $BASE_RPC_URL --broadcast
+ * forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run(address,bytes,address,uint256,address,uint256)" 0x... 0x... 0x... 1000000 0x... 900000 --rpc-url $BASE_RPC_URL --broadcast
  */
 contract UserSwap is Script {
     using stdJson for string;
 
     /**
      * @dev Swap tokens via PortfolioManager multicall
-     * @param swapConfig The swap config contract address
      * @param swapTarget The DEX router/aggregator address
      * @param swapData The encoded swap call data
      * @param inputToken The token to swap from
@@ -40,7 +39,6 @@ contract UserSwap is Script {
      * @param owner The owner address (for getting portfolio from factory)
      */
     function userSwap(
-        address swapConfig,
         address swapTarget,
         bytes memory swapData,
         address inputToken,
@@ -84,7 +82,6 @@ contract UserSwap is Script {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             selector,
-            swapConfig,
             swapTarget,
             swapData,
             inputToken,
@@ -101,7 +98,6 @@ contract UserSwap is Script {
 
     /**
      * @dev Main run function for forge script execution
-     * @param swapConfig The swap config contract address
      * @param swapTarget The DEX router/aggregator address
      * @param swapData The encoded swap call data
      * @param inputToken The token to swap from
@@ -110,7 +106,6 @@ contract UserSwap is Script {
      * @param minimumOutputAmount The minimum amount of output token to receive
      */
     function run(
-        address swapConfig,
         address swapTarget,
         bytes memory swapData,
         address inputToken,
@@ -121,16 +116,15 @@ contract UserSwap is Script {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         vm.startBroadcast(privateKey);
-        userSwap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount, owner);
+        userSwap(swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount, owner);
         vm.stopBroadcast();
     }
 
     /**
      * @dev Alternative run function that reads parameters from environment variables
-     * Usage: PRIVATE_KEY=0x... SWAP_CONFIG=0x... SWAP_TARGET=0x... SWAP_DATA=0x... INPUT_TOKEN=0x... INPUT_AMOUNT=1000000 OUTPUT_TOKEN=0x... MIN_OUTPUT=900000 forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run()" --rpc-url $RPC_URL --broadcast
+     * Usage: PRIVATE_KEY=0x... SWAP_TARGET=0x... SWAP_DATA=0x... INPUT_TOKEN=0x... INPUT_AMOUNT=1000000 OUTPUT_TOKEN=0x... MIN_OUTPUT=900000 forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run()" --rpc-url $RPC_URL --broadcast
      */
     function run() external {
-        address swapConfig = vm.envAddress("SWAP_CONFIG");
         address swapTarget = vm.envAddress("SWAP_TARGET");
         bytes memory swapData = vm.envBytes("SWAP_DATA");
         address inputToken = vm.envAddress("INPUT_TOKEN");
@@ -143,10 +137,10 @@ contract UserSwap is Script {
         address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
 
         vm.startBroadcast(privateKey);
-        userSwap(swapConfig, swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount, owner);
+        userSwap(swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount, owner);
         vm.stopBroadcast();
     }
 }
 
 // Example usage:
-// SWAP_CONFIG=0x... SWAP_TARGET=0x... SWAP_DATA=0x... INPUT_TOKEN=0x... INPUT_AMOUNT=1000000 OUTPUT_TOKEN=0x... MIN_OUTPUT=900000 forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
+// SWAP_TARGET=0x... SWAP_DATA=0x... INPUT_TOKEN=0x... INPUT_AMOUNT=1000000 OUTPUT_TOKEN=0x... MIN_OUTPUT=900000 forge script script/portfolio_account/helper/UserSwap.s.sol:UserSwap --sig "run()" --rpc-url $BASE_RPC_URL --broadcast

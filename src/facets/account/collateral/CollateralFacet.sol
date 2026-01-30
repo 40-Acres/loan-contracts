@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
@@ -35,11 +36,27 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
     function addCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         address tokenOwner = IVotingEscrow(address(_votingEscrow)).ownerOf(tokenId);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        // token must be in portfolio owners wallet or already in the portfolio account
-        require(tokenOwner == portfolioOwner || tokenOwner == address(this), NotOwnerOfToken());
-        if(tokenOwner == portfolioOwner) {
-            // if we have to transfer, transfer from portfolio owner to this portfolio account
-            IVotingEscrow(address(_votingEscrow)).transferFrom(portfolioOwner, address(this), tokenId);
+
+        // Token must be owned by: portfolio owner's EOA, this portfolio, or another portfolio owned by the same user
+        bool isOwnedByPortfolioOwner = tokenOwner == portfolioOwner;
+        bool isOwnedByThisPortfolio = tokenOwner == address(this);
+        bool isOwnedByAnotherUserPortfolio = false;
+
+        if (!isOwnedByPortfolioOwner && !isOwnedByThisPortfolio) {
+            // Check if token is in another portfolio owned by the same user
+            PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
+            address tokenOwnerFactory = manager.getFactoryForPortfolio(tokenOwner);
+            if (tokenOwnerFactory != address(0)) {
+                address tokenOwnerPortfolioOwner = PortfolioFactory(tokenOwnerFactory).ownerOf(tokenOwner);
+                isOwnedByAnotherUserPortfolio = tokenOwnerPortfolioOwner == portfolioOwner;
+            }
+        }
+
+        require(isOwnedByPortfolioOwner || isOwnedByThisPortfolio || isOwnedByAnotherUserPortfolio, NotOwnerOfToken());
+
+        if(tokenOwner != address(this)) {
+            // Transfer from current owner (EOA or another portfolio) to this portfolio account
+            IVotingEscrow(address(_votingEscrow)).transferFrom(tokenOwner, address(this), tokenId);
         }
         // add the collateral to the collateral manager
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
@@ -65,6 +82,23 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
+        CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+    }
+
+    function removeCollateralTo(uint256 tokenId, address toPortfolio) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
+        if (listing.owner != address(0)) {
+            revert ListingActive(tokenId);
+        }
+        // Verify the destination portfolio is owned by the same user
+        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        address targetFactory = manager.getFactoryForPortfolio(toPortfolio);
+        require(targetFactory != address(0), "Target portfolio not registered");
+        address targetOwner = PortfolioFactory(targetFactory).ownerOf(toPortfolio);
+        require(portfolioOwner == targetOwner, "Must own both portfolios");
+
+        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), toPortfolio, tokenId);
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
     }
 

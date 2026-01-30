@@ -50,10 +50,6 @@ contract SuperchainVotingFacet is VotingFacet {
         _votingConfig.setApprovedPool(pool, approved);
     }
 
-    function setMinimumWethBalance(uint256 minimumWethBalance) public onlyAuthorizedCaller(_portfolioFactory) {
-        _superchainVotingConfig.setMinimumWethBalance(minimumWethBalance);
-    }
-
     function getMinimumWethBalance() public view returns (uint256) {
         return _superchainVotingConfig.getMinimumWethBalance();
     }

@@ -35,7 +35,7 @@ contract VotingEscrowFacet is AccessControl {
         _voter = IVoter(voter);
     }
 
-    function increaseLock(uint256 tokenId, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function increaseLock(uint256 tokenId, uint256 amount) external {
         // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
         IERC20 votingEscrow = IERC20(_votingEscrow.token());
@@ -46,7 +46,7 @@ contract VotingEscrowFacet is AccessControl {
         emit LockIncreased(tokenId, amount, from);
     }
 
-    function createLock(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 tokenId) {
+    function createLock(uint256 amount) external returns (uint256 tokenId) {
         // if msg.sender is portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
         IERC20 votingEscrow = IERC20(_votingEscrow.token());
@@ -57,7 +57,7 @@ contract VotingEscrowFacet is AccessControl {
         emit LockCreated(tokenId, amount, from);
     }
 
-    function merge(uint256 from, uint256 to) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function merge(uint256 from, uint256 to) external {
         require(_votingEscrow.ownerOf(to) == address(this));
         address owner = _portfolioFactory.ownerOf(address(this));
         require(_votingEscrow.ownerOf(from) == owner);

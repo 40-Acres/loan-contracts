@@ -148,7 +148,6 @@ contract OpenXMarketplaceTest is Test, Setup {
 
         calldatas[0] = abi.encodeWithSelector(
             SwapFacet.userSwap.selector,
-            address(_swapConfig), // swapConfig
             address(mockRouter),  // swapTarget
             swapData,            // swapData
             _usdc,               // inputToken
