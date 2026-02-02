@@ -14,31 +14,54 @@ import {SwapConfig} from "../../src/facets/account/config/SwapConfig.sol";
 contract PortfolioAccountConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 
+    /**
+     * @dev Deploys all config contracts atomically to prevent MITM attacks.
+     *
+     * Each proxy is deployed with initialization data in its constructor,
+     * ensuring initialization happens atomically with deployment. This prevents:
+     * - Front-running of initialization calls
+     * - Hijacking of uninitialized proxies
+     *
+     * @param mock If true, uses vm.startPrank for testing; if false, assumes broadcast context
+     */
     function _deploy(bool mock) internal returns (PortfolioAccountConfig, VotingConfig, LoanConfig, SwapConfig) {
-        // Deploy PortfolioAccountConfig behind proxy
+        // Deploy PortfolioAccountConfig atomically (impl + proxy with init in constructor)
         PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        ERC1967Proxy configProxy = new ERC1967Proxy(address(configImpl), "");
-        PortfolioAccountConfig config = PortfolioAccountConfig(address(configProxy));
-        config.initialize(DEPLOYER_ADDRESS);
-        
-        // Deploy VotingConfig behind proxy
-        VotingConfig votingConfigImpl = new VotingConfig();
-        ERC1967Proxy votingConfigProxy = new ERC1967Proxy(address(votingConfigImpl), "");
-        VotingConfig votingConfig = VotingConfig(address(votingConfigProxy));
-        votingConfig.initialize(DEPLOYER_ADDRESS);
-        
-        // Deploy LoanConfig behind proxy
-        LoanConfig loanConfigImpl = new LoanConfig();
-        ERC1967Proxy loanConfigProxy = new ERC1967Proxy(address(loanConfigImpl), "");
-        LoanConfig loanConfig = LoanConfig(address(loanConfigProxy));
-        loanConfig.initialize(DEPLOYER_ADDRESS);
+        PortfolioAccountConfig config = PortfolioAccountConfig(
+            address(new ERC1967Proxy(
+                address(configImpl),
+                abi.encodeCall(PortfolioAccountConfig.initialize, (DEPLOYER_ADDRESS))
+            ))
+        );
 
-        // Deploy SwapConfig behind proxy
+        // Deploy VotingConfig atomically
+        VotingConfig votingConfigImpl = new VotingConfig();
+        VotingConfig votingConfig = VotingConfig(
+            address(new ERC1967Proxy(
+                address(votingConfigImpl),
+                abi.encodeCall(VotingConfig.initialize, (DEPLOYER_ADDRESS))
+            ))
+        );
+
+        // Deploy LoanConfig atomically
+        LoanConfig loanConfigImpl = new LoanConfig();
+        LoanConfig loanConfig = LoanConfig(
+            address(new ERC1967Proxy(
+                address(loanConfigImpl),
+                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS))
+            ))
+        );
+
+        // Deploy SwapConfig atomically
         SwapConfig swapConfigImpl = new SwapConfig();
-        ERC1967Proxy swapConfigProxy = new ERC1967Proxy(address(swapConfigImpl), "");
-        SwapConfig swapConfig = SwapConfig(address(swapConfigProxy));
-        swapConfig.initialize(DEPLOYER_ADDRESS);
-        
+        SwapConfig swapConfig = SwapConfig(
+            address(new ERC1967Proxy(
+                address(swapConfigImpl),
+                abi.encodeCall(SwapConfig.initialize, (DEPLOYER_ADDRESS))
+            ))
+        );
+
+        // Link configs together (owner-only operations, safe after atomic init)
         if(mock) {
             vm.startPrank(DEPLOYER_ADDRESS);
         }

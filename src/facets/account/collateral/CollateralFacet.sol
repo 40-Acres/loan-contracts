@@ -36,27 +36,11 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
     function addCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         address tokenOwner = IVotingEscrow(address(_votingEscrow)).ownerOf(tokenId);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-
-        // Token must be owned by: portfolio owner's EOA, this portfolio, or another portfolio owned by the same user
-        bool isOwnedByPortfolioOwner = tokenOwner == portfolioOwner;
-        bool isOwnedByThisPortfolio = tokenOwner == address(this);
-        bool isOwnedByAnotherUserPortfolio = false;
-
-        if (!isOwnedByPortfolioOwner && !isOwnedByThisPortfolio) {
-            // Check if token is in another portfolio owned by the same user
-            PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
-            address tokenOwnerFactory = manager.getFactoryForPortfolio(tokenOwner);
-            if (tokenOwnerFactory != address(0)) {
-                address tokenOwnerPortfolioOwner = PortfolioFactory(tokenOwnerFactory).ownerOf(tokenOwner);
-                isOwnedByAnotherUserPortfolio = tokenOwnerPortfolioOwner == portfolioOwner;
-            }
-        }
-
-        require(isOwnedByPortfolioOwner || isOwnedByThisPortfolio || isOwnedByAnotherUserPortfolio, NotOwnerOfToken());
-
-        if(tokenOwner != address(this)) {
-            // Transfer from current owner (EOA or another portfolio) to this portfolio account
-            IVotingEscrow(address(_votingEscrow)).transferFrom(tokenOwner, address(this), tokenId);
+        // token must be in portfolio owners wallet or already in the portfolio account
+        require(tokenOwner == portfolioOwner || tokenOwner == address(this), NotOwnerOfToken());
+        if(tokenOwner == portfolioOwner) {
+            // if we have to transfer, transfer from portfolio owner to this portfolio account
+            IVotingEscrow(address(_votingEscrow)).transferFrom(portfolioOwner, address(this), tokenId);
         }
         // add the collateral to the collateral manager
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));

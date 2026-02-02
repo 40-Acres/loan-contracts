@@ -58,7 +58,7 @@ contract LoanUpgradeTest is Test {
     Swapper public swapper;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         owner = address(loan.owner());
         user = votingEscrow.ownerOf(tokenId);

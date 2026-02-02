@@ -38,7 +38,7 @@ pragma solidity ^0.8.13;
 //     uint256 tokenId = 64196;
 
 //     function setUp() public {
-//         fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+//         fork = vm.createFork(vm.envString("BASE_RPC_URL"));
 //         vm.selectFork(fork);
 //         vm.rollFork(24353746);
 
