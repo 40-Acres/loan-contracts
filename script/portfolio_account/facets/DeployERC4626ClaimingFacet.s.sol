@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
-import {ERC4626ClaimingFacet} from "../../../src/facets/account/claim/ERC4626ClaimingFacet.sol";
+import {ERC4626ClaimingFacet} from "../../../src/facets/account/erc4626/ERC4626ClaimingFacet.sol";
 
 /**
  * @title DeployERC4626ClaimingFacet
@@ -30,16 +30,12 @@ contract DeployERC4626ClaimingFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](6);
-        // Share management
-        selectors[0] = ERC4626ClaimingFacet.depositShares.selector;
-        selectors[1] = ERC4626ClaimingFacet.trackExistingShares.selector;
-        selectors[2] = ERC4626ClaimingFacet.withdrawShares.selector;
+        bytes4[] memory selectors = new bytes4[](3);
         // Yield claiming
-        selectors[3] = ERC4626ClaimingFacet.claimVaultYield.selector;
+        selectors[0] = ERC4626ClaimingFacet.claimVaultYield.selector;
         // View functions
-        selectors[4] = ERC4626ClaimingFacet.getAvailableYield.selector;
-        selectors[5] = ERC4626ClaimingFacet.getDepositInfo.selector;
+        selectors[1] = ERC4626ClaimingFacet.getAvailableYield.selector;
+        selectors[2] = ERC4626ClaimingFacet.getDepositInfo.selector;
         return selectors;
     }
 }

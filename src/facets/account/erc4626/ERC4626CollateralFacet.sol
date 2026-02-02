@@ -8,7 +8,7 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
-import {ICollateralFacet} from "./ICollateralFacet.sol";
+import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 
 /**
  * @title ERC4626CollateralFacet

@@ -2,11 +2,11 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {ERC4626CollateralFacet} from "../../../src/facets/account/collateral/ERC4626CollateralFacet.sol";
-import {ERC4626CollateralManager} from "../../../src/facets/account/collateral/ERC4626CollateralManager.sol";
+import {ERC4626CollateralFacet} from "../../../src/facets/account/erc4626/ERC4626CollateralFacet.sol";
+import {ERC4626CollateralManager} from "../../../src/facets/account/erc4626/ERC4626CollateralManager.sol";
 import {DeployERC4626CollateralFacet} from "../../../script/portfolio_account/facets/DeployERC4626CollateralFacet.s.sol";
 import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
-import {ERC4626LendingFacet} from "../../../src/facets/account/lending/ERC4626LendingFacet.sol";
+import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626LendingFacet.sol";
 import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";

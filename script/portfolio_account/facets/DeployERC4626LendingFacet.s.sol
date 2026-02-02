@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
-import {ERC4626LendingFacet} from "../../../src/facets/account/lending/ERC4626LendingFacet.sol";
+import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626LendingFacet.sol";
 
 /**
  * @title DeployERC4626LendingFacet

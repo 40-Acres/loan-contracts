@@ -370,4 +370,20 @@ library ERC4626CollateralManager {
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
+
+    /**
+     * @dev Remove shares for yield claiming without affecting depositedAssetValue
+     * Used by ERC4626ClaimingFacet when harvesting yield
+     * @param shares The shares to remove (representing yield)
+     */
+    function removeSharesForYield(uint256 shares) external {
+        ERC4626CollateralData storage data = _getStorage();
+        require(data.shares >= shares, "Insufficient shares");
+
+        uint256 remainingShares = data.shares - shares;
+        uint256 remainingValue = IERC4626(data.vault).convertToAssets(remainingShares);
+        require(remainingValue >= data.depositedAssetValue, "Would remove principal");
+
+        data.shares = remainingShares;
+    }
 }
