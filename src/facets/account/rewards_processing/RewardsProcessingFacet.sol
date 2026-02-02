@@ -17,6 +17,12 @@ import {SwapConfig} from "../config/SwapConfig.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
+import {IPortfolioManager} from "../../../accounts/IPortfolioManager.sol";
+
+interface ILendingFacet {
+    function pay(uint256 amount) external returns (uint256 excess);
+}
+
 /**
  * @title RewardsProcessingFacet
  * @dev Facet that processes rewards for a portfolio account
@@ -36,6 +42,7 @@ contract RewardsProcessingFacet is AccessControl {
     event LenderPremiumPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
     event RewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 rewardsAmount, address user, address asset);
     event LoanPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event DebtPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address recipient, address asset);
     event PaidToRecipient(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed recipient, address asset, address indexed owner);
     event InvestedToVault(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event ZeroBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 remainingAmount, address indexed recipient, address asset, address indexed owner);
@@ -98,6 +105,8 @@ contract RewardsProcessingFacet is AccessControl {
                 remaining -= _investToVault(tokenId, rewardsAmount, rewardsOptionPercentage, asset, swapTarget, minimumOutputAmount, swapData);
             } else if(rewardsOption == UserRewardsConfig.RewardsOption.PayToRecipient) {
                 remaining -= _payToRecipient(tokenId, rewardsAmount, rewardsOptionPercentage, asset);
+            } else if(rewardsOption == UserRewardsConfig.RewardsOption.PayDebt) {
+                remaining -= _payDebt(tokenId, rewardsAmount, rewardsOptionPercentage, asset);
             }
         }
         return remaining;
@@ -262,12 +271,42 @@ contract RewardsProcessingFacet is AccessControl {
         return asset == vaultAsset ? amountToDeposit : rewardsAmountUsed;
     }
 
+    function _payDebt(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
+        uint256 amountToPay = rewardsAmount * percentage / 100;
+        address recipient = _getRecipient();
+        if (recipient == address(0)) {
+            return 0;
+        }
+
+        // ensure the recipient is a portfolio account (can be from any factory)
+        IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
+        if (!portfolioManager.isPortfolioRegistered(recipient)) {
+            return 0;
+        }
+
+        // approve the portfolio to pull the tokens
+        IERC20(asset).approve(recipient, amountToPay);
+
+        // call pay on the portfolio's LendingFacet
+        try ILendingFacet(recipient).pay(amountToPay) returns (uint256 excess) {
+            // Calculate actual amount paid (amountToPay - excess)
+            amountPaid = amountToPay - excess;
+            emit DebtPaid(_currentEpochStart(), tokenId, amountPaid, recipient, asset);
+        } catch {
+            amountPaid = 0;
+        }
+        IERC20(asset).approve(recipient, 0);
+        return amountPaid;
+    }
+
 
     function _payToRecipient(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
         // if fail to transfer, keep amountPaid to 0 so it will process to remaining funds as normal
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
-        require(recipient != address(0));
+        if(recipient == address(0)) {
+            return 0;
+        }
         bool success = IERC20(asset).trySafeTransfer(recipient, amountToPay);
         if(!success) {
             return 0;

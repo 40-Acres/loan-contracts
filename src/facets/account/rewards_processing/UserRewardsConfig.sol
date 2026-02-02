@@ -18,7 +18,8 @@ library UserRewardsConfig {
         PayBalance,
         IncreaseCollateral,
         PayToRecipient,
-        InvestToVault
+        InvestToVault,
+        PayDebt
     }
 
     struct UserRewardsConfigData {
