@@ -9,10 +9,7 @@ import {IYieldBasisFeeDistributor} from "../interfaces/IYieldBasisFeeDistributor
  * @dev Since FeeDistributor.claim(address) is public, anyone can trigger claims
  *      for any address. This contract batches claims for gas efficiency.
  *
- * Can be called by:
- * - Gelato/Chainlink Keepers
- * - Internal bot
- * - Anyone (permissionless)
+ * Can be called by anyone
  */
 contract YieldBasisClaimer {
     IYieldBasisFeeDistributor public immutable feeDistributor;

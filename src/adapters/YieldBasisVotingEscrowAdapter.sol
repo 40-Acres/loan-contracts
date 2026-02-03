@@ -7,12 +7,6 @@ import {IYieldBasisVotingEscrow} from "../interfaces/IYieldBasisVotingEscrow.sol
 /**
  * @title YieldBasisVotingEscrowAdapter
  * @dev Adapts YieldBasis's address-based veYB to match Aerodrome's tokenId-based IVotingEscrow interface.
- *      This allows CollateralManager to work with YieldBasis without code duplication.
- *
- * Key differences handled:
- * - YieldBasis: locked(address) vs Aerodrome: locked(uint256 tokenId)
- * - YieldBasis: no isPermanent, uses max lock time instead
- * - YieldBasis: no lockPermanent(), uses increase_unlock_time() to extend to max
  */
 contract YieldBasisVotingEscrowAdapter {
     IYieldBasisVotingEscrow public immutable veYB;
