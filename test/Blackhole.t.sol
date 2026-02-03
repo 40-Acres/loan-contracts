@@ -575,6 +575,7 @@ contract BlackholeTest is Test {
 
 
     function testSetToManualVoting() public {
+        vm.skip(true); // set to manual voting is removed due to contract size limit
         uint256 fork3 = vm.createFork(vm.envString("AVAX_RPC_URL"));
         vm.selectFork(fork3);
         vm.rollFork(72429705);
