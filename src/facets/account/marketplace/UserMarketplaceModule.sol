@@ -7,7 +7,7 @@ pragma solidity ^0.8.28;
  */
 library UserMarketplaceModule
  {
-    event ListingCreated(uint256 indexed tokenId, address indexed owner, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer);
+    event ListingCreated(uint256 indexed tokenId, address indexed owner, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer, uint256 nonce);
     event ListingCanceled(uint256 indexed tokenId);
     event ListingSold(uint256 indexed tokenId, address indexed buyer, uint256 price);
 
@@ -42,13 +42,14 @@ library UserMarketplaceModule
         }
     }
 
-    function createListing(uint256 tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer) external {
+    function createListing(uint256 tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer) external returns (uint256) {
         UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
         // Increment nonce for this tokenId - this invalidates any previous listing
         uint256 newNonce = marketplaceConfig.listingNonces[tokenId] + 1;
         marketplaceConfig.listingNonces[tokenId] = newNonce;
         marketplaceConfig.listings[tokenId] = Listing(msg.sender, tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer, newNonce);
-        emit ListingCreated(tokenId, msg.sender, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+        emit ListingCreated(tokenId, msg.sender, price, paymentToken, debtAttached, expiresAt, allowedBuyer, newNonce);
+        return newNonce;
     }
 
     function getListing(uint256 tokenId) external view returns (Listing memory) {

@@ -332,16 +332,20 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // lendingSelectors[3] = LendingFacet.topUp.selector;
         // _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
-        // // Deploy MarketplaceFacet
-        // PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
-        // bytes4[] memory marketplaceSelectors = new bytes4[](7);
-        // marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
-        // marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        // marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        // marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
-        // marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-
+        // Deploy MarketplaceFacet
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
+        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        bytes4[] memory marketplaceSelectors = new bytes4[](9);
+        marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
+        marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
+        marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
+        marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
+        marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
+        marketplaceSelectors[5] = MarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[6] = MarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[7] = MarketplaceFacet.getListingNonce.selector;
+        marketplaceSelectors[8] = MarketplaceFacet.isListingValid.selector;
+        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
         // VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
@@ -362,19 +366,19 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](10);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[9] = CollateralFacet.getLockedCollateral.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // bytes4[] memory collateralSelectors = new bytes4[](10);
+        // collateralSelectors[0] = CollateralFacet.addCollateral.selector;
+        // collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
+        // collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
+        // collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
+        // collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
+        // collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
+        // collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
+        // collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
+        // collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
+        // collateralSelectors[9] = CollateralFacet.getLockedCollateral.selector;
+        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
 
         // // Upgrade Loan Contract

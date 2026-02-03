@@ -35,8 +35,6 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
     event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
     event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
     
-    event ListingCreated(uint256 indexed tokenId, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address indexed owner, address allowedBuyer);
-    event ListingCancelled(uint256 indexed tokenId, address indexed owner);
     event PurchaseFinalized(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 debtAmount, uint256 unpaidFees);
     event DebtTransferredToBuyer(uint256 indexed tokenId, address indexed buyer, uint256 debtAmount, uint256 unpaidFees, address indexed seller);
     event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
@@ -56,19 +54,19 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         CollateralFacet collateralFacet = CollateralFacet(address(this));
         require(collateralFacet.getLockedCollateral(tokenId) > 0, "Token not locked");
         require(collateralFacet.getOriginTimestamp(tokenId) > 0, "Token not originated");
+
+        // ensure there is no existing listing for this token
+        require(!UserMarketplaceModule.isListingValid(tokenId), "Listing already exists");
+        
         // if user has debt, require the payment token to be the same as the debt token
         if(debtAttached > 0) {
             require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
         }
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
-        address owner = _portfolioFactory.ownerOf(address(this));
-        emit ListingCreated(tokenId, price, paymentToken, debtAttached, expiresAt, owner, allowedBuyer);
     }
 
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.removeListing(tokenId);
-        address owner = _portfolioFactory.ownerOf(address(this));
-        emit ListingCancelled(tokenId, owner);
     }
 
     /**
