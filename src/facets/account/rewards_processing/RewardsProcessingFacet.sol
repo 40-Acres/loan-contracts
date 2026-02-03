@@ -191,7 +191,6 @@ contract RewardsProcessingFacet is AccessControl {
 
         // whatever is remaining, send to recipient
         address recipient = _getRecipient();
-        require(recipient != address(0));
         IERC20(asset).safeTransfer(recipient, remaining);
         emit ZeroBalanceRewardsProcessed(_currentEpochStart(), tokenId, remaining, recipient, asset, _portfolioFactory.ownerOf(address(this)));
     }
@@ -274,9 +273,6 @@ contract RewardsProcessingFacet is AccessControl {
     function _payDebt(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset) internal returns (uint256 amountPaid) {
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
-        if (recipient == address(0)) {
-            return 0;
-        }
 
         // ensure the recipient is a portfolio account (can be from any factory)
         IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
@@ -304,9 +300,6 @@ contract RewardsProcessingFacet is AccessControl {
         // if fail to transfer, keep amountPaid to 0 so it will process to remaining funds as normal
         uint256 amountToPay = rewardsAmount * percentage / 100;
         address recipient = _getRecipient();
-        if(recipient == address(0)) {
-            return 0;
-        }
         bool success = IERC20(asset).trySafeTransfer(recipient, amountToPay);
         if(!success) {
             return 0;
