@@ -454,7 +454,7 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             address(0)
         );
-        
+
         // Cancel listing
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
@@ -466,10 +466,64 @@ contract MarketplaceFacetTest is Test, Setup {
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
-        
+
         // Verify listing is removed
         UserMarketplaceModule.Listing memory listing = IMarketplaceFacet(_portfolioAccount).getListing(_tokenId);
         assertEq(listing.owner, address(0), "Listing should be canceled");
+    }
+
+    function testRevertCancelListingWhenNoListingExists() public {
+        // Do NOT create a listing - try to cancel non-existent listing
+
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            MarketplaceFacet.cancelListing.selector,
+            _tokenId
+        );
+
+        // Should revert because there is no listing to cancel
+        vm.expectRevert();
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    function testRevertCreateListingWhenListingAlreadyExists() public {
+        // Create initial listing
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        // Verify listing exists
+        UserMarketplaceModule.Listing memory listing = IMarketplaceFacet(_portfolioAccount).getListing(_tokenId);
+        assertEq(listing.price, LISTING_PRICE, "Listing should exist");
+
+        // Try to create another listing for the same token - should revert
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            MarketplaceFacet.makeListing.selector,
+            _tokenId,
+            LISTING_PRICE * 2, // Different price
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        // Should revert with "Listing already exists"
+        vm.expectRevert("Listing already exists");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
     }
 
     function testGetListing() public {

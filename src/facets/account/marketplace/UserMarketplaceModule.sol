@@ -71,6 +71,7 @@ library UserMarketplaceModule
 
     function removeListing(uint256 tokenId) external {
         UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
+        require(marketplaceConfig.listings[tokenId].owner != address(0));
         delete marketplaceConfig.listings[tokenId];
         emit ListingCanceled(tokenId);
     }
