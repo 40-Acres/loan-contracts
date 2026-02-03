@@ -62,7 +62,7 @@ contract LoanTest is Test {
     MockOdosRouterRL public mockRouter;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(24353746);
         owner = vm.addr(0x123);
@@ -527,7 +527,7 @@ contract LoanTest is Test {
     function testBasicClaim() public {
         uint256 _tokenId = 932;
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         
@@ -587,7 +587,7 @@ contract LoanTest is Test {
     function testBasicClaimOdosV3() public {
         uint256 _tokenId = 113;
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(40262232);
         
@@ -624,7 +624,7 @@ contract LoanTest is Test {
 
     function testClaimTwoTokensWithPayoffToken() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         
@@ -764,7 +764,7 @@ contract LoanTest is Test {
 
     function testClaimTwoTokensWithPayoffTokenNoLoan() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         
@@ -919,7 +919,7 @@ contract LoanTest is Test {
     function testClaimPreferredToken() public {
         uint256 _tokenId = 932;
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         vm.startPrank(Loan(0x87f18b377e625b62c708D5f6EA96EC193558EFD0).owner());
@@ -1598,7 +1598,7 @@ contract LoanTest is Test {
     /// @notice Test payMultiple pays off multiple loans
     function testPayMultiple() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
 
@@ -1797,7 +1797,7 @@ contract LoanTest is Test {
 
     function testZeroBalanceFeePayoffToken() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
 

@@ -51,7 +51,7 @@ contract ClaimingFacet is AccessControl {
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
-                if(tokens[i][j] == launchpadToken) { 
+                if(tokens[i][j] == launchpadToken) {
                     return;
                 }
             }
@@ -127,4 +127,3 @@ contract ClaimingFacet is AccessControl {
         launchpadToken.safeTransfer(portfolioOwner, launchpadToken.balanceOf(address(this)));
     }
 }
-

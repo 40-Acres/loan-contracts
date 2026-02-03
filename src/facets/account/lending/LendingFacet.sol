@@ -73,10 +73,9 @@ contract LendingFacet is AccessControl {
         emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
-    function pay(uint256 amount) public {
+    function pay(uint256 amount) public returns (uint256 excess) {
         // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
-        address loanContract = address(_portfolioAccountConfig.getLoanContract());
 
         // transfer the funds from the from address to the portfolio account then pay the loan
         _lendingToken.safeTransferFrom(from, address(this), amount);
@@ -87,6 +86,7 @@ contract LendingFacet is AccessControl {
         if(excess > 0) {
             _lendingToken.safeTransfer(from, excess);
         }
+        return excess;
     }
 
     function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {

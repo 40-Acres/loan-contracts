@@ -128,16 +128,14 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         
         // Deploy VotingFacet
         SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), VOTING_ESCROW, VOTER, address(USDC));
-        bytes4[] memory votingSelectors = new bytes4[](9);
+        bytes4[] memory votingSelectors = new bytes4[](7);
         votingSelectors[0] = SuperchainVotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         votingSelectors[2] = VotingFacet.setVotingMode.selector;
         votingSelectors[3] = VotingFacet.isManualVoting.selector;
         votingSelectors[4] = VotingFacet.defaultVote.selector;
-        votingSelectors[5] = SuperchainVotingFacet.setSuperchainPool.selector;
-        votingSelectors[6] = SuperchainVotingFacet.setMinimumWethBalance.selector;
-        votingSelectors[7] = SuperchainVotingFacet.getMinimumWethBalance.selector;
-        votingSelectors[8] = SuperchainVotingFacet.isSuperchainPool.selector;
+        votingSelectors[5] = SuperchainVotingFacet.getMinimumWethBalance.selector;
+        votingSelectors[6] = SuperchainVotingFacet.isSuperchainPool.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
         
         // Deploy VotingEscrowFacet

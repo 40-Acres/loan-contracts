@@ -22,11 +22,12 @@ contract DeployLendingFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = LendingFacet.borrow.selector;
-        selectors[1] = LendingFacet.pay.selector;
-        selectors[2] = LendingFacet.setTopUp.selector;
-        selectors[3] = LendingFacet.topUp.selector;
+        selectors[1] = LendingFacet.borrowTo.selector;
+        selectors[2] = LendingFacet.pay.selector;
+        selectors[3] = LendingFacet.setTopUp.selector;
+        selectors[4] = LendingFacet.topUp.selector;
         return selectors;
     }
 }

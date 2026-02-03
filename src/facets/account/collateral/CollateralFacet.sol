@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
@@ -65,6 +66,23 @@ contract CollateralFacet is AccessControl, ICollateralFacet {
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
+        CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+    }
+
+    function removeCollateralTo(uint256 tokenId, address toPortfolio) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
+        if (listing.owner != address(0)) {
+            revert ListingActive(tokenId);
+        }
+        // Verify the destination portfolio is owned by the same user
+        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        address targetFactory = manager.getFactoryForPortfolio(toPortfolio);
+        require(targetFactory != address(0), "Target portfolio not registered");
+        address targetOwner = PortfolioFactory(targetFactory).ownerOf(toPortfolio);
+        require(portfolioOwner == targetOwner, "Must own both portfolios");
+
+        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), toPortfolio, tokenId);
         CollateralManager.removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
     }
 

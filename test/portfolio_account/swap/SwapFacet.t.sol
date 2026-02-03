@@ -83,7 +83,6 @@ contract SwapFacetTest is Test, Setup {
         // Execute swap via authorized caller
         vm.startPrank(_authorizedCaller);
         swapFacet.swap(
-            address(_swapConfig),
             address(mockRouter),
             swapData,
             inputToken,
@@ -131,7 +130,6 @@ contract SwapFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller, _authorizedCaller);
         vm.expectRevert();
         swapFacet.swap(
-            address(_swapConfig),
             address(mockRouter),
             swapData,
             inputToken,
@@ -162,7 +160,6 @@ contract SwapFacetTest is Test, Setup {
         vm.prank(address(0x1234));
         vm.expectRevert();
         swapFacet.swap(
-            address(_swapConfig),
             address(mockRouter),
             swapData,
             inputToken,
@@ -174,11 +171,10 @@ contract SwapFacetTest is Test, Setup {
 
     function testSwapFailsWithZeroOutputToken() public {
         setupSwapTest();
-        
+
         vm.startPrank(_authorizedCaller, _authorizedCaller);
         vm.expectRevert();
         swapFacet.swap(
-            address(_swapConfig),
             address(mockRouter),
             new bytes(0),
             inputToken,
@@ -191,11 +187,10 @@ contract SwapFacetTest is Test, Setup {
 
     function testSwapFailsWithZeroExpectedOutput() public {
         setupSwapTest();
-        
+
         vm.startPrank(_authorizedCaller, _authorizedCaller);
         vm.expectRevert();
         swapFacet.swap(
-            address(_swapConfig),
             address(mockRouter),
             new bytes(0),
             inputToken,
@@ -229,7 +224,6 @@ contract SwapFacetTest is Test, Setup {
         vm.startPrank(_authorizedCaller);
         vm.expectRevert("Input token cannot be collateral token");
         swapFacet.swap(
-            address(_swapConfig),
             address(mockRouter),
             swapData,
             collateralToken,  // Using collateral token as input

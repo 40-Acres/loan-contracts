@@ -57,6 +57,21 @@ library PortfolioHelperUtils {
     }
 
     /**
+     * @dev Get PortfolioFactory for YieldBasis from PortfolioManager
+     * @param vm The forge-std Vm interface
+     * @param portfolioManager The PortfolioManager instance
+     * @return PortfolioFactory instance for YieldBasis
+     * @notice Set FACTORY_SALT env var to override. Defaults to "yieldbasis-usdc"
+     */
+    function getYieldBasisFactory(Vm vm, PortfolioManager portfolioManager) internal view returns (PortfolioFactory) {
+        string memory factorySalt = vm.envOr("FACTORY_SALT", string("yieldbasis-usdc-v2"));
+        bytes32 salt = keccak256(abi.encodePacked(factorySalt));
+        address factoryAddress = portfolioManager.factoryBySalt(salt);
+        require(factoryAddress != address(0), string.concat("Factory not found for salt: ", factorySalt));
+        return PortfolioFactory(factoryAddress);
+    }
+
+    /**
      * @dev Get or create portfolio address for an owner from the configured factory
      * @param vm The forge-std Vm interface
      * @param owner The owner address

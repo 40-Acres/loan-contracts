@@ -25,16 +25,14 @@ contract DeploySuperchainVotingFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = VotingFacet.vote.selector;
         selectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         selectors[2] = VotingFacet.setVotingMode.selector;
         selectors[3] = VotingFacet.isManualVoting.selector;
         selectors[4] = VotingFacet.defaultVote.selector;
-        selectors[5] = SuperchainVotingFacet.setSuperchainPool.selector;
-        selectors[6] = SuperchainVotingFacet.isSuperchainPool.selector;
-        selectors[7] = SuperchainVotingFacet.setMinimumWethBalance.selector;
-        selectors[8] = SuperchainVotingFacet.getMinimumWethBalance.selector;
+        selectors[5] = SuperchainVotingFacet.isSuperchainPool.selector;
+        selectors[6] = SuperchainVotingFacet.getMinimumWethBalance.selector;
         return selectors;
     }
 }

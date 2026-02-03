@@ -102,7 +102,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         
         // Deploy CollateralFacet
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](9);
+        bytes4[] memory collateralSelectors = new bytes4[](10);
         collateralSelectors[0] = CollateralFacet.addCollateral.selector;
         collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
@@ -112,6 +112,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
         collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
         collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[9] = CollateralFacet.getLockedCollateral.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
         
         // Deploy LendingFacet
@@ -362,7 +363,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
         // Deploy CollateralFacet
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](9);
+        bytes4[] memory collateralSelectors = new bytes4[](10);
         collateralSelectors[0] = CollateralFacet.addCollateral.selector;
         collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
@@ -372,12 +373,13 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
         collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
         collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[9] = CollateralFacet.getLockedCollateral.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
 
-        // Upgrade Loan Contract
-        Loan loanImplementation = new Loan();
-        Loan(address(portfolioAccountConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
+        // // Upgrade Loan Contract
+        // Loan loanImplementation = new Loan();
+        // Loan(address(portfolioAccountConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
     }
     
     /**
