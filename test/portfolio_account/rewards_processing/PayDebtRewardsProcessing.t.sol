@@ -410,47 +410,34 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
             assertEq(debtAfter, debtBefore - amountToPay, "Debt should be reduced by payment amount");
         }
 
-        // Portfolio 1's balance after processing:
-        // - If debt < payment amount, excess is refunded back to source portfolio
-        // - Then _finalizeRewards processes the remaining (since source has no debt)
-        // - Zero balance fee is taken from remaining
+        // Verify final balances with exact accounting:
+        //
+        // Flow when source (portfolio 1) has no debt and target (portfolio 2) has 500e6 debt:
+        // 1. getRewardsOptionPercentage() caps 100% to 99% (100% - 1% ZBF) when source has no debt
+        // 2. _payDebt sends 990e6 to LendingFacet.pay() on portfolio 2
+        // 3. pay() transfers 990e6 from portfolio 1 → portfolio 2
+        // 4. pay() pays 500e6 debt, refunds 490e6 excess back to portfolio 1
+        // 5. _payDebt returns amountPaid = 500e6 (actual debt reduction)
+        // 6. remaining = 1000e6 - 500e6 = 500e6
+        // 7. _finalizeRewards → _processZeroBalanceRewards takes 10e6 ZBF (1% of 1000e6)
+        // 8. Remaining 490e6 sent to recipient (portfolio 2)
+        //
+        // Final token movements from portfolio 1:
+        //   -990e6 (to portfolio 2 via pay)
+        //   +490e6 (refund from pay)
+        //   -10e6  (ZBF to loan contract)
+        //   -490e6 (to recipient in _processZeroBalanceRewards)
+        //   = 0
+
         uint256 portfolio1BalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+        assertEq(portfolio1BalanceAfter, 0, "Portfolio 1 should have 0 balance after processing");
 
-        // When amountToPay > debtBefore, excess gets refunded to portfolio 1
-        // The excess is: amountToPay - debtBefore = 1000e6 - 500e6 = 500e6
-        // Then zero balance fee (1%) is taken: 500e6 * 100 / 10000 = 5e6
-        // Portfolio 1 should have: excess - zero balance fee = 500e6 - 5e6 - remaining sent to recipient
-        // Actually the LendingFacet.pay() refunds excess back to the source (msg.sender)
-        // So portfolio 1 gets back 500e6 - 10e6 (zero balance fee) = 490e6 (after ZBF from the refund)
-        // But wait - the refund goes to 'from' which in _payDebt is portfolio 1 via the approval mechanism
-
-        // The flow is: _payDebt approves recipient, then pay() pulls tokens and refunds excess to source
-        // The remaining after PayDebt should flow to _finalizeRewards
-        // Since source (portfolio 1) has no debt, it goes to _processZeroBalanceRewards
-
-        // Expected: excess from pay() was refunded to portfolio 1
-        // No additional processing since _payDebt returns the full amountToPay as "used"
-        // So the remaining after _processRewardsOption is 0, and _finalizeRewards gets 0
-        // But wait - looking at _payDebt, it emits DebtPaid and returns amountToPay even if debt was less
-        // The excess refund from LendingFacet.pay() is to the caller (portfolio 1)
-        // So portfolio 1 ends up with the excess
-
-        // For this test: 1000 USDC rewards, 100% to PayDebt (1000 USDC)
-        // Portfolio 2 has 500 USDC debt, so pays 500 and refunds 500 to portfolio 1
-        // Then _finalizeRewards sees remaining = 0, so nothing more happens
-        // But portfolio 1 still has the refunded 500 USDC minus zero balance fee
-
-        // Actually looking at the trace again:
-        // - DebtPaid emits amount 990000000 (990 USDC - odd, should be 1000?)
-        // - Zero balance fee of 10e6 was taken before
-        // - Then 500e6 debt paid, 490e6 refunded
-
-        // So the final balance check: portfolio 1 has refunded excess
-        // When amountToPay > debtBefore, excess = amountToPay - debtBefore
-        // The excess should be in portfolio 1 (from the refund via LendingFacet.pay())
-        // Note: The exact accounting depends on implementation details
-        // Key assertion: debt is paid off, and portfolio 1 processed its rewards
-        assertGe(portfolio1BalanceAfter, 0, "Portfolio 1 balance should be valid");
+        // Portfolio 2 receives 490e6 from _processZeroBalanceRewards (remaining after ZBF)
+        uint256 portfolio2BalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount2);
+        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 expectedZBF = (rewardsAmount * zeroBalanceFee) / 10000; // 10e6
+        uint256 expectedRecipientAmount = (rewardsAmount - debtBefore) - expectedZBF; // 500e6 - 10e6 = 490e6
+        assertEq(portfolio2BalanceAfter, expectedRecipientAmount, "Portfolio 2 should receive remaining after ZBF");
     }
 
     /**
