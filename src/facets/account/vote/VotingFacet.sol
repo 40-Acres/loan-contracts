@@ -50,6 +50,12 @@ contract VotingFacet is IVotingFacet, AccessControl {
         UserVotingConfig.setVotingMode(tokenId, true);
     }
 
+    function batchVote(uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights) external onlyPortfolioManagerMulticall(_portfolioFactory)  {
+        for(uint256 i = 0; i < tokenIds.length; i++) {
+            vote(tokenIds[i], pools, weights);
+        }
+    }
+
     function delegateVote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) external {
         require(pools.length > 0, PoolsCannotBeEmpty());
         require(msg.sender == UserVotingConfig.getDelegatedVoter(tokenId), NotAuthorized());
@@ -63,7 +69,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
 
     function defaultVote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) external onlyAuthorizedCaller(_portfolioFactory) {
         // if user did not vote last epoch, set user to automatic voting mode
-        if(!_isElligibleForManualVoting(tokenId) && UserVotingConfig.isManualVoting(tokenId)) {
+        if(!isElligibleForManualVoting(tokenId) && UserVotingConfig.isManualVoting(tokenId)) {
             UserVotingConfig.setVotingMode(tokenId, false);
         }
 
@@ -76,7 +82,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
         _vote(tokenId, pools, weights);
     }
 
-    function voteForLaunchpadToken(uint256 tokenId, address[] calldata pools, uint256[] calldata weights, bool receiveLaunchPadToken) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function voteForLaunchpadToken(uint256 tokenId, address[] calldata pools, uint256[] calldata weights, bool receiveLaunchPadToken) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         for(uint256 i = 0; i < pools.length; i++) {
             address launchpadToken = _votingConfig.getLaunchpadPoolTokenForEpoch(ProtocolTimeLibrary.epochNext(block.timestamp), pools[i]);
             if(launchpadToken != address(0)) {
@@ -84,7 +90,13 @@ contract VotingFacet is IVotingFacet, AccessControl {
                 UserClaimingConfig.setReceiveLaunchPadTokenForNextEpoch(receiveLaunchPadToken);
             }
         }
-        _vote(tokenId, pools, weights);
+        vote(tokenId, pools, weights);
+    }
+
+    function batchVoteForLaunchpadToken(uint256[] calldata tokenIds, address[] calldata pools, uint256[] calldata weights, bool receiveLaunchPadToken) external onlyPortfolioManagerMulticall(_portfolioFactory)  {
+        for(uint256 i = 0; i < tokenIds.length; i++) {
+            voteForLaunchpadToken(tokenIds[i], pools, weights, receiveLaunchPadToken);
+        }
     }
 
     function _vote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) internal virtual {
@@ -100,7 +112,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
 
     function isManualVoting(uint256 tokenId) external view returns (bool) {
         // if user is not eligible for manual voting, they are forced into automatic mode
-        if(!_isElligibleForManualVoting(tokenId)) {
+        if(!isElligibleForManualVoting(tokenId)) {
             return false;
         }
         // if user is eligible for manual voting, check if they explicitly set it to manual mode
@@ -117,7 +129,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
 
     function setVotingMode(uint256 tokenId, bool setToManualVoting) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         if(setToManualVoting) {
-            require(_isElligibleForManualVoting(tokenId));
+            require(isElligibleForManualVoting(tokenId));
         }
         UserVotingConfig.setVotingMode(tokenId, setToManualVoting);
         
@@ -125,7 +137,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
         emit VotingModeSet(tokenId, setToManualVoting, owner);
     }
 
-    function _isElligibleForManualVoting(uint256 tokenId) internal view returns (bool) {
+    function isElligibleForManualVoting(uint256 tokenId) public view returns (bool) {
         uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenId);
         // if token has not voted within the contract, they are not eligible for manual voting
         if(lastVoted < CollateralManager.getOriginTimestamp(tokenId) || CollateralManager.getOriginTimestamp(tokenId) == 0) {
