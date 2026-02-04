@@ -15,7 +15,7 @@ import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 /**
  * @title LendingFacet
  * @dev Facet for borrowing against collateral in portfolio accounts.
- *      Global debt tracked via CollateralManager, per-loan details from loan contract.
+ *      Global debt tracked via CollateralManager
  */
 contract LendingFacet is AccessControl {
     using SafeERC20 for IERC20;
@@ -73,7 +73,7 @@ contract LendingFacet is AccessControl {
         emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
-    function pay(uint256 amount) public returns (uint256 excess) {
+    function pay(uint256 amount) public returns (uint256) {
         // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
 

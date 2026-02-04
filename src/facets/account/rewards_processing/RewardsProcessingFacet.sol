@@ -308,17 +308,13 @@ contract RewardsProcessingFacet is AccessControl {
         return amountToPay;
     }
 
-    function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal virtual returns (uint256 amountUsed) {
+    function _increaseCollateral(uint256 tokenId, uint256 increasePercentage, address rewardsToken, uint256 rewardsAmount, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
         address lockedAsset = _votingEscrow.token();
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         if(rewardsToken == lockedAsset) {
             // No swap needed, directly use rewards token
             uint256 amountToUse = rewardsAmount * increasePercentage / 100;
-            IERC20(lockedAsset).approve(address(_votingEscrow), amountToUse);
-            _votingEscrow.increaseAmount(tokenId, amountToUse);
-            IERC20(lockedAsset).approve(address(_votingEscrow), 0);
-            CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
-            emit CollateralIncreased(_currentEpochStart(), tokenId, amountToUse, _portfolioFactory.ownerOf(address(this)));
+            _increaseLock(tokenId, amountToUse, lockedAsset);
             return amountToUse;
         }
 
@@ -333,14 +329,17 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 endingLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         uint256 increaseAmount = endingLockedAssetBalance - beginningLockedAssetBalance;
         // increase the collateral
+        _increaseLock(tokenId, increaseAmount, lockedAsset);
+        return amountToSwap;
+    }
+
+    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) virtual internal {
         IERC20(lockedAsset).approve(address(_votingEscrow), increaseAmount);
-        _votingEscrow.increaseAmount(tokenId, increaseAmount);
+        IVotingEscrow(address(_votingEscrow)).increaseAmount(tokenId, increaseAmount);
         // Clear approval after use
         IERC20(lockedAsset).approve(address(_votingEscrow), 0);
         CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
-
         emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
-        return amountToSwap;
     }
 
     function swapToRewardsToken(address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, uint256 minimumOutputAmount) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {

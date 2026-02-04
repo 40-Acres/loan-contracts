@@ -107,11 +107,10 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
 
         // Deploy YieldBasisFacet
         YieldBasisFacet yieldBasisFacet = new YieldBasisFacet(address(portfolioFactory), address(portfolioAccountConfig), VE_YB, YB, address(veYBAdapter), address(faucet));
-        bytes4[] memory yieldBasisSelectors = new bytes4[](4);
+        bytes4[] memory yieldBasisSelectors = new bytes4[](3);
         yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
         yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
         yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        yieldBasisSelectors[3] = YieldBasisFacet.enableInfiniteLock.selector;
         _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
 
         // Deploy YieldBasisVotingFacet
@@ -262,11 +261,10 @@ contract YieldBasisRootUpgrade is PortfolioAccountConfigDeploy {
         
         // Deploy YieldBasisFacet
         YieldBasisFacet yieldBasisFacet = new YieldBasisFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB, YB, address(veYBAdapter), address(faucet));
-        bytes4[] memory yieldBasisSelectors = new bytes4[](4);
+        bytes4[] memory yieldBasisSelectors = new bytes4[](3);
         yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
         yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
         yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        yieldBasisSelectors[3] = YieldBasisFacet.enableInfiniteLock.selector;
         _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
 
         // Deploy YieldBasisVotingFacet

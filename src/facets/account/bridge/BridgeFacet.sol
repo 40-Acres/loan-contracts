@@ -22,14 +22,14 @@ contract BridgeFacet is AccessControl {
     error NotApprovedBridge(address bridgeContract);
     
     
-    constructor(address portfolioFactory, address portfolioAccountConfig, address token, address tokenMessenger) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address token, address tokenMessenger, uint32 destinationDomain) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
         require(tokenMessenger != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _token = IERC20(token);
-        _destinationDomain = 2; // Optimism Mainnet https://developers.circle.com/cctp/cctp-supported-blockchains
+        _destinationDomain = destinationDomain; // https://developers.circle.com/cctp/cctp-supported-blockchains
         _tokenMessenger = ITokenMessenger(tokenMessenger);
     }
 

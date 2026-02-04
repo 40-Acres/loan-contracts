@@ -196,11 +196,10 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
             address(veYBAdapter),
             address(faucet)
         );
-        bytes4[] memory yieldBasisSelectors = new bytes4[](4);
+        bytes4[] memory yieldBasisSelectors = new bytes4[](3);
         yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
         yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
         yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        yieldBasisSelectors[3] = YieldBasisFacet.enableInfiniteLock.selector;
         facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
 
         // Deploy ERC721ReceiverFacet

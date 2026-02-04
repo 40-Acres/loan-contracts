@@ -43,83 +43,11 @@ contract YieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         _veYBAdapter = YieldBasisVotingEscrowAdapter(veYBAdapter);
     }
 
-    /**
-     * @notice Increase collateral by adding to the veYB lock
-     * @dev Overrides parent to use YieldBasis's address-based increase_amount()
-     *      instead of Aerodrome's tokenId-based increaseAmount()
-     */
-    function _increaseCollateral(
-        uint256 tokenId,
-        uint256 increasePercentage,
-        address rewardsToken,
-        uint256 rewardsAmount,
-        address swapTarget,
-        uint256 minimumOutputAmount,
-        bytes memory swapData
-    ) internal override returns (uint256 amountUsed) {
-        address lockedAsset = _veYB.TOKEN();
-        uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
-
-        if (rewardsToken == lockedAsset) {
-            // No swap needed, directly use rewards token
-            uint256 amountToUse = rewardsAmount * increasePercentage / 100;
-            IERC20(lockedAsset).approve(address(_veYB), amountToUse);
-            _veYB.increase_amount(amountToUse);
-            IERC20(lockedAsset).approve(address(_veYB), 0);
-
-            // Use adapter address for CollateralManager
-            CollateralManager.updateLockedCollateral(
-                address(_portfolioAccountConfig),
-                tokenId,
-                address(_veYBAdapter)
-            );
-
-            emit CollateralIncreased(
-                _currentEpochStart(),
-                tokenId,
-                amountToUse,
-                _portfolioFactory.ownerOf(address(this))
-            );
-            return amountToUse;
-        }
-
-        require(swapTarget != address(0), "Swap target must be provided");
-
-        // Swap the rewards amount to the locked asset
-        uint256 amountToSwap = rewardsAmount * increasePercentage / 100;
-        IERC20(rewardsToken).approve(swapTarget, amountToSwap);
-        SwapMod.swap(
-            address(_swapConfig),
-            swapTarget,
-            swapData,
-            rewardsToken,
-            amountToSwap,
-            lockedAsset,
-            minimumOutputAmount
-        );
-        IERC20(rewardsToken).approve(swapTarget, 0);
-
-        uint256 endingLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
-        uint256 increaseAmount = endingLockedAssetBalance - beginningLockedAssetBalance;
-
-        // Increase the collateral using YieldBasis's address-based function
+    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override {
         IERC20(lockedAsset).approve(address(_veYB), increaseAmount);
         _veYB.increase_amount(increaseAmount);
         IERC20(lockedAsset).approve(address(_veYB), 0);
-
-        // Use adapter address for CollateralManager
-        CollateralManager.updateLockedCollateral(
-            address(_portfolioAccountConfig),
-            tokenId,
-            address(_veYBAdapter)
-        );
-
-        emit CollateralIncreased(
-            _currentEpochStart(),
-            tokenId,
-            increaseAmount,
-            _portfolioFactory.ownerOf(address(this))
-        );
-        return amountToSwap;
+        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
     }
 }

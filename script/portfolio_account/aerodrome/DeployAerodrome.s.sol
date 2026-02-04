@@ -87,7 +87,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         // This allows calls to be broadcast from deployer account
         
         // // Deploy BridgeFacet
-        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER);
+        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER, 2);
         // bytes4[] memory bridgeSelectors = new bytes4[](1);
         // bridgeSelectors[0] = BridgeFacet.bridge.selector;
         // _registerFacet(facetRegistry, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
@@ -249,16 +249,16 @@ contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
         // This allows calls to be broadcast from deployer account
         
         // Deploy BridgeFacet
-        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER);
-        bytes4[] memory bridgeSelectors = new bytes4[](1);
-        bridgeSelectors[0] = BridgeFacet.bridge.selector;
+        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER, 2);
+        // bytes4[] memory bridgeSelectors = new bytes4[](1);
+        // bridgeSelectors[0] = BridgeFacet.bridge.selector;
         // Check if facet already exists
-        address oldBridgeFacet = facetRegistry.getFacetForSelector(bridgeSelectors[0]);
-        if (oldBridgeFacet == address(0)) {
-            facetRegistry.registerFacet(address(bridgeFacet), bridgeSelectors, "BridgeFacet");
-        } else {
-            facetRegistry.replaceFacet(oldBridgeFacet, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
-        }
+        // address oldBridgeFacet = facetRegistry.getFacetForSelector(bridgeSelectors[0]);
+        // if (oldBridgeFacet == address(0)) {
+        //     facetRegistry.registerFacet(address(bridgeFacet), bridgeSelectors, "BridgeFacet");
+        // } else {
+        //     facetRegistry.replaceFacet(oldBridgeFacet, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
+        // }
         
         // Deploy SwapFacet
         SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig));

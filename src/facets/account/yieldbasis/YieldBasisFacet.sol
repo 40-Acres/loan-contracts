@@ -15,8 +15,6 @@ import {YieldBasisFaucet} from "../../../faucets/YieldBasisFaucet.sol";
  * @title YieldBasisFacet
  * @dev Facet for managing veYB lock positions on YieldBasis (Ethereum)
  *
- * All locks use INFINITE LOCK mode via infinite_lock_toggle().
- * This ensures locks never expire and maintain full voting power.
  *
  * Uses YieldBasisVotingEscrowAdapter to make veYB compatible with CollateralManager
  * which expects Aerodrome's tokenId-based IVotingEscrow interface.
@@ -99,20 +97,6 @@ contract YieldBasisFacet is AccessControl {
         uint256 tokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
         // Use adapter address so CollateralManager can call locked(tokenId) correctly
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
-    }
-
-    /**
-     * @notice Enable infinite lock on an existing position
-     * @dev For migrating portfolios created before infinite lock was default.
-     *      Infinite lock ensures the position never expires and can be transferred.
-     */
-    function enableInfiniteLock() external {
-        IYieldBasisVotingEscrow.LockedBalance memory existing = _veYB.locked(address(this));
-        if (existing.amount == 0) revert NoExistingLock();
-        // Infinite lock is indicated by lock.end == type(uint256).max
-        if (existing.end == type(uint256).max) revert AlreadyInfiniteLock();
-
-        _veYB.infinite_lock_toggle();
     }
 
     /**

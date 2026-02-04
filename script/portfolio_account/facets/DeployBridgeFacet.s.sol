@@ -18,14 +18,14 @@ contract DeployBridgeFacet is AccountFacetsDeploy {
         address TOKEN_MESSENGER = vm.envAddress("TOKEN_MESSENGER");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        BridgeFacet newFacet = new BridgeFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, USDC, TOKEN_MESSENGER);
+        BridgeFacet newFacet = new BridgeFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, USDC, TOKEN_MESSENGER, 2);
         
         registerFacet(PORTFOLIO_FACTORY, address(newFacet), getSelectorsForFacet(), "BridgeFacet", false);
         vm.stopBroadcast();
     }
 
     function deploy(address portfolioFactory, address portfolioAccountConfig, address usdc, address tokenMessenger) external {
-        BridgeFacet newFacet = new BridgeFacet(portfolioFactory, portfolioAccountConfig, usdc, tokenMessenger);
+        BridgeFacet newFacet = new BridgeFacet(portfolioFactory, portfolioAccountConfig, usdc, tokenMessenger, 2);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "BridgeFacet", true);
     }
 
