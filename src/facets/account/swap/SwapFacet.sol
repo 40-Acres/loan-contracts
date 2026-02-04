@@ -11,6 +11,7 @@ import {AccessControl} from "../../account/utils/AccessControl.sol";
 import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 
 /**
+ * @notice Deprecated, Individual Facets use SwapMod directly, if a user wants to swap tokens then they can transfer to the WalletFacets's account and call swap there
  * @title SwapFacet
  * @dev Facet that swaps tokens within the portfolio
  */
