@@ -40,6 +40,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event DebtBalanceUpdated(address indexed borrower, uint256 oldBalance, uint256 newBalance, uint256 rewardsApplied);
     event RewardsMinted(address indexed to, uint256 amount);
     event FeeCalculatorUpdated(address indexed oldCalculator, address indexed newCalculator);
+    event ExcessRewardsPaid(address indexed borrower, uint256 amount);
 
     // ============ Errors ============
     error ContractPaused();
@@ -512,10 +513,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 oldDebtBalance = $.debtBalance[borrower];
 
         if (earned > oldDebtBalance) {
-            uint256 difference = earned - oldDebtBalance;
-            _mint(borrower, difference);
+            // Rewards exceed debt - clear debt and transfer excess to borrower
+            uint256 excess = earned - oldDebtBalance;
             $.debtBalance[borrower] = 0;
+            IERC20(asset()).safeTransfer(borrower, excess);
+            emit ExcessRewardsPaid(borrower, excess);
         } else if (earned > 0) {
+            // Partial repayment - reduce debt by earned amount
             $.debtBalance[borrower] -= earned;
         }
 

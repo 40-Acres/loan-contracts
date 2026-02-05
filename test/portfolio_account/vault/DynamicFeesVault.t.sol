@@ -439,12 +439,13 @@ contract DynamicFeesVaultTest is Test {
         timestamp = ProtocolTimeLibrary.epochNext(timestamp);
         vm.warp(timestamp);
 
-        uint256 sharesBefore = vault.balanceOf(user1);
+        uint256 usdcBalanceBefore = usdc.balanceOf(user1);
         vault.updateUserDebtBalance(user1);
-        uint256 sharesAfter = vault.balanceOf(user1);
+        uint256 usdcBalanceAfter = usdc.balanceOf(user1);
 
         assertEq(vault.getDebtBalance(user1), 0, "Debt should be fully paid");
-        assertGt(sharesAfter, sharesBefore, "User should receive vault shares for excess");
+        // Excess rewards are transferred as USDC, not minted as shares (prevents shareholder dilution)
+        assertGt(usdcBalanceAfter, usdcBalanceBefore, "User should receive USDC for excess rewards");
     }
 
     function testTotalAssetsDecreasesWithRealTimeRewards() public {
@@ -555,7 +556,7 @@ contract DynamicFeesVaultTest is Test {
         assertLt(vault.getDebtBalance(user2), 200e6, "User2 debt should be reduced");
     }
 
-    function testMultipleUsersRepayWithRewardsEarlyRepayerGetsShares() public {
+    function testMultipleUsersRepayWithRewardsEarlyRepayerGetsUSDC() public {
         address user2 = address(0x3);
 
         uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
@@ -582,12 +583,63 @@ contract DynamicFeesVaultTest is Test {
         timestamp = ProtocolTimeLibrary.epochNext(timestamp);
         vm.warp(timestamp);
 
-        uint256 user1SharesBefore = vault.balanceOf(user1);
+        uint256 user1UsdcBefore = usdc.balanceOf(user1);
         vault.updateUserDebtBalance(user1);
-        uint256 user1SharesAfter = vault.balanceOf(user1);
+        uint256 user1UsdcAfter = usdc.balanceOf(user1);
 
         assertEq(vault.getDebtBalance(user1), 0, "User1 debt should be fully paid");
-        assertGt(user1SharesAfter, user1SharesBefore, "User1 should receive shares for excess rewards");
+        // Excess rewards are transferred as USDC, not minted as shares (prevents shareholder dilution)
+        assertGt(user1UsdcAfter, user1UsdcBefore, "User1 should receive USDC for excess rewards");
+    }
+
+    function testExcessRewardsDoNotDiluteShareholders() public {
+        // This test verifies that when a borrower earns more rewards than their debt,
+        // the excess is transferred as USDC rather than minted as shares, preventing
+        // dilution of existing vault shareholders.
+
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        // Record initial share price (assets per share)
+        uint256 totalSupplyBefore = vault.totalSupply();
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 sharePriceBefore = totalAssetsBefore * 1e18 / totalSupplyBefore;
+
+        // User1 borrows a small amount
+        vm.prank(user1);
+        vault.borrow(100e6);
+
+        // User1 repays with significantly more rewards than their debt
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
+        vm.stopPrank();
+
+        // Move to next epoch so rewards vest
+        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
+        vm.warp(timestamp);
+
+        // Expect the ExcessRewardsPaid event to be emitted
+        vm.expectEmit(true, false, false, false);
+        emit DynamicFeesVault.ExcessRewardsPaid(user1, 0);
+        vault.updateUserDebtBalance(user1);
+
+        // Verify debt is fully paid
+        assertEq(vault.getDebtBalance(user1), 0, "Debt should be fully paid");
+
+        // Calculate share price after excess rewards distribution
+        uint256 totalSupplyAfter = vault.totalSupply();
+        uint256 totalAssetsAfter = vault.totalAssets();
+        uint256 sharePriceAfter = totalAssetsAfter * 1e18 / totalSupplyAfter;
+
+        // Share price should NOT decrease (no dilution)
+        // With the fix, shares are not minted so total supply stays the same
+        assertGe(sharePriceAfter, sharePriceBefore, "Share price should not decrease (no dilution)");
+
+        // Total supply should not have increased from minting shares to borrower
+        // (user1 had 0 shares before this test)
+        assertEq(vault.balanceOf(user1), 0, "Borrower should not receive vault shares");
     }
 
     function testFeeRatioProgressionOverEpoch() public {
