@@ -2,12 +2,12 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {YieldBasisFacet} from "../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
+import {DynamicYieldBasisFacet} from "../../../src/facets/account/yieldbasis/DynamicYieldBasisFacet.sol";
 import {YieldBasisRewardsProcessingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
-import {LoanFacet} from "../../../src/facets/account/loan/LoanFacet.sol";
+import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
+import {DynamicLendingFacet} from "../../../src/facets/account/lending/DynamicLendingFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
@@ -55,10 +55,10 @@ contract YieldBasisDynamicFeesE2E is Test {
     address public portfolioAccount;
 
     // Facets
-    YieldBasisFacet public yieldBasisFacet;
+    DynamicYieldBasisFacet public yieldBasisFacet;
     YieldBasisRewardsProcessingFacet public rewardsProcessingFacet;
-    CollateralFacet public collateralFacet;
-    LoanFacet public loanFacet;
+    DynamicCollateralFacet public collateralFacet;
+    DynamicLendingFacet public lendingFacet;
 
     // YieldBasis contracts
     IYieldBasisVotingEscrow public veYB = IYieldBasisVotingEscrow(VE_YB);
@@ -81,9 +81,8 @@ contract YieldBasisDynamicFeesE2E is Test {
         uint256 fork = vm.createFork(vm.envString("ETH_RPC_URL"));
         vm.selectFork(fork);
 
-        // Warp to start of a week to avoid epoch edge cases
-        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(epochStart + 1 hours);
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
 
         vm.startPrank(DEPLOYER);
 
@@ -149,23 +148,27 @@ contract YieldBasisDynamicFeesE2E is Test {
         );
         deal(YB, address(faucet), 1000 ether);
 
-        // Deploy CollateralFacet
-        collateralFacet = new CollateralFacet(
+        // Deploy DynamicCollateralFacet
+        collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB
         );
-        bytes4[] memory collateralSelectors = new bytes4[](5);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[3] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[4] = CollateralFacet.getCollateralToken.selector;
-        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "CollateralFacet");
+        bytes4[] memory collateralSelectors = new bytes4[](9);
+        collateralSelectors[0] = DynamicCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = DynamicCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = DynamicCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = DynamicCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = DynamicCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = DynamicCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = DynamicCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = DynamicCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = DynamicCollateralFacet.enforceCollateralRequirements.selector;
+        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
 
-        // Deploy YieldBasisFacet
-        yieldBasisFacet = new YieldBasisFacet(
+        // Deploy DynamicYieldBasisFacet
+        yieldBasisFacet = new DynamicYieldBasisFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB,
@@ -174,10 +177,10 @@ contract YieldBasisDynamicFeesE2E is Test {
             address(faucet)
         );
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
+        yieldBasisSelectors[0] = DynamicYieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = DynamicYieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = DynamicYieldBasisFacet.depositLock.selector;
+        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "DynamicYieldBasisFacet");
 
         // Deploy ERC721ReceiverFacet
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
@@ -185,22 +188,19 @@ contract YieldBasisDynamicFeesE2E is Test {
         erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
         facetRegistry.registerFacet(address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
-        // Deploy LoanFacet
-        loanFacet = new LoanFacet(
+        // Deploy DynamicLendingFacet
+        lendingFacet = new DynamicLendingFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             USDC
         );
-        bytes4[] memory loanSelectors = new bytes4[](8);
-        loanSelectors[0] = LoanFacet.borrow.selector;
-        loanSelectors[1] = LoanFacet.borrowTo.selector;
-        loanSelectors[2] = LoanFacet.pay.selector;
-        loanSelectors[3] = LoanFacet.setTopUp.selector;
-        loanSelectors[4] = LoanFacet.getMaxLoan.selector;
-        loanSelectors[5] = LoanFacet.getTotalDebt.selector;
-        loanSelectors[6] = LoanFacet.getUnpaidFees.selector;
-        loanSelectors[7] = LoanFacet.syncDebt.selector;
-        facetRegistry.registerFacet(address(loanFacet), loanSelectors, "LoanFacet");
+        bytes4[] memory lendingSelectors = new bytes4[](5);
+        lendingSelectors[0] = DynamicLendingFacet.borrow.selector;
+        lendingSelectors[1] = DynamicLendingFacet.borrowTo.selector;
+        lendingSelectors[2] = DynamicLendingFacet.pay.selector;
+        lendingSelectors[3] = DynamicLendingFacet.setTopUp.selector;
+        lendingSelectors[4] = DynamicLendingFacet.topUp.selector;
+        facetRegistry.registerFacet(address(lendingFacet), lendingSelectors, "DynamicLendingFacet");
 
         // Deploy YieldBasisRewardsProcessingFacet
         rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(
@@ -251,7 +251,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(DynamicYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -265,7 +265,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(LoanFacet.borrow.selector, amount);
+        calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.borrow.selector, amount);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -281,7 +281,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(LoanFacet.pay.selector, amount);
+        calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.pay.selector, amount);
 
         bytes[] memory results = portfolioManager.multicall(calldatas, factories);
         excess = abi.decode(results[0], (uint256));
@@ -310,13 +310,13 @@ contract YieldBasisDynamicFeesE2E is Test {
         console.log("\n--- Step 1: Create veYB lock ---");
         _createLockForUser();
 
-        uint256 lockedCollateral = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        uint256 lockedCollateral = DynamicCollateralFacet(portfolioAccount).getTotalLockedCollateral();
         console.log("Locked collateral:", lockedCollateral);
         assertGt(lockedCollateral, 0, "Should have locked collateral");
 
         // Step 2: Borrow against collateral
         console.log("\n--- Step 2: Borrow against collateral ---");
-        (uint256 maxLoan,) = LoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         console.log("Max loan available:", maxLoan);
 
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 2 : 100e6; // Borrow 50% of max or 100 USDC
@@ -328,7 +328,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             console.log("Borrowed amount:", borrowAmount);
             console.log("User USDC received:", userUsdcAfter - userUsdcBefore);
 
-            uint256 debt = LoanFacet(portfolioAccount).getTotalDebt();
+            uint256 debt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
             uint256 vaultDebt = vault.getDebtBalance(portfolioAccount);
             console.log("Portfolio debt:", debt);
             console.log("Vault debt balance:", vaultDebt);
@@ -341,11 +341,14 @@ contract YieldBasisDynamicFeesE2E is Test {
         console.log("\n--- Step 3: Simulate rewards over epochs ---");
         uint256 currentDebt = vault.getDebtBalance(portfolioAccount);
         if (currentDebt > 0) {
+            // Pre-compute epoch timestamps from initial block.timestamp
+            // (block.timestamp may be cached by via-ir optimizer across warps)
+            uint256 rewardsEpochStart = ProtocolTimeLibrary.epochNext(block.timestamp);
+
             // Simulate 3 epochs of reward payments
             for (uint256 i = 0; i < 3; i++) {
                 // Move to next epoch
-                uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-                vm.warp(nextEpoch + 1 hours);
+                vm.warp(rewardsEpochStart + (i * 1 weeks) + 1 hours);
 
                 // Simulate reward payment (25% of original debt per epoch)
                 uint256 rewardAmount = borrowAmount / 4;
@@ -355,8 +358,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             }
 
             // Move to next epoch to allow rewards to vest
-            uint256 finalEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(finalEpoch + 1 hours);
+            vm.warp(rewardsEpochStart + (3 * 1 weeks) + 1 hours);
 
             // Sync and update debt balance
             vault.sync();
@@ -369,7 +371,7 @@ contract YieldBasisDynamicFeesE2E is Test {
 
         // Step 4: Pay off remaining loan with overpayment
         console.log("\n--- Step 4: Pay off loan with overpayment ---");
-        uint256 remainingDebt = LoanFacet(portfolioAccount).getTotalDebt();
+        uint256 remainingDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
         console.log("Remaining debt before final payment:", remainingDebt);
 
         if (remainingDebt > 0) {
@@ -382,7 +384,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             uint256 excess = _payLoan(paymentAmount);
 
             uint256 userBalanceAfter = usdc.balanceOf(user);
-            uint256 finalDebt = LoanFacet(portfolioAccount).getTotalDebt();
+            uint256 finalDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
             uint256 finalVaultDebt = vault.getDebtBalance(portfolioAccount);
 
             console.log("Excess returned:", excess);
@@ -408,10 +410,15 @@ contract YieldBasisDynamicFeesE2E is Test {
     function testE2E_ExcessRewardsPaidAsUSDC() public {
         console.log("=== Testing Excess Rewards Paid as USDC ===");
 
+        // Pre-compute epoch timestamps from initial block.timestamp
+        // (block.timestamp may be cached by via-ir optimizer across warps)
+        uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 epoch2Start = epoch1Start + 1 weeks;
+
         // Create lock and borrow
         _createLockForUser();
 
-        (uint256 maxLoan,) = LoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 4 : 50e6;
 
         if (borrowAmount > 0) {
@@ -421,8 +428,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             console.log("Initial debt:", initialDebt);
 
             // Move to next epoch
-            uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(nextEpoch + 1 hours);
+            vm.warp(epoch1Start + 1 hours);
 
             // Repay with rewards that EXCEED the debt (200% of debt)
             uint256 excessiveRewards = initialDebt * 2;
@@ -431,8 +437,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             console.log("Rewards deposited (2x debt):", excessiveRewards);
 
             // Move to next epoch for rewards to vest
-            uint256 vestingEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(vestingEpoch + 1 hours);
+            vm.warp(epoch2Start + 1 hours);
 
             // Record portfolio account USDC balance before update
             uint256 portfolioUsdcBefore = usdc.balanceOf(portfolioAccount);
@@ -462,7 +467,7 @@ contract YieldBasisDynamicFeesE2E is Test {
 
         _createLockForUser();
 
-        (uint256 maxLoan,) = LoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 2 : 100e6;
 
         if (borrowAmount > 0) {
@@ -475,37 +480,44 @@ contract YieldBasisDynamicFeesE2E is Test {
             console.log("Utilization (bps):", utilization);
             console.log("Fee ratio (bps):", feeRatio);
 
-            // At ~50% utilization, fee should be ~20% (2000 bps)
+            // At ~40% utilization, fee should be ~20% (2000 bps)
             assertGe(feeRatio, 500, "Fee ratio should be at least 5%");
             assertLe(feeRatio, 9500, "Fee ratio should be at most 95%");
 
-            // Move to next epoch
-            uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(nextEpoch + 1 hours);
+            // Pre-compute epoch timestamps from initial block.timestamp
+            // Note: The vault's lender premium checkpoint is created in the SAME epoch as
+            // the first reward deposit, so it can only earn starting from the SECOND epoch.
+            // We deposit rewards in two consecutive epochs to test the fee distribution.
+            uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+            uint256 epoch2Start = epoch1Start + 1 weeks;
+            uint256 epoch3Start = epoch2Start + 1 weeks;
 
-            // Repay with rewards
-            uint256 rewardAmount = borrowAmount / 2;
+            // Epoch 1: First reward deposit (vault gets no premium for this epoch)
+            vm.warp(epoch1Start + 1 hours);
+            uint256 rewardAmount = borrowAmount / 4;
             _repayWithRewards(rewardAmount);
 
-            // Move epoch forward and sync
-            uint256 vestingEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(vestingEpoch + 1 hours);
+            // Epoch 2: Second reward deposit (vault CAN earn premium for this epoch)
+            vm.warp(epoch2Start + 1 hours);
+            _repayWithRewards(rewardAmount);
+
+            // Move to epoch 3 for full vesting
+            vm.warp(epoch3Start + 1 hours);
 
             vault.sync();
 
-            // Check that lender premium was applied
-            uint256 previousEpoch = vestingEpoch - ProtocolTimeLibrary.WEEK;
-            uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(previousEpoch);
-            uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), previousEpoch);
+            // Check that lender premium was applied for epoch 2
+            uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(epoch2Start);
+            uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch2Start);
 
-            console.log("Total rewards in epoch:", totalRewards);
-            console.log("Lender premium:", lenderPremium);
+            console.log("Total rewards in epoch 2:", totalRewards);
+            console.log("Lender premium in epoch 2:", lenderPremium);
 
             if (totalRewards > 0) {
                 uint256 actualFeeRatio = (lenderPremium * 10000) / totalRewards;
                 console.log("Actual fee ratio applied (bps):", actualFeeRatio);
 
-                // Fee ratio should be within expected range
+                // Fee ratio should be within expected range (~2000 bps at 40% utilization)
                 assertGe(actualFeeRatio, 400, "Actual fee should be >= 4%");
                 assertLe(actualFeeRatio, 9600, "Actual fee should be <= 96%");
             }
@@ -530,7 +542,7 @@ contract YieldBasisDynamicFeesE2E is Test {
 
         // User 1: Create lock and borrow
         _createLockForUser();
-        (uint256 maxLoan1,) = LoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan1,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrow1 = maxLoan1 > 0 ? maxLoan1 / 3 : 50e6;
         if (borrow1 > 0) {
             _borrowFromVault(borrow1);
@@ -543,15 +555,15 @@ contract YieldBasisDynamicFeesE2E is Test {
         address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(DynamicYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
 
-        (uint256 maxLoan2,) = LoanFacet(portfolioAccount2).getMaxLoan();
+        (uint256 maxLoan2,) = DynamicCollateralFacet(portfolioAccount2).getMaxLoan();
         uint256 borrow2 = maxLoan2 > 0 ? maxLoan2 / 3 : 50e6;
         if (borrow2 > 0) {
             vm.startPrank(user2);
-            calldatas[0] = abi.encodeWithSelector(LoanFacet.borrow.selector, borrow2);
+            calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.borrow.selector, borrow2);
             portfolioManager.multicall(calldatas, factories);
             vm.stopPrank();
         }
@@ -559,9 +571,12 @@ contract YieldBasisDynamicFeesE2E is Test {
         console.log("User1 debt:", vault.getDebtBalance(portfolioAccount));
         console.log("User2 debt:", vault.getDebtBalance(portfolioAccount2));
 
+        // Pre-compute epoch timestamps from initial block.timestamp
+        uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 epoch2Start = epoch1Start + 1 weeks;
+
         // Move to next epoch
-        uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-        vm.warp(nextEpoch + 1 hours);
+        vm.warp(epoch1Start + 1 hours);
 
         // Both users repay with rewards
         if (borrow1 > 0) {
@@ -581,8 +596,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         }
 
         // Move to next epoch for vesting
-        uint256 vestingEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-        vm.warp(vestingEpoch + 1 hours);
+        vm.warp(epoch2Start + 1 hours);
 
         vault.sync();
         vault.updateUserDebtBalance(portfolioAccount);
@@ -610,6 +624,11 @@ contract YieldBasisDynamicFeesE2E is Test {
     function testE2E_VaultSharePriceStability() public {
         console.log("=== Testing Vault Share Price Stability ===");
 
+        // Pre-compute epoch timestamps from initial block.timestamp
+        // (block.timestamp may be cached by via-ir optimizer across warps)
+        uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 epoch2Start = epoch1Start + 1 weeks;
+
         _createLockForUser();
 
         // Record initial share price
@@ -619,23 +638,21 @@ contract YieldBasisDynamicFeesE2E is Test {
 
         console.log("Initial share price:", sharePriceBefore);
 
-        (uint256 maxLoan,) = LoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 4 : 25e6;
 
         if (borrowAmount > 0) {
             _borrowFromVault(borrowAmount);
 
             // Move to next epoch
-            uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(nextEpoch + 1 hours);
+            vm.warp(epoch1Start + 1 hours);
 
             // Repay with excess rewards (3x debt)
             uint256 excessRewards = borrowAmount * 3;
             _repayWithRewards(excessRewards);
 
             // Move to next epoch for vesting
-            uint256 vestingEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(vestingEpoch + 1 hours);
+            vm.warp(epoch2Start + 1 hours);
 
             vault.updateUserDebtBalance(portfolioAccount);
 
@@ -646,7 +663,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             console.log("Final share price:", sharePriceAfter);
             console.log("Share price change:", int256(sharePriceAfter) - int256(sharePriceBefore));
 
-            // Share price should not decrease (no dilution from excess rewards)
+            // Share price should not decrease (lender premium from fee curve benefits depositors)
             assertGe(sharePriceAfter, sharePriceBefore, "Share price should not decrease");
 
             // Verify borrower didn't receive vault shares for excess

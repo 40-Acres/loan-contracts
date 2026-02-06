@@ -2,15 +2,14 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
-import {DynamicLoanFacet} from "../../../src/facets/account/loan/DynamicLoanFacet.sol";
-import {ILoanFacet} from "../../../src/facets/account/loan/ILoanFacet.sol";
-import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
+import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
+import {DynamicLendingFacet} from "../../../src/facets/account/lending/DynamicLendingFacet.sol";
+import {DynamicVotingEscrowFacet} from "../../../src/facets/account/votingEscrow/DynamicVotingEscrowFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig, DebtManagerType} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -104,9 +103,6 @@ contract AerodromeDynamicFeesE2E is Test {
         // Configure the PortfolioAccountConfig with the DynamicFeesVault as loan contract
         portfolioAccountConfig.setLoanContract(address(vault));
 
-        // Set debt manager type to Dynamic for DynamicFeesVault
-        portfolioAccountConfig.setDebtManagerType(DebtManagerType.Dynamic);
-
         // Set up loan config for Aerodrome
         loanConfig.setRewardsRate(2850); // Aerodrome rewards rate
         loanConfig.setMultiplier(52); // 52x multiplier
@@ -125,33 +121,37 @@ contract AerodromeDynamicFeesE2E is Test {
 
         vm.startPrank(DEPLOYER);
 
-        // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(
+        // Deploy DynamicCollateralFacet
+        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VOTING_ESCROW
         );
-        bytes4[] memory collateralSelectors = new bytes4[](5);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[3] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[4] = CollateralFacet.getCollateralToken.selector;
-        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "CollateralFacet");
+        bytes4[] memory collateralSelectors = new bytes4[](9);
+        collateralSelectors[0] = DynamicCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = DynamicCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = DynamicCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = DynamicCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = DynamicCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = DynamicCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = DynamicCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = DynamicCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = DynamicCollateralFacet.enforceCollateralRequirements.selector;
+        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
 
-        // Deploy VotingEscrowFacet (for creating locks)
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(
+        // Deploy DynamicVotingEscrowFacet (for creating locks)
+        DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VOTING_ESCROW,
             VOTER
         );
         bytes4[] memory votingEscrowSelectors = new bytes4[](3);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        facetRegistry.registerFacet(address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        votingEscrowSelectors[0] = DynamicVotingEscrowFacet.increaseLock.selector;
+        votingEscrowSelectors[1] = DynamicVotingEscrowFacet.createLock.selector;
+        votingEscrowSelectors[2] = DynamicVotingEscrowFacet.merge.selector;
+        facetRegistry.registerFacet(address(votingEscrowFacet), votingEscrowSelectors, "DynamicVotingEscrowFacet");
 
         // Deploy ERC721ReceiverFacet
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
@@ -159,24 +159,19 @@ contract AerodromeDynamicFeesE2E is Test {
         erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
         facetRegistry.registerFacet(address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
-        // Deploy DynamicLoanFacet (for DynamicFeesVault)
-        DynamicLoanFacet loanFacet = new DynamicLoanFacet(
+        // Deploy DynamicLendingFacet
+        DynamicLendingFacet lendingFacet = new DynamicLendingFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             USDC
         );
-        bytes4[] memory loanSelectors = new bytes4[](10);
-        loanSelectors[0] = DynamicLoanFacet.borrow.selector;
-        loanSelectors[1] = DynamicLoanFacet.borrowTo.selector;
-        loanSelectors[2] = DynamicLoanFacet.pay.selector;
-        loanSelectors[3] = DynamicLoanFacet.setTopUp.selector;
-        loanSelectors[4] = DynamicLoanFacet.getMaxLoan.selector;
-        loanSelectors[5] = DynamicLoanFacet.getTotalDebt.selector;
-        loanSelectors[6] = DynamicLoanFacet.getUnpaidFees.selector;
-        loanSelectors[7] = DynamicLoanFacet.syncDebt.selector;
-        loanSelectors[8] = DynamicLoanFacet.updateUndercollateralizedDebt.selector;
-        loanSelectors[9] = DynamicLoanFacet.enforceDebtRequirements.selector;
-        facetRegistry.registerFacet(address(loanFacet), loanSelectors, "DynamicLoanFacet");
+        bytes4[] memory lendingSelectors = new bytes4[](5);
+        lendingSelectors[0] = DynamicLendingFacet.borrow.selector;
+        lendingSelectors[1] = DynamicLendingFacet.borrowTo.selector;
+        lendingSelectors[2] = DynamicLendingFacet.pay.selector;
+        lendingSelectors[3] = DynamicLendingFacet.setTopUp.selector;
+        lendingSelectors[4] = DynamicLendingFacet.topUp.selector;
+        facetRegistry.registerFacet(address(lendingFacet), lendingSelectors, "DynamicLendingFacet");
 
         vm.stopPrank();
 
@@ -202,7 +197,7 @@ contract AerodromeDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(VotingEscrowFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(DynamicVotingEscrowFacet.createLock.selector, LOCK_AMOUNT);
 
         bytes[] memory results = portfolioManager.multicall(calldatas, factories);
 
@@ -219,7 +214,7 @@ contract AerodromeDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ILoanFacet.borrow.selector, amount);
+        calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.borrow.selector, amount);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -235,7 +230,7 @@ contract AerodromeDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ILoanFacet.pay.selector, amount);
+        calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.pay.selector, amount);
 
         bytes[] memory results = portfolioManager.multicall(calldatas, factories);
         excess = abi.decode(results[0], (uint256));
@@ -256,13 +251,6 @@ contract AerodromeDynamicFeesE2E is Test {
 
     /**
      * @notice Full E2E test: Create lock -> Borrow -> Process rewards over epochs -> Pay off with overpayment
-     * @dev KNOWN ISSUE: This test fails due to DynamicFeesVault internal accounting issue.
-     *      - DebtManager separation is complete: DynamicDebtManager syncs correctly with vault via syncDebt()
-     *      - The remaining issue is inside DynamicFeesVault.payFromPortfolio():
-     *        - It has complex accounting between debtBalance[borrower] and totalLoanedAssets
-     *        - These can get out of sync when rewards vest via _updateSettlementCheckpoint
-     *        - This causes arithmetic overflow during payment
-     *      - TODO: Fix DynamicFeesVault's internal accounting for the payment flow after rewards
      */
     function testE2E_AerodromeDynamicFees_LoanPayoffWithOverpayment() public {
         console.log("=== Starting Aerodrome Dynamic Fees E2E Test ===");
@@ -272,13 +260,13 @@ contract AerodromeDynamicFeesE2E is Test {
         uint256 tokenId = _createLockForUser();
         console.log("Token ID created:", tokenId);
 
-        uint256 lockedCollateral = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        uint256 lockedCollateral = DynamicCollateralFacet(portfolioAccount).getTotalLockedCollateral();
         console.log("Locked collateral:", lockedCollateral);
         assertGt(lockedCollateral, 0, "Should have locked collateral");
 
         // Step 2: Borrow against collateral
         console.log("\n--- Step 2: Borrow against collateral ---");
-        (uint256 maxLoan,) = ILoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         console.log("Max loan available:", maxLoan);
 
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 2 : 100e6; // Borrow 50% of max or 100 USDC
@@ -290,7 +278,7 @@ contract AerodromeDynamicFeesE2E is Test {
             console.log("Borrowed amount:", borrowAmount);
             console.log("User USDC received:", userUsdcAfter - userUsdcBefore);
 
-            uint256 debt = ILoanFacet(portfolioAccount).getTotalDebt();
+            uint256 debt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
             uint256 vaultDebt = vault.getDebtBalance(portfolioAccount);
             console.log("Portfolio debt:", debt);
             console.log("Vault debt balance:", vaultDebt);
@@ -324,11 +312,8 @@ contract AerodromeDynamicFeesE2E is Test {
             vault.sync();
             vault.updateUserDebtBalance(portfolioAccount);
 
-            // IMPORTANT: Sync the DynamicDebtManager's cached debt with the vault
-            ILoanFacet(portfolioAccount).syncDebt();
-
             uint256 debtAfterRewards = vault.getDebtBalance(portfolioAccount);
-            uint256 cachedDebt = ILoanFacet(portfolioAccount).getTotalDebt();
+            uint256 cachedDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
             console.log("Vault debt after rewards vesting:", debtAfterRewards);
             console.log("Cached debt after sync:", cachedDebt);
             assertLt(debtAfterRewards, currentDebt, "Vault debt should be reduced after rewards");
@@ -337,7 +322,7 @@ contract AerodromeDynamicFeesE2E is Test {
 
         // Step 4: Pay off remaining loan with overpayment
         console.log("\n--- Step 4: Pay off loan with overpayment ---");
-        uint256 remainingDebt = ILoanFacet(portfolioAccount).getTotalDebt();
+        uint256 remainingDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
         console.log("Remaining debt before final payment:", remainingDebt);
 
         if (remainingDebt > 0) {
@@ -350,7 +335,7 @@ contract AerodromeDynamicFeesE2E is Test {
             uint256 excess = _payLoan(paymentAmount);
 
             uint256 userBalanceAfter = usdc.balanceOf(user);
-            uint256 finalDebt = ILoanFacet(portfolioAccount).getTotalDebt();
+            uint256 finalDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
             uint256 finalVaultDebt = vault.getDebtBalance(portfolioAccount);
 
             console.log("Excess returned:", excess);
@@ -379,7 +364,7 @@ contract AerodromeDynamicFeesE2E is Test {
         // Create lock and borrow
         _createLockForUser();
 
-        (uint256 maxLoan,) = ILoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 4 : 50e6;
 
         if (borrowAmount > 0) {
@@ -431,7 +416,7 @@ contract AerodromeDynamicFeesE2E is Test {
 
         _createLockForUser();
 
-        (uint256 maxLoan,) = ILoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 2 : 100e6;
 
         if (borrowAmount > 0) {
@@ -499,7 +484,7 @@ contract AerodromeDynamicFeesE2E is Test {
 
         // User 1: Create lock and borrow
         _createLockForUser();
-        (uint256 maxLoan1,) = ILoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan1,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrow1 = maxLoan1 > 0 ? maxLoan1 / 3 : 50e6;
         if (borrow1 > 0) {
             _borrowFromVault(borrow1);
@@ -512,15 +497,15 @@ contract AerodromeDynamicFeesE2E is Test {
         address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(VotingEscrowFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(DynamicVotingEscrowFacet.createLock.selector, LOCK_AMOUNT);
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
 
-        (uint256 maxLoan2,) = ILoanFacet(portfolioAccount2).getMaxLoan();
+        (uint256 maxLoan2,) = DynamicCollateralFacet(portfolioAccount2).getMaxLoan();
         uint256 borrow2 = maxLoan2 > 0 ? maxLoan2 / 3 : 50e6;
         if (borrow2 > 0) {
             vm.startPrank(user2);
-            calldatas[0] = abi.encodeWithSelector(ILoanFacet.borrow.selector, borrow2);
+            calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.borrow.selector, borrow2);
             portfolioManager.multicall(calldatas, factories);
             vm.stopPrank();
         }
@@ -588,7 +573,7 @@ contract AerodromeDynamicFeesE2E is Test {
 
         console.log("Initial share price:", sharePriceBefore);
 
-        (uint256 maxLoan,) = ILoanFacet(portfolioAccount).getMaxLoan();
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
         uint256 borrowAmount = maxLoan > 0 ? maxLoan / 4 : 25e6;
 
         if (borrowAmount > 0) {
