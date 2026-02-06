@@ -448,12 +448,15 @@ contract DynamicFeesVaultTest is Test {
         assertGt(usdcBalanceAfter, usdcBalanceBefore, "User should receive USDC for excess rewards");
     }
 
-    function testTotalAssetsDecreasesWithRealTimeRewards() public {
+    function testVestedRewardsReduceUserDebt() public {
         uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
         vm.warp(timestamp);
 
         vm.prank(user1);
         vault.borrow(500e6);
+
+        uint256 debtBefore = vault.getDebtBalance(user1);
+        assertEq(debtBefore, 500e6, "Initial debt should be 500e6");
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
@@ -465,8 +468,19 @@ contract DynamicFeesVaultTest is Test {
         vm.warp(timestamp);
 
         vault.sync();
+        vault.updateUserDebtBalance(user1);
 
-        assertLt(vault.totalLoanedAssets(), 500e6, "Total loaned assets should decrease as rewards vest");
+        // User's debt should decrease after vesting
+        uint256 debtAfter = vault.getDebtBalance(user1);
+        assertLt(debtAfter, debtBefore, "User debt should decrease as rewards vest");
+
+        // totalVestedRewardsApplied should track the vested amount
+        uint256 vestedAmount = vault.totalVestedRewardsApplied();
+        assertGt(vestedAmount, 0, "Vested rewards should be tracked");
+
+        // Verify invariant: debtBalance = totalLoanedAssets - totalVestedRewardsApplied
+        uint256 expectedDebt = vault.totalLoanedAssets() - vestedAmount;
+        assertEq(debtAfter, expectedDebt, "Debt should match invariant");
     }
 
     function testSettlementCheckpointUpdatesCorrectly() public {
@@ -1207,7 +1221,12 @@ contract DynamicFeesVaultTest is Test {
 
         uint256 totalDebt = debt1 + debt2 + debt3 + debt4;
         assertLt(totalDebt, 550e6, "Total debt should be reduced");
-        assertEq(vault.totalLoanedAssets(), totalDebt, "Total loaned should match sum of debts");
+
+        // With the new design, totalLoanedAssets is NOT reduced when rewards vest
+        // Instead, totalVestedRewardsApplied tracks the vested rewards applied to individual debts
+        // The invariant is: sum(debtBalance) = totalLoanedAssets - totalVestedRewardsApplied
+        uint256 expectedTotalDebt = vault.totalLoanedAssets() - vault.totalVestedRewardsApplied();
+        assertEq(totalDebt, expectedTotalDebt, "Total debt should match invariant");
     }
 
     function testConcurrentSettlementOrder() public {

@@ -41,6 +41,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event RewardsMinted(address indexed to, uint256 amount);
     event FeeCalculatorUpdated(address indexed oldCalculator, address indexed newCalculator);
     event ExcessRewardsPaid(address indexed borrower, uint256 amount);
+    event DebtTransferred(address indexed from, address indexed to, uint256 amount);
 
     // ============ Errors ============
     error ContractPaused();
@@ -66,6 +67,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         // Fee calculator
         address feeCalculator;
+
+        // Track vested rewards that have been applied to individual user debts
+        // This accumulates incrementally as users sync, avoiding need to iterate all users
+        uint256 totalVestedRewardsApplied;
 
         // Debt token state
         mapping(address => mapping(uint256 => Checkpoint)) checkpoints;
@@ -233,13 +238,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function totalAssets() public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
 
+        // Two components reduce the effective debt:
+        // 1. totalVestedRewardsApplied - rewards already applied to individual user debts
+        // 2. Pending vesting - rewards that could be applied but users haven't synced yet
+        //
+        // Total effective reduction = totalVestedRewardsApplied + pending vesting
+        // Since pending vesting = currentPrincipalRepaid - totalVestedRewardsApplied,
+        // Total reduction = currentPrincipalRepaid
         uint256 currentPrincipalRepaid = _getPrincipalRepaid();
-        uint256 principalRepaidSinceCheckpoint = currentPrincipalRepaid >= $.principalRepaidAtCheckpoint
-            ? currentPrincipalRepaid - $.principalRepaidAtCheckpoint
-            : 0;
 
-        uint256 adjustedTotalLoanedAssets = $.totalLoanedAssets > principalRepaidSinceCheckpoint
-            ? $.totalLoanedAssets - principalRepaidSinceCheckpoint
+        uint256 adjustedTotalLoanedAssets = $.totalLoanedAssets > currentPrincipalRepaid
+            ? $.totalLoanedAssets - currentPrincipalRepaid
             : 0;
 
         uint256 lenderPremiumCurrentEpoch = _previewLenderPremiumUnlocked();
@@ -427,8 +436,21 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         uint256 currentBalance = _getCurrentRewardBalance(_to);
 
+        // If user has no checkpoints, create one at previous epoch so they can
+        // claim rewards for the current epoch (since _earned() looks for checkpoints
+        // BEFORE each epoch to prevent gaming)
+        bool createdPreviousCheckpoint = false;
+        if ($.numCheckpoints[_to] == 0 && currentEpoch >= DURATION) {
+            uint256 previousEpoch = currentEpoch - DURATION;
+            $.checkpoints[_to][0] = Checkpoint(previousEpoch, _amount);
+            $.numCheckpoints[_to] = 1;
+            createdPreviousCheckpoint = true;
+        }
+
         $.totalAssetsPerEpoch[currentEpoch] += _amount;
-        uint256 newBalance = currentBalance + _amount;
+
+        // Only add _amount if we didn't already account for it in the previous epoch checkpoint
+        uint256 newBalance = createdPreviousCheckpoint ? _amount : currentBalance + _amount;
 
         _writeCheckpoint(_to, newBalance);
         _rebalance();
@@ -492,17 +514,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         _getReward(address(this));
 
+        // totalLoanedAssets is NOT reduced here - it's only reduced on explicit repayment
+        // totalAssets() calculates the adjustment view-only using principalRepaid
         uint256 currentPrincipalRepaid = _getPrincipalRepaid();
-        uint256 principalRepaidSinceCheckpoint = currentPrincipalRepaid >= $.principalRepaidAtCheckpoint
-            ? currentPrincipalRepaid - $.principalRepaidAtCheckpoint
-            : 0;
-
-        if (principalRepaidSinceCheckpoint > 0) {
-            $.totalLoanedAssets = $.totalLoanedAssets > principalRepaidSinceCheckpoint
-                ? $.totalLoanedAssets - principalRepaidSinceCheckpoint
-                : 0;
-        }
-
         $.principalRepaidAtCheckpoint = currentPrincipalRepaid;
         $.settlementCheckpointEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
     }
@@ -512,18 +526,25 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 earned = _getReward(borrower);
         uint256 oldDebtBalance = $.debtBalance[borrower];
 
-        if (earned > oldDebtBalance) {
-            // Rewards exceed debt - clear debt and transfer excess to borrower
-            uint256 excess = earned - oldDebtBalance;
-            $.debtBalance[borrower] = 0;
-            IERC20(asset()).safeTransfer(borrower, excess);
-            emit ExcessRewardsPaid(borrower, excess);
-        } else if (earned > 0) {
-            // Partial repayment - reduce debt by earned amount
-            $.debtBalance[borrower] -= earned;
-        }
-
         if (earned > 0) {
+            // Calculate actual debt reduction (capped at current balance)
+            uint256 debtReduction = earned > oldDebtBalance ? oldDebtBalance : earned;
+
+            if (earned > oldDebtBalance) {
+                // Rewards exceed debt - clear debt and transfer excess to borrower
+                uint256 excess = earned - oldDebtBalance;
+                $.debtBalance[borrower] = 0;
+                IERC20(asset()).safeTransfer(borrower, excess);
+                emit ExcessRewardsPaid(borrower, excess);
+            } else {
+                // Partial repayment - reduce debt by earned amount
+                $.debtBalance[borrower] -= earned;
+            }
+
+            // Track vested rewards applied to individual debts
+            // This allows totalAssets() to calculate correct global debt without iterating all users
+            $.totalVestedRewardsApplied += debtReduction;
+
             emit DebtBalanceUpdated(borrower, oldDebtBalance, $.debtBalance[borrower], earned);
         }
 
@@ -653,10 +674,44 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return _getStorage().totalLoanedAssets;
     }
 
+    /**
+     * @notice Get the total vested rewards that have been applied to individual user debts
+     * @return The cumulative vested rewards applied
+     */
+    function totalVestedRewardsApplied() external view returns (uint256) {
+        return _getStorage().totalVestedRewardsApplied;
+    }
+
     function updateUserDebtBalance(address borrower) public {
         _updateSettlementCheckpoint();
         _updateUserDebtBalance(borrower);
         _updateSettlementCheckpoint();
+    }
+
+    /**
+     * @notice Transfer debt from one borrower to another
+     * @param from The address to transfer debt from
+     * @param to The address to transfer debt to
+     * @param amount The amount of debt to transfer
+     */
+    function transferDebt(address from, address to, uint256 amount) external onlyPortfolio {
+        _updateSettlementCheckpoint();
+        _updateUserDebtBalance(from);
+        _updateUserDebtBalance(to);
+
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        uint256 fromBalance = $.debtBalance[from];
+        uint256 transferAmount = amount > fromBalance ? fromBalance : amount;
+
+        $.debtBalance[from] -= transferAmount;
+        $.debtBalance[to] += transferAmount;
+
+        _updateUserDebtBalance(from);
+        _updateUserDebtBalance(to);
+        _updateSettlementCheckpoint();
+
+        emit DebtTransferred(from, to, transferAmount);
     }
 
     function sync() public {
