@@ -15,7 +15,6 @@ import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin
 import {BlackholeDeploy} from "../script/BlackholeDeploy.s.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
 import { IRewardsDistributor } from "src/interfaces/IRewardsDistributor.sol";
 import {BlackholeLoanV2 as Loan} from "../src/Blackhole/BlackholeLoanV2.sol";
@@ -673,6 +672,7 @@ contract BlackholeTest is Test {
     }
 
     function testSetToManualVoting() public {
+        vm.skip(true); // set to manual voting is removed due to contract size limit
         uint256 fork3 = vm.createFork(vm.envString("AVAX_RPC_URL"));
         vm.selectFork(fork3);
         vm.rollFork(72429705);

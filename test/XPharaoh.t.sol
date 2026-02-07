@@ -21,7 +21,6 @@ import {BaseUpgrade} from "../script/BaseUpgrade.s.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import {Swapper} from "../src/Swapper.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import {IMinter} from "src/interfaces/IMinter.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
@@ -39,7 +38,7 @@ import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 contract MockOdosRouterRL {
     address public testContract;
 
-    address ODOS = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC;
+    address ODOS = 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05;
     address USDC = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
     address PHAR = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     
@@ -98,7 +97,7 @@ contract XPharaohTest is Test {
     ProxyAdmin admin;
     address userAccount;
 
-    address ODOS = 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC;
+    address ODOS = 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05;
     address PHAR = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     // deployed contracts
     Vault vault;

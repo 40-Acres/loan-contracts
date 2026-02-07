@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.30;
+
+import {AccountFacetsDeploy} from "./facets/AccountFacetsDeploy.s.sol";
+import {DeployBridgeFacet} from "./facets/DeployBridgeFacet.s.sol";
+import {DeployClaimingFacet} from "./facets/DeployClaimingFacet.s.sol";
+import {DeployCollateralFacet} from "./facets/DeployCollateralFacet.s.sol";
+import {DeployLendingFacet} from "./facets/DeployLendingFacet.s.sol";
+import {DeployVotingFacet} from "./facets/DeployVotingFacet.s.sol";
+import {DeployVotingEscrowFacet} from "./facets/DeployVotingEscrowFacet.s.sol";
+import {DeploySwapFacet} from "./facets/DeploySwapFacet.s.sol";
+import {DeployMigrationFacet} from "./facets/DeployMigrationFacet.s.sol";
+import {DeployVexyFacet, DeployOpenXFacet, DeployMarketplaceFacet} from "./facets/DeployMarketplaceFacets.s.sol";
+import {DeployERC721ReceiverFacet} from "./facets/DeployERC721ReceiverFacet.s.sol";
+import {DeployRewardsProcessingFacet} from "./facets/DeployRewardsProcessingFacet.s.sol";
+
+contract DeployFacets is AccountFacetsDeploy {
+    DeployBridgeFacet deployBridgeFacet = new DeployBridgeFacet();
+    DeployClaimingFacet deployClaimingFacet = new DeployClaimingFacet();
+    DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
+    DeployLendingFacet deployLendingFacet = new DeployLendingFacet();
+    DeployVotingFacet deployVotingFacet = new DeployVotingFacet();
+    DeployVotingEscrowFacet deployVotingEscrowFacet = new DeployVotingEscrowFacet();
+    DeploySwapFacet deploySwapFacet = new DeploySwapFacet();
+    DeployMigrationFacet deployMigrationFacet = new DeployMigrationFacet();
+    DeployVexyFacet deployVexyFacet = new DeployVexyFacet();
+    DeployOpenXFacet deployOpenXFacet = new DeployOpenXFacet();
+    DeployERC721ReceiverFacet deployERC721ReceiverFacet = new DeployERC721ReceiverFacet();
+    DeployRewardsProcessingFacet deployRewardsProcessingFacet = new DeployRewardsProcessingFacet();
+    DeployMarketplaceFacet deployMarketplaceFacet = new DeployMarketplaceFacet();
+
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address tokenMessenger, address swapConfig, address loanContract, address lendingToken, address vault) external {
+        deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc, tokenMessenger);
+        deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
+        deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
+        deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, lendingToken);
+        deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
+        deployVotingEscrowFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter);
+        deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig);
+        deployMigrationFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
+        deployVexyFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
+        deployOpenXFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
+        deployERC721ReceiverFacet.deploy(portfolioFactory);
+        deployRewardsProcessingFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
+        deployMarketplaceFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
+    }
+}

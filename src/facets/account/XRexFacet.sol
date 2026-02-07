@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IXLoan} from "../../interfaces/IXLoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
@@ -17,6 +18,7 @@ import {IXVoter} from "../../interfaces/IXVoter.sol";
  * @title XRexFacet
  */
 contract XRexFacet {
+    using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
     IERC4626 public immutable _rex33 = IERC4626(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4);
@@ -46,7 +48,7 @@ contract XRexFacet {
 
         IERC20(lockedAsset).approve(address(_rex33), amount);
         uint256 assets = _rex33.deposit(amount, address(this));
-        _rex33.transfer(msg.sender, assets);
+        IERC20(address(_rex33)).safeTransfer(msg.sender, assets);
     }
 
     function xRexIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
@@ -56,7 +58,7 @@ contract XRexFacet {
 
     function xRexIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        _rex33.transferFrom(msg.sender, address(this), amount);
+        IERC20(address(_rex33)).safeTransferFrom(msg.sender, address(this), amount);
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
@@ -65,7 +67,7 @@ contract XRexFacet {
 
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
 
-        _rex33.transferFrom(msg.sender, address(this), collateralAmount);
+        IERC20(address(_rex33)).safeTransferFrom(msg.sender, address(this), collateralAmount);
 
         _rex33.approve(_voteModule, collateralAmount);
         uint256 assets = _rex33.redeem(collateralAmount, address(this), address(this));
@@ -149,11 +151,11 @@ contract XRexFacet {
         if(preferredToken != address(0)) {
             uint256 preferredTokenBalance = IERC20(preferredToken).balanceOf(address(this));
             if(preferredTokenBalance > beginningPreferredTokenBalance) {
-                IERC20(preferredToken).transfer(address(msg.sender), preferredTokenBalance - beginningPreferredTokenBalance);
+                IERC20(preferredToken).safeTransfer(address(msg.sender), preferredTokenBalance - beginningPreferredTokenBalance);
             }
         }
         if(IERC20(vaultAsset).balanceOf(address(this)) > beginningAssetBalance) {
-            IERC20(vaultAsset).transfer(address(msg.sender), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
+            IERC20(vaultAsset).safeTransfer(address(msg.sender), IERC20(vaultAsset).balanceOf(address(this)) - beginningAssetBalance);
         }
     }
 

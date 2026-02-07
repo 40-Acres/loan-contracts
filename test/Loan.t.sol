@@ -20,7 +20,6 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import {ICLGauge} from "src/interfaces/ICLGauge.sol";
 import {MockPortfolioFactory} from "./mocks/MockAccountStorage.sol";
 import { Swapper } from "../src/Swapper.sol";
-import {CommunityRewards} from "../src/CommunityRewards/CommunityRewards.sol";
 import { IMinter } from "src/interfaces/IMinter.sol";
 import { MockOdosRouterRL } from "./mocks/MockOdosRouter.sol";
 
@@ -63,7 +62,7 @@ contract LoanTest is Test {
     MockOdosRouterRL public mockRouter;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(24353746);
         owner = vm.addr(0x123);
@@ -459,73 +458,6 @@ contract LoanTest is Test {
         assertEq(vault.epochRewardsLocked(), 0);
     }
     
-
-
-    function xtestIncreaseAmountPercentage75NoLoanToCommunityToken2() public {
-        user = votingEscrow.ownerOf(524);
-
-        address[] memory tokens = new address[](1);
-        tokens[0] = address(usdc);
-            
-        address[] memory bribes = new address[](0);
-
-        address veOwner = votingEscrow.ownerOf(318);
-        vm.startPrank(veOwner);
-        CommunityRewards _communityRewards = new CommunityRewards();
-        ERC1967Proxy _proxy = new ERC1967Proxy(address(_communityRewards), "");
-        vm.roll(block.number + 1);
-        votingEscrow.approve(address(_proxy), 318);
-        CommunityRewards(address(_proxy)).initialize(address(loan), tokens, 0, 318, 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4);
-        vm.stopPrank();
-        vm.startPrank(owner);
-        loan.setManagedNft(318);
-
-        uint256 rewardsPerEpoch = loan._rewardsPerEpoch(ProtocolTimeLibrary.epochStart(block.timestamp));
-        assertEq(rewardsPerEpoch, 0, "rewardsPerEpoch should be  0");
-
-        uint256 startingUserBalance = usdc.balanceOf(address(user));
-
-        assertEq(usdc.balanceOf(address(user)), startingUserBalance);
-        assertEq(usdc.balanceOf(address(vault)), 100e6);
-        assertEq(loan.activeAssets(),0, "should have 0 active assets");
-        vm.startPrank(user);
-        IERC721(address(votingEscrow)).approve(address(loan), 524);
-        loan.requestLoan(524, 0, Loan.ZeroBalanceOption.InvestToVault, 0, address(0), false, false);
-        vm.roll(block.number+1);
-        loan.setIncreasePercentage(524, 10000);
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = 524;
-        loan.setOptInCommunityRewards(tokenIds, true);
-        vm.stopPrank();
-
-
-        CommunityRewards communityRewards = CommunityRewards(address(_proxy));
-        vm.startPrank(address(loan));
-       //  console.log(524, _claimRewards(loan, 524, bribes));
-        vm.stopPrank();
-
-
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        IMinter(0xeB018363F0a9Af8f91F06FEe6613a751b2A33FE5).updatePeriod();
-        uint256 ownerShares = communityRewards.balanceOf(owner);
-        // console.log(318, _claimRewards(loan, 318, bribes));
-        uint256 userBalance = usdc.balanceOf(address(user));
-        assertTrue(usdc.balanceOf(address(user)) > ownerShares, "owner should have shares");
-        
-        uint256 ownerUsdBalance = usdc.balanceOf(address(owner));
-        vm.roll(block.number + 1);
-        vm.warp(block.timestamp + 7 days);
-        vm.prank(address(loan));
-        communityRewards.notifyRewardAmount(tokens[0], 10e6);
-        usdc.mint(address(communityRewards), 10e6);
-        communityRewards.getRewardForUser(user, tokens);
-        communityRewards.getRewardForUser(owner, tokens);
-
-        assertTrue(usdc.balanceOf(address(user)) > userBalance, "user should have more than starting balance");
-        assertTrue(usdc.balanceOf(address(owner)) > ownerUsdBalance, "owner should have more than starting balance");
-    }
-
     function xtestIncreaseLoan() public {
         uint256 amount = 1e6;
 
@@ -595,7 +527,7 @@ contract LoanTest is Test {
     function testBasicClaim() public {
         uint256 _tokenId = 932;
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         
@@ -655,7 +587,7 @@ contract LoanTest is Test {
     function testBasicClaimOdosV3() public {
         uint256 _tokenId = 113;
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(40262232);
         
@@ -692,7 +624,7 @@ contract LoanTest is Test {
 
     function testClaimTwoTokensWithPayoffToken() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         
@@ -832,7 +764,7 @@ contract LoanTest is Test {
 
     function testClaimTwoTokensWithPayoffTokenNoLoan() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         
@@ -987,7 +919,7 @@ contract LoanTest is Test {
     function testClaimPreferredToken() public {
         uint256 _tokenId = 932;
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
         vm.startPrank(Loan(0x87f18b377e625b62c708D5f6EA96EC193558EFD0).owner());
@@ -1666,7 +1598,7 @@ contract LoanTest is Test {
     /// @notice Test payMultiple pays off multiple loans
     function testPayMultiple() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
 
@@ -1865,7 +1797,7 @@ contract LoanTest is Test {
 
     function testZeroBalanceFeePayoffToken() public {
         uint256 _fork;
-        _fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        _fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(_fork);
         vm.rollFork(31911971);
 

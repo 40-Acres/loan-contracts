@@ -1,0 +1,678 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity ^0.8.30;
+
+import {Test, console} from "forge-std/Test.sol";
+import {YieldBasisFacet} from "../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
+import {YieldBasisRewardsProcessingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
+import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
+import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
+import {DynamicLendingFacet} from "../../../src/facets/account/lending/DynamicLendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
+import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
+import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
+import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
+import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
+import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
+import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
+import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {IYieldBasisVotingEscrow} from "../../../src/interfaces/IYieldBasisVotingEscrow.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {YieldBasisVotingEscrowAdapter} from "../../../src/adapters/YieldBasisVotingEscrowAdapter.sol";
+import {YieldBasisFaucet} from "../../../src/faucets/YieldBasisFaucet.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
+
+/**
+ * @title YieldBasisDynamicFeesE2E
+ * @dev End-to-end test for YieldBasis integration with DynamicFeesVault
+ *      Tests the full flow: create lock -> borrow -> process rewards -> pay off loan with overpayment
+ */
+contract YieldBasisDynamicFeesE2E is Test {
+    // YieldBasis Protocol Addresses (Ethereum Mainnet)
+    address public constant YB = 0x01791F726B4103694969820be083196cC7c045fF;
+    address public constant VE_YB = 0x8235c179E9e84688FBd8B12295EfC26834dAC211;
+    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+
+    // Test actors
+    address public constant DEPLOYER = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
+    address public user = address(0x40ac2e);
+    address public authorizedCaller = address(0xaaaaa);
+    address public vaultDepositor = address(0xbbbbb);
+
+    // Core contracts
+    PortfolioManager public portfolioManager;
+    PortfolioFactory public portfolioFactory;
+    FacetRegistry public facetRegistry;
+    PortfolioAccountConfig public portfolioAccountConfig;
+    LoanConfig public loanConfig;
+    VotingConfig public votingConfig;
+    SwapConfig public swapConfig;
+
+    // Portfolio account
+    address public portfolioAccount;
+
+    // Facets
+    YieldBasisFacet public yieldBasisFacet;
+    YieldBasisRewardsProcessingFacet public rewardsProcessingFacet;
+    DynamicCollateralFacet public collateralFacet;
+    DynamicLendingFacet public lendingFacet;
+
+    // YieldBasis contracts
+    IYieldBasisVotingEscrow public veYB = IYieldBasisVotingEscrow(VE_YB);
+    IERC20 public ybToken = IERC20(YB);
+    IERC20 public usdc = IERC20(USDC);
+
+    // DynamicFeesVault
+    DynamicFeesVault public vault;
+
+    // Adapter and faucet
+    YieldBasisVotingEscrowAdapter public veYBAdapter;
+    YieldBasisFaucet public faucet;
+
+    // Test constants
+    uint256 public constant LOCK_AMOUNT = 10_000 ether; // 10,000 YB tokens
+    uint256 public constant VAULT_INITIAL_DEPOSIT = 100_000e6; // 100,000 USDC
+
+    function setUp() public {
+        // Fork Ethereum mainnet
+        uint256 fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        vm.selectFork(fork);
+
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
+
+        vm.startPrank(DEPLOYER);
+
+        // Deploy PortfolioManager
+        portfolioManager = new PortfolioManager(DEPLOYER);
+
+        // Deploy factory with facet registry
+        (portfolioFactory, facetRegistry) = portfolioManager.deployFactory(
+            bytes32(keccak256(abi.encodePacked("yieldbasis-dynamic-fees-e2e")))
+        );
+
+        // Deploy configs
+        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
+        (portfolioAccountConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy();
+
+        // Deploy DynamicFeesVault
+        DynamicFeesVault vaultImpl = new DynamicFeesVault();
+        bytes memory initData = abi.encodeWithSelector(
+            DynamicFeesVault.initialize.selector,
+            USDC,
+            "40Acres YB USDC Vault",
+            "40YB-USDC",
+            address(portfolioFactory)
+        );
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
+        vault = DynamicFeesVault(address(vaultProxy));
+
+        // Transfer vault ownership
+        vault.transferOwnership(DEPLOYER);
+
+        // Configure the PortfolioAccountConfig with the DynamicFeesVault as loan contract
+        portfolioAccountConfig.setLoanContract(address(vault));
+
+        // Set up loan config for YieldBasis
+        // Using a reasonable rewards rate for YB (adjusted for USDC 6 decimals)
+        loanConfig.setRewardsRate(50000); // 5% rewards rate
+        loanConfig.setMultiplier(1e12); // 1x multiplier
+
+        portfolioAccountConfig.setLoanConfig(address(loanConfig));
+
+        // Fund the vault with USDC from depositor
+        deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);
+        vm.stopPrank();
+
+        // Deposit into vault as vaultDepositor
+        vm.startPrank(vaultDepositor);
+        usdc.approve(address(vault), VAULT_INITIAL_DEPOSIT);
+        vault.deposit(VAULT_INITIAL_DEPOSIT, vaultDepositor);
+        vm.stopPrank();
+
+        vm.startPrank(DEPLOYER);
+
+        // Deploy YieldBasis VotingEscrow Adapter
+        veYBAdapter = new YieldBasisVotingEscrowAdapter(VE_YB);
+
+        // Deploy YieldBasis Faucet
+        faucet = new YieldBasisFaucet(
+            address(portfolioManager),
+            YB,
+            0.00001 ether,
+            100,
+            1 hours
+        );
+        deal(YB, address(faucet), 1000 ether);
+
+        // Deploy DynamicCollateralFacet
+        collateralFacet = new DynamicCollateralFacet(
+            address(portfolioFactory),
+            address(portfolioAccountConfig),
+            VE_YB
+        );
+        bytes4[] memory collateralSelectors = new bytes4[](9);
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
+
+
+        // Deploy YieldBasisFacet
+        yieldBasisFacet = new YieldBasisFacet(
+            address(portfolioFactory),
+            address(portfolioAccountConfig),
+            VE_YB,
+            YB,
+            address(veYBAdapter),
+            address(faucet)
+        );
+        bytes4[] memory yieldBasisSelectors = new bytes4[](3);
+        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
+        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
+
+        // Deploy ERC721ReceiverFacet
+        ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
+        bytes4[] memory erc721ReceiverSelectors = new bytes4[](1);
+        erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
+        facetRegistry.registerFacet(address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
+
+        // Deploy DynamicLendingFacet
+        lendingFacet = new DynamicLendingFacet(
+            address(portfolioFactory),
+            address(portfolioAccountConfig),
+            USDC
+        );
+        bytes4[] memory lendingSelectors = new bytes4[](5);
+        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        lendingSelectors[1] = BaseLendingFacet.borrowTo.selector;
+        lendingSelectors[2] = BaseLendingFacet.pay.selector;
+        lendingSelectors[3] = BaseLendingFacet.setTopUp.selector;
+        lendingSelectors[4] = BaseLendingFacet.topUp.selector;
+        facetRegistry.registerFacet(address(lendingFacet), lendingSelectors, "DynamicLendingFacet");
+
+        // Deploy YieldBasisRewardsProcessingFacet
+        rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(
+            address(portfolioFactory),
+            address(portfolioAccountConfig),
+            address(swapConfig),
+            VE_YB,
+            address(veYBAdapter),
+            address(vault)
+        );
+        bytes4[] memory rewardsSelectors = new bytes4[](10);
+        rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        rewardsSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
+        rewardsSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
+        rewardsSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
+        rewardsSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
+        rewardsSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSelectors, "YieldBasisRewardsProcessingFacet");
+
+        // Set authorized caller for rewards processing
+        portfolioManager.setAuthorizedCaller(authorizedCaller, true);
+
+        vm.stopPrank();
+
+        // Create portfolio account for user
+        portfolioAccount = portfolioFactory.createAccount(user);
+
+        // Fund user with tokens
+        deal(YB, user, LOCK_AMOUNT * 10);
+        deal(USDC, user, 1_000_000e6);
+
+        vm.warp(block.timestamp + 1);
+        vm.roll(block.number + 1);
+    }
+
+    // ============ Helper Functions ============
+
+    function _createLockForUser() internal {
+        vm.startPrank(user);
+
+        ybToken.approve(portfolioAccount, LOCK_AMOUNT);
+
+        address[] memory factories = new address[](1);
+        factories[0] = address(portfolioFactory);
+
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+
+        portfolioManager.multicall(calldatas, factories);
+
+        vm.stopPrank();
+    }
+
+    function _borrowFromVault(uint256 amount) internal {
+        vm.startPrank(user);
+
+        address[] memory factories = new address[](1);
+        factories[0] = address(portfolioFactory);
+
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.borrow.selector, amount);
+
+        portfolioManager.multicall(calldatas, factories);
+
+        vm.stopPrank();
+    }
+
+    function _payLoan(uint256 amount) internal returns (uint256 excess) {
+        vm.startPrank(user);
+
+        usdc.approve(portfolioAccount, amount);
+
+        address[] memory factories = new address[](1);
+        factories[0] = address(portfolioFactory);
+
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.pay.selector, amount);
+
+        bytes[] memory results = portfolioManager.multicall(calldatas, factories);
+        excess = abi.decode(results[0], (uint256));
+
+        vm.stopPrank();
+    }
+
+    function _repayWithRewards(uint256 amount) internal {
+        // Simulate reward payment going through the vault's repayWithRewards
+        vm.startPrank(portfolioAccount);
+        deal(USDC, portfolioAccount, amount);
+        usdc.approve(address(vault), amount);
+        vault.repayWithRewards(amount);
+        vm.stopPrank();
+    }
+
+    // ============ E2E Test: Full Flow with Overpayment ============
+
+    /**
+     * @notice Full E2E test: Create lock -> Borrow -> Process rewards over epochs -> Pay off with overpayment
+     */
+    function testE2E_YieldBasisDynamicFees_LoanPayoffWithOverpayment() public {
+        console.log("=== Starting YieldBasis Dynamic Fees E2E Test ===");
+
+        // Step 1: Create lock as collateral
+        console.log("\n--- Step 1: Create veYB lock ---");
+        _createLockForUser();
+
+        uint256 lockedCollateral = DynamicCollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        console.log("Locked collateral:", lockedCollateral);
+        assertGt(lockedCollateral, 0, "Should have locked collateral");
+
+        // Step 2: Borrow against collateral
+        console.log("\n--- Step 2: Borrow against collateral ---");
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
+        console.log("Max loan available:", maxLoan);
+
+        uint256 borrowAmount = maxLoan > 0 ? maxLoan / 2 : 100e6; // Borrow 50% of max or 100 USDC
+        if (borrowAmount > 0) {
+            uint256 userUsdcBefore = usdc.balanceOf(user);
+            _borrowFromVault(borrowAmount);
+            uint256 userUsdcAfter = usdc.balanceOf(user);
+
+            console.log("Borrowed amount:", borrowAmount);
+            console.log("User USDC received:", userUsdcAfter - userUsdcBefore);
+
+            uint256 debt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
+            uint256 vaultDebt = vault.getDebtBalance(portfolioAccount);
+            console.log("Portfolio debt:", debt);
+            console.log("Vault debt balance:", vaultDebt);
+
+            assertEq(debt, borrowAmount, "Portfolio debt should match borrowed amount");
+            assertEq(vaultDebt, borrowAmount, "Vault debt should match borrowed amount");
+        }
+
+        // Step 3: Simulate rewards over multiple epochs
+        console.log("\n--- Step 3: Simulate rewards over epochs ---");
+        uint256 currentDebt = vault.getDebtBalance(portfolioAccount);
+        if (currentDebt > 0) {
+            // Pre-compute epoch timestamps from initial block.timestamp
+            // (block.timestamp may be cached by via-ir optimizer across warps)
+            uint256 rewardsEpochStart = ProtocolTimeLibrary.epochNext(block.timestamp);
+
+            // Simulate 3 epochs of reward payments
+            for (uint256 i = 0; i < 3; i++) {
+                // Move to next epoch
+                vm.warp(rewardsEpochStart + (i * 1 weeks) + 1 hours);
+
+                // Simulate reward payment (25% of original debt per epoch)
+                uint256 rewardAmount = borrowAmount / 4;
+                _repayWithRewards(rewardAmount);
+
+                console.log("Epoch", i + 1, "- Rewards deposited:", rewardAmount);
+            }
+
+            // Move to next epoch to allow rewards to vest
+            vm.warp(rewardsEpochStart + (3 * 1 weeks) + 1 hours);
+
+            // Sync and update debt balance
+            vault.sync();
+            vault.updateUserDebtBalance(portfolioAccount);
+
+            uint256 debtAfterRewards = vault.getDebtBalance(portfolioAccount);
+            console.log("Debt after rewards vesting:", debtAfterRewards);
+            assertLt(debtAfterRewards, currentDebt, "Debt should be reduced after rewards");
+        }
+
+        // Step 4: Pay off remaining loan with overpayment
+        console.log("\n--- Step 4: Pay off loan with overpayment ---");
+        uint256 remainingDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
+        console.log("Remaining debt before final payment:", remainingDebt);
+
+        if (remainingDebt > 0) {
+            // Pay 150% of remaining debt (50% overpayment)
+            uint256 paymentAmount = (remainingDebt * 150) / 100;
+            uint256 userBalanceBefore = usdc.balanceOf(user);
+
+            console.log("Payment amount (with overpayment):", paymentAmount);
+
+            uint256 excess = _payLoan(paymentAmount);
+
+            uint256 userBalanceAfter = usdc.balanceOf(user);
+            uint256 finalDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
+            uint256 finalVaultDebt = vault.getDebtBalance(portfolioAccount);
+
+            console.log("Excess returned:", excess);
+            console.log("Final portfolio debt:", finalDebt);
+            console.log("Final vault debt:", finalVaultDebt);
+            console.log("User balance change:", int256(userBalanceAfter) - int256(userBalanceBefore));
+
+            // Verify debt is fully paid
+            assertEq(finalDebt, 0, "Portfolio debt should be 0 after full payment");
+            assertEq(finalVaultDebt, 0, "Vault debt should be 0 after full payment");
+
+            // Verify excess was returned
+            assertGt(excess, 0, "Should have excess returned");
+            assertApproxEqAbs(excess, paymentAmount - remainingDebt, 1, "Excess should equal overpayment");
+        }
+
+        console.log("\n=== E2E Test Complete ===");
+    }
+
+    /**
+     * @notice Test that excess rewards beyond debt are paid out as USDC
+     */
+    function testE2E_ExcessRewardsPaidAsUSDC() public {
+        console.log("=== Testing Excess Rewards Paid as USDC ===");
+
+        // Pre-compute epoch timestamps from initial block.timestamp
+        // (block.timestamp may be cached by via-ir optimizer across warps)
+        uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 epoch2Start = epoch1Start + 1 weeks;
+
+        // Create lock and borrow
+        _createLockForUser();
+
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
+        uint256 borrowAmount = maxLoan > 0 ? maxLoan / 4 : 50e6;
+
+        if (borrowAmount > 0) {
+            _borrowFromVault(borrowAmount);
+
+            uint256 initialDebt = vault.getDebtBalance(portfolioAccount);
+            console.log("Initial debt:", initialDebt);
+
+            // Move to next epoch
+            vm.warp(epoch1Start + 1 hours);
+
+            // Repay with rewards that EXCEED the debt (200% of debt)
+            uint256 excessiveRewards = initialDebt * 2;
+            _repayWithRewards(excessiveRewards);
+
+            console.log("Rewards deposited (2x debt):", excessiveRewards);
+
+            // Move to next epoch for rewards to vest
+            vm.warp(epoch2Start + 1 hours);
+
+            // Record portfolio account USDC balance before update
+            uint256 portfolioUsdcBefore = usdc.balanceOf(portfolioAccount);
+
+            // Update debt balance - this should pay excess as USDC
+            vault.updateUserDebtBalance(portfolioAccount);
+
+            uint256 portfolioUsdcAfter = usdc.balanceOf(portfolioAccount);
+            uint256 finalDebt = vault.getDebtBalance(portfolioAccount);
+
+            console.log("Portfolio USDC received (excess):", portfolioUsdcAfter - portfolioUsdcBefore);
+            console.log("Final vault debt:", finalDebt);
+
+            // Verify debt is cleared and excess was transferred
+            assertEq(finalDebt, 0, "Debt should be fully cleared");
+            assertGt(portfolioUsdcAfter, portfolioUsdcBefore, "Portfolio should receive excess USDC");
+        }
+
+        console.log("=== Excess Rewards Test Complete ===");
+    }
+
+    /**
+     * @notice Test dynamic fees curve affects reward distribution
+     */
+    function testE2E_DynamicFeesAffectRewardDistribution() public {
+        console.log("=== Testing Dynamic Fees Curve ===");
+
+        _createLockForUser();
+
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
+        uint256 borrowAmount = maxLoan > 0 ? maxLoan / 2 : 100e6;
+
+        if (borrowAmount > 0) {
+            _borrowFromVault(borrowAmount);
+
+            // Check utilization and fee ratio
+            uint256 utilization = vault.getUtilizationPercent();
+            uint256 feeRatio = vault.getVaultRatioBps(utilization);
+
+            console.log("Utilization (bps):", utilization);
+            console.log("Fee ratio (bps):", feeRatio);
+
+            // At ~40% utilization, fee should be ~20% (2000 bps)
+            assertGe(feeRatio, 500, "Fee ratio should be at least 5%");
+            assertLe(feeRatio, 9500, "Fee ratio should be at most 95%");
+
+            // Pre-compute epoch timestamps from initial block.timestamp
+            // Note: The vault's lender premium checkpoint is created in the SAME epoch as
+            // the first reward deposit, so it can only earn starting from the SECOND epoch.
+            // We deposit rewards in two consecutive epochs to test the fee distribution.
+            uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+            uint256 epoch2Start = epoch1Start + 1 weeks;
+            uint256 epoch3Start = epoch2Start + 1 weeks;
+
+            // Epoch 1: First reward deposit (vault gets no premium for this epoch)
+            vm.warp(epoch1Start + 1 hours);
+            uint256 rewardAmount = borrowAmount / 4;
+            _repayWithRewards(rewardAmount);
+
+            // Epoch 2: Second reward deposit (vault CAN earn premium for this epoch)
+            vm.warp(epoch2Start + 1 hours);
+            _repayWithRewards(rewardAmount);
+
+            // Move to epoch 3 for full vesting
+            vm.warp(epoch3Start + 1 hours);
+
+            vault.sync();
+
+            // Check that lender premium was applied for epoch 2
+            uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(epoch2Start);
+            uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch2Start);
+
+            console.log("Total rewards in epoch 2:", totalRewards);
+            console.log("Lender premium in epoch 2:", lenderPremium);
+
+            if (totalRewards > 0) {
+                uint256 actualFeeRatio = (lenderPremium * 10000) / totalRewards;
+                console.log("Actual fee ratio applied (bps):", actualFeeRatio);
+
+                // Fee ratio should be within expected range (~2000 bps at 40% utilization)
+                assertGe(actualFeeRatio, 400, "Actual fee should be >= 4%");
+                assertLe(actualFeeRatio, 9600, "Actual fee should be <= 96%");
+            }
+        }
+
+        console.log("=== Dynamic Fees Test Complete ===");
+    }
+
+    /**
+     * @notice Test multiple borrowers with concurrent reward settlements
+     */
+    function testE2E_MultipleBorrowersSettlement() public {
+        console.log("=== Testing Multiple Borrowers Settlement ===");
+
+        // Create second user
+        address user2 = address(0xbeef);
+        address portfolioAccount2 = portfolioFactory.createAccount(user2);
+
+        // Fund user2
+        deal(YB, user2, LOCK_AMOUNT * 10);
+        deal(USDC, user2, 1_000_000e6);
+
+        // User 1: Create lock and borrow
+        _createLockForUser();
+        (uint256 maxLoan1,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
+        uint256 borrow1 = maxLoan1 > 0 ? maxLoan1 / 3 : 50e6;
+        if (borrow1 > 0) {
+            _borrowFromVault(borrow1);
+        }
+
+        // User 2: Create lock and borrow
+        vm.startPrank(user2);
+        ybToken.approve(portfolioAccount2, LOCK_AMOUNT);
+
+        address[] memory factories = new address[](1);
+        factories[0] = address(portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        portfolioManager.multicall(calldatas, factories);
+        vm.stopPrank();
+
+        (uint256 maxLoan2,) = DynamicCollateralFacet(portfolioAccount2).getMaxLoan();
+        uint256 borrow2 = maxLoan2 > 0 ? maxLoan2 / 3 : 50e6;
+        if (borrow2 > 0) {
+            vm.startPrank(user2);
+            calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.borrow.selector, borrow2);
+            portfolioManager.multicall(calldatas, factories);
+            vm.stopPrank();
+        }
+
+        console.log("User1 debt:", vault.getDebtBalance(portfolioAccount));
+        console.log("User2 debt:", vault.getDebtBalance(portfolioAccount2));
+
+        // Pre-compute epoch timestamps from initial block.timestamp
+        uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 epoch2Start = epoch1Start + 1 weeks;
+
+        // Move to next epoch
+        vm.warp(epoch1Start + 1 hours);
+
+        // Both users repay with rewards
+        if (borrow1 > 0) {
+            vm.startPrank(portfolioAccount);
+            deal(USDC, portfolioAccount, borrow1 / 2);
+            usdc.approve(address(vault), borrow1 / 2);
+            vault.repayWithRewards(borrow1 / 2);
+            vm.stopPrank();
+        }
+
+        if (borrow2 > 0) {
+            vm.startPrank(portfolioAccount2);
+            deal(USDC, portfolioAccount2, borrow2 / 2);
+            usdc.approve(address(vault), borrow2 / 2);
+            vault.repayWithRewards(borrow2 / 2);
+            vm.stopPrank();
+        }
+
+        // Move to next epoch for vesting
+        vm.warp(epoch2Start + 1 hours);
+
+        vault.sync();
+        vault.updateUserDebtBalance(portfolioAccount);
+        vault.updateUserDebtBalance(portfolioAccount2);
+
+        uint256 debt1After = vault.getDebtBalance(portfolioAccount);
+        uint256 debt2After = vault.getDebtBalance(portfolioAccount2);
+
+        console.log("User1 debt after rewards:", debt1After);
+        console.log("User2 debt after rewards:", debt2After);
+
+        if (borrow1 > 0) {
+            assertLt(debt1After, borrow1, "User1 debt should be reduced");
+        }
+        if (borrow2 > 0) {
+            assertLt(debt2After, borrow2, "User2 debt should be reduced");
+        }
+
+        console.log("=== Multiple Borrowers Test Complete ===");
+    }
+
+    /**
+     * @notice Test vault share price stability with excess rewards
+     */
+    function testE2E_VaultSharePriceStability() public {
+        console.log("=== Testing Vault Share Price Stability ===");
+
+        // Pre-compute epoch timestamps from initial block.timestamp
+        // (block.timestamp may be cached by via-ir optimizer across warps)
+        uint256 epoch1Start = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 epoch2Start = epoch1Start + 1 weeks;
+
+        _createLockForUser();
+
+        // Record initial share price
+        uint256 totalSupplyBefore = vault.totalSupply();
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 sharePriceBefore = totalAssetsBefore * 1e18 / totalSupplyBefore;
+
+        console.log("Initial share price:", sharePriceBefore);
+
+        (uint256 maxLoan,) = DynamicCollateralFacet(portfolioAccount).getMaxLoan();
+        uint256 borrowAmount = maxLoan > 0 ? maxLoan / 4 : 25e6;
+
+        if (borrowAmount > 0) {
+            _borrowFromVault(borrowAmount);
+
+            // Move to next epoch
+            vm.warp(epoch1Start + 1 hours);
+
+            // Repay with excess rewards (3x debt)
+            uint256 excessRewards = borrowAmount * 3;
+            _repayWithRewards(excessRewards);
+
+            // Move to next epoch for vesting
+            vm.warp(epoch2Start + 1 hours);
+
+            vault.updateUserDebtBalance(portfolioAccount);
+
+            uint256 totalSupplyAfter = vault.totalSupply();
+            uint256 totalAssetsAfter = vault.totalAssets();
+            uint256 sharePriceAfter = totalAssetsAfter * 1e18 / totalSupplyAfter;
+
+            console.log("Final share price:", sharePriceAfter);
+            console.log("Share price change:", int256(sharePriceAfter) - int256(sharePriceBefore));
+
+            // Share price should not decrease (lender premium from fee curve benefits depositors)
+            assertGe(sharePriceAfter, sharePriceBefore, "Share price should not decrease");
+
+            // Verify borrower didn't receive vault shares for excess
+            uint256 borrowerShares = vault.balanceOf(portfolioAccount);
+            assertEq(borrowerShares, 0, "Borrower should not receive vault shares");
+        }
+
+        console.log("=== Share Price Stability Test Complete ===");
+    }
+}

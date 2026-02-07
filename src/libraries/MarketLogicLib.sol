@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {MarketStorage} from "./storage/MarketStorage.sol";
 import {ILoan} from "../interfaces/ILoan.sol";
 import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
+import {PortfolioFactory} from "../accounts/PortfolioFactory.sol";
 
 library MarketLogicLib {
     function getTokenOwnerOrBorrower(uint256 tokenId) internal view returns (address) {
@@ -24,8 +25,33 @@ library MarketLogicLib {
         return offer.creator != address(0) && (offer.expiresAt == 0 || block.timestamp < offer.expiresAt);
     }
 
+    /**
+     * @notice Check if operator can act on behalf of owner
+     * @dev Supports three cases:
+     *      1. owner == operator (self)
+     *      2. operator is approved via isOperatorFor mapping
+     *      3. owner is a portfolio and operator is the portfolio's owner (EOA)
+     * @param owner The owner address (could be EOA, portfolio, or other contract)
+     * @param operator The address attempting to operate
+     * @return True if operator can act on behalf of owner
+     */
     function canOperate(address owner, address operator) internal view returns (bool) {
-        return owner == operator || MarketStorage.orderbookLayout().isOperatorFor[owner][operator];
+        // Direct match
+        if (owner == operator) return true;
+        
+        // Explicit operator approval
+        if (MarketStorage.orderbookLayout().isOperatorFor[owner][operator]) return true;
+        
+        // Portfolio ownership check: if owner is a portfolio, check if operator is the portfolio's owner
+        address portfolioFactory = MarketStorage.configLayout().portfolioFactory;
+        if (portfolioFactory != address(0)) {
+            PortfolioFactory factory = PortfolioFactory(portfolioFactory);
+            if (factory.isPortfolio(owner)) {
+                return factory.ownerOf(owner) == operator;
+            }
+        }
+        
+        return false;
     }
 
     function getVeNFTWeight(uint256 tokenId) internal view returns (uint256) {
@@ -37,5 +63,3 @@ library MarketLogicLib {
         return uint256(uint128(lockedBalance.amount));
     }
 }
-
-

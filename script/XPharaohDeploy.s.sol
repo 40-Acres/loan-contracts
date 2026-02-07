@@ -14,6 +14,7 @@ import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
 import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../src/accounts/PortfolioManager.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
 import {PharaohLoanV2} from "../src/Pharaoh/PharaohLoanV2.sol";
 import {Vault as PharaohVault} from "../src/Pharaoh/PharaohVault.sol";
@@ -29,7 +30,7 @@ contract XPharaohDeploy is Script {
     address _rex = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     address _asset = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
     address _owner = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
-
+    address _deployer = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         console.log("Deploying XPharaohLoan from address:", msg.sender);
@@ -89,12 +90,9 @@ contract XPharaohDeploy is Script {
         _supportedTokens[0] = _rex;
         _supportedTokens[1] = _asset;
         supportedTokens = _supportedTokens;
-        FacetRegistry facetRegistry = new FacetRegistry();
-
-        // Deploy PortfolioFactory
-
-        PortfolioFactory portfolioFactory = new PortfolioFactory(
-            address(facetRegistry)
+        PortfolioManager portfolioManager = new PortfolioManager(_deployer);
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = portfolioManager.deployFactory(
+            keccak256(abi.encodePacked("xpharaoh-factory"))
         );
 
 
@@ -131,8 +129,6 @@ contract XPharaohDeploy is Script {
         loanSelectors[11] = 0xcc729a8b; // xPharSetTopUp(address,bool)
         loanSelectors[12] = 0x3b07f874; // xPharSetZeroBalanceOption(address,IXLoan.ZeroBalanceOption)
 
-        // Get the FacetRegistry from the PortfolioFactory
-        facetRegistry = FacetRegistry(portfolioFactory.facetRegistry());
         address owner = IOwnable(address(facetRegistry)).owner();
         console.log("FacetRegistry owner:", owner);
         vm.stopPrank();

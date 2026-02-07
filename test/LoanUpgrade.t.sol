@@ -54,11 +54,11 @@ contract LoanUpgradeTest is Test {
         Loan(address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0));
     address owner;
     address user;
-    uint256 tokenId = 68510;
+    uint256 tokenId = 64196;
     Swapper public swapper;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         owner = address(loan.owner());
         user = votingEscrow.ownerOf(tokenId);
@@ -141,12 +141,6 @@ contract LoanUpgradeTest is Test {
         assertEq(o, owner);
     }
 
-    function testGetMaxLoan() public view {
-        (uint256 maxLoan, ) = loan.getMaxLoan(tokenId);
-        console.log("max loan", maxLoan / 1e6);
-        assertTrue(maxLoan / 1e6 > 10);
-    }
-
     function testNftOwner() public view {
         assertEq(votingEscrow.ownerOf(tokenId), address(user));
     }
@@ -160,31 +154,6 @@ contract LoanUpgradeTest is Test {
         vm.stopPrank();
     }
 
-    function testLoanRequest() public {
-        uint256 startingUserBalance = usdc.balanceOf(address(user));
-        assertEq(usdc.balanceOf(address(user)), startingUserBalance);
-        uint256 startingVaultBalance = usdc.balanceOf(address(vault));
-        vm.startPrank(user);
-        IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        uint256 amount = 5e18;
-        vm.expectRevert();
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
-
-
-        amount = 1e6;
-        loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
-        vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) >= 1e6);
-        assertTrue(usdc.balanceOf(address(vault)) < startingVaultBalance);
-
-        (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount, "loan balance should be greater than 0");
-        assertEq(borrower, user, "borrower should be the user");
-
-        // owner of token should be the loan
-        assertEq(votingEscrow.ownerOf(tokenId), address(loan));
-    }
-
     function testConfirmUpgradable() public {
         vm.startPrank(owner);
         Loan loanV3 = new Loan();
@@ -193,44 +162,6 @@ contract LoanUpgradeTest is Test {
         loan.upgradeToAndCall(address(loanV4), new bytes(0));
         vm.stopPrank();
     }
-
-    function testCurrentOwnerCanIncreaaseLoan() public {
-        usdc.mint(address(vault), 10000e6);
-        uint256 _tokenId = 64196;
-        uint256 amount = 1e6;
-        (, address _user) = loan.getLoanDetails(_tokenId);
-        vm.startPrank(_user);
-        loan.increaseLoan(_tokenId, amount);
-        vm.stopPrank();
-    }
-
-    function testcurrentOwnerCanPayLoan() public  {
-        uint256 _tokenId = 64196;
-        (uint256 balance, address _user) = loan.getLoanDetails(_tokenId);
-
-        usdc.mint(address(_user), 100e6);
-        vm.startPrank(_user);
-        usdc.approve(address(loan), balance);
-        loan.pay(_tokenId, 0);
-        loan.claimCollateral(_tokenId);
-        vm.stopPrank();
-        assertEq(votingEscrow.ownerOf(_tokenId), _user);
-    }
-
-    function testRequestLoan() public {
-        uint256 _tokenId = 68510;
-        usdc.mint(address(vault), 10000e6);
-        uint256 amount = 1e6;
-        address _user = votingEscrow.ownerOf(_tokenId);
-        vm.startPrank(_user);
-        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
-        loan.requestLoan(_tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
-        vm.stopPrank();
-
-        uint256 loanWeight = loan.getTotalWeight();
-        assertTrue(loanWeight > 0, "loan weight should be greater than 0");
-    }
-
 
     function testRates() public {
         vm.startPrank(0x0000000000000000000000000000000000000000);

@@ -14,7 +14,7 @@ contract SwapperTest is Test {
     address _weth = 0x4200000000000000000000000000000000000006;
 
     function setUp() public {
-        fork = vm.createFork(vm.envString("ETH_RPC_URL"));
+        fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
         vm.rollFork(28494354);
 
