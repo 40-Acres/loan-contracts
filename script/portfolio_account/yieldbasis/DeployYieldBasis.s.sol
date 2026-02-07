@@ -14,6 +14,7 @@ import {YieldBasisFacet} from "../../../src/facets/account/yieldbasis/YieldBasis
 import {YieldBasisVotingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisVotingFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {YieldBasisRewardsProcessingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {Loan} from "../../../src/Loan.sol";
@@ -81,14 +82,14 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VE_YB);
         bytes4[] memory collateralSelectors = new bytes4[](8);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = CollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter (adapts veYB to CollateralManager's IVotingEscrow interface)
@@ -249,16 +250,16 @@ contract YieldBasisRootUpgrade is PortfolioAccountConfigDeploy {
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
         CollateralFacet collateralFacet = new CollateralFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB);
         bytes4[] memory collateralSelectors = new bytes4[](8);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = CollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
-        
+
         // Deploy YieldBasisFacet
         YieldBasisFacet yieldBasisFacet = new YieldBasisFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB, YB, address(veYBAdapter), address(faucet));
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);

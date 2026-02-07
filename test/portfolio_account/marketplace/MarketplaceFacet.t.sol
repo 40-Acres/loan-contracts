@@ -8,8 +8,9 @@ import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMar
 import {IMarketplaceFacet} from "../../../src/interfaces/IMarketplaceFacet.sol";
 import {UserMarketplaceModule} from "../../../src/facets/account/marketplace/UserMarketplaceModule.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
@@ -65,7 +66,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -78,7 +79,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -118,7 +119,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.borrow.selector,
+            BaseLendingFacet.borrow.selector,
             amount
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -937,7 +938,7 @@ contract MarketplaceFacetTest is Test, Setup {
             address(0)
         );
 
-        vm.expectRevert(abi.encodeWithSelector(CollateralFacet.ListingActive.selector, _tokenId));
+        vm.expectRevert(abi.encodeWithSelector(BaseCollateralFacet.ListingActive.selector, _tokenId));
         removeCollateralViaMulticall(_tokenId);
     }
 

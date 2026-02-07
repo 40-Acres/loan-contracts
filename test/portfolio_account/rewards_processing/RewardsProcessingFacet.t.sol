@@ -11,8 +11,9 @@ import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
 import {DeployRewardsProcessingFacet} from "../../../script/portfolio_account/facets/DeployRewardsProcessingFacet.s.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 
 contract RewardsProcessingFacetTest is Test, Setup {
     RewardsProcessingFacet public rewardsProcessingFacet;
@@ -64,12 +65,12 @@ contract RewardsProcessingFacetTest is Test, Setup {
             UserRewardsConfig.RewardsOption.PayToRecipient
         );
         calldatas[3] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             _tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
-        
+
         // Approve swap target
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
@@ -92,7 +93,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -106,7 +107,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.borrow.selector,
+            BaseLendingFacet.borrow.selector,
             amount
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -475,11 +476,11 @@ contract RewardsProcessingFacetTest is Test, Setup {
             UserRewardsConfig.RewardsOption.IncreaseCollateral
         );
         calldatas[2] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             _tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
-        
+
         // Borrow to create active loan
         uint256 borrowAmount = 500e6;
         

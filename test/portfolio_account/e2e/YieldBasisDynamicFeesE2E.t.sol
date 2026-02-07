@@ -2,12 +2,14 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {DynamicYieldBasisFacet} from "../../../src/facets/account/yieldbasis/DynamicYieldBasisFacet.sol";
+import {YieldBasisFacet} from "../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
 import {YieldBasisRewardsProcessingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
 import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {DynamicLendingFacet} from "../../../src/facets/account/lending/DynamicLendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
@@ -55,7 +57,7 @@ contract YieldBasisDynamicFeesE2E is Test {
     address public portfolioAccount;
 
     // Facets
-    DynamicYieldBasisFacet public yieldBasisFacet;
+    YieldBasisFacet public yieldBasisFacet;
     YieldBasisRewardsProcessingFacet public rewardsProcessingFacet;
     DynamicCollateralFacet public collateralFacet;
     DynamicLendingFacet public lendingFacet;
@@ -155,20 +157,20 @@ contract YieldBasisDynamicFeesE2E is Test {
             VE_YB
         );
         bytes4[] memory collateralSelectors = new bytes4[](9);
-        collateralSelectors[0] = DynamicCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = DynamicCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = DynamicCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = DynamicCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = DynamicCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = DynamicCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = DynamicCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = DynamicCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = DynamicCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
 
-        // Deploy DynamicYieldBasisFacet
-        yieldBasisFacet = new DynamicYieldBasisFacet(
+        // Deploy YieldBasisFacet
+        yieldBasisFacet = new YieldBasisFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB,
@@ -177,10 +179,10 @@ contract YieldBasisDynamicFeesE2E is Test {
             address(faucet)
         );
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = DynamicYieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = DynamicYieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = DynamicYieldBasisFacet.depositLock.selector;
-        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "DynamicYieldBasisFacet");
+        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
+        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
 
         // Deploy ERC721ReceiverFacet
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
@@ -195,11 +197,11 @@ contract YieldBasisDynamicFeesE2E is Test {
             USDC
         );
         bytes4[] memory lendingSelectors = new bytes4[](5);
-        lendingSelectors[0] = DynamicLendingFacet.borrow.selector;
-        lendingSelectors[1] = DynamicLendingFacet.borrowTo.selector;
-        lendingSelectors[2] = DynamicLendingFacet.pay.selector;
-        lendingSelectors[3] = DynamicLendingFacet.setTopUp.selector;
-        lendingSelectors[4] = DynamicLendingFacet.topUp.selector;
+        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        lendingSelectors[1] = BaseLendingFacet.borrowTo.selector;
+        lendingSelectors[2] = BaseLendingFacet.pay.selector;
+        lendingSelectors[3] = BaseLendingFacet.setTopUp.selector;
+        lendingSelectors[4] = BaseLendingFacet.topUp.selector;
         facetRegistry.registerFacet(address(lendingFacet), lendingSelectors, "DynamicLendingFacet");
 
         // Deploy YieldBasisRewardsProcessingFacet
@@ -251,7 +253,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(DynamicYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -265,7 +267,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.borrow.selector, amount);
+        calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.borrow.selector, amount);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -281,7 +283,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.pay.selector, amount);
+        calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.pay.selector, amount);
 
         bytes[] memory results = portfolioManager.multicall(calldatas, factories);
         excess = abi.decode(results[0], (uint256));
@@ -555,7 +557,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(DynamicYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
 
@@ -563,7 +565,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         uint256 borrow2 = maxLoan2 > 0 ? maxLoan2 / 3 : 50e6;
         if (borrow2 > 0) {
             vm.startPrank(user2);
-            calldatas[0] = abi.encodeWithSelector(DynamicLendingFacet.borrow.selector, borrow2);
+            calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.borrow.selector, borrow2);
             portfolioManager.multicall(calldatas, factories);
             vm.stopPrank();
         }

@@ -7,7 +7,7 @@ import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscr
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
-import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {YieldBasisVotingEscrowAdapter} from "../../../adapters/YieldBasisVotingEscrowAdapter.sol";
 import {YieldBasisFaucet} from "../../../faucets/YieldBasisFaucet.sol";
 
@@ -16,7 +16,7 @@ import {YieldBasisFaucet} from "../../../faucets/YieldBasisFaucet.sol";
  * @dev Facet for managing veYB lock positions on YieldBasis (Ethereum)
  *
  *
- * Uses YieldBasisVotingEscrowAdapter to make veYB compatible with CollateralManager
+ * Uses YieldBasisVotingEscrowAdapter to make veYB compatible with DynamicCollateralManager
  * which expects Aerodrome's tokenId-based IVotingEscrow interface.
  *
  * Contract Addresses (Ethereum Mainnet):
@@ -96,7 +96,7 @@ contract YieldBasisFacet is AccessControl {
         // Get the token ID that was created
         uint256 tokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
         // Use adapter address so CollateralManager can call locked(tokenId) correctly
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        DynamicCollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
     }
 
     /**
@@ -124,7 +124,7 @@ contract YieldBasisFacet is AccessControl {
 
         uint256 tokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
         // Use adapter address so CollateralManager can call locked(tokenId) correctly
-        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
     }
 
     /**
@@ -134,9 +134,10 @@ contract YieldBasisFacet is AccessControl {
      *      merges with the existing lock and the incoming tokenId is burned.
      *
      *      IMPORTANT: The faucet is a convenience feature only. If the faucet is drained,
-     *      rate limited, or unavailable, this function will fail. In that case, users should
-     *      call createLock() with their own YB tokens first to establish a lock, then call
-     *      depositLock() to merge additional positions.
+     *      rate limited, or unavailable, this function will fail due to the address not having
+     *      a permanent lock. In that case, users should call createLock() with their own
+     *      YB tokens first to establish a lock, then call depositLock() to merge
+     *      additional positions.
      *
      * @param tokenId The veYB token ID to deposit (will be burned after merge)
      */
@@ -157,7 +158,7 @@ contract YieldBasisFacet is AccessControl {
         _veYB.safeTransferFrom(from, address(this), tokenId);
 
         // Update collateral using the existing tokenId (incoming was burned)
-        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), existingTokenId, address(_veYBAdapter));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), existingTokenId, address(_veYBAdapter));
     }
 
     /**
@@ -181,6 +182,6 @@ contract YieldBasisFacet is AccessControl {
 
         // Register the collateral
         uint256 newTokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), newTokenId, address(_veYBAdapter));
+        DynamicCollateralManager.addLockedCollateral(address(_portfolioAccountConfig), newTokenId, address(_veYBAdapter));
     }
 }

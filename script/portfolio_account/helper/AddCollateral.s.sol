@@ -6,6 +6,7 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
@@ -39,7 +40,7 @@ contract AddCollateral is Script {
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = CollateralFacet.addCollateral.selector;
+        bytes4 selector = BaseCollateralFacet.addCollateral.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "CollateralFacet.addCollateral not registered in FacetRegistry. Please deploy facets first.");
         

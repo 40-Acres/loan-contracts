@@ -19,7 +19,8 @@ import {Setup} from "../utils/Setup.sol";
 import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
@@ -41,7 +42,7 @@ contract ClaimingFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -55,7 +56,7 @@ contract ClaimingFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.borrow.selector,
+            BaseLendingFacet.borrow.selector,
             amount
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);

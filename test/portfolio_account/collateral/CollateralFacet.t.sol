@@ -15,9 +15,11 @@ import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
 import {Setup} from "../utils/Setup.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
 contract CollateralFacetTest is Test, Setup {
@@ -34,7 +36,7 @@ contract CollateralFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -48,7 +50,7 @@ contract CollateralFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -62,7 +64,7 @@ contract CollateralFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.borrow.selector,
+            BaseLendingFacet.borrow.selector,
             amount
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -95,7 +97,7 @@ contract CollateralFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             _tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -254,11 +256,11 @@ contract CollateralFacetTest is Test, Setup {
         portfolioFactories[1] = address(_portfolioFactory); // Same portfolio for second operation
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
+            BaseLendingFacet.pay.selector,
             payAmount
         );
         calldatas[1] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             _tokenId
         );
         (uint256 newMaxLoan2, uint256 newMaxLoanIgnoreSupply2) = CollateralFacet(_portfolioAccount).getMaxLoan();
@@ -284,11 +286,11 @@ contract CollateralFacetTest is Test, Setup {
         IERC20(_asset).approve(_portfolioAccount, initialDebt);
         // Reuse the same portfolios array (already has 2 entries from previous test)
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
+            BaseLendingFacet.pay.selector,
             largePayAmount
         );
         calldatas[1] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             _tokenId
         );
         
@@ -298,11 +300,11 @@ contract CollateralFacetTest is Test, Setup {
 
         uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
+            BaseLendingFacet.pay.selector,
             totalDebt
         );
         calldatas[1] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             _tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -370,11 +372,11 @@ contract CollateralFacetTest is Test, Setup {
         portfolioFactories[1] = address(_portfolioFactory); // Same portfolio for second operation
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateral.selector,
+            BaseCollateralFacet.removeCollateral.selector,
             _tokenId
         );
         calldatas[1] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             _tokenId2 // Re-adding same token (should be no-op since already added)
         );
 

@@ -2,8 +2,9 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
 import {Setup} from "../utils/Setup.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
@@ -27,7 +28,7 @@ contract VexyMarketplaceTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -41,7 +42,7 @@ contract VexyMarketplaceTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.borrow.selector,
+            BaseLendingFacet.borrow.selector,
             amount
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);

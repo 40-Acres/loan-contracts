@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 
 contract DeployLendingFacet is AccountFacetsDeploy {
     function run() external {
@@ -23,11 +24,11 @@ contract DeployLendingFacet is AccountFacetsDeploy {
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
         bytes4[] memory selectors = new bytes4[](5);
-        selectors[0] = LendingFacet.borrow.selector;
-        selectors[1] = LendingFacet.borrowTo.selector;
-        selectors[2] = LendingFacet.pay.selector;
-        selectors[3] = LendingFacet.setTopUp.selector;
-        selectors[4] = LendingFacet.topUp.selector;
+        selectors[0] = BaseLendingFacet.borrow.selector;
+        selectors[1] = BaseLendingFacet.borrowTo.selector;
+        selectors[2] = BaseLendingFacet.pay.selector;
+        selectors[3] = BaseLendingFacet.setTopUp.selector;
+        selectors[4] = BaseLendingFacet.topUp.selector;
         return selectors;
     }
 }

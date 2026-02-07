@@ -6,7 +6,8 @@ import {YieldBasisFacet} from "../../../src/facets/account/yieldbasis/YieldBasis
 import {YieldBasisRewardsProcessingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
@@ -57,6 +58,10 @@ contract MockLendingPool is ILendingPool {
 
     function setActiveAssets(uint256 amount) external {
         _activeAssets = amount;
+    }
+
+    function getDebtBalance(address) external pure returns (uint256) {
+        return 0;
     }
 }
 
@@ -110,7 +115,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     // Facets
     YieldBasisFacet public yieldBasisFacet;
     YieldBasisRewardsProcessingFacet public rewardsProcessingFacet;
-    CollateralFacet public collateralFacet;
+    DynamicCollateralFacet public collateralFacet;
 
     // YieldBasis contracts
     IYieldBasisVotingEscrow public veYB = IYieldBasisVotingEscrow(VE_YB);
@@ -156,23 +161,23 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Fund the mock vault with USDC
         deal(USDC, address(mockVault), 1_000_000 * 1e6);
 
-        // Deploy CollateralFacet
-        collateralFacet = new CollateralFacet(
+        // Deploy DynamicCollateralFacet
+        collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB
         );
         bytes4[] memory collateralSelectors = new bytes4[](9);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
-        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "CollateralFacet");
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter
         veYBAdapter = new YieldBasisVotingEscrowAdapter(VE_YB);
@@ -650,7 +655,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         _createLockForUser();
 
         // Get initial collateral
-        uint256 initialCollateral = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        uint256 initialCollateral = DynamicCollateralFacet(portfolioAccount).getTotalLockedCollateral();
 
         // Set rewards option to IncreaseCollateral
         _setRewardsOption(UserRewardsConfig.RewardsOption.IncreaseCollateral, 100);
@@ -684,7 +689,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         );
 
         // Verify collateral increased in CollateralManager
-        uint256 finalCollateral = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        uint256 finalCollateral = DynamicCollateralFacet(portfolioAccount).getTotalLockedCollateral();
 
         assertTrue(
             finalCollateral > initialCollateral,

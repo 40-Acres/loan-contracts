@@ -3,8 +3,9 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
 import {Setup} from "../utils/Setup.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
@@ -88,7 +89,7 @@ contract WalletFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.addCollateral.selector,
+            BaseCollateralFacet.addCollateral.selector,
             tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -102,7 +103,7 @@ contract WalletFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            LendingFacet.borrowTo.selector,
+            BaseLendingFacet.borrowTo.selector,
             _walletPortfolio,
             amount
         );
@@ -162,7 +163,7 @@ contract WalletFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateralTo.selector,
+            BaseCollateralFacet.removeCollateralTo.selector,
             tokenId,
             toPortfolio
         );
@@ -430,7 +431,7 @@ contract WalletFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            CollateralFacet.removeCollateralTo.selector,
+            BaseCollateralFacet.removeCollateralTo.selector,
             _tokenId,
             address(0x1234) // Not a registered portfolio
         );

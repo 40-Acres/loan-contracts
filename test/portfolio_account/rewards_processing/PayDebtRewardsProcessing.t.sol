@@ -13,8 +13,9 @@ import {DeployRewardsProcessingFacet} from "../../../script/portfolio_account/fa
 import {DeployLendingFacet} from "../../../script/portfolio_account/facets/DeployLendingFacet.s.sol";
 import {DeployCollateralFacet} from "../../../script/portfolio_account/facets/DeployCollateralFacet.s.sol";
 import {DeployERC721ReceiverFacet} from "../../../script/portfolio_account/facets/DeployERC721ReceiverFacet.s.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
@@ -290,7 +291,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory2);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(CollateralFacet.addCollateral.selector, _tokenId2);
+        calldatas[0] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId2);
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
@@ -301,7 +302,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         // Borrow to create debt on portfolio 2
         vm.startPrank(_user);
         portfolioFactories[0] = address(_portfolioFactory2);
-        calldatas[0] = abi.encodeWithSelector(LendingFacet.borrow.selector, borrowAmount);
+        calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.borrow.selector, borrowAmount);
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
@@ -372,7 +373,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         address[] memory factories = new address[](1);
         factories[0] = address(_portfolioFactory);
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeWithSelector(CollateralFacet.addCollateral.selector, _tokenId);
+        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(calls, factories);
         vm.stopPrank();
 
@@ -471,7 +472,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         address[] memory factories = new address[](1);
         factories[0] = address(_portfolioFactory);
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeWithSelector(CollateralFacet.addCollateral.selector, _tokenId);
+        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(calls, factories);
         vm.stopPrank();
 
@@ -556,7 +557,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         address[] memory factories = new address[](1);
         factories[0] = address(_portfolioFactory);
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeWithSelector(CollateralFacet.addCollateral.selector, _tokenId);
+        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(calls, factories);
         vm.stopPrank();
 
@@ -618,7 +619,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         address[] memory factories = new address[](1);
         factories[0] = address(_portfolioFactory);
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeWithSelector(CollateralFacet.addCollateral.selector, _tokenId);
+        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(calls, factories);
         vm.stopPrank();
 

@@ -9,7 +9,7 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {Setup} from "../utils/Setup.sol";
@@ -191,7 +191,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         deal(address(usdc), portfolioOwner, firstPaymentAmount);
         IERC20(usdc).approve(portfolioAccount, firstPaymentAmount);
         bytes memory firstPayCalldata = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
+            BaseLendingFacet.pay.selector,
             firstPaymentAmount
         );
         
@@ -246,7 +246,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         deal(address(usdc), portfolioOwner, secondPaymentAmount);
         IERC20(usdc).approve(portfolioAccount, secondPaymentAmount);
         bytes memory secondPayCalldata = abi.encodeWithSelector(
-            LendingFacet.pay.selector,
+            BaseLendingFacet.pay.selector,
             secondPaymentAmount
         );
         

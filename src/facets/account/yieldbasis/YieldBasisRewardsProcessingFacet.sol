@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFacet.sol";
 import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscrow.sol";
 import {YieldBasisVotingEscrowAdapter} from "../../../adapters/YieldBasisVotingEscrowAdapter.sol";
-import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -47,7 +47,7 @@ contract YieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         IERC20(lockedAsset).approve(address(_veYB), increaseAmount);
         _veYB.increase_amount(increaseAmount);
         IERC20(lockedAsset).approve(address(_veYB), 0);
-        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
         emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
     }
 }

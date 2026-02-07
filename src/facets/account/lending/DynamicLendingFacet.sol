@@ -1,102 +1,22 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
-import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
-import {DynamicCollateralFacet} from "../collateral/DynamicCollateralFacet.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {AccessControl} from "../utils/AccessControl.sol";
-import {UserLendingConfig} from "./UserLendingConfig.sol";
-import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
+import {BaseLendingFacet} from "./BaseLendingFacet.sol";
 
 /**
  * @title DynamicLendingFacet
  * @dev LendingFacet variant for DynamicFeesVault — delegates to DynamicCollateralManager.
  */
-contract DynamicLendingFacet is AccessControl {
-    using SafeERC20 for IERC20;
-    PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
-    IERC20 public immutable _lendingToken;
+contract DynamicLendingFacet is BaseLendingFacet {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken)
+        BaseLendingFacet(portfolioFactory, portfolioAccountConfig, lendingToken) {}
 
-    error NotOwnerOfToken();
-    error NotPortfolioOwner();
-
-    event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
-    event BorrowedTo(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner, address indexed to);
-    event Paid(uint256 amount, address indexed owner);
-    event TopUpSet(bool topUpEnabled, address indexed owner);
-    event ToppedUp(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
-
-    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken) {
-        require(portfolioFactory != address(0));
-        _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
-        _lendingToken = IERC20(lendingToken);
+    function _increaseTotalDebt(address config, uint256 amount) internal override returns (uint256 amountAfterFees, uint256 originationFee) {
+        return DynamicCollateralManager.increaseTotalDebt(config, amount);
     }
 
-    function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        (uint256 amountAfterFees, uint256 originationFee) = DynamicCollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
-        uint256 minimumCollateral = _portfolioAccountConfig.getMinimumCollateral();
-        if(minimumCollateral > 0) {
-            require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
-        }
-        emit Borrowed(amount, amountAfterFees, originationFee, portfolioOwner);
-    }
-
-    function borrowTo(address to, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
-        require(manager.isPortfolioRegistered(to), "To address is not part of 40acres");
-        address toFactoryAddress = manager.getFactoryForPortfolio(to);
-        address portfolioOwner = PortfolioFactory(toFactoryAddress).ownerOf(to);
-        require(portfolioOwner == _portfolioFactory.ownerOf(address(this)), "not the same owner for to address and current portfolio");
-
-        (uint256 amountAfterFees, uint256 originationFee) = DynamicCollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), amount);
-        _lendingToken.safeTransfer(to, amountAfterFees);
-        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
-    }
-
-    function pay(uint256 amount) public returns (uint256) {
-        address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
-
-        _lendingToken.safeTransferFrom(from, address(this), amount);
-        uint256 excess = DynamicCollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
-
-        emit Paid(amount-excess, from);
-        if(excess > 0) {
-            _lendingToken.safeTransfer(from, excess);
-        }
-        return excess;
-    }
-
-    function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserLendingConfig.setTopUp(topUpEnabled);
-        address owner = _portfolioFactory.ownerOf(address(this));
-        emit TopUpSet(topUpEnabled, owner);
-    }
-
-    function topUp() public {
-        bool topUpEnabled = UserLendingConfig.getTopUp();
-        if(!topUpEnabled) {
-            return;
-        }
-        (uint256 maxLoan, ) = DynamicCollateralFacet(address(this)).getMaxLoan();
-        if(maxLoan == 0) {
-            return;
-        }
-        (uint256 amountAfterFees, uint256 originationFee) = DynamicCollateralManager.increaseTotalDebt(address(_portfolioAccountConfig), maxLoan);
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
-        emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
-    }
-
-    function getMaxLoan() public view returns (uint256, uint256) {
-        return DynamicCollateralFacet(address(this)).getMaxLoan();
+    function _decreaseTotalDebt(address config, uint256 amount) internal override returns (uint256 excess) {
+        return DynamicCollateralManager.decreaseTotalDebt(config, amount);
     }
 }

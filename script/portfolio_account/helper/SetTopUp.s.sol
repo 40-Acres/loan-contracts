@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
@@ -41,9 +41,9 @@ contract SetTopUp is Script {
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = LendingFacet.setTopUp.selector;
+        bytes4 selector = BaseLendingFacet.setTopUp.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
-        require(facet != address(0), "LendingFacet.setTopUp not registered in FacetRegistry. Please deploy facets first.");
+        require(facet != address(0), "BaseLendingFacet.setTopUp not registered in FacetRegistry. Please deploy facets first.");
 
         // Get portfolio address from factory
         address portfolioAddress = factory.portfolioOf(owner);

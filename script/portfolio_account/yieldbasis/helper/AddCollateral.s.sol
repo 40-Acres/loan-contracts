@@ -6,6 +6,7 @@ import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 import {CollateralFacet} from "../../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVotingEscrow.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {stdJson} from "forge-std/StdJson.sol";
@@ -47,7 +48,7 @@ contract AddCollateral is Script {
         // Get YieldBasis factory
         PortfolioFactory factory = PortfolioHelperUtils.getYieldBasisFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = CollateralFacet.addCollateral.selector;
+        bytes4 selector = BaseCollateralFacet.addCollateral.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "CollateralFacet.addCollateral not registered in FacetRegistry. Please deploy facets first.");
 

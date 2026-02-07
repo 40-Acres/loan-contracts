@@ -14,7 +14,9 @@ import {BridgeFacet} from "../../../src/facets/account/bridge/BridgeFacet.sol";
 import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
 import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFacet.sol";
@@ -106,26 +108,26 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         // Deploy CollateralFacet
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](9);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
-        
+
         // Deploy LendingFacet
         LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
         bytes4[] memory lendingSelectors = new bytes4[](4);
-        lendingSelectors[0] = LendingFacet.borrow.selector;
-        lendingSelectors[1] = LendingFacet.pay.selector;
-        lendingSelectors[2] = LendingFacet.setTopUp.selector;
-        lendingSelectors[3] = LendingFacet.topUp.selector;
+        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        lendingSelectors[1] = BaseLendingFacet.pay.selector;
+        lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
+        lendingSelectors[3] = BaseLendingFacet.topUp.selector;
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
-        
+
         // Deploy VotingFacet
         SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), VOTING_ESCROW, VOTER, address(USDC));
         bytes4[] memory votingSelectors = new bytes4[](7);
@@ -332,10 +334,10 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // // Deploy LendingFacet
         // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
         // bytes4[] memory lendingSelectors = new bytes4[](4);
-        // lendingSelectors[0] = LendingFacet.borrow.selector;
-        // lendingSelectors[1] = LendingFacet.pay.selector;
-        // lendingSelectors[2] = LendingFacet.setTopUp.selector;
-        // lendingSelectors[3] = LendingFacet.topUp.selector;
+        // lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        // lendingSelectors[1] = BaseLendingFacet.pay.selector;
+        // lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
+        // lendingSelectors[3] = BaseLendingFacet.topUp.selector;
         // _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
         // // Deploy MarketplaceFacet
@@ -370,15 +372,15 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // Deploy CollateralFacet
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](9);
-        collateralSelectors[0] = CollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = CollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = CollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = CollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = CollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = CollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = CollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
 

@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 
 contract DeployCollateralFacet is AccountFacetsDeploy {
     function run() external {
@@ -23,17 +24,17 @@ contract DeployCollateralFacet is AccountFacetsDeploy {
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
         bytes4[] memory selectors = new bytes4[](11);
-        selectors[0] = CollateralFacet.addCollateral.selector;
-        selectors[1] = CollateralFacet.getTotalLockedCollateral.selector;
-        selectors[2] = CollateralFacet.getTotalDebt.selector;
-        selectors[3] = CollateralFacet.getUnpaidFees.selector;
-        selectors[4] = CollateralFacet.getMaxLoan.selector;
-        selectors[5] = CollateralFacet.getOriginTimestamp.selector;
-        selectors[6] = CollateralFacet.removeCollateral.selector;
-        selectors[7] = CollateralFacet.removeCollateralTo.selector;
-        selectors[8] = CollateralFacet.getCollateralToken.selector;
-        selectors[9] = CollateralFacet.getLockedCollateral.selector;
-        selectors[10] = CollateralFacet.enforceCollateralRequirements.selector;
+        selectors[0] = BaseCollateralFacet.addCollateral.selector;
+        selectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        selectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        selectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        selectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        selectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        selectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        selectors[7] = BaseCollateralFacet.removeCollateralTo.selector;
+        selectors[8] = BaseCollateralFacet.getCollateralToken.selector;
+        selectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
+        selectors[10] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         return selectors;
     }
 }
