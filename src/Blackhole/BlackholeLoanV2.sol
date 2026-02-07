@@ -155,7 +155,7 @@ contract BlackholeLoanV2 is Loan {
      * @return The address of the ODOS Router contract.
      */
     function odosRouter() public override pure returns (address) {
-        return 0x88de50B233052e4Fb783d4F6db78Cc34fEa3e9FC; // ODOS Router address
+        return 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05; // ODOS Router address
     }
 
 
@@ -167,6 +167,27 @@ contract BlackholeLoanV2 is Loan {
         }
     }
 
+    function claimRebase(uint256 tokenId) public {
+        _claimRebase(_loanDetails[tokenId]);
+    }
+
+
+    function _claimRebase(LoanInfo storage loan) override internal {
+        // claim from both rewards distributors
+        address[] memory rewardsDistributors = new address[](2);
+        rewardsDistributors[0] = address(_rewardsDistributor);
+        rewardsDistributors[1] = address(0x7c7BD86BaF240dB3DbCc3f7a22B35c5bAa83bA28);
+        for (uint256 i = 0; i < rewardsDistributors.length; i++) {
+            uint256 claimable =  IRewardsDistributor(rewardsDistributors[i]).claimable(loan.tokenId);
+            if (claimable > 0) {
+                try IRewardsDistributor(rewardsDistributors[i]).claim(loan.tokenId) {
+                    addTotalWeight(claimable);
+                    loan.weight += claimable;
+                } catch {
+                }
+            }
+        }
+    }
     /**
      * @notice Processes rewards for a specific loan.
      * @dev This function handles the claiming and processing of rewards.

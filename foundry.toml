@@ -23,4 +23,8 @@ remappings = [
 [rpc_endpoints]
 base = "https://mainnet.base.org"
 
+[profile.ci]
+fuzz = { runs = 256 }
+verbosity = 2
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

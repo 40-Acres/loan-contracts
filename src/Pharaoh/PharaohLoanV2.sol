@@ -131,6 +131,15 @@ contract PharaohLoanV2 is Loan {
         return super.claim(tokenId, fees, tokens, tradeData, allocations);
     }
 
+    /**
+     * @notice Returns the address of the ODOS Router contract.
+     * @dev This function is used to interact with the ODOS Router for trading and swapping tokens.
+     * @return The address of the ODOS Router contract.
+     */
+    function odosRouter() public override pure returns (address) {
+        return 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05; // ODOS Router address
+    }
+
 
     /**
      * @notice Returns the rewards for next epoch.
