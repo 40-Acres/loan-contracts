@@ -74,11 +74,11 @@ contract ERC4626ClaimingFacetTest is Test {
 
         // Deploy and register ERC4626CollateralFacet (required for collateral tracking)
         DeployERC4626CollateralFacet collateralDeployer = new DeployERC4626CollateralFacet();
-        _erc4626CollateralFacet = collateralDeployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig));
+        _erc4626CollateralFacet = collateralDeployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_mockVault));
 
         // Deploy and register ERC4626ClaimingFacet
         DeployERC4626ClaimingFacet deployer = new DeployERC4626ClaimingFacet();
-        _erc4626ClaimingFacet = deployer.deploy(address(_portfolioFactory));
+        _erc4626ClaimingFacet = deployer.deploy(address(_portfolioFactory), address(_mockVault));
 
         // Set config
         _loanConfig.setRewardsRate(10000);
@@ -141,12 +141,12 @@ contract ERC4626ClaimingFacetTest is Test {
         vm.stopPrank();
     }
 
-    function addCollateralViaMulticall(address vault, uint256 shares) internal {
+    function addCollateralViaMulticall(uint256 shares) internal {
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, vault, shares);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, shares);
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
@@ -166,7 +166,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Simulate yield
         simulateYield(YIELD_AMOUNT);
@@ -196,7 +196,7 @@ contract ERC4626ClaimingFacetTest is Test {
 
     function testClaimVaultYieldRevertsWithNoCollateral() public {
         vm.startPrank(_authorizedCaller);
-        vm.expectRevert("No collateral vault");
+        vm.expectRevert("No shares deposited");
         ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
         vm.stopPrank();
     }
@@ -205,7 +205,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral but no yield
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         vm.startPrank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
@@ -217,7 +217,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Simulate yield
         simulateYield(YIELD_AMOUNT);
@@ -241,7 +241,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         (uint256 yieldAssets, uint256 yieldShares) = ERC4626ClaimingFacet(_portfolioAccount).getAvailableYield();
         assertEq(yieldAssets, 0);
@@ -252,7 +252,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Simulate yield
         simulateYield(YIELD_AMOUNT);
@@ -269,7 +269,7 @@ contract ERC4626ClaimingFacetTest is Test {
     function testGetDepositInfoNoCollateral() public view {
         (address vault, uint256 shares, uint256 depositedAssets, uint256 currentAssets) =
             ERC4626ClaimingFacet(_portfolioAccount).getDepositInfo();
-        assertEq(vault, address(0));
+        assertEq(vault, address(_mockVault));
         assertEq(shares, 0);
         assertEq(depositedAssets, 0);
         assertEq(currentAssets, 0);
@@ -279,7 +279,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 depositedShares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(depositedShares);
-        addCollateralViaMulticall(address(_mockVault), depositedShares);
+        addCollateralViaMulticall(depositedShares);
 
         (address vault, uint256 shares, uint256 depositedAssets, uint256 currentAssets) =
             ERC4626ClaimingFacet(_portfolioAccount).getDepositInfo();
@@ -294,7 +294,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 depositedShares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(depositedShares);
-        addCollateralViaMulticall(address(_mockVault), depositedShares);
+        addCollateralViaMulticall(depositedShares);
 
         // Simulate yield
         simulateYield(YIELD_AMOUNT);
@@ -316,7 +316,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Setup: add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // First yield simulation and claim
         simulateYield(YIELD_AMOUNT);

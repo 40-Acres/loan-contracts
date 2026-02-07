@@ -79,11 +79,11 @@ contract ERC4626CollateralFacetTest is Test {
 
         // Deploy and register ERC4626CollateralFacet
         DeployERC4626CollateralFacet deployer = new DeployERC4626CollateralFacet();
-        _erc4626CollateralFacet = deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig));
+        _erc4626CollateralFacet = deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_mockVault));
 
         // Deploy and register ERC4626LendingFacet
         DeployERC4626LendingFacet lendingDeployer = new DeployERC4626LendingFacet();
-        _erc4626LendingFacet = lendingDeployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_underlyingAsset));
+        _erc4626LendingFacet = lendingDeployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_underlyingAsset), address(_mockVault));
 
         // Set config
         _loanConfig.setRewardsRate(10000);
@@ -133,22 +133,22 @@ contract ERC4626CollateralFacetTest is Test {
 
     // ============ Helper Functions ============
 
-    function addCollateralViaMulticall(address vault, uint256 shares) internal {
+    function addCollateralViaMulticall(uint256 shares) internal {
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, vault, shares);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, shares);
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
 
-    function addCollateralFromViaMulticall(address vault, uint256 shares) internal {
+    function addCollateralFromViaMulticall(uint256 shares) internal {
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateralFrom.selector, vault, shares);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateralFrom.selector, shares);
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
@@ -158,7 +158,7 @@ contract ERC4626CollateralFacetTest is Test {
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(bytes4(keccak256("removeCollateral(uint256)")), shares);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateral.selector, shares);
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
@@ -195,7 +195,7 @@ contract ERC4626CollateralFacetTest is Test {
 
         assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
 
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Collateral value should equal the asset value of shares
         uint256 collateralValue = ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
@@ -221,7 +221,7 @@ contract ERC4626CollateralFacetTest is Test {
 
         assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
 
-        addCollateralFromViaMulticall(address(_mockVault), shares);
+        addCollateralFromViaMulticall(shares);
 
         // Verify collateral was added
         uint256 collateralValue = ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
@@ -236,12 +236,12 @@ contract ERC4626CollateralFacetTest is Test {
         // First deposit
         uint256 shares1 = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares1);
-        addCollateralViaMulticall(address(_mockVault), shares1);
+        addCollateralViaMulticall(shares1);
 
         // Second deposit
         uint256 shares2 = prepareUserWithVaultShares(INITIAL_DEPOSIT / 2);
         transferSharesToPortfolio(shares2);
-        addCollateralViaMulticall(address(_mockVault), shares2);
+        addCollateralViaMulticall(shares2);
 
         // Total collateral should be sum of both deposits
         uint256 collateralValue = ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
@@ -256,37 +256,9 @@ contract ERC4626CollateralFacetTest is Test {
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, address(_mockVault), 0);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, 0);
 
         vm.expectRevert("Shares must be > 0");
-        _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-    }
-
-    function testAddCollateralRevertsWithVaultMismatch() public {
-        // Add first collateral
-        uint256 shares1 = prepareUserWithVaultShares(INITIAL_DEPOSIT);
-        transferSharesToPortfolio(shares1);
-        addCollateralViaMulticall(address(_mockVault), shares1);
-
-        // Create a different vault
-        MockERC4626 differentVault = new MockERC4626(address(_underlyingAsset), "Different Vault", "dVAULT", 6);
-
-        // Try to add collateral from different vault - should revert
-        _underlyingAsset.mint(_user, INITIAL_DEPOSIT);
-        vm.startPrank(_user);
-        _underlyingAsset.approve(address(differentVault), INITIAL_DEPOSIT);
-        uint256 shares2 = differentVault.deposit(INITIAL_DEPOSIT, _user);
-        differentVault.transfer(_portfolioAccount, shares2);
-        vm.stopPrank();
-
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, address(differentVault), shares2);
-
-        vm.expectRevert("Vault mismatch");
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
@@ -296,7 +268,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testRemoveCollateral() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Remove collateral
         removeCollateralViaMulticall(shares);
@@ -308,7 +280,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testRemoveCollateralTo() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         uint256 userSharesBefore = _mockVault.balanceOf(_user);
 
@@ -323,7 +295,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testRemovePartialCollateral() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         uint256 removeAmount = shares / 2;
         removeCollateralViaMulticall(removeAmount);
@@ -338,13 +310,13 @@ contract ERC4626CollateralFacetTest is Test {
     function testRemoveCollateralRevertsWithInsufficientShares() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(bytes4(keccak256("removeCollateral(uint256)")), shares + 1);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateral.selector, shares + 1);
 
         vm.expectRevert("Insufficient collateral shares");
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -356,7 +328,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testGetMaxLoan() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         (, uint256 maxLoanIgnoreSupply) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
 
@@ -375,11 +347,7 @@ contract ERC4626CollateralFacetTest is Test {
 
     // ============ View Functions Tests ============
 
-    function testGetCollateralVault() public {
-        uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
-        transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
-
+    function testGetCollateralVault() public view {
         address vault = ERC4626CollateralFacet(_portfolioAccount).getCollateralVault();
         assertEq(vault, address(_mockVault));
     }
@@ -387,7 +355,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testGetCollateralShares() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         uint256 collateralShares = ERC4626CollateralFacet(_portfolioAccount).getCollateralShares();
         assertEq(collateralShares, shares);
@@ -396,7 +364,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testEnforceCollateralRequirementsNoDebt() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         bool success = ERC4626CollateralFacet(_portfolioAccount).enforceCollateralRequirements();
         assertTrue(success);
@@ -407,7 +375,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testCollateralValueIncreasesWithYield() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         uint256 initialValue = ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
 
@@ -429,7 +397,7 @@ contract ERC4626CollateralFacetTest is Test {
     function testMaxLoanIncreasesWithYield() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         (, uint256 initialMaxLoanIgnoreSupply) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
 
@@ -486,7 +454,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Borrow against collateral
         uint256 borrowAmount = 500e6; // Borrow 500 USDC (within 70% LTV of 1000 USDC)
@@ -501,7 +469,7 @@ contract ERC4626CollateralFacetTest is Test {
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(bytes4(keccak256("removeCollateral(uint256)")), shares);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateral.selector, shares);
 
         vm.expectRevert(); // Should revert due to undercollateralized debt
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -512,7 +480,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Borrow max amount (700 USDC at 70% LTV)
         uint256 borrowAmount = 600e6;
@@ -525,7 +493,7 @@ contract ERC4626CollateralFacetTest is Test {
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(bytes4(keccak256("removeCollateral(uint256)")), shares / 2);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateral.selector, shares / 2);
 
         vm.expectRevert(); // Should revert
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -536,7 +504,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral and borrow
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         uint256 borrowAmount = 500e6;
         borrowViaMulticall(borrowAmount);
@@ -565,7 +533,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Borrow small amount (200 USDC)
         uint256 borrowAmount = 200e6;
@@ -593,7 +561,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Verify max loan
         (, uint256 maxLoanIgnoreSupply) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
@@ -626,7 +594,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         // Try to borrow more than max loan (>700 USDC)
         // Note: The manager enforces collateral requirements after multicall
@@ -647,7 +615,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Setup: Add collateral and borrow
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
-        addCollateralViaMulticall(address(_mockVault), shares);
+        addCollateralViaMulticall(shares);
 
         uint256 borrowAmount = 500e6;
         borrowViaMulticall(borrowAmount);
@@ -665,7 +633,7 @@ contract ERC4626CollateralFacetTest is Test {
 
         bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(ERC4626LendingFacet.pay.selector, borrowAmount);
-        calldatas[1] = abi.encodeWithSelector(bytes4(keccak256("removeCollateral(uint256)")), shares);
+        calldatas[1] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateral.selector, shares);
 
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();

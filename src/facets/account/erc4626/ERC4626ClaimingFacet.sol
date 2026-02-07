@@ -26,13 +26,16 @@ contract ERC4626ClaimingFacet is AccessControl {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
+    IERC4626 public immutable _vault;
 
     // Events
     event VaultYieldClaimed(address indexed vault, uint256 yieldAssets, uint256 sharesRedeemed, address asset, address indexed owner);
 
-    constructor(address portfolioFactory) {
+    constructor(address portfolioFactory, address vault) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
+        require(vault != address(0), "Invalid vault");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
+        _vault = IERC4626(vault);
     }
 
     // ============ Yield Claiming ============
@@ -43,11 +46,12 @@ contract ERC4626ClaimingFacet is AccessControl {
      * @return yieldAssets The amount of yield claimed (in underlying assets)
      */
     function claimVaultYield() external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 yieldAssets) {
-        // Get collateral info from ERC4626CollateralManager
-        (address vault, uint256 trackedShares, uint256 depositedAssets, uint256 currentAssets) =
-            ERC4626CollateralManager.getCollateral();
+        address vault = address(_vault);
 
-        require(vault != address(0), "No collateral vault");
+        // Get collateral info from ERC4626CollateralManager
+        (uint256 trackedShares, uint256 depositedAssets, uint256 currentAssets) =
+            ERC4626CollateralManager.getCollateral(vault);
+
         require(trackedShares > 0, "No shares deposited");
 
         // Calculate yield (current value - original deposit value)
@@ -64,7 +68,7 @@ contract ERC4626ClaimingFacet is AccessControl {
 
         // Update collateral tracking - remove redeemed shares
         // Note: This reduces shares but keeps depositedAssets the same (we're only removing yield)
-        ERC4626CollateralManager.removeSharesForYield(sharesToRedeem);
+        ERC4626CollateralManager.removeSharesForYield(vault, sharesToRedeem);
 
         emit VaultYieldClaimed(vault, assetsReceived, sharesToRedeem, vaultAsset, _portfolioFactory.ownerOf(address(this)));
 
@@ -79,10 +83,12 @@ contract ERC4626ClaimingFacet is AccessControl {
      * @return yieldShares The shares that would be redeemed for the yield
      */
     function getAvailableYield() external view returns (uint256 yieldAssets, uint256 yieldShares) {
-        (address vault, uint256 trackedShares, uint256 depositedAssets, uint256 currentAssets) =
-            ERC4626CollateralManager.getCollateral();
+        address vault = address(_vault);
 
-        if (vault == address(0) || trackedShares == 0) {
+        (uint256 trackedShares, uint256 depositedAssets, uint256 currentAssets) =
+            ERC4626CollateralManager.getCollateral(vault);
+
+        if (trackedShares == 0) {
             return (0, 0);
         }
 
@@ -115,6 +121,7 @@ contract ERC4626ClaimingFacet is AccessControl {
         uint256 depositedAssets,
         uint256 currentAssets
     ) {
-        return ERC4626CollateralManager.getCollateral();
+        vault = address(_vault);
+        (shares, depositedAssets, currentAssets) = ERC4626CollateralManager.getCollateral(vault);
     }
 }

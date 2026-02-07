@@ -19,17 +19,20 @@ contract ERC4626LendingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IERC20 public immutable _lendingToken;
+    address public immutable _vault;
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken, address vault) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(portfolioAccountConfig != address(0), "Invalid portfolio account config");
         require(lendingToken != address(0), "Invalid lending token");
+        require(vault != address(0), "Invalid vault");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _lendingToken = IERC20(lendingToken);
+        _vault = vault;
     }
 
     /**
@@ -39,6 +42,7 @@ contract ERC4626LendingFacet is AccessControl {
     function borrow(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         (uint256 amountAfterFees, uint256 originationFee) = ERC4626CollateralManager.increaseTotalDebt(
             address(_portfolioAccountConfig),
+            _vault,
             amount
         );
 
@@ -62,7 +66,7 @@ contract ERC4626LendingFacet is AccessControl {
         _lendingToken.safeTransferFrom(from, address(this), amount);
 
         // Pay down debt
-        uint256 excess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), amount);
+        uint256 excess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), _vault, amount);
 
         emit Paid(amount - excess, from);
 
@@ -76,7 +80,7 @@ contract ERC4626LendingFacet is AccessControl {
      * @dev Get the maximum loan amount
      */
     function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(address(_portfolioAccountConfig));
+        return ERC4626CollateralManager.getMaxLoan(address(_portfolioAccountConfig), _vault);
     }
 
     /**

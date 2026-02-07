@@ -20,44 +20,43 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
 
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
+    IERC4626 public immutable _vault;
 
-    error InvalidVault();
     error InvalidShares();
     error InsufficientShares();
 
-    constructor(address portfolioFactory, address portfolioAccountConfig) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address vault) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(portfolioAccountConfig != address(0), "Invalid portfolio account config");
+        require(vault != address(0), "Invalid vault");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
+        _vault = IERC4626(vault);
     }
 
     /**
      * @dev Add ERC4626 vault shares as collateral
      * Shares must already be in the portfolio account wallet
-     * @param vault The ERC4626 vault address
      * @param shares The amount of shares to add as collateral
      */
-    function addCollateral(address vault, uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), vault, shares);
+    function addCollateral(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), address(_vault), shares);
     }
 
     /**
      * @dev Add ERC4626 vault shares as collateral by transferring from owner
-     * @param vault The ERC4626 vault address
      * @param shares The amount of shares to transfer and add as collateral
      */
-    function addCollateralFrom(address vault, uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        require(vault != address(0), "Invalid vault");
+    function addCollateralFrom(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(shares > 0, "Shares must be > 0");
 
         address owner = _portfolioFactory.ownerOf(address(this));
 
         // Transfer shares from owner to this contract
-        IERC20(vault).safeTransferFrom(owner, address(this), shares);
+        IERC20(address(_vault)).safeTransferFrom(owner, address(this), shares);
 
         // Add to collateral tracking
-        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), vault, shares);
+        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), address(_vault), shares);
     }
 
     /**
@@ -65,7 +64,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @param shares The amount of shares to remove
      */
     function removeCollateral(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), shares);
+        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), address(_vault), shares);
     }
 
     /**
@@ -73,15 +72,12 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @param shares The amount of shares to remove and transfer
      */
     function removeCollateralTo(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        address vault = ERC4626CollateralManager.getCollateralVault();
-        require(vault != address(0), "No collateral vault set");
-
         // Remove from collateral tracking
-        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), shares);
+        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), address(_vault), shares);
 
         // Transfer shares to owner
         address owner = _portfolioFactory.ownerOf(address(this));
-        IERC20(vault).safeTransfer(owner, shares);
+        IERC20(address(_vault)).safeTransfer(owner, shares);
     }
 
     // ============ View Functions ============
@@ -90,7 +86,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @dev Get total collateral value in underlying assets
      */
     function getTotalLockedCollateral() external view override returns (uint256) {
-        return ERC4626CollateralManager.getTotalCollateralValue();
+        return ERC4626CollateralManager.getTotalCollateralValue(address(_vault));
     }
 
     /**
@@ -111,7 +107,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @dev Get maximum loan amount
      */
     function getMaxLoan() external view override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(address(_portfolioAccountConfig));
+        return ERC4626CollateralManager.getMaxLoan(address(_portfolioAccountConfig), address(_vault));
     }
 
     /**
@@ -130,14 +126,15 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
         uint256 depositedAssetValue,
         uint256 currentAssetValue
     ) {
-        return ERC4626CollateralManager.getCollateral();
+        vault = address(_vault);
+        (shares, depositedAssetValue, currentAssetValue) = ERC4626CollateralManager.getCollateral(address(_vault));
     }
 
     /**
      * @dev Get the collateral vault address
      */
     function getCollateralVault() external view returns (address) {
-        return ERC4626CollateralManager.getCollateralVault();
+        return address(_vault);
     }
 
     /**
