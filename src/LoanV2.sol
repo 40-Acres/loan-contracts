@@ -20,8 +20,7 @@ import {IAerodromeRouter} from "./interfaces/IAerodromeRouter.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import { LoanUtils } from "./LoanUtils.sol";
-import { IPortfolioFactory } from "./accounts/IPortfolioFactory.sol";
-import { IMigrationFacet } from "./facets/account/migration/IMigrationFacet.sol";
+import { PortfolioLoanLib } from "./PortfolioLoanLib.sol";
 
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
@@ -1287,69 +1286,19 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     /** Portfolio Account Methods */
 
-    /**
-     * @notice Migrates a loan to be controlled by the user's portfolio account.
-     * @dev Transfers loan ownership from user's EOA to their portfolio account.
-     *      Creates a portfolio if the user doesn't have one.
-     * @param tokenId The ID of the loan to migrate.
-     */
     function migrateToPortfolio(uint256 tokenId) external {
         LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower == msg.sender);
-        
-        address factory = getPortfolioFactory();
-        require(factory != address(0));
-        
-        address portfolio = IPortfolioFactory(factory).portfolioOf(msg.sender);
-        if(portfolio == address(0)) {
-            portfolio = IPortfolioFactory(factory).createAccount(msg.sender);
-        }
-
-        IVotingEscrow(address(_ve)).approve(address(portfolio), tokenId);
-        IMigrationFacet(portfolio).migrate(tokenId, loan.unpaidFees);   // migrate the loan to the portfolio with unpaid fees
+        PortfolioLoanLib.migrateToPortfolio(tokenId, loan.borrower, loan.unpaidFees, getPortfolioFactory(), _ve);
         delete _loanDetails[tokenId];
     }
 
-
     function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external {
-        address factory = getPortfolioFactory();
-        require(factory != address(0));
-
-        address portfolioOwner = IPortfolioFactory(factory).ownerOf(msg.sender);
-        require(portfolioOwner != address(0));
-        
-        // Handle unpaid fees first - transfer to protocol owner
-        if(feesToPay > 0) {
-            _asset.transferFrom(msg.sender, owner(), feesToPay);
-            emit LoanPaid(0, portfolioOwner, feesToPay, currentEpochStart(), true);
-            emit ProtocolFeePaid(currentEpochStart(), feesToPay, portfolioOwner, 0, address(_asset));
-        }
-        
-        // Transfer remaining amount to vault
-        uint256 balanceToPay = totalPayment - feesToPay;
-        if(balanceToPay > 0) {
-            _asset.transferFrom(msg.sender, _vault, balanceToPay);
-            _outstandingCapital -= balanceToPay;
-            emit LoanPaid(0, portfolioOwner, balanceToPay, currentEpochStart(), false);
-        }
+        uint256 capitalReduction = PortfolioLoanLib.payFromPortfolio(totalPayment, feesToPay, getPortfolioFactory(), _asset, _vault, owner());
+        _outstandingCapital -= capitalReduction;
     }
 
     function borrowFromPortfolio(uint256 amount) external returns (uint256 originationFee) {
-        address factory = getPortfolioFactory();
-        require(factory != address(0));
-
-        address portfolioOwner = IPortfolioFactory(factory).ownerOf(msg.sender);
-        require(portfolioOwner != address(0));
-
-        originationFee = (amount * 80) / 10000; // 0.8%
+        originationFee = PortfolioLoanLib.borrowFromPortfolio(amount, getPortfolioFactory(), _asset, _vault, owner());
         _outstandingCapital += amount;
-        
-        // Transfer origination fee to owner upfront
-        _asset.transferFrom(_vault, owner(), originationFee);
-        emit ProtocolFeePaid(currentEpochStart(), originationFee, portfolioOwner, 0, address(_asset));
-        
-        // Transfer remaining amount to portfolio owner
-        _asset.transferFrom(_vault, msg.sender, amount - originationFee);
-        emit FundsBorrowed(0, portfolioOwner, amount);
     }
 }
