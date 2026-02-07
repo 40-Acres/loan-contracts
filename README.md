@@ -15,6 +15,67 @@ The system is built using upgradeable contracts with the following key component
 
 Contracts use UUPS upgradeability pattern and inherit from OpenZeppelin's upgradeable contracts.
 
+### Portfolio Accounts Architecture
+
+Portfolio Accounts use a hierarchical diamond proxy pattern where each user gets a dedicated account (diamond proxy) whose facets are managed centrally via a `FacetRegistry`. Different deployment types register different facets depending on the protocol integration.
+
+```
+PortfolioManager (central hub - deploys factories, enforces collateral)
+    └── PortfolioFactory + FacetRegistry (one per deployment type)
+            └── FortyAcresPortfolioAccount (per user - diamond proxy)
+```
+
+Each factory type registers a specific set of facets:
+
+#### Aerodrome / Velodrome Factory
+
+Full-featured deployment for veAERO/veVELO collateral with marketplace, voting, rewards processing, and lending.
+
+| Facet | Functions |
+|-------|-----------|
+| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getUnpaidFees, getMaxLoan, getOriginTimestamp, getCollateralToken, getLockedCollateral, enforceCollateralRequirements |
+| **LendingFacet** | borrow, pay, setTopUp, topUp |
+| **ClaimingFacet** | claimFees, claimRebase, claimLaunchpadToken |
+| **VotingFacet** | vote, voteForLaunchpadToken, setVotingMode, isManualVoting, defaultVote |
+| **VotingEscrowFacet** | increaseLock, createLock, merge |
+| **SwapFacet** | userSwap |
+| **MigrationFacet** | migrate |
+| **MarketplaceFacet** | processPayment, finalizePurchase, buyMarketplaceListing, getListing, transferDebtToBuyer, makeListing, cancelListing |
+| **RewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
+| **VexyFacet** | buyVexyListing |
+| **OpenXFacet** | buyOpenXListing |
+| **ERC721ReceiverFacet** | onERC721Received |
+
+#### YieldBasis Factory
+
+Deployment for YieldBasis protocol integration with veNFT collateral, YB-specific locking/voting, and rewards processing.
+
+| Facet | Functions |
+|-------|-----------|
+| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getUnpaidFees, getMaxLoan, getOriginTimestamp, enforceCollateralRequirements |
+| **YieldBasisFacet** | createLock, increaseLock, depositLock |
+| **YieldBasisVotingFacet** | vote, defaultVote |
+| **YieldBasisRewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
+| **ERC721ReceiverFacet** | onERC721Received |
+
+#### Wallet Factory
+
+Lightweight wallet deployment for cross-portfolio asset transfers, token swaps, and veNFT lock creation. No collateral enforcement — `enforceCollateralRequirements` always returns true.
+
+| Facet | Functions |
+|-------|-----------|
+| **WalletFacet** | enforceCollateralRequirements, transferERC20, transferNFT, swap, createLock |
+
+#### ERC4626 Vault Factory
+
+Deployment for borrowing against ERC4626 vault share collateral (e.g. LP positions). Uses a separate collateral manager (`ERC4626CollateralManager`) with vault share valuation.
+
+| Facet | Functions |
+|-------|-----------|
+| **ERC4626CollateralFacet** | addCollateral, addCollateralFrom, removeCollateral, getTotalLockedCollateral, getTotalDebt, getUnpaidFees, getMaxLoan, getOriginTimestamp, getCollateralVault, getLockedCollateral, enforceCollateralRequirements, getCollateralToken |
+| **ERC4626LendingFacet** | borrow, pay |
+| **ERC4626ClaimingFacet** | claimVaultYield, getAvailableYield, getDepositInfo |
+
 ## Contracts
 
 - [LoanV2](src/LoanV2.sol) - Main loan contract with rewards rate-based lending and manages the veNFTs.
