@@ -62,3 +62,4 @@ jobs:
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
           LINEA_RPC_URL: ${{ secrets.LINEA_RPC_URL }}
           OP_RPC_URL: ${{ secrets.OP_RPC_URL }}
+          INK_RPC_URL: ${{ secrets.INK_RPC_URL }}
