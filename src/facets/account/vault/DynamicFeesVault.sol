@@ -80,6 +80,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         mapping(uint256 => SupplyCheckpoint) supplyCheckpoints;
         uint256 supplyNumCheckpoints;
         mapping(address => mapping(uint256 => uint256)) tokenClaimedPerEpoch;
+
+        // Tracks how many rewards have already been fee-split in _rebalance()
+        // so subsequent rebalances only apply the current fee rate to new rewards
+        mapping(uint256 => uint256) rebalancedAssetsPerEpoch;
     }
 
     struct Checkpoint {
@@ -464,7 +468,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 ratio = getVaultRatioBps(utilizationBps);
         if (ratio > 0 && ratio < 10000) {
             uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-            uint256 newVaultBalance = ($.totalAssetsPerEpoch[currentEpoch] * ratio) / (10000 - ratio);
+
+            // Only apply current fee rate to rewards added since last rebalance
+            // This ensures lender premium is monotonically increasing within an epoch
+            uint256 previouslyRebalanced = $.rebalancedAssetsPerEpoch[currentEpoch];
+            uint256 newRewards = $.totalAssetsPerEpoch[currentEpoch] - previouslyRebalanced;
+
+            uint256 currentVaultBalance = _getCurrentRewardBalance(address(this));
+            uint256 incrementalVaultShare = (newRewards * ratio) / (10000 - ratio);
+            uint256 newVaultBalance = currentVaultBalance + incrementalVaultShare;
+
+            $.rebalancedAssetsPerEpoch[currentEpoch] = $.totalAssetsPerEpoch[currentEpoch];
             $.totalSupplyPerEpoch[currentEpoch] = $.totalAssetsPerEpoch[currentEpoch] + newVaultBalance;
             _writeCheckpoint(address(this), newVaultBalance);
             _writeSupplyCheckpoint();

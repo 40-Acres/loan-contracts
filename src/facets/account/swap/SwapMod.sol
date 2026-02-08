@@ -9,8 +9,9 @@ import {SwapConfig} from "../config/SwapConfig.sol";
  */
 
 library SwapMod {
+    event SwapExecuted(address indexed swapTarget, address indexed inputToken, uint256 inputAmount, address indexed outputToken, uint256 outputAmount);
+    
     error NotApprovedSwapTarget(address swapTarget);
-
     error SwapFailed();
 
     function swap(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) public returns (uint256 amount) {
@@ -25,6 +26,7 @@ library SwapMod {
         uint256 balanceAfter = IERC20(outputToken).balanceOf(address(this));
         amount = balanceAfter - balanceBefore;
         require(amount >= minimumOutputAmount, "Slippage exceeded");
+        emit SwapExecuted(swapTarget, inputToken, inputAmount, outputToken, amount);
         return amount;
     }
 }
