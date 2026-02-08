@@ -90,6 +90,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         mapping(uint256 => uint256) effectiveBorrowerSupplyPerEpoch;
         // Last epoch in which a user's effective balance was counted
         mapping(address => uint256) lastEffectiveSupplyEpoch;
+
+        // Tracks first reward epoch for each user to prevent retroactive checkpoint over-distribution
+        mapping(address => uint256) firstRewardEpoch;
+        mapping(address => uint256) firstRewardEpochBalance;
     }
 
     struct Checkpoint {
@@ -214,6 +218,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function tokenClaimedPerEpoch(address _owner, uint256 _epoch) public view returns (uint256) {
         return _getStorage().tokenClaimedPerEpoch[_owner][_epoch];
+    }
+
+    function getFirstRewardEpoch(address _owner) public view returns (uint256) {
+        return _getStorage().firstRewardEpoch[_owner];
     }
 
     function rewardTotalSupply() public view returns (uint256) {
@@ -401,6 +409,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         if (numEpochs > 0) {
             for (uint256 i = 0; i < numEpochs; i++) {
                 uint256 epoch = _currTs;
+
+                // Guard: skip epochs before user's first participation
+                uint256 _fre = $.firstRewardEpoch[_owner];
+                if (_fre != 0 && epoch < _fre) {
+                    _currTs += DURATION;
+                    continue;
+                }
+
                 _supply = Math.max(rewardTotalSupply(epoch), 1);
                 uint256 assetsUnlocked = rewardTotalAssets(epoch);
 
@@ -409,25 +425,35 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
                     continue;
                 }
 
-                uint256 queryTimestamp = _currTs > 0 ? _currTs - 1 : _currTs;
-                _index = getPriorBalanceIndex(_owner, queryTimestamp);
+                uint256 balanceForEpoch;
 
-                uint256 nCheckpoints = $.numCheckpoints[_owner];
-                if (_index >= nCheckpoints) {
-                    _currTs += DURATION;
-                    continue;
-                }
+                if (_fre != 0 && epoch == _fre) {
+                    // First epoch: use stored balance (matches effectiveBorrowerSupplyPerEpoch)
+                    balanceForEpoch = $.firstRewardEpochBalance[_owner];
+                } else {
+                    // Normal path: prior-epoch checkpoint lookup (unchanged behavior)
+                    uint256 queryTimestamp = _currTs > 0 ? _currTs - 1 : _currTs;
+                    _index = getPriorBalanceIndex(_owner, queryTimestamp);
 
-                cp0 = $.checkpoints[_owner][_index];
+                    uint256 nCheckpoints = $.numCheckpoints[_owner];
+                    if (_index >= nCheckpoints) {
+                        _currTs += DURATION;
+                        continue;
+                    }
 
-                uint256 cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
-                while (cpEpoch >= _currTs && _index > 0) {
-                    _index = _index - 1;
                     cp0 = $.checkpoints[_owner][_index];
-                    cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
+
+                    uint256 cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
+                    while (cpEpoch >= _currTs && _index > 0) {
+                        _index = _index - 1;
+                        cp0 = $.checkpoints[_owner][_index];
+                        cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
+                    }
+
+                    balanceForEpoch = cp0._balances;
                 }
 
-                uint256 epochReward = (cp0._balances * assetsUnlocked) / _supply;
+                uint256 epochReward = (balanceForEpoch * assetsUnlocked) / _supply;
                 uint256 alreadyClaimed = $.tokenClaimedPerEpoch[_owner][epoch];
                 uint256 newReward = epochReward > alreadyClaimed ? epochReward - alreadyClaimed : 0;
 
@@ -446,40 +472,29 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
         uint256 currentBalance = _getCurrentRewardBalance(_to);
 
-        // If user has no checkpoints, create one at previous epoch so they can
-        // claim rewards for the current epoch (since _earned() looks for checkpoints
-        // BEFORE each epoch to prevent gaming)
-        bool createdPreviousCheckpoint = false;
-        if ($.numCheckpoints[_to] == 0 && currentEpoch >= DURATION) {
-            uint256 previousEpoch = currentEpoch - DURATION;
-            $.checkpoints[_to][0] = Checkpoint(previousEpoch, _amount);
-            $.numCheckpoints[_to] = 1;
-            createdPreviousCheckpoint = true;
+        bool isNewUser = $.numCheckpoints[_to] == 0;
+
+        if (isNewUser) {
+            $.firstRewardEpoch[_to] = currentEpoch;
+            $.firstRewardEpochBalance[_to] = _amount;
         }
 
         $.totalAssetsPerEpoch[currentEpoch] += _amount;
 
         // Track effective borrower supply — the sum of balances that _earned() will actually use.
-        // _earned() looks up the prior-epoch checkpoint, so mid-epoch deposits don't increase
-        // the balance that _earned() sees. We must track this separately to avoid dead supply.
+        // For the first epoch, _earned() uses firstRewardEpochBalance instead of prior-epoch lookup.
         if ($.lastEffectiveSupplyEpoch[_to] != currentEpoch) {
-            // First deposit this epoch for this user
             $.lastEffectiveSupplyEpoch[_to] = currentEpoch;
-            if (createdPreviousCheckpoint) {
-                // Case 1: New user — prior-epoch checkpoint was created with _amount
+            if (isNewUser) {
+                // New user — _earned() will use firstRewardEpochBalance for this epoch
                 $.effectiveBorrowerSupplyPerEpoch[currentEpoch] += _amount;
             } else {
-                // Case 2: Existing user, first deposit this epoch — _earned() uses their
-                // existing prior-epoch balance (currentBalance before this deposit)
+                // Existing user — _earned() uses their prior-epoch checkpoint balance
                 $.effectiveBorrowerSupplyPerEpoch[currentEpoch] += currentBalance;
             }
         }
-        // Case 3: Subsequent deposit same epoch — no change to effective supply
-        // because _earned() still uses the same prior-epoch checkpoint balance
 
-        // Only add _amount if we didn't already account for it in the previous epoch checkpoint
-        uint256 newBalance = createdPreviousCheckpoint ? _amount : currentBalance + _amount;
-
+        uint256 newBalance = currentBalance + _amount;
         _writeCheckpoint(_to, newBalance);
         _rebalance();
 

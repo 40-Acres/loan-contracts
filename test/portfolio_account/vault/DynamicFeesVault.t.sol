@@ -1527,6 +1527,62 @@ contract DynamicFeesVaultTest is Test {
         return balance;
     }
 
+    function testRetroactiveCheckpointOverDistribution() public {
+        // Verifies that new users cannot claim rewards from epochs before their first participation.
+        address newUser = address(0x99);
+
+        // Epoch 1: existing user deposits rewards (newUser not yet participating)
+        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(epoch1);
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 epoch1Rewards = vault.rewardTotalAssetsPerEpoch(epoch1);
+
+        // Epoch 2: newUser joins by depositing rewards
+        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
+        vm.warp(epoch2);
+
+        vm.prank(newUser);
+        vault.borrow(200e6);
+
+        vm.startPrank(newUser);
+        deal(address(usdc), newUser, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
+        vm.stopPrank();
+
+        // Verify firstRewardEpoch is set correctly
+        assertEq(vault.getFirstRewardEpoch(newUser), epoch2, "newUser's first reward epoch should be epoch2");
+
+        // Epoch 3: settle all rewards
+        uint256 epoch3 = ProtocolTimeLibrary.epochNext(epoch2);
+        vm.warp(epoch3);
+
+        vault.sync();
+
+        // Check what newUser claims from epoch1 (should be 0 — they weren't participating)
+        uint256 newUserClaimedE1 = vault.tokenClaimedPerEpoch(newUser, epoch1);
+        assertEq(newUserClaimedE1, 0, "New user should NOT claim rewards from epoch before they joined");
+
+        // Settle user1 and newUser
+        vault.updateUserDebtBalance(user1);
+        vault.updateUserDebtBalance(newUser);
+
+        // Verify no over-distribution: total claimed from epoch1 should not exceed epoch1 rewards
+        uint256 user1ClaimedE1 = vault.tokenClaimedPerEpoch(user1, epoch1);
+        uint256 vaultClaimedE1 = vault.tokenClaimedPerEpoch(address(vault), epoch1);
+        uint256 totalClaimedE1 = user1ClaimedE1 + vaultClaimedE1 + newUserClaimedE1;
+        assertLe(totalClaimedE1, epoch1Rewards, "Total claimed from epoch1 should not exceed epoch1 rewards");
+    }
+
     function testConcurrentSettlementOrder() public {
         address user2 = address(0x3);
 
