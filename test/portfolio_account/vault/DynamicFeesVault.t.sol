@@ -1229,6 +1229,251 @@ contract DynamicFeesVaultTest is Test {
         assertEq(totalDebt, expectedTotalDebt, "Total debt should match invariant");
     }
 
+    // ============ Mid-Epoch Fee Change Tests ============
+
+    function testMidEpochFeeDropLenderPremiumAlwaysIncreases() public {
+        // Scenario: fee is 80% on day 1, drops to 20% on day 2
+        // Lender premium should always increase as rewards vest (never stagnate to 0)
+        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
+        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
+        vm.warp(epoch1);
+
+        // Set up: borrow to create utilization
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Day 1: Set fee to 80%, deposit 100 USDC rewards
+        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Record lender premium after day 1 deposit
+        uint256 vaultCheckpointAfterDay1 = vault.numCheckpoints(address(vault)) > 0
+            ? _getLatestCheckpointBalance(address(vault))
+            : 0;
+        assertGt(vaultCheckpointAfterDay1, 0, "Vault should have premium after day 1");
+
+        // Day 2: Drop fee to 20%, deposit another 100 USDC rewards
+        vm.warp(epoch1 + dayDuration);
+        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(lowFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Vault checkpoint should have INCREASED (not decreased)
+        uint256 vaultCheckpointAfterDay2 = _getLatestCheckpointBalance(address(vault));
+        assertGt(
+            vaultCheckpointAfterDay2,
+            vaultCheckpointAfterDay1,
+            "Vault checkpoint should increase after day 2 deposit even with lower fee"
+        );
+
+        // Now vest rewards through the epoch and verify lender premium always increases
+        uint256 previousLenderPremium = 0;
+        for (uint256 day = 2; day <= 7; day++) {
+            vm.warp(epoch1 + (day * dayDuration));
+            vault.sync();
+
+            uint256 currentLenderPremium = vault.tokenClaimedPerEpoch(
+                address(vault),
+                epoch1
+            );
+            assertGe(
+                currentLenderPremium,
+                previousLenderPremium,
+                "Lender premium should never decrease as rewards vest"
+            );
+            previousLenderPremium = currentLenderPremium;
+        }
+
+        // Move to next epoch — all rewards fully vested
+        vm.warp(epoch2);
+        vault.sync();
+
+        uint256 finalLenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
+        assertGt(finalLenderPremium, 0, "Lender should have earned premium");
+
+        // Verify lender premium is between 20% and 80% of total rewards (blended rate)
+        uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(epoch1);
+        assertEq(totalRewards, 200e6, "Total rewards should be 200 USDC");
+        // Day 1: 100 USDC at 80% → vault gets 100*8000/2000 = 400 share units
+        // Day 2: 100 USDC at 20% → vault gets 100*2000/8000 = 25 share units
+        // Vault total = 425 out of (200 + 425) = 625 total supply
+        // Lender premium = 425/625 * 200 = 136 USDC
+        assertGt(finalLenderPremium, 200e6 * 2000 / 10000, "Premium should be above pure 20% rate");
+        assertLt(finalLenderPremium, 200e6 * 8000 / 10000, "Premium should be below pure 80% rate");
+    }
+
+    function testMidEpochFeeIncreaseLenderPremiumAccelerates() public {
+        // Scenario: fee is 20% on day 1, increases to 80% on day 2
+        // Lender premium should accelerate on day 2's rewards
+        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
+        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
+        vm.warp(epoch1);
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Day 1: 20% fee, deposit 100 USDC
+        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(lowFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 vaultCheckpointAfterDay1 = _getLatestCheckpointBalance(address(vault));
+
+        // Day 2: 80% fee, deposit 100 USDC
+        vm.warp(epoch1 + dayDuration);
+        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 vaultCheckpointAfterDay2 = _getLatestCheckpointBalance(address(vault));
+
+        // Day 2's increment should be much larger than day 1's (80% vs 20%)
+        uint256 day2Increment = vaultCheckpointAfterDay2 - vaultCheckpointAfterDay1;
+        // Day 1: 100 * 2000/8000 = 25
+        // Day 2: 100 * 8000/2000 = 400
+        assertGt(day2Increment, vaultCheckpointAfterDay1, "Day 2 increment should exceed day 1 (higher fee)");
+
+        // Move to next epoch and verify final premium
+        vm.warp(epoch2);
+        vault.sync();
+
+        uint256 finalLenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
+        // Blended: vault = 25 + 400 = 425 out of 625 → 136 USDC
+        assertGt(finalLenderPremium, 200e6 * 2000 / 10000, "Premium should exceed pure 20% rate");
+        assertLt(finalLenderPremium, 200e6 * 8000 / 10000, "Premium should be below pure 80% rate");
+    }
+
+    function testMidEpochFeeDropBorrowerStillGetsRewards() public {
+        // Verify borrower rewards are not broken by mid-epoch fee change
+        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
+        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
+        vm.warp(epoch1);
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Day 1: 80% fee, 100 USDC rewards
+        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Day 2: Drop to 20% fee, 100 USDC more
+        vm.warp(epoch1 + dayDuration);
+        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(lowFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Move to next epoch, vest all rewards
+        vm.warp(epoch2);
+        vault.sync();
+        vault.updateUserDebtBalance(user1);
+
+        uint256 debtAfter = vault.getDebtBalance(user1);
+        uint256 debtReduction = 500e6 - debtAfter;
+        uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
+
+        // Borrower and lender should both receive rewards
+        assertGt(debtReduction, 0, "Borrower should still get debt reduction");
+        assertGt(lenderPremium, 0, "Lender should still get premium");
+
+        // Sum may be less than total rewards due to checkpoint timing:
+        // user's mid-epoch checkpoint balance inflates totalSupplyPerEpoch,
+        // but _earned() uses the prior-epoch checkpoint, so some supply is "dead"
+        // for that epoch. This is pre-existing checkpoint behavior, not a fee-change issue.
+        assertLe(
+            debtReduction + lenderPremium,
+            200e6,
+            "Distributed rewards should not exceed total"
+        );
+    }
+
+    function testMidEpochNoNewRewardsRebalanceIsNoop() public {
+        // When fee changes but no new rewards are deposited, vault balance should not change
+        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
+        vm.warp(epoch1);
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Deposit rewards at 80% fee
+        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 vaultBalanceBefore = _getLatestCheckpointBalance(address(vault));
+
+        // Change fee to 20% but DON'T deposit new rewards — just trigger a sync
+        vm.warp(epoch1 + dayDuration);
+        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(lowFee));
+
+        // Sync triggers _updateSettlementCheckpoint → _getReward(vault) → _rebalance
+        vault.sync();
+
+        uint256 vaultBalanceAfter = _getLatestCheckpointBalance(address(vault));
+        assertEq(
+            vaultBalanceAfter,
+            vaultBalanceBefore,
+            "Vault balance should not change when no new rewards are deposited"
+        );
+    }
+
+    // Helper to read the latest checkpoint balance for an address
+    function _getLatestCheckpointBalance(address _owner) internal view returns (uint256) {
+        uint256 n = vault.numCheckpoints(_owner);
+        if (n == 0) return 0;
+        (, uint256 balance) = vault.checkpoints(_owner, n - 1);
+        return balance;
+    }
+
     function testConcurrentSettlementOrder() public {
         address user2 = address(0x3);
 
