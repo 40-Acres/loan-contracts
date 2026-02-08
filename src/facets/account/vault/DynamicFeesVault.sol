@@ -84,6 +84,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Tracks how many rewards have already been fee-split in _rebalance()
         // so subsequent rebalances only apply the current fee rate to new rewards
         mapping(uint256 => uint256) rebalancedAssetsPerEpoch;
+
+        // Sum of borrower balances that _earned() will actually use for each epoch
+        // (prior-epoch checkpoint balances), preventing dead supply in totalSupplyPerEpoch
+        mapping(uint256 => uint256) effectiveBorrowerSupplyPerEpoch;
+        // Last epoch in which a user's effective balance was counted
+        mapping(address => uint256) lastEffectiveSupplyEpoch;
     }
 
     struct Checkpoint {
@@ -453,6 +459,24 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         $.totalAssetsPerEpoch[currentEpoch] += _amount;
 
+        // Track effective borrower supply — the sum of balances that _earned() will actually use.
+        // _earned() looks up the prior-epoch checkpoint, so mid-epoch deposits don't increase
+        // the balance that _earned() sees. We must track this separately to avoid dead supply.
+        if ($.lastEffectiveSupplyEpoch[_to] != currentEpoch) {
+            // First deposit this epoch for this user
+            $.lastEffectiveSupplyEpoch[_to] = currentEpoch;
+            if (createdPreviousCheckpoint) {
+                // Case 1: New user — prior-epoch checkpoint was created with _amount
+                $.effectiveBorrowerSupplyPerEpoch[currentEpoch] += _amount;
+            } else {
+                // Case 2: Existing user, first deposit this epoch — _earned() uses their
+                // existing prior-epoch balance (currentBalance before this deposit)
+                $.effectiveBorrowerSupplyPerEpoch[currentEpoch] += currentBalance;
+            }
+        }
+        // Case 3: Subsequent deposit same epoch — no change to effective supply
+        // because _earned() still uses the same prior-epoch checkpoint balance
+
         // Only add _amount if we didn't already account for it in the previous epoch checkpoint
         uint256 newBalance = createdPreviousCheckpoint ? _amount : currentBalance + _amount;
 
@@ -479,7 +503,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             uint256 newVaultBalance = currentVaultBalance + incrementalVaultShare;
 
             $.rebalancedAssetsPerEpoch[currentEpoch] = $.totalAssetsPerEpoch[currentEpoch];
-            $.totalSupplyPerEpoch[currentEpoch] = $.totalAssetsPerEpoch[currentEpoch] + newVaultBalance;
+            $.totalSupplyPerEpoch[currentEpoch] = $.effectiveBorrowerSupplyPerEpoch[currentEpoch] + newVaultBalance;
             _writeCheckpoint(address(this), newVaultBalance);
             _writeSupplyCheckpoint();
         }
