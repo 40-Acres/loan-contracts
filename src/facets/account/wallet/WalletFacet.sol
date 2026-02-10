@@ -11,11 +11,12 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 import {VotingEscrowFacet} from "../votingEscrow/VotingEscrowFacet.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 
 // WalletFacet is a facet that can handle tokens for the owner, so they can be utilized without having to approve each token individually
-// There should be no other functions on this diamond other than the ones listed here
-contract WalletFacet is AccessControl {
+// There should be no other functions on this diamond other than the ones listed here, and it should not hold any collateral or have any borrowing power on its own. It is purely a utility for the owner to manage their tokens across their portfolios
+contract WalletFacet is AccessControl, IERC721Receiver {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
@@ -88,5 +89,12 @@ contract WalletFacet is AccessControl {
         tokenId = VotingEscrowFacet(toPortfolio).createLock(amount);
 
         emit LockCreated(tokenId, amount, walletOwner, toPortfolio);
+    }
+
+        /**
+        * @dev Required by IERC721Receiver - allows this contract to receive ERC721 tokens
+        */ 
+    function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data) external pure override returns (bytes4) {
+        return this.onERC721Received.selector;
     }
 }

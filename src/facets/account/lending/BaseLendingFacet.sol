@@ -124,4 +124,12 @@ abstract contract BaseLendingFacet is AccessControl {
     function getMaxLoan() public view returns (uint256, uint256) {
         return ICollateralFacet(address(this)).getMaxLoan();
     }
+
+    function getPortfolioAccountConfig() public view returns (PortfolioAccountConfig) {
+        return _portfolioAccountConfig;
+    }
+
+    function getLendingToken() public view returns (IERC20) {
+        return _lendingToken;
+    }
 }
