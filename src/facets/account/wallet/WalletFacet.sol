@@ -69,31 +69,8 @@ contract WalletFacet is AccessControl, IERC721Receiver {
     }
 
     /**
-     * @dev Create a new veNFT lock on a target portfolio by calling its createLock function
-     * @param amount The amount of tokens to lock
-     * @param toPortfolio The target portfolio account where createLock will be called
-     * @return tokenId The ID of the newly created veNFT
-     */
-    function createLock(uint256 amount, address toPortfolio) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 tokenId) {
-        // Verify the caller owns both this wallet and the target portfolio
-        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
-        address walletOwner = _portfolioFactory.ownerOf(address(this));
-
-        // Get the factory for the target portfolio and verify same owner
-        address targetFactory = manager.getFactoryForPortfolio(toPortfolio);
-        require(targetFactory != address(0), "Target portfolio not registered");
-        address targetOwner = PortfolioFactory(targetFactory).ownerOf(toPortfolio);
-        require(walletOwner == targetOwner, "Must own both wallet and target portfolio");
-
-        // Call createLock on the target portfolio
-        tokenId = VotingEscrowFacet(toPortfolio).createLock(amount);
-
-        emit LockCreated(tokenId, amount, walletOwner, toPortfolio);
-    }
-
-        /**
-        * @dev Required by IERC721Receiver - allows this contract to receive ERC721 tokens
-        */ 
+    * @dev Required by IERC721Receiver - allows this contract to receive ERC721 tokens
+    */ 
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data) external pure override returns (bytes4) {
         return this.onERC721Received.selector;
     }
