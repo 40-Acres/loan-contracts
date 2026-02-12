@@ -60,7 +60,6 @@ contract VotingEscrowFacet is AccessControl {
     function merge(uint256 from, uint256 to) external {
         require(_votingEscrow.ownerOf(to) == address(this));
         address owner = _portfolioFactory.ownerOf(address(this));
-        require(_votingEscrow.ownerOf(from) == owner);
         int128 beginningBalance = _votingEscrow.locked(to).amount;
         _votingEscrow.merge(from, to);
         int128 weightIncrease = _votingEscrow.locked(to).amount - beginningBalance;
