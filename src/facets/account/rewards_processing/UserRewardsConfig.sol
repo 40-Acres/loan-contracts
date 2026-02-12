@@ -75,4 +75,14 @@ library UserRewardsConfig {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
         return collateralManagerData.recipient;
     }
+
+    function setVaultForInvesting(address vault) external {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        collateralManagerData.recipient = vault;
+    }
+
+    function getVaultForInvesting() external view returns (address) {
+        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
+        return collateralManagerData.recipient;
+    }
 }

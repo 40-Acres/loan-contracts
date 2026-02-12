@@ -238,7 +238,10 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _investToVault(uint256 tokenId, uint256 rewardsAmount, uint256 percentage, address asset, address swapTarget, uint256 minimumOutputAmount, bytes memory swapData) internal returns (uint256 amountUsed) {
-        IERC4626 vault = _vault;
+        IERC4626 vault = IERC4626(UserRewardsConfig.getVaultForInvesting());
+        if(address(vault) == address(0)) {
+            vault = _vault;
+        }
         address vaultAsset = vault.asset();
         uint256 rewardsAmountUsed = rewardsAmount * percentage / 100;
         uint256 actualAmountToInvest = rewardsAmountUsed;
