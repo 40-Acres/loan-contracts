@@ -27,6 +27,7 @@ library UserRewardsConfig {
         address recipient;
         RewardsOption rewardsOption;
         uint256 rewardsOptionPercentage;
+        address vaultForInvesting;
     }
 
     function _getUserRewardsConfigData() internal pure returns (UserRewardsConfigData storage collateralManagerData) {
@@ -78,11 +79,11 @@ library UserRewardsConfig {
 
     function setVaultForInvesting(address vault) external {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.recipient = vault;
+        collateralManagerData.vaultForInvesting = vault;
     }
 
     function getVaultForInvesting() external view returns (address) {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.recipient;
+        return collateralManagerData.vaultForInvesting;
     }
 }

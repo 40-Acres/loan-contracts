@@ -32,6 +32,8 @@ contract ClaimingFacet is AccessControl {
     IERC4626 public immutable _vault;
     error InvalidClaim(address token);
 
+    event RebaseClaimed(uint256 indexed tokenId, uint256 amount);
+
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
@@ -65,6 +67,7 @@ contract ClaimingFacet is AccessControl {
         uint256 claimable = _rewardsDistributor.claimable(tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {
+                emit RebaseClaimed(tokenId, claimable);
             } catch {
             }
         }

@@ -61,12 +61,11 @@ contract WalletFacetTest is Test, Setup {
         );
 
         // Register WalletFacet selectors
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](4);
         selectors[0] = WalletFacet.transferERC20.selector;
         selectors[1] = WalletFacet.transferNFT.selector;
         selectors[2] = WalletFacet.swap.selector;
-        selectors[3] = WalletFacet.createLock.selector;
-        selectors[4] = WalletFacet.enforceCollateralRequirements.selector;
+        selectors[3] = WalletFacet.enforceCollateralRequirements.selector;
         _walletFacetRegistry.registerFacet(address(newWalletFacet), selectors, "WalletFacet");
 
         vm.stopPrank();
@@ -139,23 +138,6 @@ contract WalletFacetTest is Test, Setup {
         return abi.decode(results[0], (uint256));
     }
 
-    // Helper to create lock via WalletFacet multicall (on wallet factory, targeting main portfolio)
-    function createLockViaMulticall(uint256 amount, address toPortfolio) internal returns (uint256) {
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_walletFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            WalletFacet.createLock.selector,
-            amount,
-            toPortfolio
-        );
-        bytes[] memory results = _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-
-        return abi.decode(results[0], (uint256));
-    }
-
     // Helper to remove collateral to wallet via PortfolioManager multicall (on main portfolio)
     function removeCollateralToViaMulticall(uint256 tokenId, address toPortfolio) internal {
         vm.startPrank(_user);
@@ -186,120 +168,6 @@ contract WalletFacetTest is Test, Setup {
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
-
-    /**
-     * @dev Test the full flow: borrow to wallet -> swap to AERO -> create lock on main portfolio
-     */
-    function testBorrowSwapAndCreateLock() public {
-        // Step 1: Add collateral to main portfolio
-        addCollateralViaMulticall(_tokenId);
-
-        uint256 borrowAmount = 100e6; // 100 USDC
-        uint256 aeroAmount = 50e18; // Expected 50 AERO from swap
-
-        // Fund vault so borrow can succeed
-        address loanContract = _portfolioAccountConfig.getLoanContract();
-        address vault = ILoan(loanContract)._vault();
-        deal(address(_asset), vault, 1000e6);
-
-        // Record initial collateral on main portfolio
-        uint256 initialCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-
-        // Step 2: Borrow to the wallet portfolio
-        borrowToWalletViaMulticall(borrowAmount);
-
-        // Verify USDC is in the wallet portfolio (minus origination fee)
-        uint256 originationFee = (borrowAmount * 80) / 10000; // 0.8% fee
-        uint256 expectedUsdcInWallet = borrowAmount - originationFee;
-        assertEq(
-            IERC20(inputToken).balanceOf(_walletPortfolio),
-            expectedUsdcInWallet,
-            "Wallet should have borrowed USDC"
-        );
-
-        // Step 3: Swap USDC to AERO in wallet
-        vm.prank(_walletPortfolio);
-        IERC20(inputToken).approve(address(mockRouter), expectedUsdcInWallet);
-
-        bytes memory swapData = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwap.selector,
-            inputToken,
-            outputToken,
-            expectedUsdcInWallet,
-            aeroAmount,
-            _walletPortfolio
-        );
-
-        uint256 swappedAmount = swapViaMulticall(
-            address(mockRouter),
-            swapData,
-            inputToken,
-            expectedUsdcInWallet,
-            outputToken,
-            aeroAmount
-        );
-
-        assertEq(swappedAmount, aeroAmount, "Swapped amount should match expected");
-        assertEq(
-            IERC20(outputToken).balanceOf(_walletPortfolio),
-            aeroAmount,
-            "Wallet should have AERO after swap"
-        );
-
-        // Step 4: Wallet approves main portfolio to pull AERO
-        // When WalletFacet calls VotingEscrowFacet.createLock, msg.sender is the wallet,
-        // so VotingEscrowFacet will pull from the wallet (not the user)
-        vm.prank(_walletPortfolio);
-        IERC20(outputToken).approve(_portfolioAccount, aeroAmount);
-
-        // Step 5: Call createLock on wallet which calls VotingEscrowFacet.createLock on main portfolio
-        uint256 newTokenId = createLockViaMulticall(aeroAmount, _portfolioAccount);
-
-        // Verify the lock was created
-        assertGt(newTokenId, 0, "New token ID should be returned");
-
-        // Verify the veNFT is owned by the main portfolio
-        assertEq(
-            _ve.ownerOf(newTokenId),
-            _portfolioAccount,
-            "Main portfolio should own the new veNFT"
-        );
-
-        // Verify collateral increased on main portfolio
-        uint256 newCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(
-            newCollateral,
-            initialCollateral + aeroAmount,
-            "Collateral should increase by locked amount"
-        );
-
-        console.log("=== Borrow -> Swap -> Lock Flow Complete ===");
-        console.log("Borrowed USDC:", borrowAmount);
-        console.log("USDC after fees:", expectedUsdcInWallet);
-        console.log("Swapped to AERO:", aeroAmount);
-        console.log("New veNFT ID:", newTokenId);
-        console.log("Total collateral:", newCollateral);
-    }
-
-    /**
-     * @dev Test creating a lock fails when target portfolio is not registered
-     */
-    function testCreateLockFailsWithUnregisteredPortfolio() public {
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_walletFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            WalletFacet.createLock.selector,
-            1e18,
-            address(0x1234) // Unregistered portfolio
-        );
-
-        vm.expectRevert("Target portfolio not registered");
-        _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-    }
-
     /**
      * @dev Test that WalletFacet.swap works independently
      */
@@ -334,37 +202,6 @@ contract WalletFacetTest is Test, Setup {
 
         assertEq(swappedAmount, aeroAmount, "Should swap successfully");
         assertEq(IERC20(outputToken).balanceOf(_walletPortfolio), aeroAmount, "Wallet should have AERO");
-    }
-
-    /**
-     * @dev Test that WalletFacet.createLock calls VotingEscrowFacet on target portfolio
-     */
-    function testWalletCreateLock() public {
-        uint256 aeroAmount = 10e18;
-
-        // Fund wallet with AERO (VotingEscrowFacet.createLock pulls from wallet when called cross-portfolio)
-        deal(outputToken, _walletPortfolio, aeroAmount);
-
-        // Wallet approves main portfolio to pull AERO
-        vm.prank(_walletPortfolio);
-        IERC20(outputToken).approve(_portfolioAccount, aeroAmount);
-
-        // Record initial collateral
-        uint256 initialCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-
-        // Create lock via wallet, targeting main portfolio
-        uint256 newTokenId = createLockViaMulticall(aeroAmount, _portfolioAccount);
-
-        // Verify the lock
-        assertGt(newTokenId, 0, "Should return token ID");
-        assertEq(_ve.ownerOf(newTokenId), _portfolioAccount, "Main portfolio should own veNFT");
-
-        IVotingEscrow.LockedBalance memory locked = _ve.locked(newTokenId);
-        assertEq(uint256(uint128(locked.amount)), aeroAmount, "Locked amount should match");
-
-        // Verify collateral increased on main portfolio
-        uint256 newCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(newCollateral, initialCollateral + aeroAmount, "Collateral should increase");
     }
 
     /**

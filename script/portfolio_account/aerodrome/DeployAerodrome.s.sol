@@ -300,19 +300,19 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
 
         // // Deploy RewardsProcessingFacet
-        // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsOption.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
+        rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsOption.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
+        rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Deploy LendingFacet
         // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
