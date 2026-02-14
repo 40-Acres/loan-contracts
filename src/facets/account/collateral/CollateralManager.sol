@@ -333,6 +333,37 @@ library CollateralManager {
 
 
     /**
+     * @dev Calculate the minimum payment needed to keep account in good standing after removing a specific token's collateral
+     * @param portfolioAccountConfig The portfolio account config address
+     * @param tokenId The token ID whose collateral will be removed
+     * @return requiredPayment The minimum amount to pass to decreaseTotalDebt (includes unpaid fees since they are paid first)
+     */
+    function getRequiredPaymentForCollateralRemoval(address portfolioAccountConfig, uint256 tokenId) public view returns (uint256) {
+        CollateralManagerData storage data = _getCollateralManagerData();
+        uint256 currentDebt = data.debt;
+        if (currentDebt == 0) return 0;
+
+        uint256 nftCollateral = data.lockedCollaterals[tokenId];
+        if (nftCollateral == 0) return 0;
+
+        uint256 newTotalCollateral = data.totalLockedCollateral - nftCollateral;
+
+        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        uint256 rewardsRate = loanConfig.getRewardsRate();
+        uint256 multiplier = loanConfig.getMultiplier();
+
+        uint256 newMaxLoanIgnoreSupply = (((newTotalCollateral * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        if (currentDebt <= newMaxLoanIgnoreSupply) return 0;
+
+        // debtReductionNeeded is how much the debt field must decrease
+        // In decreaseTotalDebt, unpaid fees are paid first from the payment amount,
+        // so we need to add unpaidFees to ensure enough principal gets reduced
+        uint256 debtReductionNeeded = currentDebt - newMaxLoanIgnoreSupply;
+        return debtReductionNeeded + data.unpaidFees;
+    }
+
+    /**
      * @dev Add debt
      * @param amount The amount of debt to add
      * @param unpaidFees The unpaid fees to add

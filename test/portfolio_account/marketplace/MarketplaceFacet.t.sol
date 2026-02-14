@@ -1604,4 +1604,250 @@ contract MarketplaceFacetTest is Test, Setup {
         );
         vm.stopPrank();
     }
+
+    // ============ Partial Debt Payment Tests ============
+    // These tests verify that when selling with debtAttached=0, only enough debt
+    // is paid to keep the account in good standing, and the rest goes to the seller.
+
+    function testBuyMarketplaceListingPartialDebtPaymentMultipleNFTs() public {
+        // Seller has 2 NFTs, borrows, sells one NFT without debt attached.
+        // Only enough debt should be paid to stay in good standing after NFT removal.
+        // The rest of the listing price goes to the seller.
+
+        address deployer = _portfolioManager.owner();
+
+        // Set rewards rate higher so we can borrow meaningful amounts
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(50000); // 5%
+        vm.stopPrank();
+
+        // Add second token as collateral
+        uint256 tokenId2 = 84298;
+        address token2Owner = IVotingEscrow(_ve).ownerOf(tokenId2);
+        vm.startPrank(token2Owner);
+        IVotingEscrow(_ve).transferFrom(token2Owner, _portfolioAccount, tokenId2);
+        vm.stopPrank();
+        addCollateralViaMulticall(tokenId2);
+
+        // Get max loan with both tokens
+        (, uint256 maxLoanBothTokens) = CollateralFacet(_portfolioAccount).getMaxLoan();
+
+        // Fund vault for borrowing
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_usdc), vault, (maxLoanBothTokens * 10000) / 8000);
+
+        // Calculate what maxLoan would be with only token2
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        // Borrow an amount between maxLoanToken2Only and maxLoanBothTokens
+        // This means after selling token1, some debt needs paying but not all
+        uint256 borrowAmount = maxLoanToken2Only + (maxLoanBothTokens - maxLoanToken2Only) / 2;
+        (uint256 maxLoanAvailable,) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        if (borrowAmount > maxLoanAvailable) {
+            borrowAmount = maxLoanAvailable;
+        }
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 expectedRequiredPayment = totalDebt - maxLoanToken2Only;
+
+        // List at a price that covers required payment plus extra for seller
+        uint256 extraForSeller = 500e6;
+        uint256 listingPrice = expectedRequiredPayment + extraForSeller;
+
+        makeListingViaMulticall(
+            _tokenId,
+            listingPrice,
+            address(_usdc),
+            0, // no debt attached
+            0,
+            address(0)
+        );
+
+        // External buyer
+        address nonPortfolioBuyer = address(0x9999);
+        deal(address(_usdc), nonPortfolioBuyer, listingPrice);
+
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+
+        vm.startPrank(nonPortfolioBuyer);
+        IERC20(_usdc).approve(_portfolioAccount, listingPrice);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+
+        // Debt should be reduced to exactly maxLoanToken2Only (not zero)
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, maxLoanToken2Only, "Debt should be reduced to maxLoanToken2Only, not zero");
+        assertGt(debtAfter, 0, "Seller should still have some debt remaining");
+
+        // Seller should receive the extra (listing price - required payment)
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
+        assertEq(sellerReceived, extraForSeller, "Seller should receive listing price minus required debt payment");
+
+        // NFT transferred
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), nonPortfolioBuyer, "NFT should be transferred to buyer");
+    }
+
+    function testPurchaseListingPartialDebtPaymentMultipleNFTs() public {
+        // Portfolio buyer path (processPayment): Seller has 2 NFTs, borrows,
+        // sells one NFT without debt attached via marketplace.
+        // Only enough debt should be paid to stay in good standing.
+
+        address deployer = _portfolioManager.owner();
+
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(50000); // 5%
+        vm.stopPrank();
+
+        // Add second token as collateral
+        uint256 tokenId2 = 84298;
+        address token2Owner = IVotingEscrow(_ve).ownerOf(tokenId2);
+        vm.startPrank(token2Owner);
+        IVotingEscrow(_ve).transferFrom(token2Owner, _portfolioAccount, tokenId2);
+        vm.stopPrank();
+        addCollateralViaMulticall(tokenId2);
+
+        (, uint256 maxLoanBothTokens) = CollateralFacet(_portfolioAccount).getMaxLoan();
+
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_usdc), vault, (maxLoanBothTokens * 10000) / 8000);
+
+        // Calculate maxLoan with only token2
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        // Borrow between maxLoanToken2Only and maxLoanBothTokens
+        uint256 borrowAmount = maxLoanToken2Only + (maxLoanBothTokens - maxLoanToken2Only) / 2;
+        (uint256 maxLoanAvailable,) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        if (borrowAmount > maxLoanAvailable) {
+            borrowAmount = maxLoanAvailable;
+        }
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 expectedRequiredPayment = totalDebt - maxLoanToken2Only;
+
+        uint256 extraForSeller = 500e6;
+        uint256 listingPrice = expectedRequiredPayment + extraForSeller;
+
+        makeListingViaMulticall(
+            _tokenId,
+            listingPrice,
+            address(_usdc),
+            0, // no debt attached
+            0,
+            address(0)
+        );
+
+        // Fund buyer for portfolio purchase
+        deal(address(_usdc), buyer, listingPrice);
+
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+
+        // Purchase via marketplace (portfolio buyer path)
+        vm.startPrank(buyer);
+        IERC20(_usdc).approve(address(portfolioMarketplace), listingPrice);
+        portfolioMarketplace.purchaseListing(
+            _portfolioAccount,
+            _tokenId,
+            address(_usdc),
+            listingPrice
+        );
+        vm.stopPrank();
+
+        // Protocol fee is deducted first
+        uint256 expectedProtocolFee = (listingPrice * PROTOCOL_FEE_BPS) / 10000;
+        uint256 paymentAfterFee = listingPrice - expectedProtocolFee;
+
+        // Debt should be reduced by requiredPayment (computed on paymentAfterFee)
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(debtAfter, 0, "Seller should still have some debt remaining");
+        assertEq(debtAfter, maxLoanToken2Only, "Debt should be reduced to maxLoanToken2Only");
+
+        // Seller should receive paymentAfterFee minus requiredPayment
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
+        assertEq(sellerReceived, paymentAfterFee - expectedRequiredPayment, "Seller should receive payment minus fee minus required debt payment");
+
+        // NFT should be in buyer's portfolio
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerPortfolio, "NFT should be in buyer's portfolio");
+    }
+
+    function testBuyMarketplaceListingNoDebtPaymentNeeded() public {
+        // When debt is small enough that remaining collateral can cover it,
+        // no debt payment should be needed — full listing price goes to seller.
+
+        address deployer = _portfolioManager.owner();
+
+        vm.startPrank(deployer);
+        _loanConfig.setRewardsRate(50000); // 5%
+        vm.stopPrank();
+
+        // Add second token as collateral
+        uint256 tokenId2 = 84298;
+        address token2Owner = IVotingEscrow(_ve).ownerOf(tokenId2);
+        vm.startPrank(token2Owner);
+        IVotingEscrow(_ve).transferFrom(token2Owner, _portfolioAccount, tokenId2);
+        vm.stopPrank();
+        addCollateralViaMulticall(tokenId2);
+
+        // Fund vault
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_usdc), vault, 100000e6);
+
+        // Calculate maxLoan with only token2
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        // Borrow a small amount that token2 alone can cover
+        uint256 borrowAmount = maxLoanToken2Only / 2;
+        require(borrowAmount > 0, "Borrow amount must be positive");
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(totalDebt, 0, "Should have debt");
+
+        // Listing price
+        uint256 listingPrice = 1000e6;
+        makeListingViaMulticall(
+            _tokenId,
+            listingPrice,
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        address nonPortfolioBuyer = address(0x9999);
+        deal(address(_usdc), nonPortfolioBuyer, listingPrice);
+
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+        uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
+
+        vm.startPrank(nonPortfolioBuyer);
+        IERC20(_usdc).approve(_portfolioAccount, listingPrice);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+
+        // Debt should NOT change (no payment needed to stay in good standing)
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, debtBefore, "Debt should not change when remaining collateral covers it");
+
+        // Seller should receive full listing price
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
+        assertEq(sellerReceived, listingPrice, "Seller should receive full listing price when no debt payment needed");
+
+        // NFT transferred
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), nonPortfolioBuyer, "NFT should be transferred to buyer");
+    }
 }

@@ -158,12 +158,19 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         CollateralFacet collateralFacet = CollateralFacet(address(this));
         uint256 totalDebt = collateralFacet.getTotalDebt();
         if(listing.debtAttached == 0) {
-            // No debt attached, so handle payment normally
+            // No debt attached - only pay down enough debt to keep account in good standing after NFT removal
             if(totalDebt > 0) {
-                // Pay down debt with payment, transfer excess to seller
-                uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), paymentAmount);
-                if(excess > 0) {
-                    paymentToken.safeTransfer(portfolioOwner, excess);
+                uint256 requiredPayment = CollateralManager.getRequiredPaymentForCollateralRemoval(address(_portfolioAccountConfig), tokenId);
+                if(requiredPayment > 0) {
+                    uint256 debtPayment = requiredPayment > paymentAmount ? paymentAmount : requiredPayment;
+                    uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), debtPayment);
+                    uint256 sellerPayment = paymentAmount - debtPayment + excess;
+                    if(sellerPayment > 0) {
+                        paymentToken.safeTransfer(portfolioOwner, sellerPayment);
+                    }
+                } else {
+                    // Account is already in good standing after removal, all goes to seller
+                    paymentToken.safeTransfer(portfolioOwner, paymentAmount);
                 }
             } else {
                 // No debt, transfer full payment to seller
@@ -327,11 +334,18 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         if(totalDebt == 0) {
             // No debt, transfer full listing price to seller
             paymentToken.safeTransfer(portfolioOwner, listing.price);
-        } else if (listing.debtAttached == 0) { 
-            // no debt attached, pay down debt with listing price transfer excess to seller
-            uint256 excess = CollateralManager.decreaseTotalDebt(configAddress, listing.price);
-            if(excess > 0) {
-                paymentToken.safeTransfer(portfolioOwner, excess);
+        } else if (listing.debtAttached == 0) {
+            // no debt attached - only pay down enough debt to keep account in good standing after NFT removal
+            uint256 requiredPayment = CollateralManager.getRequiredPaymentForCollateralRemoval(configAddress, tokenId);
+            if(requiredPayment > 0) {
+                uint256 debtPayment = requiredPayment > listing.price ? listing.price : requiredPayment;
+                uint256 excess = CollateralManager.decreaseTotalDebt(configAddress, debtPayment);
+                uint256 sellerPayment = listing.price - debtPayment + excess;
+                if(sellerPayment > 0) {
+                    paymentToken.safeTransfer(portfolioOwner, sellerPayment);
+                }
+            } else {
+                paymentToken.safeTransfer(portfolioOwner, listing.price);
             }
         } else {
             // Debt attached, transfer full listing price to seller, debt will be transferred separately
