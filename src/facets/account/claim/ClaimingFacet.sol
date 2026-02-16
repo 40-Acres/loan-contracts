@@ -54,7 +54,7 @@ contract ClaimingFacet is AccessControl {
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
                 if(tokens[i][j] == launchpadToken) {
-                    return;
+                    revert(InvalidClaim(tokens[i][j]));
                 }
             }
         }

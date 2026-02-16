@@ -26,6 +26,7 @@ contract BridgeFacet is AccessControl {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
         require(tokenMessenger != address(0));
+        require(token != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _token = IERC20(token);
