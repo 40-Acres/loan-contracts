@@ -11,8 +11,10 @@ import {ILoanConfig} from "./ILoanConfig.sol";
  */
 contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     uint256 public constant MAX_FEE_BPS = 100_00; // 100% in basis points
+    uint256 public constant MAX_COMBINED_FEES = 50_00; // 50% in basis points
 
     error TooHigh(uint256 value, uint256 max);
+    error CombinedFeesTooHigh(uint256 combined, uint256 max);
     constructor() {
         _disableInitializers();
     }
@@ -74,6 +76,10 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
 
     function setMultiplier(uint256 multiplier) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+
+        if(collateralStorage.multiplier > 0) {
+            require(multiplier <= collateralStorage.multiplier * 2, TooHigh(multiplier, collateralStorage.multiplier * 2));
+        }
         collateralStorage.multiplier = multiplier;
     }
 
@@ -85,6 +91,8 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     function setLenderPremium(uint256 lenderPremium) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
         require(lenderPremium <= MAX_FEE_BPS, "Lender premium cannot exceed max fee");
+        uint256 combined = lenderPremium + collateralStorage.treasuryFee;
+        require(combined <= MAX_COMBINED_FEES, CombinedFeesTooHigh(combined, MAX_COMBINED_FEES));
         collateralStorage.lenderPremium = lenderPremium;
     }
 
@@ -96,6 +104,8 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     function setTreasuryFee(uint256 treasuryFee) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
         require(treasuryFee <= MAX_FEE_BPS, "Treasury fee cannot exceed max fee");
+        uint256 combined = collateralStorage.lenderPremium + treasuryFee;
+        require(combined <= MAX_COMBINED_FEES, CombinedFeesTooHigh(combined, MAX_COMBINED_FEES));
         collateralStorage.treasuryFee = treasuryFee;
     }
 

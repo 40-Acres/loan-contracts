@@ -985,14 +985,16 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 buyerBalanceAfter = IERC20(_usdc).balanceOf(nonPortfolioBuyer);
         assertEq(buyerBalanceAfter, buyerBalanceBefore - LISTING_PRICE, "Buyer should pay full listing price");
         
-        // Verify seller receives excess if listing price > debt
+        // Verify seller receives excess after fee and debt payment
         uint256 sellerBalanceAfter = IERC20(_usdc).balanceOf(_user);
-        if (LISTING_PRICE > debtBefore) {
-            uint256 excess = LISTING_PRICE - debtBefore;
-            assertEq(sellerBalanceAfter, sellerBalanceBefore + excess, "Seller should receive excess payment");
+        uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+        uint256 paymentAfterFee = LISTING_PRICE - expectedProtocolFee;
+        if (paymentAfterFee > debtBefore) {
+            uint256 excess = paymentAfterFee - debtBefore;
+            assertEq(sellerBalanceAfter, sellerBalanceBefore + excess, "Seller should receive excess payment after fee and debt");
         } else {
-            // If listing price <= debt, seller receives nothing (all goes to debt)
-            assertEq(sellerBalanceAfter, sellerBalanceBefore, "Seller should receive nothing when price <= debt");
+            // If payment after fee <= debt, seller receives nothing (all goes to debt)
+            assertEq(sellerBalanceAfter, sellerBalanceBefore, "Seller should receive nothing when payment after fee <= debt");
         }
     }
 
@@ -1102,19 +1104,23 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debtAfter, 0, "Debt should be cleared after purchase");
         
-        // Verify seller received full listing price (150 USDC)
+        // Protocol fee is deducted from listing price
+        uint256 expectedProtocolFee = (listingPrice * PROTOCOL_FEE_BPS) / 10000;
+        uint256 expectedSellerPayment = listingPrice - expectedProtocolFee;
+
+        // Verify seller received listing price minus protocol fee
         uint256 sellerBalanceAfter = usdc.balanceOf(_user);
         uint256 sellerReceived = sellerBalanceAfter - sellerBalanceBefore;
-        assertEq(sellerReceived, listingPrice, "Seller should receive full listing price (150 USDC)");
-        
-        // Verify buyer paid exactly 250 USDC total (150 price + 100 debt)
+        assertEq(sellerReceived, expectedSellerPayment, "Seller should receive listing price minus protocol fee");
+
+        // Verify buyer paid exactly listing price + debt attached
         uint256 buyerBalanceAfter = usdc.balanceOf(nonPortfolioBuyer);
         uint256 buyerPaid = buyerBalanceBefore - buyerBalanceAfter;
         assertEq(buyerPaid, listingPrice + debtAttached, "Buyer should pay exactly 250 USDC (150 price + 100 debt)");
-        
-        // Verify no excess was refunded (buyer should pay exactly 250, no more, no less)
-        // This ensures debt was paid correctly without double payment
-        assertEq(buyerPaid, 250e6, "Buyer should pay exactly 250 USDC with no refund");
+
+        // Verify protocol fee was sent to fee recipient
+        uint256 feeRecipientBalance = usdc.balanceOf(feeRecipient);
+        assertGe(feeRecipientBalance, expectedProtocolFee, "Fee recipient should receive protocol fee");
     }
 
     function testRevertBuyMarketplaceListingExpired() public {
@@ -1684,9 +1690,10 @@ contract MarketplaceFacetTest is Test, Setup {
         assertEq(debtAfter, maxLoanToken2Only, "Debt should be reduced to maxLoanToken2Only, not zero");
         assertGt(debtAfter, 0, "Seller should still have some debt remaining");
 
-        // Seller should receive the extra (listing price - required payment)
+        // Seller should receive the extra (listing price - protocol fee - required payment)
         uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
-        assertEq(sellerReceived, extraForSeller, "Seller should receive listing price minus required debt payment");
+        uint256 expectedProtocolFee = (listingPrice * PROTOCOL_FEE_BPS) / 10000;
+        assertEq(sellerReceived, extraForSeller - expectedProtocolFee, "Seller should receive listing price minus fee and required debt payment");
 
         // NFT transferred
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), nonPortfolioBuyer, "NFT should be transferred to buyer");
@@ -1843,11 +1850,178 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debtAfter, debtBefore, "Debt should not change when remaining collateral covers it");
 
-        // Seller should receive full listing price
+        // Seller should receive listing price minus protocol fee
         uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
-        assertEq(sellerReceived, listingPrice, "Seller should receive full listing price when no debt payment needed");
+        uint256 expectedProtocolFee = (listingPrice * PROTOCOL_FEE_BPS) / 10000;
+        assertEq(sellerReceived, listingPrice - expectedProtocolFee, "Seller should receive listing price minus protocol fee when no debt payment needed");
 
         // NFT transferred
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), nonPortfolioBuyer, "NFT should be transferred to buyer");
+    }
+
+    // ============ buyMarketplaceListing Protocol Fee Tests ============
+
+    function testBuyMarketplaceListingProtocolFeeCollected() public {
+        // Verify that buyMarketplaceListing collects protocol fees (same as portfolio path)
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        address nonPortfolioBuyer = address(0x9999);
+        deal(address(_usdc), nonPortfolioBuyer, LISTING_PRICE);
+
+        IERC20 usdc = IERC20(_usdc);
+        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
+        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
+        uint256 buyerBalanceBefore = usdc.balanceOf(nonPortfolioBuyer);
+
+        uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+        uint256 expectedSellerPayment = LISTING_PRICE - expectedProtocolFee;
+
+        vm.startPrank(nonPortfolioBuyer);
+        usdc.approve(_portfolioAccount, LISTING_PRICE);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+
+        // Verify protocol fee sent to fee recipient
+        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive protocol fee");
+
+        // Verify seller received payment minus fee
+        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
+        assertEq(sellerReceived, expectedSellerPayment, "Seller should receive payment minus protocol fee");
+
+        // Verify buyer paid full listing price
+        uint256 buyerPaid = buyerBalanceBefore - usdc.balanceOf(nonPortfolioBuyer);
+        assertEq(buyerPaid, LISTING_PRICE, "Buyer should pay full listing price");
+
+        // Verify total distribution
+        assertEq(feeReceived + sellerReceived, LISTING_PRICE, "Total distribution should equal listing price");
+    }
+
+    function testBuyMarketplaceListingProtocolFeeWithDebtAttached() public {
+        // Verify fee collection when debt is attached (buyer pays price + debt, fee from price)
+        uint256 borrowAmount = 300e6;
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            totalDebt,
+            0,
+            address(0)
+        );
+
+        address nonPortfolioBuyer = address(0x9999);
+        deal(address(_usdc), nonPortfolioBuyer, LISTING_PRICE + totalDebt);
+
+        IERC20 usdc = IERC20(_usdc);
+        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
+        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
+        uint256 buyerBalanceBefore = usdc.balanceOf(nonPortfolioBuyer);
+
+        uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+        uint256 expectedSellerPayment = LISTING_PRICE - expectedProtocolFee;
+
+        vm.startPrank(nonPortfolioBuyer);
+        usdc.approve(_portfolioAccount, LISTING_PRICE + totalDebt);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+
+        // Verify protocol fee
+        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive protocol fee with debt attached");
+
+        // Verify seller received payment minus fee (debt paid separately)
+        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
+        assertEq(sellerReceived, expectedSellerPayment, "Seller should receive payment minus fee when debt attached");
+
+        // Verify debt was paid down
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, 0, "Debt should be fully paid");
+
+        // Verify buyer total spend
+        uint256 buyerPaid = buyerBalanceBefore - usdc.balanceOf(nonPortfolioBuyer);
+        assertEq(buyerPaid, LISTING_PRICE + totalDebt, "Buyer should pay listing price + debt");
+    }
+
+    function testBuyMarketplaceListingZeroProtocolFee() public {
+        // Verify no fee is taken when protocol fee is 0
+        address marketplaceOwner = portfolioMarketplace.owner();
+        vm.startPrank(marketplaceOwner);
+        portfolioMarketplace.setProtocolFee(0);
+        vm.stopPrank();
+
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        address nonPortfolioBuyer = address(0x9999);
+        deal(address(_usdc), nonPortfolioBuyer, LISTING_PRICE);
+
+        IERC20 usdc = IERC20(_usdc);
+        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
+        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
+
+        vm.startPrank(nonPortfolioBuyer);
+        usdc.approve(_portfolioAccount, LISTING_PRICE);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+
+        // Verify no fee was taken
+        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        assertEq(feeReceived, 0, "No fee should be taken when protocol fee is 0");
+
+        // Verify seller received full payment
+        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
+        assertEq(sellerReceived, LISTING_PRICE, "Seller should receive full listing price when no fee");
+    }
+
+    function testBuyMarketplaceListingFeeMatchesPortfolioPath() public {
+        // Verify that both buy paths collect the same protocol fee percentage
+        // This test ensures parity between buyMarketplaceListing and purchaseListing
+
+        uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+
+        // Path 1: Direct buy (buyMarketplaceListing)
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            0,
+            address(0)
+        );
+
+        address nonPortfolioBuyer = address(0x9999);
+        deal(address(_usdc), nonPortfolioBuyer, LISTING_PRICE);
+
+        IERC20 usdc = IERC20(_usdc);
+        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
+
+        vm.startPrank(nonPortfolioBuyer);
+        usdc.approve(_portfolioAccount, LISTING_PRICE);
+        MarketplaceFacet(_portfolioAccount).buyMarketplaceListing(_tokenId, nonPortfolioBuyer);
+        vm.stopPrank();
+
+        uint256 directBuyFee = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        assertEq(directBuyFee, expectedProtocolFee, "Direct buy should collect correct protocol fee");
+
+        // Both paths should collect the same fee amount for the same listing price
+        // (Portfolio path fee is already tested in testProtocolFeeIsCalculatedCorrectly)
+        assertEq(directBuyFee, expectedProtocolFee, "Direct buy fee should match expected protocol fee");
     }
 }

@@ -33,8 +33,6 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
 
     event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
-    event PaymentProcessed(uint256 indexed tokenId, address indexed buyer, uint256 paymentAmount, uint256 protocolFee);
-    
     event PurchaseFinalized(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 debtAmount, uint256 unpaidFees);
     event DebtTransferredToBuyer(uint256 indexed tokenId, address indexed buyer, uint256 debtAmount, uint256 unpaidFees, address indexed seller);
     event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
@@ -319,11 +317,20 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
 
         // Transfer payment token from buyer to this portfolio account
         IERC20 paymentToken = IERC20(listing.paymentToken);
-        paymentToken.safeTransferFrom(buyer, address(this), listing.price);
-        
+
+        // Collect protocol fee
+        PortfolioMarketplace market = PortfolioMarketplace(address(_marketplace));
+        uint256 protocolFee = (listing.price * market.protocolFee()) / 10000;
+        if(protocolFee > 0) {
+            paymentToken.safeTransferFrom(buyer, market.feeRecipient(), protocolFee);
+        }
+        uint256 paymentAmount = listing.price - protocolFee;
+        paymentToken.safeTransferFrom(buyer, address(this), paymentAmount);
+
+        emit ProtocolFeeTaken(tokenId, buyer, protocolFee);
+
         // Pay down debt if needed
-        // Buyer pays listing price, seller receives it (minus debt paid)
-        // Excess always goes to seller - buyer agreed to pay the listing price
+        // Buyer pays listing price (minus protocol fee), seller receives it (minus debt paid)
         uint256 totalDebt = collateralFacet.getTotalDebt();
 
         if(totalDebt > 0) {
@@ -332,25 +339,25 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         address configAddress = address(_portfolioAccountConfig);
         if(totalDebt == 0) {
-            // No debt, transfer full listing price to seller
-            paymentToken.safeTransfer(portfolioOwner, listing.price);
+            // No debt, transfer full payment to seller
+            paymentToken.safeTransfer(portfolioOwner, paymentAmount);
         } else if (listing.debtAttached == 0) {
             // no debt attached - only pay down enough debt to keep account in good standing after NFT removal
             uint256 requiredPayment = CollateralManager.getRequiredPaymentForCollateralRemoval(configAddress, tokenId);
             if(requiredPayment > 0) {
-                uint256 debtPayment = requiredPayment > listing.price ? listing.price : requiredPayment;
+                uint256 debtPayment = requiredPayment > paymentAmount ? paymentAmount : requiredPayment;
                 uint256 excess = CollateralManager.decreaseTotalDebt(configAddress, debtPayment);
-                uint256 sellerPayment = listing.price - debtPayment + excess;
+                uint256 sellerPayment = paymentAmount - debtPayment + excess;
                 if(sellerPayment > 0) {
                     paymentToken.safeTransfer(portfolioOwner, sellerPayment);
                 }
             } else {
-                paymentToken.safeTransfer(portfolioOwner, listing.price);
+                paymentToken.safeTransfer(portfolioOwner, paymentAmount);
             }
         } else {
-            // Debt attached, transfer full listing price to seller, debt will be transferred separately
+            // Debt attached: buyer pays additional debtAttached amount, seller receives paymentAmount
             paymentToken.safeTransferFrom(buyer, address(this), listing.debtAttached);
-            paymentToken.safeTransfer(portfolioOwner, listing.price);
+            paymentToken.safeTransfer(portfolioOwner, paymentAmount);
             uint256 excess = CollateralManager.decreaseTotalDebt(configAddress, listing.debtAttached);
             if(excess > 0) {
                 paymentToken.safeTransfer(buyer, excess);
