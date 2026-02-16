@@ -194,20 +194,162 @@ contract VotingEscrowFacetTest is Test, Setup {
     function testCreateLockRevertsWhenNotApproved() public {
         address aeroToken = _ve.token();
         IERC20 aero = IERC20(aeroToken);
-        
+
         uint256 lockAmount = 1e18;
-        
+
         // Fund user but don't approve user -> portfolio account
         deal(aeroToken, _user, lockAmount);
         // Don't approve - this should cause the test to revert
-        
+
         vm.startPrank(_portfolioAccount);
         aero.approve(address(_ve), type(uint256).max);
         vm.stopPrank();
-        
+
         // Should revert due to insufficient allowance from user
         vm.expectRevert();
         createLockViaMulticallExpectRevert(lockAmount);
+    }
+
+    // ========================
+    // Merge Tests (C-02 fix)
+    // ========================
+
+    address internal _externalUser = address(0xbeef);
+    address internal _randomCaller = address(0xdead);
+
+    /// @dev Helper: create a portfolio-owned lock and return its tokenId
+    function _createPortfolioLock(uint256 amount) internal returns (uint256 tokenId) {
+        address aeroToken = _ve.token();
+        IERC20 aero = IERC20(aeroToken);
+        deal(aeroToken, _user, amount);
+        vm.startPrank(_user);
+        aero.approve(_portfolioAccount, type(uint256).max);
+        vm.stopPrank();
+        vm.startPrank(_portfolioAccount);
+        aero.approve(address(_ve), type(uint256).max);
+        vm.stopPrank();
+        tokenId = createLockViaMulticall(amount);
+    }
+
+    /// @dev Helper: create a lock owned by an external user directly on VE
+    function _createExternalLock(address externalUser, uint256 amount) internal returns (uint256 tokenId) {
+        address aeroToken = _ve.token();
+        deal(aeroToken, externalUser, amount);
+        vm.startPrank(externalUser);
+        IERC20(aeroToken).approve(address(_ve), amount);
+        tokenId = _ve.createLock(amount, 4 * 365 days);
+        vm.stopPrank();
+    }
+
+    function testMergeExternalNftIntoPortfolio() public {
+        // Create portfolio-owned lock (toToken)
+        uint256 toToken = _createPortfolioLock(10e18);
+        uint256 collateralBefore = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+
+        // Create external user's lock (fromToken)
+        uint256 fromToken = _createExternalLock(_externalUser, 5e18);
+
+        // External user approves portfolio account for their NFT
+        vm.prank(_externalUser);
+        _ve.approve(_portfolioAccount, fromToken);
+
+        // Anyone can trigger the merge
+        vm.prank(_randomCaller);
+        VotingEscrowFacet(_portfolioAccount).merge(fromToken, toToken);
+
+        // Verify collateral increased
+        uint256 collateralAfter = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertGt(collateralAfter, collateralBefore, "Collateral should increase after merge");
+
+        // Verify the toToken balance increased
+        IVotingEscrow.LockedBalance memory locked = _ve.locked(toToken);
+        assertEq(uint256(uint128(locked.amount)), 15e18, "Merged amount should be 15 AERO");
+
+        // Verify the portfolio still owns toToken
+        assertEq(_ve.ownerOf(toToken), _portfolioAccount, "Portfolio should still own toToken");
+    }
+
+    function testMergeCalledByPortfolioOwner() public {
+        uint256 toToken = _createPortfolioLock(10e18);
+
+        uint256 fromToken = _createExternalLock(_externalUser, 5e18);
+        vm.prank(_externalUser);
+        _ve.approve(_portfolioAccount, fromToken);
+
+        // Portfolio owner can also call merge directly
+        vm.prank(_user);
+        VotingEscrowFacet(_portfolioAccount).merge(fromToken, toToken);
+
+        IVotingEscrow.LockedBalance memory locked = _ve.locked(toToken);
+        assertEq(uint256(uint128(locked.amount)), 15e18, "Merged amount should be 15 AERO");
+    }
+
+    function testMergeRevertsWhenFromTokenOwnedByPortfolio() public {
+        // Create two portfolio-owned locks
+        uint256 tokenA = _createPortfolioLock(10e18);
+        uint256 tokenB = _createPortfolioLock(5e18);
+
+        // Attempt to merge portfolio's own tokens — should revert
+        // because require(_votingEscrow.ownerOf(fromToken) != address(this))
+        vm.prank(_randomCaller);
+        vm.expectRevert();
+        VotingEscrowFacet(_portfolioAccount).merge(tokenA, tokenB);
+    }
+
+    function testMergeRevertsWhenToTokenNotOwnedByPortfolio() public {
+        // Create an external lock as toToken (not owned by portfolio)
+        uint256 externalTo = _createExternalLock(_externalUser, 10e18);
+
+        // Create another external lock as fromToken
+        address otherUser = address(0xcafe);
+        uint256 externalFrom = _createExternalLock(otherUser, 5e18);
+
+        vm.prank(otherUser);
+        _ve.approve(_portfolioAccount, externalFrom);
+
+        // Should revert because toToken is not owned by portfolio
+        vm.prank(_randomCaller);
+        vm.expectRevert();
+        VotingEscrowFacet(_portfolioAccount).merge(externalFrom, externalTo);
+    }
+
+    function testMergeRevertsWhenFromTokenNotApproved() public {
+        uint256 toToken = _createPortfolioLock(10e18);
+
+        // Create external lock but do NOT approve portfolio
+        uint256 fromToken = _createExternalLock(_externalUser, 5e18);
+
+        // Should revert at VotingEscrow level (NotApprovedOrOwner)
+        vm.prank(_randomCaller);
+        vm.expectRevert();
+        VotingEscrowFacet(_portfolioAccount).merge(fromToken, toToken);
+    }
+
+    function testMergeUpdatesCollateralCorrectly() public {
+        uint256 toToken = _createPortfolioLock(10e18);
+        uint256 collateralAfterLock = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateralAfterLock, 10e18, "Collateral should be 10 AERO");
+
+        // Merge in 5 AERO from external
+        uint256 fromToken1 = _createExternalLock(_externalUser, 5e18);
+        vm.prank(_externalUser);
+        _ve.approve(_portfolioAccount, fromToken1);
+        vm.prank(_randomCaller);
+        VotingEscrowFacet(_portfolioAccount).merge(fromToken1, toToken);
+
+        uint256 collateralAfterMerge1 = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateralAfterMerge1, 15e18, "Collateral should be 15 AERO after first merge");
+
+        // Merge in another 3 AERO
+        address otherUser = address(0xcafe);
+        uint256 fromToken2 = _createExternalLock(otherUser, 3e18);
+        vm.prank(otherUser);
+        _ve.approve(_portfolioAccount, fromToken2);
+        vm.prank(_randomCaller);
+        VotingEscrowFacet(_portfolioAccount).merge(fromToken2, toToken);
+
+        uint256 collateralAfterMerge2 = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateralAfterMerge2, 18e18, "Collateral should be 18 AERO after second merge");
     }
 }
 

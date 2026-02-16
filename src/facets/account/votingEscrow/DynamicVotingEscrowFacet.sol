@@ -56,14 +56,14 @@ contract DynamicVotingEscrowFacet is AccessControl {
         emit LockCreated(tokenId, amount, from);
     }
 
-    function merge(uint256 from, uint256 to) external {
-        require(_votingEscrow.ownerOf(to) == address(this));
+    function merge(uint256 fromToken, uint256 toToken) external {
+        require(_votingEscrow.ownerOf(toToken) == address(this));
+        require(_votingEscrow.ownerOf(fromToken) != address(this));
         address owner = _portfolioFactory.ownerOf(address(this));
-        require(_votingEscrow.ownerOf(from) == owner);
-        int128 beginningBalance = _votingEscrow.locked(to).amount;
-        _votingEscrow.merge(from, to);
-        int128 weightIncrease = _votingEscrow.locked(to).amount - beginningBalance;
-        DynamicCollateralManager.updateLockedCollateral(address(_accountConfigStorage), to, address(_votingEscrow));
-        emit LockMerged(from, to, uint256(uint128(weightIncrease)), owner);
+        int128 beginningBalance = _votingEscrow.locked(toToken).amount;
+        _votingEscrow.merge(fromToken, toToken);
+        int128 weightIncrease = _votingEscrow.locked(toToken).amount - beginningBalance;
+        DynamicCollateralManager.updateLockedCollateral(address(_accountConfigStorage), toToken, address(_votingEscrow));
+        emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);
     }
 }
