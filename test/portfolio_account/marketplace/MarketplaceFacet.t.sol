@@ -648,11 +648,11 @@ contract MarketplaceFacetTest is Test, Setup {
         
         // Step 5: Increase rewards rate back - now purchase should succeed
         vm.startPrank(deployer);
-        _loanConfig.setRewardsRate(50000); // Increase rate back to 5%
+        _loanConfig.setRewardsRate(20000); // Increase rate back to 2%
         vm.stopPrank();
         
         // Verify that with higher rate, seller would not be undercollateralized
-        uint256 newMaxLoanIgnoreSupplyWithToken2Only = (((collateral2 * 50000) / 1000000) * multiplier) / 1e12;
+        uint256 newMaxLoanIgnoreSupplyWithToken2Only = (((collateral2 * 20000) / 1000000) * multiplier) / 1e12;
         require(
             remainingDebtAfterSale <= newMaxLoanIgnoreSupplyWithToken2Only,
             "Test setup: With higher rate, seller should not be undercollateralized"
@@ -1540,7 +1540,7 @@ contract MarketplaceFacetTest is Test, Setup {
         
         // Step 1: Set rewards rate HIGH
         vm.startPrank(deployer);
-        _loanConfig.setRewardsRate(50000); // High rate: 5%
+        _loanConfig.setRewardsRate(20000); // High rate: 2%
         vm.stopPrank();
         
         // Step 2: Seller takes max loan
@@ -1618,7 +1618,7 @@ contract MarketplaceFacetTest is Test, Setup {
 
         // Set rewards rate higher so we can borrow meaningful amounts
         vm.startPrank(deployer);
-        _loanConfig.setRewardsRate(50000); // 5%
+        _loanConfig.setRewardsRate(20000); // 2%
         vm.stopPrank();
 
         // Add second token as collateral
@@ -1700,7 +1700,7 @@ contract MarketplaceFacetTest is Test, Setup {
         address deployer = _portfolioManager.owner();
 
         vm.startPrank(deployer);
-        _loanConfig.setRewardsRate(50000); // 5%
+        _loanConfig.setRewardsRate(20000); // 2%
         vm.stopPrank();
 
         // Add second token as collateral
@@ -1787,7 +1787,7 @@ contract MarketplaceFacetTest is Test, Setup {
         address deployer = _portfolioManager.owner();
 
         vm.startPrank(deployer);
-        _loanConfig.setRewardsRate(50000); // 5%
+        _loanConfig.setRewardsRate(20000); // 2%
         vm.stopPrank();
 
         // Add second token as collateral

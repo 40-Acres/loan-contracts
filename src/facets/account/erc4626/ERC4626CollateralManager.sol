@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {LoanConfig} from "../config/LoanConfig.sol";
+import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 
@@ -226,7 +226,7 @@ library ERC4626CollateralManager {
      */
     function getMaxLoan(address portfolioAccountConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalCollateralValue = getTotalCollateralValue(vault);
-        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
 
         // Get loan-to-value ratio (LTV) from multiplier - e.g., 7000 = 70%
         uint256 ltv = loanConfig.getMultiplier();
