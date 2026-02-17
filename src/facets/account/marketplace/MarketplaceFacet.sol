@@ -214,29 +214,29 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
             // Get seller's total debt and unpaid fees
             uint256 sellerTotalDebt = CollateralFacet(seller).getTotalDebt();
             uint256 sellerUnpaidFees = CollateralFacet(seller).getUnpaidFees();
-            
+
             // Cap debt amount to seller's actual total debt
             if (debtAmount > sellerTotalDebt) {
                 debtAmount = sellerTotalDebt;
             }
-            
+
             // Calculate proportional unpaid fees
             if (sellerUnpaidFees > 0 && sellerTotalDebt > 0) {
                 unpaidFeesToTransfer = (sellerUnpaidFees * debtAmount) / sellerTotalDebt;
             }
-            
+
             // Transfer debt away from seller by calling seller's MarketplaceFacet
             // This must happen before NFT transfer since transferDebtToBuyer checks token ownership
             IMarketplaceFacet(seller).transferDebtToBuyer(tokenId, address(this), debtAmount, unpaidFeesToTransfer);
         }
-        
+
         // Transfer NFT from seller to this portfolio account (buyer)
         // Seller must have approved this account in processPayment
         _votingEscrow.transferFrom(seller, address(this), tokenId);
-        
+
         // Add collateral to buyer's account BEFORE adding debt (to avoid undercollateralization)
         CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
-        
+
         // Add debt to buyer's account AFTER adding collateral
         if (debtAmount > 0) {
             CollateralManager.addDebt(address(_portfolioAccountConfig), debtAmount, unpaidFeesToTransfer);
@@ -262,10 +262,10 @@ contract MarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Only allow calls from buyer's portfolio account
         require(_portfolioFactory.isPortfolio(msg.sender), "Caller must be a portfolio account");
         require(msg.sender == buyer, "Caller must be the buyer");
-        
+
         // Verify token is owned by this portfolio account (seller)
         require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not in seller's portfolio");
-        
+
         // Transfer debt away from seller (this portfolio account)
         CollateralManager.transferDebtAway(address(_portfolioAccountConfig), debtAmount, unpaidFees);
         

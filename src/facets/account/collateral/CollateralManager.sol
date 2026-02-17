@@ -401,17 +401,9 @@ library CollateralManager {
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         // Cap the amount to actual total debt
         uint256 debtToTransfer = amount > collateralManagerData.debt ? collateralManagerData.debt : amount;
-        
+
         if (debtToTransfer == 0) {
             return;
-        }
-        
-        // Decrease over-supplied vault debt proportionally if it exists
-        if (collateralManagerData.overSuppliedVaultDebt > 0) {
-            uint256 overSuppliedToTransfer = collateralManagerData.overSuppliedVaultDebt > debtToTransfer 
-                ? debtToTransfer 
-                : collateralManagerData.overSuppliedVaultDebt;
-            collateralManagerData.overSuppliedVaultDebt -= overSuppliedToTransfer;
         }
         
         // Decrease unpaid fees (cap to actual unpaid fees)

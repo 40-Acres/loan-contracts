@@ -349,13 +349,6 @@ library ERC4626CollateralManager {
             return;
         }
 
-        if (data.overSuppliedVaultDebt > 0) {
-            uint256 overSuppliedToTransfer = data.overSuppliedVaultDebt > debtToTransfer
-                ? debtToTransfer
-                : data.overSuppliedVaultDebt;
-            data.overSuppliedVaultDebt -= overSuppliedToTransfer;
-        }
-
         uint256 feesToTransfer = unpaidFees > data.unpaidFees
             ? data.unpaidFees
             : unpaidFees;
