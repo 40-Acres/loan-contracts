@@ -50,13 +50,13 @@ abstract contract BaseLendingFacet is AccessControl {
     // ──────────────────────────────────────────────
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioAccountConfig), amount);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
         uint256 minimumCollateral = _portfolioAccountConfig.getMinimumCollateral();
         if(minimumCollateral > 0) {
             require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
         }
+        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioAccountConfig), amount);
         emit Borrowed(amount, amountAfterFees, originationFee, portfolioOwner);
     }
 
