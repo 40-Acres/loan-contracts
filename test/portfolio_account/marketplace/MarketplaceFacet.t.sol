@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {Setup} from "../utils/Setup.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {IMarketplaceFacet} from "../../../src/interfaces/IMarketplaceFacet.sol";
 import {UserMarketplaceModule} from "../../../src/facets/account/marketplace/UserMarketplaceModule.sol";
@@ -101,7 +102,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            MarketplaceFacet.makeListing.selector,
+            BaseMarketplaceFacet.makeListing.selector,
             tokenId,
             price,
             paymentToken,
@@ -463,7 +464,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            MarketplaceFacet.cancelListing.selector,
+            BaseMarketplaceFacet.cancelListing.selector,
             _tokenId
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -482,7 +483,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            MarketplaceFacet.cancelListing.selector,
+            BaseMarketplaceFacet.cancelListing.selector,
             _tokenId
         );
 
@@ -513,7 +514,7 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            MarketplaceFacet.makeListing.selector,
+            BaseMarketplaceFacet.makeListing.selector,
             _tokenId,
             LISTING_PRICE * 2, // Different price
             address(_usdc),

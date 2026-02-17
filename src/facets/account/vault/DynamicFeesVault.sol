@@ -715,6 +715,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     /**
+     * @notice Compatibility shim for PortfolioAccountConfig.getDebtToken() which calls ILoan._asset()
+     * @return The underlying asset address (USDC)
+     */
+    function _asset() external view returns (address) {
+        return asset();
+    }
+
+    /**
      * @notice Get the vault address (this contract is both lending pool and vault)
      * @return The vault address (address(this))
      */

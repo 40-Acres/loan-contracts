@@ -30,6 +30,7 @@ import {Vault} from "../../../src/VaultV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationFacet.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
@@ -162,14 +163,14 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
-        marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
-        marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-        marketplaceSelectors[5] = MarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[6] = MarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[7] = MarketplaceFacet.marketplace.selector;
+        marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
+        marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
+        marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
+        marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.marketplace.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy ERC721ReceiverFacet
@@ -338,15 +339,15 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // Deploy MarketplaceFacet
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(MARKETPLACE));
         bytes4[] memory marketplaceSelectors = new bytes4[](9);
-        marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
-        marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-        marketplaceSelectors[5] = MarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[6] = MarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[7] = MarketplaceFacet.getListingNonce.selector;
-        marketplaceSelectors[8] = MarketplaceFacet.isListingValid.selector;
+        marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
+        marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
+        marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
+        marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.getListingNonce.selector;
+        marketplaceSelectors[8] = BaseMarketplaceFacet.isListingValid.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
@@ -425,7 +426,7 @@ contract UpgradeMarketplaceFacet is Script {
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // Get the existing MarketplaceFacet address
-        address existingFacet = facetRegistry.getFacetForSelector(MarketplaceFacet.processPayment.selector);
+        address existingFacet = facetRegistry.getFacetForSelector(BaseMarketplaceFacet.processPayment.selector);
         require(existingFacet != address(0), "MarketplaceFacet not found");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -434,16 +435,16 @@ contract UpgradeMarketplaceFacet is Script {
         facetRegistry.removeFacet(existingFacet);
 
         bytes4[] memory selectors = new bytes4[](10);
-        selectors[0] = MarketplaceFacet.processPayment.selector;
-        selectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        selectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        selectors[3] = MarketplaceFacet.getListing.selector;
-        selectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-        selectors[5] = MarketplaceFacet.makeListing.selector;
-        selectors[6] = MarketplaceFacet.cancelListing.selector;
-        selectors[7] = MarketplaceFacet.marketplace.selector;
-        selectors[8] = MarketplaceFacet.getListingNonce.selector;
-        selectors[9] = MarketplaceFacet.isListingValid.selector;
+        selectors[0] = BaseMarketplaceFacet.processPayment.selector;
+        selectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
+        selectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
+        selectors[3] = BaseMarketplaceFacet.getListing.selector;
+        selectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
+        selectors[5] = BaseMarketplaceFacet.makeListing.selector;
+        selectors[6] = BaseMarketplaceFacet.cancelListing.selector;
+        selectors[7] = BaseMarketplaceFacet.marketplace.selector;
+        selectors[8] = BaseMarketplaceFacet.getListingNonce.selector;
+        selectors[9] = BaseMarketplaceFacet.isListingValid.selector;
 
         facetRegistry.registerFacet(existingFacet, selectors, "MarketplaceFacet");
 

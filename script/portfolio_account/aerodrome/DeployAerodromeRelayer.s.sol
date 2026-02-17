@@ -30,6 +30,7 @@ import {Vault} from "../../../src/VaultV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationFacet.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
@@ -153,13 +154,13 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](7);
-        marketplaceSelectors[0] = MarketplaceFacet.processPayment.selector;
-        marketplaceSelectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        marketplaceSelectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        marketplaceSelectors[3] = MarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-        marketplaceSelectors[5] = MarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[6] = MarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
+        marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
+        marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
+        marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy ERC721ReceiverFacet

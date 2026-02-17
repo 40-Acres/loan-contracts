@@ -5,6 +5,7 @@ import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 
 contract DeployVexyFacet is AccountFacetsDeploy {
@@ -76,16 +77,16 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
         bytes4[] memory selectors = new bytes4[](10);
-        selectors[0] = MarketplaceFacet.processPayment.selector;
-        selectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        selectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        selectors[3] = MarketplaceFacet.getListing.selector;
-        selectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-        selectors[5] = MarketplaceFacet.makeListing.selector;
-        selectors[6] = MarketplaceFacet.cancelListing.selector;
-        selectors[7] = MarketplaceFacet.marketplace.selector;
-        selectors[8] = MarketplaceFacet.getListingNonce.selector;
-        selectors[9] = MarketplaceFacet.isListingValid.selector;
+        selectors[0] = BaseMarketplaceFacet.processPayment.selector;
+        selectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
+        selectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
+        selectors[3] = BaseMarketplaceFacet.getListing.selector;
+        selectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
+        selectors[5] = BaseMarketplaceFacet.makeListing.selector;
+        selectors[6] = BaseMarketplaceFacet.cancelListing.selector;
+        selectors[7] = BaseMarketplaceFacet.marketplace.selector;
+        selectors[8] = BaseMarketplaceFacet.getListingNonce.selector;
+        selectors[9] = BaseMarketplaceFacet.isListingValid.selector;
         return selectors;
     }
 }
