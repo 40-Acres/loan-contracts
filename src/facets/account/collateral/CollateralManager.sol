@@ -72,7 +72,6 @@ library CollateralManager {
         // require the token to be in the portfolio account
         require(IVotingEscrow(address(ve)).ownerOf(tokenId) == address(this), "Token not in portfolio account");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        require(ve != address(0), "Voting escrow address cannot be zero");
 
         int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
         require(newLockedCollateralInt > 0, "Locked collateral amount must be greater than 0");

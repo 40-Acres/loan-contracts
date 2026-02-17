@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import "./FortyAcresPortfolioAccount.sol";
 import "./FacetRegistry.sol";
 import "./PortfolioManager.sol";
-import {CollateralStorage} from "../storage/CollateralStorage.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 /**
  * @title PortfolioFactory

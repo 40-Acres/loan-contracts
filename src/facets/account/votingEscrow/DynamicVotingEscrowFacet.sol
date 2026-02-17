@@ -7,7 +7,6 @@ import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 
