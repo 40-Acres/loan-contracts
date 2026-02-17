@@ -23,6 +23,7 @@ library SwapMod {
         IERC20(inputToken).approve(swapTarget, inputAmount);
         (bool success, ) = swapTarget.call(swapData);
         require(success, "Swap failed");
+        IERC20(inputToken).approve(swapTarget, 0);
         uint256 balanceAfter = IERC20(outputToken).balanceOf(address(this));
         amount = balanceAfter - balanceBefore;
         require(amount >= minimumOutputAmount, "Slippage exceeded");

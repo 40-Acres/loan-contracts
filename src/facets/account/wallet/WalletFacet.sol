@@ -49,7 +49,7 @@ contract WalletFacet is AccessControl, IERC721Receiver {
         require(targetFactory != address(0), "Target portfolio not registered");
         address targetOwner = PortfolioFactory(targetFactory).ownerOf(to);
         require(walletOwner == targetOwner, "Must own both portfolios");
-        IERC20(token).transfer(to, amount);
+        IERC20(token).safeTransfer(to, amount);
     }
 
     function transferNFT(address nft, uint256 tokenId, address to) external onlyPortfolioManagerMulticall(_portfolioFactory) {

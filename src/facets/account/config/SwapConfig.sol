@@ -73,4 +73,5 @@ contract SwapConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         SwapConfigData storage swapConfigData = _getSwapConfig();
         return swapConfigData.approvedSwapTargetsList.at(index);
     }
+
 }

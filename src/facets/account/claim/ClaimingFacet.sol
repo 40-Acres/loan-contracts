@@ -116,6 +116,7 @@ contract ClaimingFacet is AccessControl {
 
             // from the total amount of output amount, calculate the treasury fee and lender premium
             uint256 totalFees = treasuryFee + lenderPremium;
+            require(totalFees > 0, "Fees not configured");
 
             uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
             uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;

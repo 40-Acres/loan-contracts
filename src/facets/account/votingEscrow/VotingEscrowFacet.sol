@@ -63,6 +63,8 @@ contract VotingEscrowFacet is AccessControl {
         int128 beginningBalance = _votingEscrow.locked(toToken).amount;
         _votingEscrow.merge(fromToken, toToken);
         int128 weightIncrease = _votingEscrow.locked(toToken).amount - beginningBalance;
+        // Remove stale collateral record for fromToken (burned after merge)
+        CollateralManager.removeLockedCollateral(fromToken, address(_accountConfigStorage));
         CollateralManager.updateLockedCollateral(address(_accountConfigStorage), toToken, address(_votingEscrow));
         emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);
     }

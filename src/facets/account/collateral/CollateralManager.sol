@@ -65,6 +65,8 @@ library CollateralManager {
     }
 
     function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        if(collateralManagerData.lockedCollaterals[tokenId] != 0) return;
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
     }
 
@@ -404,13 +406,13 @@ library CollateralManager {
         if (debtToTransfer == 0) {
             return;
         }
-        
+
         // Decrease unpaid fees (cap to actual unpaid fees)
-        uint256 feesToTransfer = unpaidFees > collateralManagerData.unpaidFees 
-            ? collateralManagerData.unpaidFees 
+        uint256 feesToTransfer = unpaidFees > collateralManagerData.unpaidFees
+            ? collateralManagerData.unpaidFees
             : unpaidFees;
         collateralManagerData.unpaidFees -= feesToTransfer;
-        
+
         // Decrease debt
         collateralManagerData.debt -= debtToTransfer;
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);

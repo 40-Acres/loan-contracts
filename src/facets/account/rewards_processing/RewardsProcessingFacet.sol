@@ -163,7 +163,7 @@ contract RewardsProcessingFacet is AccessControl {
         return rewardsToken != address(0) ? rewardsToken : vaultAsset;
     }
 
-    function _processActiveLoanRewards(uint256 tokenId, uint256 availableAmount, address asset) internal returns (uint256 remaining) {
+    function _processActiveLoanRewards(uint256 tokenId, uint256 availableAmount, address asset) internal virtual returns (uint256 remaining) {
         require(IERC20(asset).balanceOf(address(this)) >= availableAmount);
         address loanContract = _portfolioAccountConfig.getLoanContract();
         require(loanContract != address(0));
@@ -247,9 +247,7 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 optionAmount = rewardsAmount * percentage / 100;
         uint256 actualAmountToInvest = optionAmount;
         if(asset != vaultAsset) {
-            IERC20(asset).approve(swapTarget, optionAmount);
             actualAmountToInvest = SwapMod.swap(address(_swapConfig), swapTarget, swapData, asset, optionAmount, vaultAsset, minimumOutputAmount);
-            IERC20(asset).approve(swapTarget, 0);
         }
         uint256 vaultAssetBalance = IERC20(vaultAsset).balanceOf(address(this));
         amountToDeposit = vaultAssetBalance < actualAmountToInvest ? vaultAssetBalance : actualAmountToInvest;
@@ -315,10 +313,7 @@ contract RewardsProcessingFacet is AccessControl {
         require(swapTarget != address(0), "Swap target must be provided");
         // swap the rewards amount to the locked asset
         uint256 amountToSwap = rewardsAmount * increasePercentage / 100;
-        IERC20(rewardsToken).approve(swapTarget, amountToSwap);
         SwapMod.swap(address(_swapConfig), swapTarget, swapData, rewardsToken, amountToSwap, lockedAsset, minimumOutputAmount);
-        // Clear approval after swap
-        IERC20(rewardsToken).approve(swapTarget, 0);
 
         uint256 endingLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         uint256 increaseAmount = endingLockedAssetBalance - beginningLockedAssetBalance;

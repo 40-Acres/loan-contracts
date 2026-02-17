@@ -69,6 +69,8 @@ library DynamicCollateralManager {
     }
 
     function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        if(collateralManagerData.lockedCollaterals[tokenId] != 0) return;
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
     }
 

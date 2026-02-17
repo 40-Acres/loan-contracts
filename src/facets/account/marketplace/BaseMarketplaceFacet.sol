@@ -189,6 +189,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Approve buyer's portfolio account to transfer the NFT
         _votingEscrow.approve(buyerPortfolio, tokenId);
 
+        // Set approved buyer for debt transfer authorization
+        UserMarketplaceModule.setApprovedBuyer(tokenId, buyerPortfolio);
+
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
     }
@@ -265,6 +268,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         require(_portfolioFactory.isPortfolio(msg.sender), "Caller must be a portfolio account");
         require(msg.sender == buyer, "Caller must be the buyer");
 
+        // Verify buyer was approved during processPayment
+        require(UserMarketplaceModule.getApprovedBuyer(tokenId) == buyer, "Not approved buyer");
+
         // Verify token is owned by this portfolio account (seller)
         require(_votingEscrow.ownerOf(tokenId) == address(this), "Token not in seller's portfolio");
 
@@ -274,6 +280,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Remove collateral from seller's collateral manager
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         _enforceCollateralRequirements();
+
+        // Clear approval after use
+        UserMarketplaceModule.clearApprovedBuyer(tokenId);
 
         address sellerOwner = _portfolioFactory.ownerOf(address(this));
         emit DebtTransferredToBuyer(tokenId, buyer, debtAmount, unpaidFees, sellerOwner);

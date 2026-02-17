@@ -6,7 +6,6 @@ import "./FacetRegistry.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ICollateralFacet} from "../facets/account/collateral/ICollateralFacet.sol";
-import {console} from "forge-std/console.sol";
 import {IPortfolioAccountConfig} from "../facets/account/config/IPortfolioAccountConfig.sol";
 /**
  * @title PortfolioManager
@@ -62,6 +61,10 @@ contract PortfolioManager is Ownable {
      * @param initialOwner The address that will own this router
      */
     constructor(address initialOwner) Ownable(initialOwner) {}
+
+    function renounceOwnership() public pure override {
+        revert("PortfolioManager: Cannot renounce ownership");
+    }
 
     /**
      * @dev Modifier to enforce collateral requirements after operations
