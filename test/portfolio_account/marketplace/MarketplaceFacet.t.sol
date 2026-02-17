@@ -16,6 +16,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {FortyAcresMarketplaceFacet} from "../../../src/facets/account/marketplace/FortyAcresMarketplaceFacet.sol";
 
 contract MarketplaceFacetTest is Test, Setup {
     PortfolioMarketplace public portfolioMarketplace;
@@ -1596,18 +1597,24 @@ contract MarketplaceFacetTest is Test, Setup {
         // Verify that debt exceeds buyer's new collateral limit
         assertGt(sellerTotalDebt, buyerNewMaxLoanIgnoreSupply, "Debt should exceed buyer's collateral limit after rate decrease");
         
-        IERC20 usdc = IERC20(_usdc);
+        // Step 5: Buyer tries to buy NFT via FortyAcresMarketplaceFacet (multicall) - should REVERT
+        // PortfolioManager enforces collateral requirements after multicall,
+        // and addDebt now properly tracks undercollateralizedDebt
+        deal(address(_usdc), buyer, LISTING_PRICE);
+        buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
         vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        
-        // Step 5: Buyer tries to buy NFT via portfolio manager multicall - should REVERT
-        vm.expectRevert();
-        portfolioMarketplace.purchaseListing(
+        IERC20(_usdc).approve(buyerPortfolio, LISTING_PRICE);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
             _portfolioAccount,
             _tokenId,
-            address(_usdc),
-            LISTING_PRICE
+            buyer
         );
+        vm.expectRevert();
+        _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
     }
 

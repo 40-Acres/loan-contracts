@@ -372,8 +372,12 @@ library CollateralManager {
     function addDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         (,uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        require(amount <= maxLoanIgnoreSupply, "Amount exceeds max loan ignore supply");
-        // Add debt and unpaid fees
+
+        uint256 projectedTotalDebt = collateralManagerData.debt + amount;
+        if (projectedTotalDebt > maxLoanIgnoreSupply) {
+            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+        }
+
         collateralManagerData.debt += amount;
         collateralManagerData.unpaidFees += unpaidFees;
     }
