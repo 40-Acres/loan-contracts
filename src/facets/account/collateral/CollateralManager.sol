@@ -158,7 +158,7 @@ library CollateralManager {
 
         uint256 projectedTotalDebt = collateralManagerData.debt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
         originationFee = lendingPool.borrowFromPortfolio(amount);
@@ -382,7 +382,7 @@ library CollateralManager {
 
         uint256 projectedTotalDebt = collateralManagerData.debt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
 
         collateralManagerData.debt += amount;

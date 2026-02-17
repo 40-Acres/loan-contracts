@@ -162,7 +162,7 @@ library DynamicCollateralManager {
         uint256 currentVaultDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
         uint256 projectedTotalDebt = currentVaultDebt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
 
         // Borrow from vault — vault tracks the debt internally

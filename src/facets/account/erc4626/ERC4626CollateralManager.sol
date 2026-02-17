@@ -172,7 +172,7 @@ library ERC4626CollateralManager {
 
         uint256 projectedTotalDebt = data.debt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            data.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            data.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
 
         data.debt += amount;
