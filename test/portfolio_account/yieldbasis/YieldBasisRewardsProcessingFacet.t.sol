@@ -42,7 +42,7 @@ contract MockLendingPool is ILendingPool {
         return 0;
     }
 
-    function payFromPortfolio(uint256, uint256) external pure {}
+    function payFromPortfolio(uint256 totalPayment, uint256) external pure returns (uint256) { return totalPayment; }
 
     function lendingAsset() external view returns (address) {
         return _lendingAsset;

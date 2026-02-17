@@ -677,7 +677,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @param totalPayment The total payment amount
      * @param feesToPay The portion of payment that goes to protocol fees (sent to owner)
      */
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused returns (uint256 actualPaid) {
         _updateSettlementCheckpoint();
         _updateUserDebtBalance(msg.sender);
 
@@ -689,10 +689,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         }
 
         // Transfer remaining amount to vault (principal repayment)
+        uint256 amountToRepay;
         uint256 balanceToPay = totalPayment - feesToPay;
         if (balanceToPay > 0) {
             uint256 userDebtBalance = $.debtBalance[msg.sender];
-            uint256 amountToRepay = userDebtBalance < balanceToPay ? userDebtBalance : balanceToPay;
+            amountToRepay = userDebtBalance < balanceToPay ? userDebtBalance : balanceToPay;
 
             IERC20(asset()).safeTransferFrom(msg.sender, address(this), amountToRepay);
             $.totalLoanedAssets -= amountToRepay;
@@ -701,6 +702,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         _updateUserDebtBalance(msg.sender);
         _updateSettlementCheckpoint();
+
+        return feesToPay + amountToRepay;
     }
 
     /**

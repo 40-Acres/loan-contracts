@@ -189,13 +189,9 @@ library DynamicCollateralManager {
         }
 
         if (balancePayment > 0) {
-            // Measure USDC balance before/after to determine exact amount paid
-            // (vault may reduce debt via rewards vesting during the call)
-            uint256 usdcBefore = IERC20(lendingAsset).balanceOf(address(this));
             IERC20(lendingAsset).approve(address(lendingPool), balancePayment);
-            lendingPool.payFromPortfolio(balancePayment, 0);
+            uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
             IERC20(lendingAsset).approve(address(lendingPool), 0);
-            uint256 actualPaid = usdcBefore - IERC20(lendingAsset).balanceOf(address(this));
             excess = amount - actualPaid;
         }
 
