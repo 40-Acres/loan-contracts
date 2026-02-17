@@ -327,6 +327,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Validate buyer if restricted
         require(listing.allowedBuyer == address(0) || listing.allowedBuyer == buyer, "Buyer not allowed");
 
+        // Remove listing BEFORE any external calls
+        UserMarketplaceModule.removeListing(tokenId);
+
         // Transfer payment token from buyer to this portfolio account
         IERC20 paymentToken = IERC20(listing.paymentToken);
 
@@ -381,9 +384,6 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // remove collateral from the seller's collateral manager
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
         _enforceCollateralRequirements();
-
-        // Remove listing from user marketplace module
-        UserMarketplaceModule.removeListing(tokenId);
 
         emit MarketplaceListingBought(tokenId, buyer, listing.price, listing.debtAttached, portfolioOwner);
     }
