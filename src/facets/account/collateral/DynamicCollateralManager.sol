@@ -304,6 +304,13 @@ library DynamicCollateralManager {
                 collateralManagerData.undercollateralizedDebt -= difference;
             }
         }
+
+        // NOTE: When previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply (e.g., repayment
+        // where only debt changes), the delta is 0 and undercollateralizedDebt is unchanged.
+        // This can leave a stale value that overstates the actual shortfall. However, it does
+        // NOT affect transaction outcomes — the early return above already zeroes
+        // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
+        // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
     function addDebt(address, uint256, uint256) external pure {
