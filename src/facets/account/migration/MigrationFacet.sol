@@ -16,7 +16,6 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
  */
 contract MigrationFacet {
     PortfolioFactory public immutable _portfolioFactory;
-    AccountConfigStorage public immutable _accountConfigStorage;
     IVotingEscrow public immutable _ve;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
 
@@ -36,7 +35,7 @@ contract MigrationFacet {
         require(borrower == _portfolioFactory.ownerOf(address(this)));
 
 
-        CollateralManager.migrateDebt(address(_accountConfigStorage), balance, unpaidFees);
+        CollateralManager.migrateDebt(address(_portfolioAccountConfig), balance, unpaidFees);
     }
 
     modifier onlyLoanContract(address loanContract) {

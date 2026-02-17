@@ -45,5 +45,6 @@ contract BridgeFacet is AccessControl {
             maxFee, 
             minFinalityThreshold
         );
+        _token.approve(address(_tokenMessenger), 0);
     }
 }
