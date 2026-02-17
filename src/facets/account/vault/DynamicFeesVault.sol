@@ -94,6 +94,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Tracks first reward epoch for each user to prevent retroactive checkpoint over-distribution
         mapping(address => uint256) firstRewardEpoch;
         mapping(address => uint256) firstRewardEpochBalance;
+
+        // Flash loan protection: block same-block deposit+withdraw
+        mapping(address => uint256) lastDepositBlock;
     }
 
     struct Checkpoint {
@@ -827,6 +830,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
 
+        $.lastDepositBlock[receiver] = block.number;
+
         _updateSettlementCheckpoint();
         super._deposit(caller, receiver, assets, shares);
         _rebalance();
@@ -841,6 +846,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     ) internal virtual override {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
+
+        // Prevent flash deposit+withdraw manipulation of utilization cap
+        require($.lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
 
         _updateSettlementCheckpoint();
         super._withdraw(caller, receiver, _owner, assets, shares);

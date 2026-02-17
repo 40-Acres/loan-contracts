@@ -1018,6 +1018,7 @@ contract DynamicFeesVaultTest is Test {
     function testHighUtilizationWithWithdrawalAndDailyFeeRatioCheck() public {
         uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
         vm.warp(timestamp);
+        vm.roll(block.number + 1); // Advance block so deposit and withdraw are in different blocks
 
         vm.prank(user1);
         vault.borrow(500e6);
@@ -1057,6 +1058,7 @@ contract DynamicFeesVaultTest is Test {
     function testHighUtilizationSingleRewardPaymentDailyDebtCheck() public {
         uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
         vm.warp(timestamp);
+        vm.roll(block.number + 1); // Advance block so deposit and withdraw are in different blocks
 
         vm.prank(user1);
         vault.borrow(500e6);
