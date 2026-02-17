@@ -176,7 +176,7 @@ library CollateralManager {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
 
         // get the total debt to ensure we don't overpay
-        uint256 totalDebt = collateralManagerData.debt;
+        uint256 totalDebt = collateralManagerData.debt + collateralManagerData.unpaidFees;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
         excess = amount - balancePayment;
 

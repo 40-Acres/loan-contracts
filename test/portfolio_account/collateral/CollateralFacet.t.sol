@@ -428,4 +428,59 @@ contract CollateralFacetTest is Test, Setup {
         // The modifier should allow operations where debt and maxLoanIgnoreSupply stay the same
         // because overcollateralization doesn't increase
     }
+
+    function testDebtFromUnpaidFees() public {
+        // Step 1: Setup - add collateral and borrow
+        addCollateralViaMulticall(_tokenId);
+        uint256 borrowAmount = 100e6; // 100 USDC
+
+        // Fund vault so borrow can succeed
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 200e6);
+
+        borrowViaMulticall(borrowAmount);
+
+        uint256 debtAfterBorrow = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfterBorrow, borrowAmount, "Debt should equal borrow amount");
+        assertEq(CollateralFacet(_portfolioAccount).getUnpaidFees(), 0, "No unpaid fees yet");
+
+        // Step 2: Simulate migrated unpaid fees using vm.store
+        // CollateralManager storage layout: keccak256("storage.CollateralManager")
+        //   slot+0: mapping lockedCollaterals
+        //   slot+1: mapping originTimestamps
+        //   slot+2: totalLockedCollateral
+        //   slot+3: debt
+        //   slot+4: unpaidFees
+        uint256 unpaidFees = 30e6; // 30 USDC in unpaid fees
+        bytes32 baseSlot = keccak256("storage.CollateralManager");
+        bytes32 unpaidFeesSlot = bytes32(uint256(baseSlot) + 4);
+        vm.store(_portfolioAccount, unpaidFeesSlot, bytes32(unpaidFees));
+
+        assertEq(CollateralFacet(_portfolioAccount).getUnpaidFees(), unpaidFees, "Unpaid fees should be set");
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount, "Debt unchanged");
+
+        // Step 3: User pays debt + unpaidFees - should clear everything
+        uint256 totalObligation = debtAfterBorrow + unpaidFees; // 130e6
+        deal(address(_asset), _user, totalObligation);
+
+        vm.startPrank(_user);
+        IERC20(address(_asset)).approve(_portfolioAccount, totalObligation);
+        vm.stopPrank();
+        pay(_portfolioAccount, totalObligation);
+
+        // Step 4: Assert - both debt and unpaidFees should be zero
+        uint256 remainingDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 remainingFees = CollateralFacet(_portfolioAccount).getUnpaidFees();
+
+        console.log("Debt after paying full obligation:", remainingDebt);
+        console.log("Unpaid fees after paying full obligation:", remainingFees);
+
+        // This is the critical assertion:
+        // After paying debt + unpaidFees, both should be zero.
+        // Currently fails because balancePayment is capped at debt (not debt+fees),
+        // so fees eat into principal repayment, leaving phantom debt.
+        assertEq(remainingDebt, 0, "C-01: Phantom debt remains after paying full obligation (debt + unpaidFees)");
+        assertEq(remainingFees, 0, "Unpaid fees should be zero after full payment");
+    }
 }
