@@ -80,6 +80,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // if user has debt, require the payment token to be the same as the debt token
         if(debtAttached > 0) {
             require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
+            require(debtAttached <= ICollateralFacet(address(this)).getTotalDebt(), "Debt exceeds actual debt");
         }
         UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
     }

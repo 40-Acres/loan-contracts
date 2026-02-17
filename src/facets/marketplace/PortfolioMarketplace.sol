@@ -102,6 +102,15 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         address paymentToken,
         uint256 paymentAmount
     ) external nonReentrant {
+        // Only callable by a portfolio account (via FortyAcresMarketplaceFacet through PortfolioManager.multicall)
+        require(portfolioFactory.isPortfolio(msg.sender), "Only portfolio accounts can call");
+
+        // msg.sender is the buyer's portfolio (called from FortyAcresMarketplaceFacet via diamond)
+        address buyerPortfolio = msg.sender;
+
+        // Resolve the buyer EOA from the portfolio for allowedBuyer checks
+        address buyerEoa = portfolioFactory.ownerOf(buyerPortfolio);
+
         // Validate portfolio account
         require(portfolioFactory.isPortfolio(portfolioAccount), InvalidPortfolio());
 
@@ -123,8 +132,8 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             revert ListingExpired();
         }
 
-        // Validate buyer if restricted
-        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != msg.sender) {
+        // Validate buyer if restricted (check both portfolio and EOA)
+        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != buyerEoa && listing.allowedBuyer != buyerPortfolio) {
             revert BuyerNotAllowed();
         }
 
@@ -138,28 +147,24 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
 
         // Get debt amount from listing (nonce ensures we have the correct listing)
         uint256 debtAmount = listing.debtAttached;
-        
-        // Transfer payment from buyer to this contract
+
+        // Transfer payment from buyer's portfolio to this contract
         IERC20 paymentTokenContract = IERC20(paymentToken);
         require(
-            paymentTokenContract.transferFrom(msg.sender, address(this), paymentAmount),
+            paymentTokenContract.transferFrom(buyerPortfolio, address(this), paymentAmount),
             TransferFailed()
         );
-        
-        // Approve portfolio account to take the full payment
+
+        // Approve seller's portfolio account to take the full payment
         paymentTokenContract.approve(portfolioAccount, paymentAmount);
-        
-        // Call portfolio account's processPayment function
+
+        // Call seller's processPayment function
         // This will approve buyer for NFT transfer and transfer payment to seller
-        IMarketplaceFacet(portfolioAccount).processPayment(tokenId, msg.sender, paymentAmount);
-        
+        IMarketplaceFacet(portfolioAccount).processPayment(tokenId, buyerEoa, paymentAmount);
+
         // Clear approval
         paymentTokenContract.approve(portfolioAccount, 0);
-        
-        // Get buyer's portfolio account
-        address buyerPortfolio = portfolioFactory.portfolioOf(msg.sender);
-        require(buyerPortfolio != address(0), "Buyer must be a portfolio account");
-        
+
         // Finalize purchase: transfer NFT and debt from seller to buyer
         // Always transfer debt (never pay it down automatically)
         IMarketplaceFacet(buyerPortfolio).finalizePurchase(
@@ -170,7 +175,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         
         emit ListingPurchased(
             tokenId,
-            msg.sender,
+            buyerEoa,
             portfolioAccount,
             paymentAmount,
             (paymentAmount * protocolFeeBps) / 10000

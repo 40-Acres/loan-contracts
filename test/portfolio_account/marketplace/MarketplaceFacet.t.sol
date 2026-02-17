@@ -56,9 +56,19 @@ contract MarketplaceFacetTest is Test, Setup {
         portfolioMarketplace.setProtocolFee(PROTOCOL_FEE_BPS);
         portfolioMarketplace.setFeeRecipient(feeRecipient);
         vm.stopPrank();
-        
-        // Cast _usdc to IERC20 for convenience
-        IERC20 usdc = IERC20(_usdc);
+
+        // Register FortyAcresMarketplaceFacet for buyer multicall purchases
+        vm.startPrank(_facetRegistry.owner());
+        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(
+            address(_portfolioFactory),
+            address(_portfolioAccountConfig),
+            address(_ve),
+            address(portfolioMarketplace)
+        );
+        bytes4[] memory fortyAcresSelectors = new bytes4[](1);
+        fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
+        _facetRegistry.registerFacet(address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
+        vm.stopPrank();
     }
 
     // Helper function to add collateral via PortfolioManager multicall
@@ -128,6 +138,29 @@ contract MarketplaceFacetTest is Test, Setup {
         vm.stopPrank();
     }
 
+    // Helper function to purchase listing via FortyAcresMarketplaceFacet through PortfolioManager.multicall
+    function purchaseListingViaMulticall(
+        address buyerEoa,
+        address sellerPortfolio,
+        uint256 tokenId,
+        uint256 price
+    ) internal {
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyerEoa);
+        vm.startPrank(buyerEoa);
+        IERC20(_usdc).approve(buyerPortfolio, price);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
+            sellerPortfolio,
+            tokenId,
+            buyerEoa
+        );
+        _portfolioManager.multicall(cd, pf);
+        vm.stopPrank();
+    }
+
     // Helper function to add unpaid fees using migrateDebt
     // migrateDebt is a CollateralManager library function
     // This is a public function so it can be called externally for try-catch
@@ -164,7 +197,10 @@ contract MarketplaceFacetTest is Test, Setup {
     }
 
     function testCreateListingWithDebtAttached() public {
+        // Borrow first so the account has actual debt
         uint256 debtAmount = 500e6;
+        borrowViaMulticall(debtAmount);
+
         makeListingViaMulticall(
             _tokenId,
             LISTING_PRICE,
@@ -173,9 +209,54 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             address(0)
         );
-        
+
         UserMarketplaceModule.Listing memory listing = IMarketplaceFacet(_portfolioAccount).getListing(_tokenId);
         assertEq(listing.debtAttached, debtAmount);
+    }
+
+    function testCannotListWithDebtExceedingActualDebt() public {
+        // Borrow a small amount
+        uint256 borrowAmount = 100e6;
+        borrowViaMulticall(borrowAmount);
+
+        // Try to list with debtAttached exceeding actual debt — should revert
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseMarketplaceFacet.makeListing.selector,
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            borrowAmount * 10, // 10x actual debt
+            0,
+            address(0)
+        );
+        vm.expectRevert("Debt exceeds actual debt");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    function testCannotListWithDebtWhenNoDebt() public {
+        // No borrowing — account has zero debt
+        // Try to list with debtAttached > 0
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseMarketplaceFacet.makeListing.selector,
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            500e6, // debt attached but no actual debt
+            0,
+            address(0)
+        );
+        vm.expectRevert("Debt exceeds actual debt");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
     }
 
     function testCreateListingWithExpiration() public {
@@ -224,15 +305,7 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
         
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
 
         // Get buyer's portfolio account
         address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
@@ -294,15 +367,7 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
 
         // Verify debt is transferred (not paid down)
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
@@ -339,15 +404,7 @@ contract MarketplaceFacetTest is Test, Setup {
         );
         
         // Purchase by allowed buyer should succeed
-        vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
 
         // Get buyer's portfolio account
         address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
@@ -359,7 +416,12 @@ contract MarketplaceFacetTest is Test, Setup {
     function testRevertPurchaseListingByRestrictedBuyer() public {
         address otherBuyer = address(0x9999);
         deal(address(_usdc), otherBuyer, LISTING_PRICE);
-        
+
+        // Create portfolio account for otherBuyer
+        vm.prank(otherBuyer);
+        _portfolioFactory.createAccount(otherBuyer);
+        address otherBuyerPortfolio = _portfolioFactory.portfolioOf(otherBuyer);
+
         // Create listing with buyer restriction
         makeListingViaMulticall(
             _tokenId,
@@ -369,17 +431,21 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             buyer
         );
-        
+
         // Purchase by non-allowed buyer should fail
         vm.startPrank(otherBuyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
-        vm.expectRevert(PortfolioMarketplace.BuyerNotAllowed.selector);
-        portfolioMarketplace.purchaseListing(
+        IERC20(_usdc).approve(otherBuyerPortfolio, LISTING_PRICE);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
             _portfolioAccount,
             _tokenId,
-            address(_usdc),
-            LISTING_PRICE
+            otherBuyer
         );
+        vm.expectRevert(PortfolioMarketplace.BuyerNotAllowed.selector);
+        _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
     }
 
@@ -394,20 +460,25 @@ contract MarketplaceFacetTest is Test, Setup {
             expiresAt,
             address(0)
         );
-        
+
         // Fast forward past expiration
         vm.warp(expiresAt + 1);
-        
+
         // Purchase should fail
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
         vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
-        vm.expectRevert(PortfolioMarketplace.ListingExpired.selector);
-        portfolioMarketplace.purchaseListing(
+        IERC20(_usdc).approve(buyerPortfolio, LISTING_PRICE);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
             _portfolioAccount,
             _tokenId,
-            address(_usdc),
-            LISTING_PRICE
+            buyer
         );
+        vm.expectRevert(PortfolioMarketplace.ListingExpired.selector);
+        _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
     }
 
@@ -420,31 +491,43 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             address(0)
         );
-        
-        // Try to purchase with wrong price
+
+        // Through the multicall path, the buyer cannot specify a wrong price
+        // (FortyAcresMarketplaceFacet reads price from the listing).
+        // Instead, test insufficient allowance: approve less than listing price.
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
         vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
-        vm.expectRevert(PortfolioMarketplace.PaymentAmountMismatch.selector);
-        portfolioMarketplace.purchaseListing(
+        IERC20(_usdc).approve(buyerPortfolio, LISTING_PRICE - 1);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
             _portfolioAccount,
             _tokenId,
-            address(_usdc),
-            LISTING_PRICE - 1
+            buyer
         );
+        vm.expectRevert("Insufficient allowance");
+        _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
     }
 
     function testRevertPurchaseNonExistentListing() public {
         // Try to purchase without creating listing
+        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
         vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
-        vm.expectRevert(PortfolioMarketplace.InvalidListing.selector);
-        portfolioMarketplace.purchaseListing(
+        IERC20(_usdc).approve(buyerPortfolio, LISTING_PRICE);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
             _portfolioAccount,
             _tokenId,
-            address(_usdc),
-            LISTING_PRICE
+            buyer
         );
+        vm.expectRevert("Listing does not exist");
+        _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
     }
 
@@ -633,43 +716,38 @@ contract MarketplaceFacetTest is Test, Setup {
         );
         
         // Step 4: Buyer tries to buy - should revert because seller would be undercollateralized after sale
-        IERC20 usdc = IERC20(_usdc);
+        address buyerPortfolioAddr = _portfolioFactory.portfolioOf(buyer);
         vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        
+        IERC20(_usdc).approve(buyerPortfolioAddr, LISTING_PRICE);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
+            _portfolioAccount,
+            _tokenId,
+            buyer
+        );
         // The purchase should revert when enforceCollateralRequirements is called
         // This happens after removing collateral from seller
         vm.expectRevert();
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
+        _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
-        
+
         // Step 5: Increase rewards rate back - now purchase should succeed
         vm.startPrank(deployer);
         _loanConfig.setRewardsRate(20000); // Increase rate back to 2%
         vm.stopPrank();
-        
+
         // Verify that with higher rate, seller would not be undercollateralized
         uint256 newMaxLoanIgnoreSupplyWithToken2Only = (((collateral2 * 20000) / 1000000) * multiplier) / 1e12;
         require(
             remainingDebtAfterSale <= newMaxLoanIgnoreSupplyWithToken2Only,
             "Test setup: With higher rate, seller should not be undercollateralized"
         );
-        
+
         // Now the purchase should succeed
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
         
         // Verify NFT was transferred to buyer's portfolio account
         address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
@@ -729,17 +807,8 @@ contract MarketplaceFacetTest is Test, Setup {
         console.log("Buyer unpaid fees before:", buyerUnpaidFeesBefore);
         
         // Purchase listing
-        IERC20 usdc = IERC20(_usdc);
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Verify NFT transferred to buyer
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerPortfolio, "NFT should be transferred to buyer's portfolio");
         
@@ -775,7 +844,7 @@ contract MarketplaceFacetTest is Test, Setup {
         }
         
         // Verify seller received full payment (no debt was paid, just transferred)
-        uint256 sellerBalanceAfter = usdc.balanceOf(_user);
+        uint256 sellerBalanceAfter = IERC20(_usdc).balanceOf(_user);
         // Note: We need to check seller balance before purchase
         uint256 sellerBalanceBefore = sellerBalanceAfter - LISTING_PRICE;
         uint256 sellerReceived = sellerBalanceAfter - sellerBalanceBefore;
@@ -842,17 +911,8 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 buyerUnpaidFeesBefore = CollateralFacet(buyerPortfolio).getUnpaidFees();
         
         // Purchase listing
-        IERC20 usdc = IERC20(_usdc);
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Verify seller's debt was reduced by transferred amount
         uint256 sellerDebtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         uint256 sellerUnpaidFeesAfter = CollateralFacet(_portfolioAccount).getUnpaidFees();
@@ -1258,27 +1318,18 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             address(0)
         );
-        
-        IERC20 usdc = IERC20(_usdc);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
-        
+
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
+
         // Calculate expected protocol fee (1% = 100 bps)
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
         assertEq(expectedProtocolFee, 10e6, "Expected protocol fee should be 10 USDC (1% of 1000 USDC)");
-        
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Verify protocol fee was transferred to fee recipient
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive correct protocol fee");
     }
 
@@ -1292,34 +1343,25 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             address(0)
         );
-        
-        IERC20 usdc = IERC20(_usdc);
-        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
-        
+
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Calculate expected amounts
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
         uint256 expectedPaymentToSeller = LISTING_PRICE - expectedProtocolFee;
-        
+
         // Verify seller received payment minus protocol fee
-        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
         assertEq(sellerReceived, expectedPaymentToSeller, "Seller should receive payment minus protocol fee");
-        
+
         // Verify fee recipient received protocol fee
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive protocol fee");
-        
+
         // Verify total distribution is correct
         assertEq(sellerReceived + feeReceived, LISTING_PRICE, "Total distribution should equal listing price");
     }
@@ -1345,29 +1387,20 @@ contract MarketplaceFacetTest is Test, Setup {
             address(0)
         );
         
-        IERC20 usdc = IERC20(_usdc);
-        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
-        
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Calculate expected amounts with 2.5% fee
         uint256 expectedProtocolFee = (LISTING_PRICE * newFeeBps) / 10000;
         assertEq(expectedProtocolFee, 25e6, "Expected protocol fee should be 25 USDC (2.5% of 1000 USDC)");
         uint256 expectedPaymentToSeller = LISTING_PRICE - expectedProtocolFee;
-        
+
         // Verify distribution
-        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         
         assertEq(sellerReceived, expectedPaymentToSeller, "Seller should receive payment minus 2.5% protocol fee");
         assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive 2.5% protocol fee");
@@ -1391,31 +1424,22 @@ contract MarketplaceFacetTest is Test, Setup {
             address(0)
         );
         
-        IERC20 usdc = IERC20(_usdc);
-        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
-        
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Calculate expected protocol fee
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
         uint256 paymentAfterFee = LISTING_PRICE - expectedProtocolFee;
-        
+
         // Verify protocol fee was taken
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive protocol fee even with debt attached");
-        
+
         // When debtAttached > 0, seller receives full payment after fee (debt is transferred, not paid)
-        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
         assertApproxEqRel(
             sellerReceived,
             paymentAfterFee,
@@ -1434,25 +1458,16 @@ contract MarketplaceFacetTest is Test, Setup {
             0,
             address(0)
         );
-        
-        IERC20 usdc = IERC20(_usdc);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
+
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
-        
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Verify protocol fee was transferred (which confirms events were emitted)
         // Events are emitted from MarketplaceFacet.processPayment when fee is transferred
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, expectedProtocolFee, "Protocol fee should be transferred, confirming events were emitted");
     }
 
@@ -1473,27 +1488,18 @@ contract MarketplaceFacetTest is Test, Setup {
             address(0)
         );
         
-        IERC20 usdc = IERC20(_usdc);
-        uint256 sellerBalanceBefore = usdc.balanceOf(_user);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
-        
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), LISTING_PRICE);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            LISTING_PRICE
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, LISTING_PRICE);
+
         // Verify no fee was taken
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, 0, "Fee recipient should receive no fee when fee is 0");
-        
+
         // Verify seller received full payment
-        uint256 sellerReceived = usdc.balanceOf(_user) - sellerBalanceBefore;
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
         assertEq(sellerReceived, LISTING_PRICE, "Seller should receive full payment when protocol fee is 0");
     }
 
@@ -1513,30 +1519,21 @@ contract MarketplaceFacetTest is Test, Setup {
         
         // Fund buyer with test price
         deal(address(_usdc), buyer, testPrice);
-        
-        IERC20 usdc = IERC20(_usdc);
-        uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
-        
+
+        uint256 feeRecipientBalanceBefore = IERC20(_usdc).balanceOf(feeRecipient);
+
         // Calculate expected protocol fee (should truncate, not round)
         uint256 expectedProtocolFee = (testPrice * PROTOCOL_FEE_BPS) / 10000;
-        
+
         // Purchase listing
-        vm.startPrank(buyer);
-        usdc.approve(address(portfolioMarketplace), testPrice);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            testPrice
-        );
-        vm.stopPrank();
-        
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, testPrice);
+
         // Verify protocol fee calculation (should match exact calculation)
-        uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
+        uint256 feeReceived = IERC20(_usdc).balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, expectedProtocolFee, "Protocol fee should be calculated correctly with precision");
         
         // Verify seller received the remainder
-        uint256 sellerReceived = usdc.balanceOf(_user);
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user);
         uint256 expectedSellerAmount = testPrice - expectedProtocolFee;
         assertEq(sellerReceived, expectedSellerAmount, "Seller should receive payment minus protocol fee");
     }
@@ -1767,15 +1764,7 @@ contract MarketplaceFacetTest is Test, Setup {
         uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
 
         // Purchase via marketplace (portfolio buyer path)
-        vm.startPrank(buyer);
-        IERC20(_usdc).approve(address(portfolioMarketplace), listingPrice);
-        portfolioMarketplace.purchaseListing(
-            _portfolioAccount,
-            _tokenId,
-            address(_usdc),
-            listingPrice
-        );
-        vm.stopPrank();
+        purchaseListingViaMulticall(buyer, _portfolioAccount, _tokenId, listingPrice);
 
         // Protocol fee is deducted first
         uint256 expectedProtocolFee = (listingPrice * PROTOCOL_FEE_BPS) / 10000;
