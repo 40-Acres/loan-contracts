@@ -52,8 +52,9 @@ contract FortyAcresMarketplaceFacet is AccessControl {
      * @param buyer The buyer's EOA address (must own this portfolio)
      */
     function buyFortyAcresListing(
-        address sellerPortfolio,
         uint256 tokenId,
+        uint256 sellerPortfolio,
+        uint256 nonce,
         address buyer
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(buyer != address(this), "Buyer cannot be the portfolio account");
@@ -74,8 +75,6 @@ contract FortyAcresMarketplaceFacet is AccessControl {
         // Approve marketplace to pull payment
         paymentToken.approve(address(_marketplace), price);
 
-        // Call marketplace's purchaseListing
-        // Handles: processPayment on seller (fee, debt, NFT approval) + finalizePurchase on buyer (NFT transfer, collateral, debt)
         _marketplace.purchaseListing(sellerPortfolio, tokenId, paymentTokenAddr, price);
 
         // Clear remaining approval

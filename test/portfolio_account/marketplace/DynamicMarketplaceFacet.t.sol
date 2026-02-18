@@ -226,18 +226,17 @@ contract DynamicMarketplaceFacetTest is Test {
             VOTING_ESCROW,
             address(portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSelectors = new bytes4[](11);
+        bytes4[] memory marketplaceSelectors = new bytes4[](10);
         marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
         marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[7] = BaseMarketplaceFacet.marketplace.selector;
-        marketplaceSelectors[8] = BaseMarketplaceFacet.isListingValid.selector;
-        marketplaceSelectors[9] = BaseMarketplaceFacet.getListingNonce.selector;
-        marketplaceSelectors[10] = BaseMarketplaceFacet.buyMarketplaceListings.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.marketplace.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingValid.selector;
+        marketplaceSelectors[8] = BaseMarketplaceFacet.getListingNonce.selector;
+        marketplaceSelectors[9] = BaseMarketplaceFacet.buyMarketplaceListings.selector;
         facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSelectors, "DynamicMarketplaceFacet");
 
         // FortyAcresMarketplaceFacet (for buyer multicall tests)

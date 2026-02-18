@@ -13,22 +13,28 @@ import {UserMarketplaceModule} from "../account/marketplace/UserMarketplaceModul
 
 /**
  * @title PortfolioMarketplace
- * @dev Marketplace contract for portfolio account listings
- * Handles taking funds from buyers and calling portfolio account's processPayment function
  */
 contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     PortfolioManager public immutable portfolioManager;
     IVotingEscrow public immutable votingEscrow;
     uint256 public protocolFeeBps;
     address public feeRecipient;
+
+    struct Listing {
+        address owner;
+        uint256 tokenId;
+        uint256 price;                    // in paymentToken decimals
+        address paymentToken;
+        uint256 debtAttached;             // debt amount that should be paid from sale proceeds
+        uint256 expiresAt;                // 0 = never
+        address allowedBuyer;             // (optional) allowed buyer address
+        uint256 nonce;                    // listing nonce - only highest nonce is valid
+    }
     
-    event ListingPurchased(
-        uint256 indexed tokenId,
-        address indexed buyer,
-        address indexed sellerPortfolio,
-        uint256 price,
-        uint256 protocolFee
-    );
+    event ListingCreated(uint256 indexed tokenId, address indexed owner, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer, uint256 nonce);
+    event ListingCanceled(uint256 indexed tokenId);
+    event ListingSold(uint256 indexed tokenId, address indexed buyer, uint256 price);
+    event ListingPurchased(uint256 indexed tokenId, address indexed buyer, address indexed sellerPortfolio, uint256 price, uint256 protocolFee);
     
     error InvalidListing();
     error ListingExpired();
@@ -91,27 +97,19 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     }
     
     /**
-     * @notice Purchase a listing from a portfolio account
-     * @param portfolioAccount The portfolio account that owns the listing
+     * @notice Purchase a listing
+     * @param sellerAddress The portfolio account that owns the listing
      * @param tokenId The token ID being purchased
      * @param paymentToken The token being used for payment (must match listing)
      * @param paymentAmount The amount to pay (must match listing price)
      */
     function purchaseListing(
-        address portfolioAccount,
+        address sellerAddress,
         uint256 tokenId,
-        address paymentToken,
-        uint256 paymentAmount
+        uint256 nonce
     ) external nonReentrant {
         // Only callable by a registered portfolio account (cross-factory safe)
         require(portfolioManager.isPortfolioRegistered(msg.sender), "Only portfolio accounts can call");
-
-        // msg.sender is the buyer's portfolio (called from FortyAcresMarketplaceFacet via diamond)
-        address buyerPortfolio = msg.sender;
-
-        // Resolve the buyer EOA via PortfolioManager (cross-factory safe)
-        address buyerFactory = portfolioManager.getFactoryForPortfolio(buyerPortfolio);
-        address buyerEoa = PortfolioFactory(buyerFactory).ownerOf(buyerPortfolio);
 
         // Validate seller portfolio account (cross-factory safe)
         require(portfolioManager.isPortfolioRegistered(portfolioAccount), InvalidPortfolio());

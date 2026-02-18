@@ -2056,17 +2056,16 @@ contract MarketplaceFacetTest is Test, Setup {
         MarketplaceFacet marketplaceFacet2 = new MarketplaceFacet(
             address(factory2), address(_portfolioAccountConfig), address(_ve), address(portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSelectors = new bytes4[](10);
+        bytes4[] memory marketplaceSelectors = new bytes4[](9);
         marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
         marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[7] = BaseMarketplaceFacet.marketplace.selector;
-        marketplaceSelectors[8] = BaseMarketplaceFacet.getListingNonce.selector;
-        marketplaceSelectors[9] = BaseMarketplaceFacet.isListingValid.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.marketplace.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.getListingNonce.selector;
+        marketplaceSelectors[8] = BaseMarketplaceFacet.isListingValid.selector;
         facetRegistry2.registerFacet(address(marketplaceFacet2), marketplaceSelectors, "MarketplaceFacet");
 
         // 3. FortyAcresMarketplaceFacet (pointing to same marketplace)

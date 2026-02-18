@@ -83,19 +83,4 @@ library UserMarketplaceModule
         emit ListingSold(tokenId, buyer, price);
     }
 
-    function setApprovedBuyer(uint256 tokenId, address buyer) external {
-        UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
-        marketplaceConfig.approvedBuyers[tokenId] = buyer;
-    }
-
-    function getApprovedBuyer(uint256 tokenId) external view returns (address) {
-        UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
-        return marketplaceConfig.approvedBuyers[tokenId];
-    }
-
-    function clearApprovedBuyer(uint256 tokenId) external {
-        UserMarketplaceModuleData storage marketplaceConfig = _getUserMarketplaceModuleData();
-        delete marketplaceConfig.approvedBuyers[tokenId];
-    }
-
 }

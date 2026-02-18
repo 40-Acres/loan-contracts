@@ -153,14 +153,13 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        bytes4[] memory marketplaceSelectors = new bytes4[](6);
         marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
         marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.cancelListing.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy ERC721ReceiverFacet

@@ -83,6 +83,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 globalLastUpdateTime;    // last global vesting computation
         uint256 totalUnsettledRewards;   // raw reward deposits not yet processed
         uint256 globalBorrowerPending;   // borrower portion computed globally, not yet applied per-user
+        uint256 lastGlobalRatio;         // cached ratio from last _processGlobalVesting for per-user consistency
+        uint8 sharesDecimalsOffset;      // asset decimals used as virtual share offset for inflation attack prevention
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -118,6 +120,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         DynamicFeesVaultStorage storage $ = _getStorage();
         $.portfolioFactory = _portfolioFactory;
+        $.sharesDecimalsOffset = ERC20(_asset).decimals();
 
         // Deploy the default fee calculator
         FeeCalculator feeCalc = new FeeCalculator();
@@ -252,7 +255,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 total = totalAssets();
         if (total == 0) return 0;
         DynamicFeesVaultStorage storage $ = _getStorage();
-        return ($.totalLoanedAssets * 10000) / total;
+        uint256 util = ($.totalLoanedAssets * 10000) / total;
+        return util > 10000 ? 10000 : util;
     }
 
     // ============ Lender Premium Vesting ============
@@ -352,22 +356,18 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             globalVested = $.totalUnsettledRewards;
         }
 
-        // Compute fee split using current ratio
+        // Compute fee split using current ratio and cache for per-user consistency
         uint256 ratio = getCurrentVaultRatioBps();
+        $.lastGlobalRatio = ratio;
         uint256 lenderPremium = (globalVested * ratio) / 10000;
         uint256 borrowerCredit = globalVested - lenderPremium;
 
-        // Track lender premium — vest in current epoch (not delayed)
+        // Track lender premium — deposit into current epoch, vests next epoch
         if (lenderPremium > 0) {
             _rollLenderPremium();
-            uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-            if ($.vestingEpochStart == epochStart) {
-                // Already vesting in this epoch — accumulate
-                $.vestingEpochPremium += lenderPremium;
-            } else {
-                // Start new vesting for current epoch
-                $.vestingEpochPremium = lenderPremium;
-                $.vestingEpochStart = epochStart;
+            $.currentEpochPremium += lenderPremium;
+            if ($.currentEpochStart == 0) {
+                $.currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
             }
         }
 
@@ -393,16 +393,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 userVested = rate * (currentTime - $.userLastSettledTime[user]);
         $.userLastSettledTime[user] = currentTime;
 
-        // If past period finish, clear user stream
+        // If past period finish, clear user stream and defensively clean up global rate
         if (block.timestamp >= $.userPeriodFinish[user]) {
+            if ($.activeEpochRate >= rate) {
+                $.activeEpochRate -= rate;
+            }
             $.userRewardRate[user] = 0;
             $.userPeriodFinish[user] = 0;
         }
 
-        // Compute borrower reward using current ratio, capped at globalBorrowerPending
-        // to prevent over-extraction from ratio drift between global and per-user settlement
-        uint256 ratio = getCurrentVaultRatioBps();
-        uint256 borrowerReward = userVested - (userVested * ratio) / 10000;
+        // Compute borrower reward using cached global ratio for consistency
+        uint256 borrowerReward = userVested - (userVested * $.lastGlobalRatio) / 10000;
         if (borrowerReward > $.globalBorrowerPending) {
             borrowerReward = $.globalBorrowerPending;
         }
@@ -443,22 +444,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ Core Vault Functions ============
-    function borrow(uint256 amount) external onlyPortfolio whenNotPaused {
-        _settleRewards(msg.sender);
-
-        DynamicFeesVaultStorage storage $ = _getStorage();
-
-        uint256 total = totalAssets();
-        uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
-        uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
-        require(postBorrowUtilization < 8000, "Borrow would exceed 80% utilization");
-
-        IERC20(asset()).safeTransfer(msg.sender, amount);
-        $.debtBalance[msg.sender] += amount;
-        $.totalDebtBalance += amount;
-        $.totalLoanedAssets += amount;
-    }
-
     function repay(uint256 amount) external whenNotPaused {
         _settleRewards(msg.sender);
 
@@ -471,7 +456,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.totalDebtBalance -= amountToRepay;
     }
 
-    function repayWithRewards(uint256 amount) external whenNotPaused {
+    function repayWithRewards(uint256 amount) external whenNotPaused onlyPortfolio {
         if (amount == 0) revert ZeroAmount();
 
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
@@ -493,6 +478,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
         uint256 duration = periodFinish - block.timestamp;
         uint256 newRate = total / duration;
+        require(newRate > 0, "Amount too small");
 
         $.userRewardRate[msg.sender] = newRate;
         $.userPeriodFinish[msg.sender] = periodFinish;
@@ -506,7 +492,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.globalLastUpdateTime = block.timestamp;
         }
 
-        $.totalUnsettledRewards += amount;
+        uint256 actualVesting = newRate * duration;
+        $.totalUnsettledRewards = $.totalUnsettledRewards - remaining + actualVesting;
 
         emit RewardsMinted(msg.sender, amount);
     }
@@ -534,6 +521,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
+
+        // Cap fees at total payment to prevent underflow
+        if (feesToPay > totalPayment) {
+            feesToPay = totalPayment;
+        }
 
         if (feesToPay > 0) {
             IERC20(asset()).safeTransferFrom(msg.sender, owner(), feesToPay);
@@ -631,6 +623,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ ERC4626 Overrides ============
+    function maxDeposit(address) public view override returns (uint256) {
+        if (_getStorage().paused) return 0;
+        return type(uint256).max;
+    }
+
+    function maxMint(address) public view override returns (uint256) {
+        if (_getStorage().paused) return 0;
+        return type(uint256).max;
+    }
+
     function maxWithdraw(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
@@ -676,6 +678,23 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         require($.lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
 
         super._withdraw(caller, receiver, _owner, assets, shares);
+    }
+
+    // ============ ERC20 Override ============
+    function _update(address from, address to, uint256 value) internal virtual override {
+        super._update(from, to, value);
+        // Propagate flash loan protection to share transfer recipients
+        if (from != address(0) && to != address(0)) {
+            DynamicFeesVaultStorage storage $ = _getStorage();
+            if ($.lastDepositBlock[from] >= block.number) {
+                $.lastDepositBlock[to] = block.number;
+            }
+        }
+    }
+
+    // ============ ERC4626 Inflation Attack Prevention ============
+    function _decimalsOffset() internal view override returns (uint8) {
+        return _getStorage().sharesDecimalsOffset;
     }
 
     // ============ Access Control ============
