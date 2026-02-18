@@ -1629,4 +1629,54 @@ contract DynamicFeesVaultTest is Test {
 
         assertApproxEqAbs(user1Reduction, user2Reduction, 1e6, "Both users should have similar debt reduction");
     }
+
+    function testIncrementalCursorPreservesRewardsOver52Weeks() public {
+        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        vm.warp(timestamp);
+
+        address user2 = address(0x3);
+
+        // User1 borrows and deposits initial rewards to establish checkpoint
+        vm.prank(user1);
+        vault.borrow(100e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 10e6);
+        usdc.approve(address(vault), 10e6);
+        vault.repayWithRewards(10e6);
+        vm.stopPrank();
+
+        // User2 borrows too
+        vm.prank(user2);
+        vault.borrow(100e6);
+
+        // Advance 60 weeks. User2 deposits rewards each week.
+        // User1 does NOT interact — their checkpoint stays at epoch 0.
+        for (uint256 i = 1; i <= 60; i++) {
+            vm.warp(timestamp + i * ProtocolTimeLibrary.WEEK);
+            vm.startPrank(user2);
+            deal(address(usdc), user2, 10e6);
+            usdc.approve(address(vault), 10e6);
+            vault.repayWithRewards(10e6);
+            vm.stopPrank();
+        }
+
+        // User1 hasn't interacted for 60 epochs.
+        // First sync processes up to 52 epochs (MAX_EPOCH_ITERATIONS)
+        uint256 debtBefore = vault.getDebtBalance(user1);
+        vault.updateUserDebtBalance(user1);
+        uint256 debtAfterFirst = vault.getDebtBalance(user1);
+        uint256 firstReduction = debtBefore - debtAfterFirst;
+
+        // Second sync should process remaining epochs from cursor
+        vault.updateUserDebtBalance(user1);
+        uint256 debtAfterSecond = vault.getDebtBalance(user1);
+        uint256 secondReduction = debtAfterFirst - debtAfterSecond;
+
+        uint256 totalReduction = firstReduction + secondReduction;
+        assertGt(totalReduction, 0, "Should have reduced debt from rewards");
+        assertGt(firstReduction, 0, "First sync should process rewards");
+        // With cursor, second call picks up remaining epochs beyond the 52-epoch cap
+        assertGt(secondReduction, 0, "Second sync should process remaining epochs via cursor");
+    }
 }

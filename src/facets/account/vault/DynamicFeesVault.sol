@@ -95,6 +95,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         mapping(address => uint256) firstRewardEpoch;
         mapping(address => uint256) firstRewardEpochBalance;
 
+        mapping(address => uint256) lastEarnedEpoch;
+
         // Flash loan protection: block same-block deposit+withdraw
         mapping(address => uint256) lastDepositBlock;
     }
@@ -394,12 +396,19 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 _index = getPriorBalanceIndex(_owner, _currTs);
         Checkpoint storage cp0 = $.checkpoints[_owner][_index];
 
-        _currTs = Math.max(_currTs, ProtocolTimeLibrary.epochStart(cp0._epoch));
+        // Start from the checkpoint epoch
+        _currTs = ProtocolTimeLibrary.epochStart(cp0._epoch);
 
         uint256 currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
         if (_currTs >= DURATION) {
             _currTs = _currTs - DURATION;
         }
+
+        uint256 cursor = $.lastEarnedEpoch[_owner];
+        if (cursor > 0 && cursor > _currTs) {
+            _currTs = cursor;
+        }
+
         uint256 numEpochs = 0;
         if (currentEpochStart >= _currTs) {
             numEpochs = ((currentEpochStart - _currTs) / DURATION) + 1;
@@ -464,6 +473,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
                 reward += newReward;
                 _currTs += DURATION;
             }
+
+            // Save cursor: _currTs was advanced past the last processed epoch
+            $.lastEarnedEpoch[_owner] = _currTs - DURATION;
         }
 
         return reward;
