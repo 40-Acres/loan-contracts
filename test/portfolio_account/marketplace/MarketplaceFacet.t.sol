@@ -18,6 +18,8 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {FortyAcresMarketplaceFacet} from "../../../src/facets/account/marketplace/FortyAcresMarketplaceFacet.sol";
+import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
+import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 
 contract MarketplaceFacetTest is Test, Setup {
     PortfolioMarketplace public portfolioMarketplace;
@@ -2020,5 +2022,105 @@ contract MarketplaceFacetTest is Test, Setup {
         // Both paths should collect the same fee amount for the same listing price
         // (Portfolio path fee is already tested in testProtocolFeeIsCalculatedCorrectly)
         assertEq(directBuyFee, expectedProtocolFee, "Direct buy fee should match expected protocol fee");
+    }
+
+    // ============ Cross-Factory Purchase Test (NEW-HIGH-04) ============
+
+    function testCrossFactoryPurchase() public {
+        // Deploy a second factory from the same PortfolioManager
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        (PortfolioFactory factory2, FacetRegistry facetRegistry2) = _portfolioManager.deployFactory(
+            bytes32(keccak256(abi.encodePacked("cross-factory-test")))
+        );
+
+        // Register the minimum required facets on factory2 using the SAME marketplace
+        // 1. CollateralFacet
+        CollateralFacet collateralFacet2 = new CollateralFacet(
+            address(factory2), address(_portfolioAccountConfig), address(_ve)
+        );
+        bytes4[] memory collateralSelectors = new bytes4[](11);
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[8] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSelectors[10] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        facetRegistry2.registerFacet(address(collateralFacet2), collateralSelectors, "CollateralFacet");
+
+        // 2. MarketplaceFacet (pointing to the SAME shared marketplace)
+        MarketplaceFacet marketplaceFacet2 = new MarketplaceFacet(
+            address(factory2), address(_portfolioAccountConfig), address(_ve), address(portfolioMarketplace)
+        );
+        bytes4[] memory marketplaceSelectors = new bytes4[](10);
+        marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;
+        marketplaceSelectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
+        marketplaceSelectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
+        marketplaceSelectors[3] = BaseMarketplaceFacet.getListing.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.transferDebtToBuyer.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.marketplace.selector;
+        marketplaceSelectors[8] = BaseMarketplaceFacet.getListingNonce.selector;
+        marketplaceSelectors[9] = BaseMarketplaceFacet.isListingValid.selector;
+        facetRegistry2.registerFacet(address(marketplaceFacet2), marketplaceSelectors, "MarketplaceFacet");
+
+        // 3. FortyAcresMarketplaceFacet (pointing to same marketplace)
+        FortyAcresMarketplaceFacet fortyAcresFacet2 = new FortyAcresMarketplaceFacet(
+            address(factory2), address(_portfolioAccountConfig), address(_ve), address(portfolioMarketplace)
+        );
+        bytes4[] memory fortyAcresSelectors = new bytes4[](1);
+        fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
+        facetRegistry2.registerFacet(address(fortyAcresFacet2), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
+
+        // 4. ERC721ReceiverFacet (needed to receive NFTs)
+        ERC721ReceiverFacet receiverFacet2 = new ERC721ReceiverFacet();
+        bytes4[] memory receiverSelectors = new bytes4[](1);
+        receiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
+        facetRegistry2.registerFacet(address(receiverFacet2), receiverSelectors, "ERC721ReceiverFacet");
+
+        vm.stopPrank();
+
+        // Create buyer in factory2 (cross-factory buyer)
+        address crossFactoryBuyer = address(0xCF01);
+        address buyerPortfolio2 = factory2.createAccount(crossFactoryBuyer);
+
+        // Fund buyer
+        deal(address(_usdc), crossFactoryBuyer, LISTING_PRICE);
+
+        // Seller creates listing in factory1
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, 0, address(0));
+
+        // Verify buyer is NOT in factory1
+        assertEq(_portfolioFactory.portfolioOf(crossFactoryBuyer), address(0), "Buyer should NOT be in factory1");
+        // Verify buyer IS in factory2
+        assertEq(factory2.portfolioOf(crossFactoryBuyer), buyerPortfolio2, "Buyer should be in factory2");
+
+        // Cross-factory purchase: buyer in factory2 buys from seller in factory1
+        vm.startPrank(crossFactoryBuyer);
+        IERC20(_usdc).approve(buyerPortfolio2, LISTING_PRICE);
+        address[] memory pf = new address[](1);
+        pf[0] = address(factory2); // buyer's factory
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
+            _portfolioAccount, // seller portfolio in factory1
+            _tokenId,
+            crossFactoryBuyer
+        );
+        _portfolioManager.multicall(cd, pf);
+        vm.stopPrank();
+
+        // Verify NFT transferred to buyer's portfolio in factory2
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerPortfolio2, "NFT should be in buyer's portfolio (factory2)");
+
+        // Verify payment went to seller
+        uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+        assertEq(IERC20(_usdc).balanceOf(crossFactoryBuyer), 0, "Buyer should have spent all USDC");
+        assertEq(IERC20(_usdc).balanceOf(feeRecipient), expectedProtocolFee, "Fee recipient should have protocol fee");
     }
 }

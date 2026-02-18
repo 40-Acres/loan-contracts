@@ -175,7 +175,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // Deploy MarketplaceFacet
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](7);
         marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;

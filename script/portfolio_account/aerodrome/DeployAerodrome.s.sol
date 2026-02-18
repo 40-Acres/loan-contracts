@@ -160,7 +160,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
         
         // Deploy MarketplaceFacet
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.processPayment.selector;

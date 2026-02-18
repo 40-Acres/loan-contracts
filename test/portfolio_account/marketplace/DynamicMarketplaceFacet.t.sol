@@ -122,7 +122,7 @@ contract DynamicMarketplaceFacetTest is Test {
 
         // Deploy PortfolioMarketplace
         portfolioMarketplace = new PortfolioMarketplace(
-            address(portfolioFactory),
+            address(portfolioManager),
             VOTING_ESCROW,
             PROTOCOL_FEE_BPS,
             feeRecipient

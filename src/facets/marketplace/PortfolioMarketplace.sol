@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../accounts/PortfolioManager.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IMarketplaceFacet} from "../../interfaces/IMarketplaceFacet.sol";
@@ -16,7 +17,7 @@ import {UserMarketplaceModule} from "../account/marketplace/UserMarketplaceModul
  * Handles taking funds from buyers and calling portfolio account's processPayment function
  */
 contract PortfolioMarketplace is Ownable, ReentrancyGuard {
-    PortfolioFactory public immutable portfolioFactory;
+    PortfolioManager public immutable portfolioManager;
     IVotingEscrow public immutable votingEscrow;
     uint256 public protocolFeeBps;
     address public feeRecipient;
@@ -38,16 +39,16 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     error InvalidPortfolio();
     
     constructor(
-        address _portfolioFactory,
+        address _portfolioManager,
         address _votingEscrow,
         uint256 _protocolFeeBps,
         address _feeRecipient
     ) Ownable(msg.sender) {
-        require(_portfolioFactory != address(0), "Invalid portfolio factory");
+        require(_portfolioManager != address(0), "Invalid portfolio manager");
         require(_votingEscrow != address(0), "Invalid voting escrow");
         require(_feeRecipient != address(0), "Invalid fee recipient");
-        
-        portfolioFactory = PortfolioFactory(_portfolioFactory);
+
+        portfolioManager = PortfolioManager(_portfolioManager);
         votingEscrow = IVotingEscrow(_votingEscrow);
         feeRecipient = _feeRecipient;
         protocolFeeBps = _protocolFeeBps;
@@ -85,7 +86,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         view 
         returns (UserMarketplaceModule.Listing memory listing) 
     {
-        require(portfolioFactory.isPortfolio(portfolioAccount), "Invalid portfolio");
+        require(portfolioManager.isPortfolioRegistered(portfolioAccount), "Invalid portfolio");
         return IMarketplaceFacet(portfolioAccount).getListing(tokenId);
     }
     
@@ -102,17 +103,18 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         address paymentToken,
         uint256 paymentAmount
     ) external nonReentrant {
-        // Only callable by a portfolio account (via FortyAcresMarketplaceFacet through PortfolioManager.multicall)
-        require(portfolioFactory.isPortfolio(msg.sender), "Only portfolio accounts can call");
+        // Only callable by a registered portfolio account (cross-factory safe)
+        require(portfolioManager.isPortfolioRegistered(msg.sender), "Only portfolio accounts can call");
 
         // msg.sender is the buyer's portfolio (called from FortyAcresMarketplaceFacet via diamond)
         address buyerPortfolio = msg.sender;
 
-        // Resolve the buyer EOA from the portfolio for allowedBuyer checks
-        address buyerEoa = portfolioFactory.ownerOf(buyerPortfolio);
+        // Resolve the buyer EOA via PortfolioManager (cross-factory safe)
+        address buyerFactory = portfolioManager.getFactoryForPortfolio(buyerPortfolio);
+        address buyerEoa = PortfolioFactory(buyerFactory).ownerOf(buyerPortfolio);
 
-        // Validate portfolio account
-        require(portfolioFactory.isPortfolio(portfolioAccount), InvalidPortfolio());
+        // Validate seller portfolio account (cross-factory safe)
+        require(portfolioManager.isPortfolioRegistered(portfolioAccount), InvalidPortfolio());
 
         // Get listing from portfolio account
         UserMarketplaceModule.Listing memory listing = this.getListing(portfolioAccount, tokenId);
@@ -159,8 +161,8 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         paymentTokenContract.approve(portfolioAccount, paymentAmount);
 
         // Call seller's processPayment function
-        // This will approve buyer for NFT transfer and transfer payment to seller
-        IMarketplaceFacet(portfolioAccount).processPayment(tokenId, buyerEoa, paymentAmount);
+        // Pass buyerPortfolio directly so processPayment doesn't need cross-factory lookup
+        IMarketplaceFacet(portfolioAccount).processPayment(tokenId, buyerPortfolio, paymentAmount);
 
         // Clear approval
         paymentTokenContract.approve(portfolioAccount, 0);

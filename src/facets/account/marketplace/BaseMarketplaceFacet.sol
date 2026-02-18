@@ -129,8 +129,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Ensure listing hasn't expired (0 = never expires)
         require(listing.expiresAt == 0 || listing.expiresAt > block.timestamp, "Listing expired");
 
-        // Validate buyer if restricted
-        require(listing.allowedBuyer == address(0) || listing.allowedBuyer == buyer, "Buyer not allowed");
+        // allowedBuyer validation is handled by PortfolioMarketplace.purchaseListing()
+        // which checks against both the buyer's EOA and portfolio address.
+        // processPayment is restricted to msg.sender == _marketplace, so this is safe.
 
         // Validate payment amount matches listing price
         require(paymentAmount == listing.price, "Payment amount mismatch");
@@ -183,15 +184,12 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
             paymentToken.safeTransfer(portfolioOwner, paymentAmount);
         }
 
-        // Get buyer's portfolio account (buyer parameter is the EOA, but we need to approve the portfolio account)
-        address buyerPortfolio = _portfolioFactory.portfolioOf(buyer);
-        require(buyerPortfolio != address(0), "Buyer must have a portfolio account");
-
-        // Approve buyer's portfolio account to transfer the NFT
-        _votingEscrow.approve(buyerPortfolio, tokenId);
+        // buyer parameter is the buyer's portfolio address (passed directly by PortfolioMarketplace)
+        // No cross-factory lookup needed
+        _votingEscrow.approve(buyer, tokenId);
 
         // Set approved buyer for debt transfer authorization
-        UserMarketplaceModule.setApprovedBuyer(tokenId, buyerPortfolio);
+        UserMarketplaceModule.setApprovedBuyer(tokenId, buyer);
 
         // Remove listing from user marketplace module
         UserMarketplaceModule.removeListing(tokenId);
@@ -211,7 +209,8 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         uint256 debtAmount
     ) external {
         require(msg.sender == _marketplace, "Only marketplace can finalize purchase");
-        require(_portfolioFactory.isPortfolio(seller), "Seller must be a portfolio account");
+        // Cross-factory safe: seller may be in a different factory
+        require(_portfolioFactory.portfolioManager().isPortfolioRegistered(seller), "Seller must be a portfolio account");
         require(seller != address(this), "Cannot purchase from self");
 
         // Calculate proportional unpaid fees if there's debt to transfer
@@ -265,8 +264,8 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         uint256 debtAmount,
         uint256 unpaidFees
     ) external {
-        // Only allow calls from buyer's portfolio account
-        require(_portfolioFactory.isPortfolio(msg.sender), "Caller must be a portfolio account");
+        // Only allow calls from buyer's portfolio account (cross-factory safe)
+        require(_portfolioFactory.portfolioManager().isPortfolioRegistered(msg.sender), "Caller must be a portfolio account");
         require(msg.sender == buyer, "Caller must be the buyer");
 
         // Verify buyer was approved during processPayment
