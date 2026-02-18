@@ -10,7 +10,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
@@ -23,13 +22,7 @@ import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
 contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ILendingPool {
-    using Math for uint256;
     using SafeERC20 for IERC20;
-
-    // ============ Constants ============
-    uint256 public constant DURATION = 7 days;
-    uint256 public constant MAX_EPOCH_ITERATIONS = 52; // ~1 year of weeks
-    uint256 public constant PRECISION = 1e18;
 
     // ============ Events ============
     event Synced(uint256 indexed epoch, uint256 totalLoanedAssets, uint256 principalRepaid);
@@ -48,7 +41,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     error NotPauser();
     error AlreadyPauser();
     error NotAPauser();
-    error InvalidReward();
     error ZeroAmount();
     error ZeroAddress();
 
@@ -58,9 +50,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Vault state
         uint256 totalLoanedAssets;
         mapping(address => uint256) debtBalance;
-        uint256 originationFeeBasisPoints;
-        uint256 settlementCheckpointEpoch;
-        uint256 principalRepaidAtCheckpoint;
         address portfolioFactory;
         bool paused;
         mapping(address => bool) pausers;
@@ -69,46 +58,31 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address feeCalculator;
 
         // Track vested rewards that have been applied to individual user debts
-        // This accumulates incrementally as users sync, avoiding need to iterate all users
         uint256 totalVestedRewardsApplied;
-
-        // Debt token state
-        mapping(address => mapping(uint256 => Checkpoint)) checkpoints;
-        mapping(address => uint256) numCheckpoints;
-        mapping(uint256 => uint256) totalAssetsPerEpoch;
-        mapping(uint256 => uint256) totalSupplyPerEpoch;
-        mapping(uint256 => SupplyCheckpoint) supplyCheckpoints;
-        uint256 supplyNumCheckpoints;
-        mapping(address => mapping(uint256 => uint256)) tokenClaimedPerEpoch;
-
-        // Tracks how many rewards have already been fee-split in _rebalance()
-        // so subsequent rebalances only apply the current fee rate to new rewards
-        mapping(uint256 => uint256) rebalancedAssetsPerEpoch;
-
-        // Sum of borrower balances that _earned() will actually use for each epoch
-        // (prior-epoch checkpoint balances), preventing dead supply in totalSupplyPerEpoch
-        mapping(uint256 => uint256) effectiveBorrowerSupplyPerEpoch;
-        // Last epoch in which a user's effective balance was counted
-        mapping(address => uint256) lastEffectiveSupplyEpoch;
-
-        // Tracks first reward epoch for each user to prevent retroactive checkpoint over-distribution
-        mapping(address => uint256) firstRewardEpoch;
-        mapping(address => uint256) firstRewardEpochBalance;
-
-        mapping(address => uint256) lastEarnedEpoch;
 
         // Flash loan protection: block same-block deposit+withdraw
         mapping(address => uint256) lastDepositBlock;
-    }
 
-    struct Checkpoint {
-        uint256 _epoch;
-        uint256 _balances;
-    }
+        // Running sum of all debtBalance
+        uint256 totalDebtBalance;
 
-    struct SupplyCheckpoint {
-        uint256 _epoch;
-        uint256 _supply;
+        // Epoch-based lender premium vesting
+        uint256 currentEpochPremium;     // Premium deposited in current epoch (not vesting yet)
+        uint256 currentEpochStart;       // Epoch start time for currentEpochPremium
+        uint256 vestingEpochPremium;     // Premium from previous epoch (currently vesting linearly)
+        uint256 vestingEpochStart;       // Epoch start time for vestingEpochPremium
+
+        // Per-user reward streaming
+        mapping(address => uint256) userRewardRate;        // USDC per second
+        mapping(address => uint256) userPeriodFinish;      // epoch end when stream expires
+        mapping(address => uint256) userLastSettledTime;   // last per-user settlement
+
+        // Global reward vesting tracking
+        uint256 activeEpochRate;         // sum of all active stream rates (USDC/sec)
+        uint256 activeEpochEnd;          // epoch end for active streams
+        uint256 globalLastUpdateTime;    // last global vesting computation
+        uint256 totalUnsettledRewards;   // raw reward deposits not yet processed
+        uint256 globalBorrowerPending;   // borrower portion computed globally, not yet applied per-user
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -154,10 +128,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // ============ Admin Functions ============
-    /**
-     * @notice Updates the fee calculator contract
-     * @param _newFeeCalculator The new fee calculator address
-     */
     function setFeeCalculator(address _newFeeCalculator) external onlyOwner {
         if (_newFeeCalculator == address(0)) revert ZeroAddress();
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -187,98 +157,85 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return _getStorage().pausers[account];
     }
 
-    function getSettlementCheckpoint() public view returns (uint256 checkpointEpoch, uint256 principalRepaidAtCheckpoint) {
+    function getTotalDebtBalance() public view returns (uint256) {
+        return _getStorage().totalDebtBalance;
+    }
+
+    function totalVestedRewardsApplied() external view returns (uint256) {
+        return _getStorage().totalVestedRewardsApplied;
+    }
+
+    function getUnvestedLenderPremium() public view returns (uint256) {
+        return _getUnvestedLenderPremium();
+    }
+
+    function getPendingRewards(address user) public view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        return ($.settlementCheckpointEpoch, $.principalRepaidAtCheckpoint);
+        uint256 rate = $.userRewardRate[user];
+        if (rate == 0) return 0;
+        if (block.timestamp >= $.userPeriodFinish[user]) return 0;
+        return rate * ($.userPeriodFinish[user] - $.userLastSettledTime[user]);
     }
 
-    // ============ Debt Token View Functions ============
-    function checkpoints(address _owner, uint256 _index) public view returns (uint256 epoch, uint256 balances) {
+    function getVestedPendingRewards(address user) public view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        Checkpoint storage cp = $.checkpoints[_owner][_index];
-        return (cp._epoch, cp._balances);
+        uint256 rate = $.userRewardRate[user];
+        if (rate == 0) return 0;
+        uint256 currentTime = block.timestamp < $.userPeriodFinish[user] ? block.timestamp : $.userPeriodFinish[user];
+        if (currentTime <= $.userLastSettledTime[user]) return 0;
+        return rate * (currentTime - $.userLastSettledTime[user]);
     }
 
-    function numCheckpoints(address _owner) public view returns (uint256) {
-        return _getStorage().numCheckpoints[_owner];
+    function getGlobalBorrowerPending() public view returns (uint256) {
+        return _getStorage().globalBorrowerPending;
     }
 
-    function rewardTotalAssetsPerEpoch(uint256 _epoch) public view returns (uint256) {
-        return _getStorage().totalAssetsPerEpoch[_epoch];
+    function getActiveEpochRate() public view returns (uint256) {
+        return _getStorage().activeEpochRate;
     }
 
-    function rewardTotalSupplyPerEpoch(uint256 _epoch) public view returns (uint256) {
-        return _getStorage().totalSupplyPerEpoch[_epoch];
+    function getTotalUnsettledRewards() public view returns (uint256) {
+        return _getStorage().totalUnsettledRewards;
     }
 
-    function supplyCheckpoints(uint256 _index) public view returns (uint256 epoch, uint256 supply) {
+    function lenderPremiumUnlockedThisEpoch() public view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        SupplyCheckpoint storage sc = $.supplyCheckpoints[_index];
-        return (sc._epoch, sc._supply);
-    }
+        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 WEEK = ProtocolTimeLibrary.WEEK;
 
-    function supplyNumCheckpoints() public view returns (uint256) {
-        return _getStorage().supplyNumCheckpoints;
-    }
+        uint256 vestPremium = $.vestingEpochPremium;
+        uint256 vestStart = $.vestingEpochStart;
+        uint256 currentPremium = $.currentEpochPremium;
+        uint256 currentStart = $.currentEpochStart;
 
-    function tokenClaimedPerEpoch(address _owner, uint256 _epoch) public view returns (uint256) {
-        return _getStorage().tokenClaimedPerEpoch[_owner][_epoch];
-    }
-
-    function getFirstRewardEpoch(address _owner) public view returns (uint256) {
-        return _getStorage().firstRewardEpoch[_owner];
-    }
-
-    function rewardTotalSupply() public view returns (uint256) {
-        return _getStorage().totalSupplyPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)];
-    }
-
-    function rewardTotalSupply(uint256 epoch) public view returns (uint256) {
-        return _getStorage().totalSupplyPerEpoch[epoch];
-    }
-
-    function rewardTotalAssets() public view returns (uint256) {
-        return _getStorage().totalAssetsPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)];
-    }
-
-    function rewardTotalAssets(uint256 epoch) public view returns (uint256) {
-        epoch = ProtocolTimeLibrary.epochStart(epoch);
-        uint256 currentTimestamp = block.timestamp;
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(currentTimestamp);
-
-        if (currentEpoch == epoch) {
-            DynamicFeesVaultStorage storage $ = _getStorage();
-            uint256 assets = $.totalAssetsPerEpoch[epoch];
-            uint256 duration = ProtocolTimeLibrary.epochNext(epoch) - epoch;
-            uint256 elapsed = currentTimestamp - epoch;
-            uint256 prorated = (assets * elapsed) / duration;
-            return prorated;
+        // Simulate roll
+        if (vestStart > 0 && epochStart > vestStart) {
+            vestPremium = 0; vestStart = 0;
         }
-        return _getStorage().totalAssetsPerEpoch[epoch];
+        if (currentStart > 0 && epochStart > currentStart) {
+            uint256 vestEpochStart = currentStart + WEEK;
+            if (epochStart <= vestEpochStart) {
+                vestPremium += currentPremium;
+                vestStart = vestEpochStart;
+            }
+        }
+
+        if (vestPremium == 0 || vestStart == 0) return 0;
+        uint256 elapsed = block.timestamp - vestStart;
+        if (elapsed >= WEEK) return vestPremium;
+        return (vestPremium * elapsed) / WEEK;
     }
 
     // ============ ERC4626 Override ============
     function totalAssets() public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-
-        // Two components reduce the effective debt:
-        // 1. totalVestedRewardsApplied - rewards already applied to individual user debts
-        // 2. Pending vesting - rewards that could be applied but users haven't synced yet
-        //
-        // Total effective reduction = totalVestedRewardsApplied + pending vesting
-        // Since pending vesting = currentPrincipalRepaid - totalVestedRewardsApplied,
-        // Total reduction = currentPrincipalRepaid
-        uint256 currentPrincipalRepaid = _getPrincipalRepaid();
-
-        uint256 adjustedTotalLoanedAssets = $.totalLoanedAssets > currentPrincipalRepaid
-            ? $.totalLoanedAssets - currentPrincipalRepaid
-            : 0;
-
-        uint256 lenderPremiumCurrentEpoch = _previewLenderPremiumUnlocked();
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        return IERC20(asset()).balanceOf(address(this)) + adjustedTotalLoanedAssets
-            - $.totalAssetsPerEpoch[currentEpoch] + lenderPremiumCurrentEpoch;
+        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
+        uint256 outstandingDebt = $.totalLoanedAssets > totalReduction
+            ? $.totalLoanedAssets - totalReduction : 0;
+        uint256 unvested = _getUnvestedLenderPremium();
+        uint256 total = IERC20(asset()).balanceOf(address(this)) + outstandingDebt;
+        return total > (unvested + $.totalUnsettledRewards)
+            ? total - unvested - $.totalUnsettledRewards : 0;
     }
 
     // ============ Fee Calculator Functions ============
@@ -298,331 +255,196 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return ($.totalLoanedAssets * 10000) / total;
     }
 
-    // ============ Checkpoint Functions ============
-    function getPriorBalanceIndex(address _owner, uint256 _timestamp) public view returns (uint256) {
+    // ============ Lender Premium Vesting ============
+    function _rollLenderPremium() internal {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 nCheckpoints = $.numCheckpoints[_owner];
-        if (nCheckpoints == 0) {
-            return 0;
+        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+
+        // Step 1: If vesting epoch is in the past, its premium is fully vested — clear it
+        if ($.vestingEpochStart > 0 && epochStart > $.vestingEpochStart) {
+            $.vestingEpochPremium = 0;
+            $.vestingEpochStart = 0;
         }
 
-        uint256 epoch = ProtocolTimeLibrary.epochStart(_timestamp);
+        // Step 2: If current epoch premium is from a past epoch, promote to vesting
+        if ($.currentEpochStart > 0 && epochStart > $.currentEpochStart) {
+            uint256 vestEpochStart = $.currentEpochStart + ProtocolTimeLibrary.WEEK;
+            if (epochStart <= vestEpochStart) {
+                // We're in the immediate next epoch — move to vesting
+                $.vestingEpochPremium += $.currentEpochPremium;
+                $.vestingEpochStart = vestEpochStart;
+            }
+            // else: gap > 1 epoch — premium already fully vested, nothing to do
+            $.currentEpochPremium = 0;
+            $.currentEpochStart = epochStart;
+        }
+    }
 
-        if ($.checkpoints[_owner][nCheckpoints - 1]._epoch <= epoch) {
-            return (nCheckpoints - 1);
+    function _getUnvestedLenderPremium() internal view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 WEEK = ProtocolTimeLibrary.WEEK;
+        uint256 unvested = 0;
+
+        // Simulate the roll to get current-state values
+        uint256 currentPremium = $.currentEpochPremium;
+        uint256 currentStart = $.currentEpochStart;
+        uint256 vestPremium = $.vestingEpochPremium;
+        uint256 vestStart = $.vestingEpochStart;
+
+        // Clear vesting if its epoch has passed
+        if (vestStart > 0 && epochStart > vestStart) {
+            vestPremium = 0;
+            vestStart = 0;
         }
 
-        if ($.checkpoints[_owner][0]._epoch > epoch) {
-            return 0;
+        // Promote current to vesting if epoch advanced
+        if (currentStart > 0 && epochStart > currentStart) {
+            uint256 vestEpochStart = currentStart + WEEK;
+            if (epochStart <= vestEpochStart) {
+                vestPremium += currentPremium;
+                vestStart = vestEpochStart;
+            }
+            currentPremium = 0;
         }
 
-        uint256 lower = 0;
-        uint256 upper = nCheckpoints - 1;
-        while (upper > lower) {
-            uint256 center = upper - (upper - lower) / 2;
-            Checkpoint storage cp = $.checkpoints[_owner][center];
-            if (cp._epoch == epoch) {
-                return center;
-            } else if (cp._epoch < epoch) {
-                lower = center;
+        // Current epoch premium is completely unvested
+        unvested += currentPremium;
+
+        // Vesting premium: linearly releasing over its epoch
+        if (vestPremium > 0 && vestStart > 0) {
+            uint256 elapsed = block.timestamp - vestStart;
+            if (elapsed < WEEK) {
+                unvested += vestPremium - (vestPremium * elapsed) / WEEK;
+            }
+            // else: fully vested
+        }
+
+        return unvested;
+    }
+
+    // ============ Reward Streaming Functions ============
+
+    /**
+     * @notice Process global vesting of all active reward streams
+     * @dev Called at the top of every state-changing function. Computes total vested
+     *      from all streams, extracts lender premium, accumulates borrower credit.
+     */
+    function _processGlobalVesting() internal {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        if ($.activeEpochRate == 0) return;
+
+        uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
+        if (currentTime <= $.globalLastUpdateTime) return;
+
+        uint256 globalVested = $.activeEpochRate * (currentTime - $.globalLastUpdateTime);
+        $.globalLastUpdateTime = currentTime;
+
+        // If past epoch end, clear the rate
+        if (block.timestamp >= $.activeEpochEnd) {
+            $.activeEpochRate = 0;
+            $.activeEpochEnd = 0;
+        }
+
+        // Cap globalVested at totalUnsettledRewards to prevent underflow from rounding
+        if (globalVested > $.totalUnsettledRewards) {
+            globalVested = $.totalUnsettledRewards;
+        }
+
+        // Compute fee split using current ratio
+        uint256 ratio = getCurrentVaultRatioBps();
+        uint256 lenderPremium = (globalVested * ratio) / 10000;
+        uint256 borrowerCredit = globalVested - lenderPremium;
+
+        // Track lender premium — vest in current epoch (not delayed)
+        if (lenderPremium > 0) {
+            _rollLenderPremium();
+            uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+            if ($.vestingEpochStart == epochStart) {
+                // Already vesting in this epoch — accumulate
+                $.vestingEpochPremium += lenderPremium;
             } else {
-                upper = center - 1;
+                // Start new vesting for current epoch
+                $.vestingEpochPremium = lenderPremium;
+                $.vestingEpochStart = epochStart;
             }
         }
-        return lower;
+
+        $.totalUnsettledRewards -= globalVested;
+        $.globalBorrowerPending += borrowerCredit;
     }
 
-    function _getCurrentRewardBalance(address _owner) internal view returns (uint256) {
+    /**
+     * @notice Settle vested rewards for a specific user, applying borrower credit to their debt
+     * @param user The user whose rewards to settle
+     */
+    function _settleRewards(address user) internal {
+        _processGlobalVesting();
+
         DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 nCheckpoints = $.numCheckpoints[_owner];
-        if (nCheckpoints == 0) {
-            return 0;
-        }
-        return $.checkpoints[_owner][nCheckpoints - 1]._balances;
-    }
 
-    function _writeCheckpoint(address _owner, uint256 _balance) internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 _nCheckPoints = $.numCheckpoints[_owner];
-        uint256 _timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 rate = $.userRewardRate[user];
+        if (rate == 0) return;
 
-        if (_nCheckPoints > 0 && $.checkpoints[_owner][_nCheckPoints - 1]._epoch == _timestamp) {
-            $.checkpoints[_owner][_nCheckPoints - 1] = Checkpoint(_timestamp, _balance);
-        } else {
-            $.checkpoints[_owner][_nCheckPoints] = Checkpoint(_timestamp, _balance);
-            $.numCheckpoints[_owner] = _nCheckPoints + 1;
-        }
-    }
+        uint256 currentTime = block.timestamp < $.userPeriodFinish[user] ? block.timestamp : $.userPeriodFinish[user];
+        if (currentTime <= $.userLastSettledTime[user]) return;
 
-    function _writeSupplyCheckpoint() internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 _nCheckPoints = $.supplyNumCheckpoints;
-        uint256 _timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
+        uint256 userVested = rate * (currentTime - $.userLastSettledTime[user]);
+        $.userLastSettledTime[user] = currentTime;
 
-        if (_nCheckPoints > 0 && $.supplyCheckpoints[_nCheckPoints - 1]._epoch == _timestamp) {
-            $.supplyCheckpoints[_nCheckPoints - 1] = SupplyCheckpoint(_timestamp, rewardTotalSupply());
-        } else {
-            $.supplyCheckpoints[_nCheckPoints] = SupplyCheckpoint(_timestamp, rewardTotalSupply());
-            $.supplyNumCheckpoints = _nCheckPoints + 1;
-        }
-    }
-
-    // ============ Reward Functions ============
-    function _getReward(address _owner) internal returns (uint256) {
-        return _earned(_owner);
-    }
-
-    function lenderPremiumUnlockedThisEpoch() public returns (uint256) {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        _earned(address(this));
-        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        return $.tokenClaimedPerEpoch[address(this)][_epoch];
-    }
-
-    function debtRepaidThisEpoch() public returns (uint256) {
-        uint256 _epoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        return rewardTotalAssets(_epoch) - lenderPremiumUnlockedThisEpoch();
-    }
-
-    function _earned(address _owner) internal returns (uint256) {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        if ($.numCheckpoints[_owner] == 0) {
-            return 0;
+        // If past period finish, clear user stream
+        if (block.timestamp >= $.userPeriodFinish[user]) {
+            $.userRewardRate[user] = 0;
+            $.userPeriodFinish[user] = 0;
         }
 
-        uint256 reward = 0;
-        uint256 _supply = 1;
-        uint256 _currTs = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 _index = getPriorBalanceIndex(_owner, _currTs);
-        Checkpoint storage cp0 = $.checkpoints[_owner][_index];
-
-        // Start from the checkpoint epoch
-        _currTs = ProtocolTimeLibrary.epochStart(cp0._epoch);
-
-        uint256 currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-        if (_currTs >= DURATION) {
-            _currTs = _currTs - DURATION;
+        // Compute borrower reward using current ratio, capped at globalBorrowerPending
+        // to prevent over-extraction from ratio drift between global and per-user settlement
+        uint256 ratio = getCurrentVaultRatioBps();
+        uint256 borrowerReward = userVested - (userVested * ratio) / 10000;
+        if (borrowerReward > $.globalBorrowerPending) {
+            borrowerReward = $.globalBorrowerPending;
         }
 
-        uint256 cursor = $.lastEarnedEpoch[_owner];
-        if (cursor > 0 && cursor > _currTs) {
-            _currTs = cursor;
-        }
-
-        uint256 numEpochs = 0;
-        if (currentEpochStart >= _currTs) {
-            numEpochs = ((currentEpochStart - _currTs) / DURATION) + 1;
-        }
-
-        if (numEpochs > MAX_EPOCH_ITERATIONS) {
-            numEpochs = MAX_EPOCH_ITERATIONS;
-        }
-
-        if (numEpochs > 0) {
-            for (uint256 i = 0; i < numEpochs; i++) {
-                uint256 epoch = _currTs;
-
-                // Guard: skip epochs before user's first participation
-                uint256 _fre = $.firstRewardEpoch[_owner];
-                if (_fre != 0 && epoch < _fre) {
-                    _currTs += DURATION;
-                    continue;
-                }
-
-                _supply = Math.max(rewardTotalSupply(epoch), 1);
-                uint256 assetsUnlocked = rewardTotalAssets(epoch);
-
-                if (assetsUnlocked == 0) {
-                    _currTs += DURATION;
-                    continue;
-                }
-
-                uint256 balanceForEpoch;
-
-                if (_fre != 0 && epoch == _fre) {
-                    // First epoch: use stored balance (matches effectiveBorrowerSupplyPerEpoch)
-                    balanceForEpoch = $.firstRewardEpochBalance[_owner];
-                } else {
-                    // Normal path: prior-epoch checkpoint lookup (unchanged behavior)
-                    uint256 queryTimestamp = _currTs > 0 ? _currTs - 1 : _currTs;
-                    _index = getPriorBalanceIndex(_owner, queryTimestamp);
-
-                    uint256 nCheckpoints = $.numCheckpoints[_owner];
-                    if (_index >= nCheckpoints) {
-                        _currTs += DURATION;
-                        continue;
-                    }
-
-                    cp0 = $.checkpoints[_owner][_index];
-
-                    uint256 cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
-                    while (cpEpoch >= _currTs && _index > 0) {
-                        _index = _index - 1;
-                        cp0 = $.checkpoints[_owner][_index];
-                        cpEpoch = ProtocolTimeLibrary.epochStart(cp0._epoch);
-                    }
-
-                    balanceForEpoch = cp0._balances;
-                }
-
-                uint256 epochReward = (balanceForEpoch * assetsUnlocked) / _supply;
-                uint256 alreadyClaimed = $.tokenClaimedPerEpoch[_owner][epoch];
-                uint256 newReward = epochReward > alreadyClaimed ? epochReward - alreadyClaimed : 0;
-
-                $.tokenClaimedPerEpoch[_owner][epoch] = epochReward;
-                reward += newReward;
-                _currTs += DURATION;
-            }
-
-            // Save cursor: _currTs was advanced past the last processed epoch
-            $.lastEarnedEpoch[_owner] = _currTs - DURATION;
-        }
-
-        return reward;
-    }
-
-    // ============ Reward Mint Functions ============
-    function _mintReward(address _to, uint256 _amount) internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 currentBalance = _getCurrentRewardBalance(_to);
-
-        bool isNewUser = $.numCheckpoints[_to] == 0;
-
-        if (isNewUser) {
-            $.firstRewardEpoch[_to] = currentEpoch;
-            $.firstRewardEpochBalance[_to] = _amount;
-        }
-
-        $.totalAssetsPerEpoch[currentEpoch] += _amount;
-
-        // Track effective borrower supply — the sum of balances that _earned() will actually use.
-        // For the first epoch, _earned() uses firstRewardEpochBalance instead of prior-epoch lookup.
-        if ($.lastEffectiveSupplyEpoch[_to] != currentEpoch) {
-            $.lastEffectiveSupplyEpoch[_to] = currentEpoch;
-            if (isNewUser) {
-                // New user — _earned() will use firstRewardEpochBalance for this epoch
-                $.effectiveBorrowerSupplyPerEpoch[currentEpoch] += _amount;
+        // Apply to user's debt
+        uint256 oldDebtBalance = $.debtBalance[user];
+        if (borrowerReward > 0 && oldDebtBalance > 0) {
+            if (borrowerReward > oldDebtBalance) {
+                uint256 excess = borrowerReward - oldDebtBalance;
+                $.debtBalance[user] = 0;
+                $.totalDebtBalance -= oldDebtBalance;
+                $.totalVestedRewardsApplied += oldDebtBalance;
+                $.globalBorrowerPending -= borrowerReward;
+                IERC20(asset()).safeTransfer(user, excess);
+                emit ExcessRewardsPaid(user, excess);
             } else {
-                // Existing user — _earned() uses their prior-epoch checkpoint balance
-                $.effectiveBorrowerSupplyPerEpoch[currentEpoch] += currentBalance;
-            }
-        }
-
-        uint256 newBalance = currentBalance + _amount;
-        _writeCheckpoint(_to, newBalance);
-        _rebalance();
-
-        emit RewardsMinted(_to, _amount);
-    }
-
-    function _rebalance() internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 utilizationBps = getUtilizationPercent();
-        uint256 ratio = getVaultRatioBps(utilizationBps);
-        if (ratio > 0 && ratio < 10000) {
-            uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-            // Only apply current fee rate to rewards added since last rebalance
-            // This ensures lender premium is monotonically increasing within an epoch
-            uint256 previouslyRebalanced = $.rebalancedAssetsPerEpoch[currentEpoch];
-            uint256 newRewards = $.totalAssetsPerEpoch[currentEpoch] - previouslyRebalanced;
-
-            uint256 currentVaultBalance = _getCurrentRewardBalance(address(this));
-            uint256 incrementalVaultShare = (newRewards * ratio) / (10000 - ratio);
-            uint256 newVaultBalance = currentVaultBalance + incrementalVaultShare;
-
-            $.rebalancedAssetsPerEpoch[currentEpoch] = $.totalAssetsPerEpoch[currentEpoch];
-            $.totalSupplyPerEpoch[currentEpoch] = $.effectiveBorrowerSupplyPerEpoch[currentEpoch] + newVaultBalance;
-            _writeCheckpoint(address(this), newVaultBalance);
-            _writeSupplyCheckpoint();
-        }
-    }
-
-    // ============ Internal Helper Functions ============
-    function _previewLenderPremiumUnlocked() internal view returns (uint256) {
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        return $.tokenClaimedPerEpoch[address(this)][currentEpoch];
-    }
-
-    function assetsUnlockedThisEpoch() public view returns (uint256) {
-        return rewardTotalAssets(ProtocolTimeLibrary.epochStart(block.timestamp));
-    }
-
-    function _getPrincipalRepaid() internal view returns (uint256) {
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 checkpointEpoch = $.settlementCheckpointEpoch;
-        uint256 totalPrincipalRepaid = 0;
-
-        uint256 startEpoch = checkpointEpoch > 0 ? checkpointEpoch : currentEpoch;
-
-        uint256 iterations = 0;
-        for (uint256 epoch = startEpoch; epoch <= currentEpoch && iterations < MAX_EPOCH_ITERATIONS; epoch += ProtocolTimeLibrary.WEEK) {
-            iterations++;
-            uint256 assetsUnlocked = rewardTotalAssets(epoch);
-            if (assetsUnlocked == 0) continue;
-
-            uint256 lenderPremium;
-            if (epoch == currentEpoch) {
-                lenderPremium = _previewLenderPremiumUnlocked();
-            } else {
-                lenderPremium = $.tokenClaimedPerEpoch[address(this)][epoch];
+                $.debtBalance[user] -= borrowerReward;
+                $.totalDebtBalance -= borrowerReward;
+                $.totalVestedRewardsApplied += borrowerReward;
+                $.globalBorrowerPending -= borrowerReward;
             }
 
-            uint256 principalRepaid = assetsUnlocked > lenderPremium ? assetsUnlocked - lenderPremium : 0;
-            totalPrincipalRepaid += principalRepaid;
+            emit DebtBalanceUpdated(user, oldDebtBalance, $.debtBalance[user], borrowerReward);
+        } else if (borrowerReward > 0 && oldDebtBalance == 0) {
+            // No debt — send full borrower reward as excess
+            $.globalBorrowerPending -= borrowerReward;
+            IERC20(asset()).safeTransfer(user, borrowerReward);
+            emit ExcessRewardsPaid(user, borrowerReward);
         }
-
-        return totalPrincipalRepaid;
     }
 
-    function _updateSettlementCheckpoint() internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        _getReward(address(this));
-
-        // totalLoanedAssets is NOT reduced here - it's only reduced on explicit repayment
-        // totalAssets() calculates the adjustment view-only using principalRepaid
-        uint256 currentPrincipalRepaid = _getPrincipalRepaid();
-        $.principalRepaidAtCheckpoint = currentPrincipalRepaid;
-        $.settlementCheckpointEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-    }
-
-    function _updateUserDebtBalance(address borrower) internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 earned = _getReward(borrower);
-        uint256 oldDebtBalance = $.debtBalance[borrower];
-
-        if (earned > 0) {
-            // Calculate actual debt reduction (capped at current balance)
-            uint256 debtReduction = earned > oldDebtBalance ? oldDebtBalance : earned;
-
-            if (earned > oldDebtBalance) {
-                // Rewards exceed debt - clear debt and transfer excess to borrower
-                uint256 excess = earned - oldDebtBalance;
-                $.debtBalance[borrower] = 0;
-                IERC20(asset()).safeTransfer(borrower, excess);
-                emit ExcessRewardsPaid(borrower, excess);
-            } else {
-                // Partial repayment - reduce debt by earned amount
-                $.debtBalance[borrower] -= earned;
-            }
-
-            // Track vested rewards applied to individual debts
-            // This allows totalAssets() to calculate correct global debt without iterating all users
-            $.totalVestedRewardsApplied += debtReduction;
-
-            emit DebtBalanceUpdated(borrower, oldDebtBalance, $.debtBalance[borrower], earned);
-        }
-
-        _rebalance();
+    /**
+     * @notice Public wrapper to settle rewards for any user
+     * @param user The user whose rewards to settle
+     */
+    function settleRewards(address user) external {
+        _settleRewards(user);
     }
 
     // ============ Core Vault Functions ============
     function borrow(uint256 amount) external onlyPortfolio whenNotPaused {
-        _updateSettlementCheckpoint();
-        _updateUserDebtBalance(msg.sender);
+        _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
 
@@ -633,43 +455,65 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         IERC20(asset()).safeTransfer(msg.sender, amount);
         $.debtBalance[msg.sender] += amount;
+        $.totalDebtBalance += amount;
         $.totalLoanedAssets += amount;
-        _updateUserDebtBalance(msg.sender);
-        _updateSettlementCheckpoint();
     }
 
     function repay(uint256 amount) external whenNotPaused {
-        _updateSettlementCheckpoint();
-        _updateUserDebtBalance(msg.sender);
+        _settleRewards(msg.sender);
+
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 userDebtBalance = $.debtBalance[msg.sender];
         uint256 amountToRepay = userDebtBalance < amount ? userDebtBalance : amount;
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amountToRepay);
         $.totalLoanedAssets -= amountToRepay;
         $.debtBalance[msg.sender] -= amountToRepay;
-        _updateUserDebtBalance(msg.sender);
-        _updateSettlementCheckpoint();
+        $.totalDebtBalance -= amountToRepay;
     }
 
     function repayWithRewards(uint256 amount) external whenNotPaused {
         if (amount == 0) revert ZeroAmount();
 
-        _updateSettlementCheckpoint();
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
-        _mintReward(msg.sender, amount);
-        _updateUserDebtBalance(msg.sender);
-        _updateSettlementCheckpoint();
+
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        // Settle any existing vested rewards for this user
+        _settleRewards(msg.sender);
+
+        // Compute remaining unsettled from existing stream
+        uint256 remaining = 0;
+        if ($.userRewardRate[msg.sender] > 0 && $.userPeriodFinish[msg.sender] > block.timestamp) {
+            remaining = $.userRewardRate[msg.sender] * ($.userPeriodFinish[msg.sender] - block.timestamp);
+            $.activeEpochRate -= $.userRewardRate[msg.sender]; // remove old rate from global
+        }
+
+        // Create new stream combining remaining + new amount
+        uint256 total = remaining + amount;
+        uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 duration = periodFinish - block.timestamp;
+        uint256 newRate = total / duration;
+
+        $.userRewardRate[msg.sender] = newRate;
+        $.userPeriodFinish[msg.sender] = periodFinish;
+        $.userLastSettledTime[msg.sender] = block.timestamp;
+
+        $.activeEpochRate += newRate;
+        if ($.activeEpochEnd != periodFinish) {
+            $.activeEpochEnd = periodFinish;
+        }
+        if ($.globalLastUpdateTime < block.timestamp) {
+            $.globalLastUpdateTime = block.timestamp;
+        }
+
+        $.totalUnsettledRewards += amount;
+
+        emit RewardsMinted(msg.sender, amount);
     }
 
     // ============ ILendingPool Implementation ============
-    /**
-     * @notice Borrow funds from the vault on behalf of a portfolio account
-     * @param amount The amount to borrow
-     * @return originationFee Always returns 0 for DynamicFeesVault (no origination fees)
-     */
     function borrowFromPortfolio(uint256 amount) external onlyPortfolio whenNotPaused returns (uint256 originationFee) {
-        _updateSettlementCheckpoint();
-        _updateUserDebtBalance(msg.sender);
+        _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
 
@@ -680,30 +524,21 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         IERC20(asset()).safeTransfer(msg.sender, amount);
         $.debtBalance[msg.sender] += amount;
+        $.totalDebtBalance += amount;
         $.totalLoanedAssets += amount;
-        _updateUserDebtBalance(msg.sender);
-        _updateSettlementCheckpoint();
 
-        return 0; // No origination fee for DynamicFeesVault
+        return 0;
     }
 
-    /**
-     * @notice Repay funds to the vault from a portfolio account
-     * @param totalPayment The total payment amount
-     * @param feesToPay The portion of payment that goes to protocol fees (sent to owner)
-     */
     function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused returns (uint256 actualPaid) {
-        _updateSettlementCheckpoint();
-        _updateUserDebtBalance(msg.sender);
+        _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
 
-        // Handle unpaid fees first - transfer to protocol owner
         if (feesToPay > 0) {
             IERC20(asset()).safeTransferFrom(msg.sender, owner(), feesToPay);
         }
 
-        // Transfer remaining amount to vault (principal repayment)
         uint256 amountToRepay;
         uint256 balanceToPay = totalPayment - feesToPay;
         if (balanceToPay > 0) {
@@ -713,70 +548,31 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             IERC20(asset()).safeTransferFrom(msg.sender, address(this), amountToRepay);
             $.totalLoanedAssets -= amountToRepay;
             $.debtBalance[msg.sender] -= amountToRepay;
+            $.totalDebtBalance -= amountToRepay;
         }
-
-        _updateUserDebtBalance(msg.sender);
-        _updateSettlementCheckpoint();
 
         return feesToPay + amountToRepay;
     }
 
-    /**
-     * @notice Get the lending asset address
-     * @return The address of the lending asset (same as ERC4626 asset)
-     */
     function lendingAsset() external view returns (address) {
         return asset();
     }
 
-    /**
-     * @notice Compatibility shim for PortfolioAccountConfig.getDebtToken() which calls ILoan._asset()
-     * @return The underlying asset address (USDC)
-     */
     function _asset() external view returns (address) {
         return asset();
     }
 
-    /**
-     * @notice Get the vault address (this contract is both lending pool and vault)
-     * @return The vault address (address(this))
-     */
     function lendingVault() external view returns (address) {
         return address(this);
     }
 
-    /**
-     * @notice Get the total outstanding loaned assets
-     * @return The total amount of assets currently loaned out
-     */
     function activeAssets() external view returns (uint256) {
         return _getStorage().totalLoanedAssets;
     }
 
-    /**
-     * @notice Get the total vested rewards that have been applied to individual user debts
-     * @return The cumulative vested rewards applied
-     */
-    function totalVestedRewardsApplied() external view returns (uint256) {
-        return _getStorage().totalVestedRewardsApplied;
-    }
-
-    function updateUserDebtBalance(address borrower) public {
-        _updateSettlementCheckpoint();
-        _updateUserDebtBalance(borrower);
-        _updateSettlementCheckpoint();
-    }
-
-    /**
-     * @notice Transfer debt from one borrower to another
-     * @param from The address to transfer debt from
-     * @param to The address to transfer debt to
-     * @param amount The amount of debt to transfer
-     */
     function transferDebt(address from, address to, uint256 amount) external onlyPortfolio {
-        _updateSettlementCheckpoint();
-        _updateUserDebtBalance(from);
-        _updateUserDebtBalance(to);
+        _settleRewards(from);
+        _settleRewards(to);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
 
@@ -786,20 +582,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.debtBalance[from] -= transferAmount;
         $.debtBalance[to] += transferAmount;
 
-        _updateUserDebtBalance(from);
-        _updateUserDebtBalance(to);
-        _updateSettlementCheckpoint();
-
         emit DebtTransferred(from, to, transferAmount);
     }
 
     function sync() public {
-        _updateSettlementCheckpoint();
+        _processGlobalVesting();
         DynamicFeesVaultStorage storage $ = _getStorage();
+        _rollLenderPremium();
         emit Synced(
             ProtocolTimeLibrary.epochStart(block.timestamp),
             $.totalLoanedAssets,
-            $.principalRepaidAtCheckpoint
+            $.totalVestedRewardsApplied
         );
     }
 
@@ -858,14 +651,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        _processGlobalVesting();
+
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
 
         $.lastDepositBlock[receiver] = block.number;
 
-        _updateSettlementCheckpoint();
         super._deposit(caller, receiver, assets, shares);
-        _rebalance();
     }
 
     function _withdraw(
@@ -875,15 +668,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 assets,
         uint256 shares
     ) internal virtual override {
+        _processGlobalVesting();
+
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
 
-        // Prevent flash deposit+withdraw manipulation of utilization cap
         require($.lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
 
-        _updateSettlementCheckpoint();
         super._withdraw(caller, receiver, _owner, assets, shares);
-        _rebalance();
     }
 
     // ============ Access Control ============

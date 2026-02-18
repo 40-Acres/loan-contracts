@@ -31,91 +31,46 @@ contract MockUSDC is ERC20 {
 
 /**
  * @title MockPortfolioFactory
- * @notice Simple mock portfolio factory that returns true for isPortfolio if address is not zero
  */
 contract MockPortfolioFactory is IPortfolioFactory {
     function isPortfolio(address _portfolio) external pure override returns (bool) {
         return _portfolio != address(0);
     }
-
-    function facetRegistry() external pure override returns (address) {
-        return address(0);
-    }
-
-    function portfolioManager() external pure override returns (address) {
-        return address(0);
-    }
-
-    function portfolios(address) external pure override returns (address) {
-        return address(0);
-    }
-
-    function owners(address) external pure override returns (address) {
-        return address(0);
-    }
-
-    function createAccount(address) external pure override returns (address) {
-        return address(0);
-    }
-
-    function getRegistryVersion() external pure override returns (uint256) {
-        return 0;
-    }
-
-    function ownerOf(address) external pure override returns (address) {
-        return address(0);
-    }
-
-    function portfolioOf(address) external pure override returns (address) {
-        return address(0);
-    }
-
-    function getAllPortfolios() external pure override returns (address[] memory) {
-        return new address[](0);
-    }
-
-    function getPortfoliosLength() external pure override returns (uint256) {
-        return 0;
-    }
-
-    function getPortfolio(uint256) external pure override returns (address) {
-        return address(0);
-    }
+    function facetRegistry() external pure override returns (address) { return address(0); }
+    function portfolioManager() external pure override returns (address) { return address(0); }
+    function portfolios(address) external pure override returns (address) { return address(0); }
+    function owners(address) external pure override returns (address) { return address(0); }
+    function createAccount(address) external pure override returns (address) { return address(0); }
+    function getRegistryVersion() external pure override returns (uint256) { return 0; }
+    function ownerOf(address) external pure override returns (address) { return address(0); }
+    function portfolioOf(address) external pure override returns (address) { return address(0); }
+    function getAllPortfolios() external pure override returns (address[] memory) { return new address[](0); }
+    function getPortfoliosLength() external pure override returns (uint256) { return 0; }
+    function getPortfolio(uint256) external pure override returns (address) { return address(0); }
 }
 
 /**
  * @title FlatFeeCalculator
- * @notice Test fee calculator that returns a flat fee regardless of utilization
  */
 contract FlatFeeCalculator is IFeeCalculator {
     uint256 public immutable flatRate;
-
-    constructor(uint256 _flatRate) {
-        flatRate = _flatRate;
-    }
-
-    function getVaultRatioBps(uint256) external view override returns (uint256) {
-        return flatRate;
-    }
+    constructor(uint256 _flatRate) { flatRate = _flatRate; }
+    function getVaultRatioBps(uint256) external view override returns (uint256) { return flatRate; }
 }
 
 /**
  * @title HighFeeCalculator
- * @notice Test fee calculator that returns higher fees than default
  */
 contract HighFeeCalculator is IFeeCalculator {
     function getVaultRatioBps(uint256 utilizationBps) external pure override returns (uint256) {
-        if (utilizationBps <= 5000) {
-            return 6000;
-        } else {
-            return 6000 + (utilizationBps - 5000) * 7 / 10;
-        }
+        if (utilizationBps <= 5000) return 6000;
+        return 6000 + (utilizationBps - 5000) * 7 / 10;
     }
 }
 
 /**
  * @title DynamicFeesVaultTest
- * @notice Test suite for DynamicFeesVault with USDC
+ * @notice Test suite for DynamicFeesVault with per-user reward streaming
  */
 contract DynamicFeesVaultTest is Test {
     DynamicFeesVault public vault;
@@ -124,59 +79,61 @@ contract DynamicFeesVaultTest is Test {
     address public owner;
     address public user1;
 
+    uint256 constant WEEK = ProtocolTimeLibrary.WEEK;
+    // setUp warps to 2*WEEK, so epoch boundaries are at 2*WEEK, 3*WEEK, etc.
+    uint256 constant EPOCH_2 = 2 * WEEK;
+    uint256 constant EPOCH_3 = 3 * WEEK;
+    uint256 constant EPOCH_4 = 4 * WEEK;
+    uint256 constant EPOCH_5 = 5 * WEEK;
+
     function setUp() public {
-        // Start at week 2 to avoid epoch 0 edge cases
-        vm.warp(2 * ProtocolTimeLibrary.WEEK);
+        vm.warp(EPOCH_2);
 
         owner = address(0x1);
         user1 = address(0x2);
 
-        // Deploy mock USDC
         usdc = new MockUSDC();
-
-        // Deploy mock portfolio factory
         portfolioFactory = new MockPortfolioFactory();
 
-        // Deploy vault implementation
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
-
-        // Deploy proxy
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            address(usdc),
-            "USDC Vault",
-            "vUSDC",
-            address(portfolioFactory)
+            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory)
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(vaultImpl), initData);
         vault = DynamicFeesVault(address(proxy));
 
-        // Transfer ownership (Ownable2Step requires acceptance)
         vault.transferOwnership(owner);
         vm.prank(owner);
         vault.acceptOwnership();
 
-        // Deposit assets into vault so it has funds to borrow from
         usdc.approve(address(vault), 1000e6);
         vault.deposit(1000e6, address(this));
     }
 
-    function testBorrow() public {
-        vm.startPrank(user1);
-        vault.borrow(790e6);
-        vm.stopPrank();
+    /// @dev Helper: warp to end of current epoch and settle rewards for a user
+    function _warpAndSettle(address user) internal {
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user);
+    }
 
-        uint256 utilizationPercent = vault.getUtilizationPercent();
-        assertLt(utilizationPercent, 8000, "Utilization should be less than 80%");
+    /// @dev Helper: warp to a specific time and settle rewards for a user
+    function _warpToAndSettle(uint256 timestamp, address user) internal {
+        vm.warp(timestamp);
+        vault.settleRewards(user);
+    }
+
+    // ============ Basic Borrow/Repay Tests ============
+
+    function testBorrow() public {
+        vm.prank(user1);
+        vault.borrow(790e6);
+        assertLt(vault.getUtilizationPercent(), 8000);
     }
 
     function testBorrowAndRepay() public {
-        vm.startPrank(user1);
+        vm.prank(user1);
         vault.borrow(790e6);
-        vm.stopPrank();
-
-        uint256 utilizationPercent = vault.getUtilizationPercent();
-        assertLt(utilizationPercent, 8000, "Utilization should be less than 80%");
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 790e6);
@@ -184,8 +141,7 @@ contract DynamicFeesVaultTest is Test {
         vault.repay(790e6);
         vm.stopPrank();
 
-        uint256 utilizationPercent2 = vault.getUtilizationPercent();
-        assertEq(utilizationPercent2, 0, "Utilization should be 0%");
+        assertEq(vault.getUtilizationPercent(), 0);
     }
 
     function testDepositAndWithdraw() public {
@@ -194,90 +150,47 @@ contract DynamicFeesVaultTest is Test {
         usdc.approve(address(vault), 800e6);
         vault.deposit(800e6, address(this));
         vm.stopPrank();
-
-        uint256 utilizationPercent = vault.getUtilizationPercent();
-        assertLt(utilizationPercent, 800e6, "Utilization should be less than 80%");
     }
 
     function testCannotWithdrawMoreThanLiquid() public {
-        vm.startPrank(user1);
+        vm.prank(user1);
         vault.borrow(500e6);
-        vm.stopPrank();
 
         uint256 vaultBalance = usdc.balanceOf(address(vault));
-        uint256 shares = vault.balanceOf(address(this));
-
         vm.expectRevert();
         vault.withdraw(vaultBalance + 1, address(this), address(this));
     }
 
     function testTotalAssetsIncludesLoanedAssets() public {
         uint256 totalAssetsBefore = vault.totalAssets();
-
-        vm.startPrank(user1);
+        vm.prank(user1);
         vault.borrow(500e6);
-        vm.stopPrank();
-
-        uint256 totalAssetsAfter = vault.totalAssets();
-        assertEq(totalAssetsBefore, totalAssetsAfter, "Total assets should include loaned assets");
+        assertEq(vault.totalAssets(), totalAssetsBefore, "Total assets should include loaned assets");
     }
 
     function testUtilizationCalculation() public {
-        uint256 total = vault.totalAssets();
-        assertEq(total, 1000e6, "Total assets should be 1000 USDC");
-
+        assertEq(vault.totalAssets(), 1000e6);
         vm.prank(user1);
         vault.borrow(500e6);
-
-        uint256 utilization = vault.getUtilizationPercent();
-        assertEq(utilization, 5000, "Utilization should be 50%");
-    }
-
-    function testBorrowAndRepayWithRewards() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        vm.startPrank(user1);
-        vault.borrow(500e6);
-        vm.stopPrank();
-
-        assertEq(vault.getDebtBalance(user1), 500e6, "Debt balance should be 500");
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 250e6);
-        usdc.approve(address(vault), 250e6);
-        vault.repayWithRewards(250e6);
-        vm.stopPrank();
-
-        assertEq(vault.getDebtBalance(user1), 500e6, "Debt balance should still be 500 (rewards not yet vested)");
-
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        vault.updateUserDebtBalance(user1);
-
-        uint256 debtAfter = vault.getDebtBalance(user1);
-        assertLt(debtAfter, 500e6, "Debt balance should be reduced after rewards vest");
+        assertEq(vault.getUtilizationPercent(), 5000, "Utilization should be 50%");
     }
 
     function testMultipleUsersBorrow() public {
         address user2 = address(0x3);
-
         vm.prank(user1);
         vault.borrow(300e6);
-
         vm.prank(user2);
         vault.borrow(200e6);
 
-        assertEq(vault.getDebtBalance(user1), 300e6, "User1 debt should be 300");
-        assertEq(vault.getDebtBalance(user2), 200e6, "User2 debt should be 200");
-        assertEq(vault.totalLoanedAssets(), 500e6, "Total loaned should be 500");
+        assertEq(vault.getDebtBalance(user1), 300e6);
+        assertEq(vault.getDebtBalance(user2), 200e6);
+        assertEq(vault.totalLoanedAssets(), 500e6);
+        assertEq(vault.getTotalDebtBalance(), 500e6);
     }
 
     function testOverRepayOnlyRepaysDebt() public {
-        vm.startPrank(user1);
+        vm.prank(user1);
         vault.borrow(100e6);
-        vm.stopPrank();
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
@@ -285,14 +198,13 @@ contract DynamicFeesVaultTest is Test {
         vault.repay(200e6);
         vm.stopPrank();
 
-        assertEq(vault.getDebtBalance(user1), 0, "Debt should be 0");
-        assertEq(usdc.balanceOf(user1), 100e6, "User should have 100 USDC remaining");
+        assertEq(vault.getDebtBalance(user1), 0);
+        assertEq(usdc.balanceOf(user1), 100e6);
     }
 
     function testPartialRepay() public {
-        vm.startPrank(user1);
+        vm.prank(user1);
         vault.borrow(500e6);
-        vm.stopPrank();
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
@@ -300,7 +212,7 @@ contract DynamicFeesVaultTest is Test {
         vault.repay(200e6);
         vm.stopPrank();
 
-        assertEq(vault.getDebtBalance(user1), 300e6, "Debt should be 300 after partial repay");
+        assertEq(vault.getDebtBalance(user1), 300e6);
     }
 
     function testRepayWithZeroDebt() public {
@@ -310,33 +222,25 @@ contract DynamicFeesVaultTest is Test {
         vault.repay(100e6);
         vm.stopPrank();
 
-        assertEq(vault.getDebtBalance(user1), 0, "Debt should still be 0");
+        assertEq(vault.getDebtBalance(user1), 0);
     }
 
     function testWithdrawLimitedByLiquidity() public {
-        // Roll past deposit block to clear flash loan guard
         vm.roll(block.number + 1);
-
         vm.prank(user1);
         vault.borrow(500e6);
 
-        // After borrow, vault has 500e6 USDC remaining
         uint256 vaultBalance = usdc.balanceOf(address(vault));
-        assertEq(vaultBalance, 500e6, "Vault should have 500e6 USDC after borrow");
+        assertEq(vaultBalance, 500e6);
 
-        // maxWithdraw is now capped at liquid USDC in the vault
         uint256 maxWithdrawable = vault.maxWithdraw(address(this));
-
-        assertGt(maxWithdrawable, 0, "Should have some max withdrawable amount");
-        assertLe(maxWithdrawable, vaultBalance, "maxWithdraw should be capped at liquid USDC");
+        assertGt(maxWithdrawable, 0);
+        assertLe(maxWithdrawable, vaultBalance);
     }
 
     function testCannotBorrowWhenUtilizationAt80Percent() public {
         vm.prank(user1);
         vault.borrow(790e6);
-
-        uint256 utilization = vault.getUtilizationPercent();
-        assertLt(utilization, 8000, "Should be just under 80%");
 
         address user2 = address(0x3);
         vm.prank(user2);
@@ -348,59 +252,24 @@ contract DynamicFeesVaultTest is Test {
         vm.prank(user1);
         vault.borrow(700e6);
 
-        uint256 utilization = vault.getUtilizationPercent();
-        assertLt(utilization, 8000, "Utilization should be under 80%");
-
         address user2 = address(0x3);
         vm.prank(user2);
         vault.borrow(50e6);
 
-        assertEq(vault.totalLoanedAssets(), 750e6, "Total loaned should be 750");
+        assertEq(vault.totalLoanedAssets(), 750e6);
     }
 
     function testGetVaultRatioBps() public view {
-        uint256 rate0 = vault.getVaultRatioBps(0);
-        assertEq(rate0, 500, "0% utilization should return 5%");
-
-        uint256 rate1000 = vault.getVaultRatioBps(1000);
-        assertEq(rate1000, 2000, "10% utilization should return 20%");
-
-        uint256 rate5000 = vault.getVaultRatioBps(5000);
-        assertEq(rate5000, 2000, "50% utilization should return 20%");
-
-        uint256 rate9000 = vault.getVaultRatioBps(9000);
-        assertEq(rate9000, 4000, "90% utilization should return 40%");
-
-        uint256 rate10000 = vault.getVaultRatioBps(10000);
-        assertEq(rate10000, 9500, "100% utilization should return 95%");
+        assertEq(vault.getVaultRatioBps(0), 500);
+        assertEq(vault.getVaultRatioBps(1000), 2000);
+        assertEq(vault.getVaultRatioBps(5000), 2000);
+        assertEq(vault.getVaultRatioBps(9000), 4000);
+        assertEq(vault.getVaultRatioBps(10000), 9500);
     }
 
-    function testMultipleRepayWithRewardsInSameEpoch() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
+    // ============ Reward Streaming Tests ============
 
-        vm.prank(user1);
-        vault.borrow(500e6);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 300e6);
-        usdc.approve(address(vault), 300e6);
-
-        vault.repayWithRewards(100e6);
-        vault.repayWithRewards(100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        uint256 currentEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(currentEpoch);
-        assertEq(totalRewards, 300e6, "Total rewards should be 300");
-    }
-
-    function testRewardsAccumulateOverMultipleEpochs() public {
-        // Start at beginning of an epoch
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(epoch1);
-
+    function testRepayWithRewardsDoesNotReduceDebtImmediately() public {
         vm.prank(user1);
         vault.borrow(500e6);
 
@@ -410,24 +279,98 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        // Move to next epoch
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        vm.warp(epoch2);
+        // Debt should NOT be reduced immediately — rewards are streaming
+        assertEq(vault.getDebtBalance(user1), 500e6, "Debt should not change immediately");
+        assertGt(vault.getActiveEpochRate(), 0, "Stream should be active");
+        assertEq(vault.getTotalUnsettledRewards(), 100e6, "Unsettled should be 100");
+    }
+
+    function testRepayWithRewardsReducesDebtAfterVesting() public {
+        vm.prank(user1);
+        vault.borrow(500e6);
 
         vm.startPrank(user1);
-        deal(address(usdc), user1, 150e6);
-        usdc.approve(address(vault), 150e6);
-        vault.repayWithRewards(150e6);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        assertEq(vault.rewardTotalAssetsPerEpoch(epoch1), 100e6, "Epoch1 rewards should be 100");
-        assertEq(vault.rewardTotalAssetsPerEpoch(epoch2), 150e6, "Epoch2 rewards should be 150");
+        // Warp to end of epoch and settle
+        _warpAndSettle(user1);
+
+        // Borrower share reduces sender's debt
+        uint256 debtAfter = vault.getDebtBalance(user1);
+        assertLt(debtAfter, 500e6, "Debt should be reduced after vesting + settle");
+    }
+
+    function testRewardsOnlyReduceDepositorDebt() public {
+        address user2 = address(0x3);
+
+        vm.prank(user1);
+        vault.borrow(300e6);
+        vm.prank(user2);
+        vault.borrow(200e6);
+
+        // user1 deposits rewards
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp and settle both users
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+        vault.settleRewards(user2);
+
+        // user1's debt should be reduced
+        assertLt(vault.getDebtBalance(user1), 300e6, "Depositor debt should be reduced");
+        // user2's debt should be UNCHANGED
+        assertEq(vault.getDebtBalance(user2), 200e6, "Non-depositor debt should be unchanged");
+    }
+
+    function testTotalClaimedNeverExceedsTotalDeposited() public {
+        address user2 = address(0x3);
+        address user3 = address(0x4);
+
+        vm.prank(user1);
+        vault.borrow(100e6);
+        vm.prank(user2);
+        vault.borrow(200e6);
+        vm.prank(user3);
+        vault.borrow(300e6);
+
+        // Multiple reward deposits from different users
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        deal(address(usdc), user2, 80e6);
+        usdc.approve(address(vault), 80e6);
+        vault.repayWithRewards(80e6);
+        vm.stopPrank();
+
+        // Warp and settle all users
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+        vault.settleRewards(user2);
+        vault.settleRewards(user3);
+
+        uint256 totalReduction = (100e6 - vault.getDebtBalance(user1))
+            + (200e6 - vault.getDebtBalance(user2))
+            + (300e6 - vault.getDebtBalance(user3));
+
+        uint256 vestedApplied = vault.totalVestedRewardsApplied();
+        assertEq(vestedApplied, totalReduction, "Vested should match reductions");
+
+        // user3 never deposited, their debt should be unchanged
+        assertEq(vault.getDebtBalance(user3), 300e6, "Non-depositor debt unchanged");
     }
 
     function testDebtFullyPaidByRewards() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
         vm.prank(user1);
         vault.borrow(100e6);
 
@@ -437,27 +380,20 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(150e6);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        uint256 usdcBalanceBefore = usdc.balanceOf(user1);
-        vault.updateUserDebtBalance(user1);
-        uint256 usdcBalanceAfter = usdc.balanceOf(user1);
+        // Warp and settle — excess should be sent as USDC
+        _warpAndSettle(user1);
 
         assertEq(vault.getDebtBalance(user1), 0, "Debt should be fully paid");
-        // Excess rewards are transferred as USDC, not minted as shares (prevents shareholder dilution)
-        assertGt(usdcBalanceAfter, usdcBalanceBefore, "User should receive USDC for excess rewards");
+        assertGt(usdc.balanceOf(user1), 0, "User should receive USDC for excess rewards");
     }
 
-    function testVestedRewardsReduceUserDebt() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
+    function testExcessRewardsDoNotDiluteShareholders() public {
+        uint256 totalSupplyBefore = vault.totalSupply();
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 sharePriceBefore = totalAssetsBefore * 1e18 / totalSupplyBefore;
 
         vm.prank(user1);
-        vault.borrow(500e6);
-
-        uint256 debtBefore = vault.getDebtBalance(user1);
-        assertEq(debtBefore, 500e6, "Initial debt should be 500e6");
+        vault.borrow(100e6);
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
@@ -465,87 +401,58 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(200e6);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
+        // Share price shouldn't decrease immediately
+        uint256 sharePriceNow = vault.totalAssets() * 1e18 / vault.totalSupply();
+        assertGe(sharePriceNow, sharePriceBefore, "Share price should not decrease immediately");
 
-        vault.sync();
-        vault.updateUserDebtBalance(user1);
+        // Warp and settle to clear debt + excess
+        _warpAndSettle(user1);
+        assertEq(vault.getDebtBalance(user1), 0);
 
-        // User's debt should decrease after vesting
+        // Premium extracted at EPOCH_3 → vests in same epoch → fully vested at EPOCH_4
+        vm.warp(EPOCH_4);
+
+        uint256 totalSupplyAfter = vault.totalSupply();
+        uint256 totalAssetsAfter = vault.totalAssets();
+        uint256 sharePriceAfter = totalAssetsAfter * 1e18 / totalSupplyAfter;
+
+        assertGe(sharePriceAfter, sharePriceBefore, "Share price should not decrease after vesting");
+        assertEq(vault.balanceOf(user1), 0, "Borrower should not receive vault shares");
+    }
+
+    function testMultipleRepayWithRewardsAccumulate() public {
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Deposit 3 times in same block — streams combine
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 300e6);
+        usdc.approve(address(vault), 300e6);
+        vault.repayWithRewards(100e6);
+        vault.repayWithRewards(100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // All 300 should be streaming
+        assertEq(vault.getTotalUnsettledRewards(), 300e6, "All 300 should be unsettled");
+
+        // Warp and settle — all rewards vest
+        _warpAndSettle(user1);
+
         uint256 debtAfter = vault.getDebtBalance(user1);
-        assertLt(debtAfter, debtBefore, "User debt should decrease as rewards vest");
+        assertLt(debtAfter, 500e6, "Debt should be reduced after settling all rewards");
 
-        // totalVestedRewardsApplied should track the vested amount
-        uint256 vestedAmount = vault.totalVestedRewardsApplied();
-        assertGt(vestedAmount, 0, "Vested rewards should be tracked");
-
-        // Verify invariant: debtBalance = totalLoanedAssets - totalVestedRewardsApplied
-        uint256 expectedDebt = vault.totalLoanedAssets() - vestedAmount;
-        assertEq(debtAfter, expectedDebt, "Debt should match invariant");
-    }
-
-    function testSettlementCheckpointUpdatesCorrectly() public {
-        // Start at beginning of an epoch
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(epoch1);
-
-        vm.prank(user1);
-        vault.borrow(500e6);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        // Move to next epoch
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        vm.warp(epoch2);
-
-        vault.sync();
-
-        (uint256 checkpointEpoch, uint256 principalRepaid) = vault.getSettlementCheckpoint();
-        assertEq(checkpointEpoch, epoch2, "Checkpoint epoch should be current");
-        assertGt(principalRepaid, 0, "Principal repaid should be > 0");
-    }
-
-    function testLenderPremiumVsBorrowerPrincipalSplit() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        vm.prank(user1);
-        vault.borrow(500e6);
-
-        uint256 utilization = vault.getUtilizationPercent();
-        uint256 vaultRatio = vault.getVaultRatioBps(utilization);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        vault.sync();
-
-        uint256 totalAssets = vault.rewardTotalAssetsPerEpoch(ProtocolTimeLibrary.epochStart(timestamp) - ProtocolTimeLibrary.WEEK);
-        uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), ProtocolTimeLibrary.epochStart(timestamp) - ProtocolTimeLibrary.WEEK);
-
-        assertGt(lenderPremium, 0, "Lender premium should be > 0");
-        assertLt(lenderPremium, totalAssets, "Lender premium should be less than total");
+        // Borrower share of 300 should reduce debt significantly
+        uint256 ratio = vault.getCurrentVaultRatioBps();
+        uint256 expectedBorrowerShare = 300e6 - (300e6 * ratio / 10000);
+        assertApproxEqAbs(500e6 - debtAfter, expectedBorrowerShare, 2e6, "Debt reduction should match borrower share");
     }
 
     function testMultipleUsersRepayWithRewards() public {
         address user2 = address(0x3);
 
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
         vm.prank(user1);
         vault.borrow(300e6);
-
         vm.prank(user2);
         vault.borrow(200e6);
 
@@ -561,126 +468,346 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        vault.updateUserDebtBalance(user1);
-        vault.updateUserDebtBalance(user2);
+        // Warp and settle both
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+        vault.settleRewards(user2);
 
         assertLt(vault.getDebtBalance(user1), 300e6, "User1 debt should be reduced");
         assertLt(vault.getDebtBalance(user2), 200e6, "User2 debt should be reduced");
     }
 
-    function testMultipleUsersRepayWithRewardsEarlyRepayerGetsUSDC() public {
+    function testMultipleConcurrentBorrowersSettling() public {
         address user2 = address(0x3);
-
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
+        address user3 = address(0x4);
+        address user4 = address(0x5);
 
         vm.prank(user1);
         vault.borrow(100e6);
-
         vm.prank(user2);
+        vault.borrow(150e6);
+        vm.prank(user3);
         vault.borrow(200e6);
+        vm.prank(user4);
+        vault.borrow(100e6);
 
+        assertEq(vault.totalLoanedAssets(), 550e6);
+        assertEq(vault.getTotalDebtBalance(), 550e6);
+
+        // Each user deposits their own rewards
         vm.startPrank(user1);
-        deal(address(usdc), user1, 200e6);
-        usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        deal(address(usdc), user1, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
-        deal(address(usdc), user2, 100e6);
+        deal(address(usdc), user2, 75e6);
+        usdc.approve(address(vault), 75e6);
+        vault.repayWithRewards(75e6);
+        vm.stopPrank();
+
+        vm.startPrank(user3);
+        deal(address(usdc), user3, 100e6);
         usdc.approve(address(vault), 100e6);
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        uint256 user1UsdcBefore = usdc.balanceOf(user1);
-        vault.updateUserDebtBalance(user1);
-        uint256 user1UsdcAfter = usdc.balanceOf(user1);
-
-        assertEq(vault.getDebtBalance(user1), 0, "User1 debt should be fully paid");
-        // Excess rewards are transferred as USDC, not minted as shares (prevents shareholder dilution)
-        assertGt(user1UsdcAfter, user1UsdcBefore, "User1 should receive USDC for excess rewards");
-    }
-
-    function testExcessRewardsDoNotDiluteShareholders() public {
-        // This test verifies that when a borrower earns more rewards than their debt,
-        // the excess is transferred as USDC rather than minted as shares, preventing
-        // dilution of existing vault shareholders.
-
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        // Record initial share price (assets per share)
-        uint256 totalSupplyBefore = vault.totalSupply();
-        uint256 totalAssetsBefore = vault.totalAssets();
-        uint256 sharePriceBefore = totalAssetsBefore * 1e18 / totalSupplyBefore;
-
-        // User1 borrows a small amount
-        vm.prank(user1);
-        vault.borrow(100e6);
-
-        // User1 repays with significantly more rewards than their debt
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 200e6);
-        usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        vm.startPrank(user4);
+        deal(address(usdc), user4, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
         vm.stopPrank();
 
-        // Move to next epoch so rewards vest
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
+        // Warp and settle all users
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+        vault.settleRewards(user2);
+        vault.settleRewards(user3);
+        vault.settleRewards(user4);
 
-        // Expect the ExcessRewardsPaid event to be emitted
-        vm.expectEmit(true, false, false, false);
-        emit DynamicFeesVault.ExcessRewardsPaid(user1, 0);
-        vault.updateUserDebtBalance(user1);
+        uint256 debt1 = vault.getDebtBalance(user1);
+        uint256 debt2 = vault.getDebtBalance(user2);
+        uint256 debt3 = vault.getDebtBalance(user3);
+        uint256 debt4 = vault.getDebtBalance(user4);
 
-        // Verify debt is fully paid
-        assertEq(vault.getDebtBalance(user1), 0, "Debt should be fully paid");
+        assertLt(debt1, 100e6, "User1 debt should be reduced");
+        assertLt(debt2, 150e6, "User2 debt should be reduced");
+        assertLt(debt3, 200e6, "User3 debt should be reduced");
+        assertLt(debt4, 100e6, "User4 debt should be reduced");
 
-        // Calculate share price after excess rewards distribution
-        uint256 totalSupplyAfter = vault.totalSupply();
-        uint256 totalAssetsAfter = vault.totalAssets();
-        uint256 sharePriceAfter = totalAssetsAfter * 1e18 / totalSupplyAfter;
+        uint256 totalDebt = debt1 + debt2 + debt3 + debt4;
+        assertLt(totalDebt, 550e6, "Total debt should be reduced");
 
-        // Share price should NOT decrease (no dilution)
-        // With the fix, shares are not minted so total supply stays the same
-        assertGe(sharePriceAfter, sharePriceBefore, "Share price should not decrease (no dilution)");
-
-        // Total supply should not have increased from minting shares to borrower
-        // (user1 had 0 shares before this test)
-        assertEq(vault.balanceOf(user1), 0, "Borrower should not receive vault shares");
+        assertEq(vault.getTotalDebtBalance(), totalDebt, "totalDebtBalance should match sum of debts");
     }
 
-    function testFeeRatioProgressionOverEpoch() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
+    // ============ Partial Vesting Tests ============
+
+    function testPartialVestingAt50Percent() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
         vm.prank(user1);
         vault.borrow(500e6);
 
         vm.startPrank(user1);
-        deal(address(usdc), user1, 200e6);
-        usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        uint256 epochDuration = ProtocolTimeLibrary.WEEK;
+        // Warp to 50% of epoch duration
+        uint256 halfwayPoint = EPOCH_2 + (EPOCH_3 - EPOCH_2) / 2;
+        vm.warp(halfwayPoint);
+        vault.settleRewards(user1);
 
-        for (uint256 i = 1; i <= 7; i++) {
-            vm.warp(timestamp + (i * epochDuration / 7));
+        // ~50% of borrower share should be applied
+        uint256 expectedBorrowerTotal = 80e6; // 80% of 100
+        uint256 debtReduction = 500e6 - vault.getDebtBalance(user1);
+        assertApproxEqAbs(debtReduction, expectedBorrowerTotal / 2, 1e6, "~50% of borrower share should be applied at halfway");
+    }
 
-            uint256 utilization = vault.getUtilizationPercent();
-            uint256 feeRatio = vault.getVaultRatioBps(utilization);
+    function testMidStreamDeposit() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
-            assertGe(feeRatio, 500, "Fee ratio should be at least 5%");
-            assertLe(feeRatio, 9500, "Fee ratio should be at most 95%");
-        }
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // First deposit at epoch start
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp to 50% and make second deposit
+        uint256 halfwayPoint = EPOCH_2 + (EPOCH_3 - EPOCH_2) / 2;
+        vm.warp(halfwayPoint);
+
+        vm.startPrank(user1);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp to end and settle
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+
+        // Both deposits should contribute to debt reduction
+        uint256 debtAfter = vault.getDebtBalance(user1);
+        assertLt(debtAfter, 500e6, "Debt should be reduced");
+        // Total borrower share: 80% of 200 = 160
+        // But some rounding from rate computation
+        uint256 debtReduction = 500e6 - debtAfter;
+        assertApproxEqAbs(debtReduction, 160e6, 3e6, "Both deposits should contribute to ~160 debt reduction");
+    }
+
+    // ============ totalAssets Tests ============
+
+    function testTotalAssetsUnchangedByRewardDeposit() public {
+        uint256 totalAssetsBefore = vault.totalAssets();
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets unchanged after borrow");
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // totalAssets should NOT increase (rewards are unsettled)
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets unchanged after reward deposit");
+    }
+
+    function testTotalAssetsIncreasesAfterLenderPremiumVests() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
+
+        uint256 totalAssetsBefore = vault.totalAssets();
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp to end of stream epoch — triggers global vesting via sync
+        // Premium deposited directly into vestingEpochPremium at EPOCH_3 (vests in same epoch)
+        vm.warp(EPOCH_3);
+        vault.sync();
+
+        // At EPOCH_3 start, 0% elapsed in vesting epoch → premium is fully unvested
+        // totalAssets should still equal totalAssetsBefore
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets unchanged at start of vesting epoch");
+
+        // At EPOCH_3 + WEEK/2 = halfway through vesting
+        vm.warp(EPOCH_3 + WEEK / 2);
+
+        uint256 totalAssetsMid = vault.totalAssets();
+        assertGt(totalAssetsMid, totalAssetsBefore, "totalAssets should increase as premium vests");
+
+        // Warp to fully vested (end of EPOCH_3)
+        vm.warp(EPOCH_4);
+
+        uint256 totalAssetsAfter = vault.totalAssets();
+        uint256 increase = totalAssetsAfter - totalAssetsBefore;
+        assertApproxEqAbs(increase, 20e6, 1e6, "Increase should be ~20 USDC (20% of 100)");
+    }
+
+    // ============ Fee Split Tests ============
+
+    function testFeeSplitAtDifferentRates() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        uint256 totalAssetsBefore = vault.totalAssets();
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // totalAssets unchanged in deposit epoch
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets unchanged in deposit epoch");
+
+        // Warp to end of stream and settle
+        _warpAndSettle(user1);
+
+        // Borrower debt reduction = 80% of 100 = 80
+        uint256 debtReduction = 500e6 - vault.getDebtBalance(user1);
+        assertApproxEqAbs(debtReduction, 80e6, 2e6, "Debt reduction should be ~80 USDC at 20% fee");
+
+        // Premium extracted at EPOCH_3 → vests in same epoch → fully vested at EPOCH_4
+        vm.warp(EPOCH_4);
+
+        uint256 lenderPremium = vault.totalAssets() - totalAssetsBefore;
+        assertApproxEqAbs(lenderPremium, 20e6, 2e6, "Lender premium should be ~20 USDC at 20% fee after vesting");
+    }
+
+    function testFeeSplitAt50Percent() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(5000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        uint256 totalAssetsBefore = vault.totalAssets();
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp and settle
+        _warpAndSettle(user1);
+
+        uint256 debtReduction = 500e6 - vault.getDebtBalance(user1);
+        assertApproxEqAbs(debtReduction, 50e6, 2e6, "Debt reduction should be ~50 USDC at 50% fee");
+
+        // Premium extracted at EPOCH_3 → vests in same epoch → fully vested at EPOCH_4
+        vm.warp(EPOCH_4);
+
+        uint256 lenderPremium = vault.totalAssets() - totalAssetsBefore;
+        assertApproxEqAbs(lenderPremium, 50e6, 2e6, "Lender premium should be ~50 USDC at 50% fee after vesting");
+    }
+
+    function testFeeCalculatorSwapAffectsRewardSplit() public {
+        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000); // 20% lender
+        vm.prank(owner);
+        vault.setFeeCalculator(address(lowFee));
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Deposit rewards
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp to 50% and settle — first half at 20% fee
+        uint256 halfwayPoint = EPOCH_2 + (EPOCH_3 - EPOCH_2) / 2;
+        _warpToAndSettle(halfwayPoint, user1);
+
+        uint256 debtAfterFirstHalf = vault.getDebtBalance(user1);
+        uint256 firstHalfReduction = 500e6 - debtAfterFirstHalf;
+
+        // Swap to high fee calculator (60%)
+        FlatFeeCalculator highFee = new FlatFeeCalculator(6000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        // Warp to end and settle — second half at 60% fee
+        _warpAndSettle(user1);
+
+        uint256 secondHalfReduction = debtAfterFirstHalf - vault.getDebtBalance(user1);
+
+        // First half: ~80% borrower = ~40 USDC debt reduction
+        // Second half: ~40% borrower = ~20 USDC debt reduction
+        assertGt(firstHalfReduction, secondHalfReduction, "Higher fee should give less to borrower");
+    }
+
+    // ============ Fee Calculator Tests ============
+
+    function testFeeCalculatorAddressExposed() public view {
+        assertNotEq(vault.feeCalculator(), address(0));
+    }
+
+    function testOnlyOwnerCanSetFeeCalculator() public {
+        FeeCalculator newFeeCalc = new FeeCalculator();
+        vm.prank(user1);
+        vm.expectRevert();
+        vault.setFeeCalculator(address(newFeeCalc));
+
+        vm.prank(owner);
+        vault.setFeeCalculator(address(newFeeCalc));
+        assertEq(vault.feeCalculator(), address(newFeeCalc));
+    }
+
+    function testSwapFeeCalculator() public {
+        FlatFeeCalculator flatFeeCalc = new FlatFeeCalculator(5000);
+
+        assertEq(vault.getVaultRatioBps(5000), 2000);
+
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFeeCalc));
+
+        assertEq(vault.getVaultRatioBps(5000), 5000);
+        assertEq(vault.getVaultRatioBps(1000), 5000);
+        assertEq(vault.getVaultRatioBps(9000), 5000);
+    }
+
+    function testCannotSetZeroAddressFeeCalculator() public {
+        vm.prank(owner);
+        vm.expectRevert(DynamicFeesVault.ZeroAddress.selector);
+        vault.setFeeCalculator(address(0));
+    }
+
+    function testFeeCalculatorUpdatedEvent() public {
+        FeeCalculator newFeeCalc = new FeeCalculator();
+        address oldCalc = vault.feeCalculator();
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, false);
+        emit DynamicFeesVault.FeeCalculatorUpdated(oldCalc, address(newFeeCalc));
+        vault.setFeeCalculator(address(newFeeCalc));
     }
 
     // ============ Pause Mechanism Tests ============
@@ -688,24 +815,20 @@ contract DynamicFeesVaultTest is Test {
     function testPauseByOwner() public {
         vm.prank(owner);
         vault.pause();
-        assertTrue(vault.paused(), "Vault should be paused");
+        assertTrue(vault.paused());
     }
 
     function testPauseByAuthorizedPauser() public {
         address pauser = address(0x999);
-
         vm.prank(owner);
         vault.addPauser(pauser);
-
         vm.prank(pauser);
         vault.pause();
-        assertTrue(vault.paused(), "Vault should be paused");
+        assertTrue(vault.paused());
     }
 
     function testCannotPauseIfNotAuthorized() public {
-        address notPauser = address(0x888);
-
-        vm.prank(notPauser);
+        vm.prank(address(0x888));
         vm.expectRevert(DynamicFeesVault.NotPauser.selector);
         vault.pause();
     }
@@ -724,25 +847,23 @@ contract DynamicFeesVaultTest is Test {
 
         vm.prank(owner);
         vault.unpause();
-        assertFalse(vault.paused(), "Vault should be unpaused");
+        assertFalse(vault.paused());
     }
 
     function testAddAndRemovePauser() public {
         address pauser = address(0x999);
-
         vm.prank(owner);
         vault.addPauser(pauser);
-        assertTrue(vault.isPauser(pauser), "Should be a pauser");
+        assertTrue(vault.isPauser(pauser));
 
         vm.prank(owner);
         vault.removePauser(pauser);
-        assertFalse(vault.isPauser(pauser), "Should not be a pauser");
+        assertFalse(vault.isPauser(pauser));
     }
 
     function testCannotBorrowWhenPaused() public {
         vm.prank(owner);
         vault.pause();
-
         vm.prank(user1);
         vm.expectRevert(DynamicFeesVault.ContractPaused.selector);
         vault.borrow(100e6);
@@ -751,7 +872,6 @@ contract DynamicFeesVaultTest is Test {
     function testCannotRepayWhenPaused() public {
         vm.prank(user1);
         vault.borrow(100e6);
-
         vm.prank(owner);
         vault.pause();
 
@@ -766,7 +886,6 @@ contract DynamicFeesVaultTest is Test {
     function testCannotRepayWithRewardsWhenPaused() public {
         vm.prank(user1);
         vault.borrow(100e6);
-
         vm.prank(owner);
         vault.pause();
 
@@ -794,8 +913,6 @@ contract DynamicFeesVaultTest is Test {
         vm.roll(block.number + 1);
         vm.prank(owner);
         vault.pause();
-
-        // maxWithdraw returns 0 when paused, so ERC4626 base reverts before _withdraw
         vm.expectRevert();
         vault.withdraw(100e6, address(this), address(this));
     }
@@ -803,142 +920,24 @@ contract DynamicFeesVaultTest is Test {
     function testCanSyncWhenPaused() public {
         vm.prank(owner);
         vault.pause();
-
         vault.sync();
-    }
-
-    function testCanUpdateUserDebtBalanceWhenPaused() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        vm.prank(user1);
-        vault.borrow(100e6);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
-        vm.stopPrank();
-
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        vm.prank(owner);
-        vault.pause();
-
-        vault.updateUserDebtBalance(user1);
-        assertLt(vault.getDebtBalance(user1), 100e6, "Debt should be reduced even when paused");
-    }
-
-    // ============ Fee Calculator Tests ============
-
-    function testFeeCalculatorAddressExposed() public view {
-        address feeCalc = vault.feeCalculator();
-        assertNotEq(feeCalc, address(0), "Fee calculator should not be zero address");
-    }
-
-    function testOnlyOwnerCanSetFeeCalculator() public {
-        FeeCalculator newFeeCalc = new FeeCalculator();
-
-        vm.prank(user1);
-        vm.expectRevert();
-        vault.setFeeCalculator(address(newFeeCalc));
-
-        vm.prank(owner);
-        vault.setFeeCalculator(address(newFeeCalc));
-
-        assertEq(vault.feeCalculator(), address(newFeeCalc), "Fee calculator should be updated");
-    }
-
-    function testSwapFeeCalculator() public {
-        FlatFeeCalculator flatFeeCalc = new FlatFeeCalculator(5000);
-
-        uint256 rateBefore = vault.getVaultRatioBps(5000);
-        assertEq(rateBefore, 2000, "Fee should be 20% at 50% utilization");
-
-        vm.prank(owner);
-        vault.setFeeCalculator(address(flatFeeCalc));
-
-        uint256 rateAfter = vault.getVaultRatioBps(5000);
-        assertEq(rateAfter, 5000, "Fee should now be 50%");
-
-        assertEq(vault.getVaultRatioBps(1000), 5000, "Fee at 10% utilization should be 50%");
-        assertEq(vault.getVaultRatioBps(9000), 5000, "Fee at 90% utilization should be 50%");
-    }
-
-    function testFeeCalculatorSwapAffectsRebalance() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        vm.prank(user1);
-        vault.borrow(500e6);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        uint256 currentUtilization = vault.getUtilizationPercent();
-        uint256 ratioBefore = vault.getVaultRatioBps(currentUtilization);
-
-        HighFeeCalculator highFeeCalc = new HighFeeCalculator();
-        vm.prank(owner);
-        vault.setFeeCalculator(address(highFeeCalc));
-
-        uint256 ratioAfter = vault.getVaultRatioBps(currentUtilization);
-        assertGt(ratioAfter, ratioBefore, "High fee calculator should return higher rate");
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        assertEq(
-            vault.getCurrentVaultRatioBps(),
-            highFeeCalc.getVaultRatioBps(vault.getUtilizationPercent()),
-            "Current vault ratio should match high fee calculator"
-        );
-    }
-
-    function testCannotSetZeroAddressFeeCalculator() public {
-        vm.prank(owner);
-        vm.expectRevert(DynamicFeesVault.ZeroAddress.selector);
-        vault.setFeeCalculator(address(0));
-    }
-
-    function testFeeCalculatorUpdatedEvent() public {
-        FeeCalculator newFeeCalc = new FeeCalculator();
-        address oldCalc = vault.feeCalculator();
-
-        vm.prank(owner);
-        vm.expectEmit(true, true, false, false);
-        emit DynamicFeesVault.FeeCalculatorUpdated(oldCalc, address(newFeeCalc));
-        vault.setFeeCalculator(address(newFeeCalc));
     }
 
     // ============ Upgrade Tests ============
 
     function testVaultUpgrade() public {
         DynamicFeesVault newImpl = new DynamicFeesVault();
-
         vm.prank(user1);
         vm.expectRevert();
         vault.upgradeToAndCall(address(newImpl), "");
 
         address feeCalcBefore = vault.feeCalculator();
-
         vm.prank(owner);
         vault.upgradeToAndCall(address(newImpl), "");
-
-        assertEq(vault.feeCalculator(), feeCalcBefore, "Fee calculator should be preserved after upgrade");
+        assertEq(vault.feeCalculator(), feeCalcBefore);
     }
 
     function testVaultUpgradePreservesState() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
         vm.prank(user1);
         vault.borrow(200e6);
 
@@ -948,22 +947,22 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        uint256 numCheckpointsBefore = vault.numCheckpoints(user1);
-        uint256 supplyNumCheckpointsBefore = vault.supplyNumCheckpoints();
+        // Stream is active — debt not yet reduced
+        uint256 debtBefore = vault.getDebtBalance(user1);
+        uint256 totalDebtBefore = vault.getTotalDebtBalance();
+        uint256 unsettledBefore = vault.getTotalUnsettledRewards();
 
         DynamicFeesVault newImpl = new DynamicFeesVault();
         vm.prank(owner);
         vault.upgradeToAndCall(address(newImpl), "");
 
-        assertEq(vault.numCheckpoints(user1), numCheckpointsBefore, "Checkpoints should be preserved");
-        assertEq(vault.supplyNumCheckpoints(), supplyNumCheckpointsBefore, "Supply checkpoints should be preserved");
+        assertEq(vault.getDebtBalance(user1), debtBefore, "Debt preserved after upgrade");
+        assertEq(vault.getTotalDebtBalance(), totalDebtBefore, "Total debt preserved");
+        assertEq(vault.getTotalUnsettledRewards(), unsettledBefore, "Unsettled preserved");
 
-        vault.updateUserDebtBalance(user1);
-        uint256 debt = vault.getDebtBalance(user1);
-        assertLt(debt, 200e6, "Debt should be reduced after reward settlement");
+        // Verify settle still works after upgrade
+        _warpAndSettle(user1);
+        assertLt(vault.getDebtBalance(user1), debtBefore, "Settlement should work after upgrade");
     }
 
     // ============ Fuzz Tests ============
@@ -973,7 +972,7 @@ contract DynamicFeesVaultTest is Test {
 
         vm.prank(user1);
         vault.borrow(amount);
-        assertEq(vault.getDebtBalance(user1), amount, "Debt should match borrowed amount");
+        assertEq(vault.getDebtBalance(user1), amount);
 
         vm.startPrank(user1);
         deal(address(usdc), user1, amount);
@@ -981,15 +980,12 @@ contract DynamicFeesVaultTest is Test {
         vault.repay(amount);
         vm.stopPrank();
 
-        assertEq(vault.getDebtBalance(user1), 0, "Debt should be 0 after full repay");
+        assertEq(vault.getDebtBalance(user1), 0);
     }
 
     function testFuzzRepayWithRewards(uint256 borrowAmount, uint256 rewardAmount) public {
         borrowAmount = bound(borrowAmount, 100e6, 500e6);
         rewardAmount = bound(rewardAmount, 10e6, 200e6);
-
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
 
         vm.prank(user1);
         vault.borrow(borrowAmount);
@@ -1000,345 +996,286 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(rewardAmount);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
+        // Debt not reduced yet — streaming
+        assertEq(vault.getDebtBalance(user1), borrowAmount, "Debt unchanged before vesting");
 
-        vault.updateUserDebtBalance(user1);
-        assertLt(vault.getDebtBalance(user1), borrowAmount, "Debt should be reduced");
+        // Warp and settle
+        _warpAndSettle(user1);
+
+        assertLt(vault.getDebtBalance(user1), borrowAmount, "Debt should be reduced after vesting");
     }
 
     function testFuzzVaultRatioBps(uint256 utilization) public view {
         utilization = bound(utilization, 0, 10000);
-
         uint256 rate = vault.getVaultRatioBps(utilization);
-
-        assertGe(rate, 500, "Rate should be >= 5%");
-        assertLe(rate, 9500, "Rate should be <= 95%");
+        assertGe(rate, 500);
+        assertLe(rate, 9500);
     }
 
-    // ============ High Utilization Tests ============
+    // ============ TotalDebtBalance Tracking Tests ============
 
-    function testHighUtilizationWithWithdrawalAndDailyFeeRatioCheck() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-        vm.roll(block.number + 1); // Advance block so deposit and withdraw are in different blocks
-
-        vm.prank(user1);
-        vault.borrow(500e6);
-
-        uint256 sharesToWithdraw = vault.balanceOf(address(this)) * 45 / 100;
-        vault.redeem(sharesToWithdraw, address(this), address(this));
-
-        uint256 utilization = vault.getUtilizationPercent();
-        assertGt(utilization, 8000, "Utilization should be > 80%");
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        uint256 epochDuration = ProtocolTimeLibrary.WEEK;
-
-        uint256[] memory dailyDebts = new uint256[](8);
-        dailyDebts[0] = vault.getDebtBalance(user1);
-
-        for (uint256 day = 1; day <= 7; day++) {
-            vm.warp(timestamp + (day * epochDuration / 7));
-
-            utilization = vault.getUtilizationPercent();
-            uint256 feeRatio = vault.getVaultRatioBps(utilization);
-
-            assertGe(feeRatio, 2000, "Fee ratio should be at least 20%");
-            assertLe(feeRatio, 9500, "Fee ratio should be at most 95%");
-
-            vault.sync();
-            vault.updateUserDebtBalance(user1);
-            dailyDebts[day] = vault.getDebtBalance(user1);
-        }
-    }
-
-    function testHighUtilizationSingleRewardPaymentDailyDebtCheck() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-        vm.roll(block.number + 1); // Advance block so deposit and withdraw are in different blocks
-
-        vm.prank(user1);
-        vault.borrow(500e6);
-
-        uint256 sharesToWithdraw = vault.balanceOf(address(this)) * 45 / 100;
-        vault.redeem(sharesToWithdraw, address(this), address(this));
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        uint256 epochDuration = ProtocolTimeLibrary.WEEK;
-
-        uint256[] memory dailyDebts = new uint256[](8);
-        dailyDebts[0] = vault.getDebtBalance(user1);
-
-        for (uint256 day = 1; day <= 7; day++) {
-            vm.warp(timestamp + (day * epochDuration / 7));
-
-            vault.sync();
-            vault.updateUserDebtBalance(user1);
-            dailyDebts[day] = vault.getDebtBalance(user1);
-
-            uint256 utilization = vault.getUtilizationPercent();
-            uint256 feeRatio = vault.getVaultRatioBps(utilization);
-
-            assertGe(feeRatio, 2000, "Fee ratio should be at least 20%");
-        }
-    }
-
-    // ============ Stale Checkpoint Tests ============
-
-    function testStaleCheckpointRecovery() public {
-        // Start at beginning of an epoch
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(epoch1);
-
-        vm.prank(user1);
-        vault.borrow(100e6);
-
-        // Deposit rewards in epoch1 - user gets a checkpoint
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
-        vm.stopPrank();
-
-        // Move to next epoch and deposit more rewards
-        // This ensures user has balance at START of an epoch with rewards
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        vm.warp(epoch2);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
-        vm.stopPrank();
-
-        // Move to a much later epoch (rewards should have vested)
-        uint256 laterEpoch = ProtocolTimeLibrary.epochNext(epoch2) + (8 * ProtocolTimeLibrary.WEEK);
-        vm.warp(laterEpoch);
-
-        vault.sync();
-        vault.updateUserDebtBalance(user1);
-
-        uint256 debt = vault.getDebtBalance(user1);
-        assertLt(debt, 100e6, "Debt should be reduced after recovery");
-    }
-
-    function testVeryStaleCheckpoint() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        vm.prank(user1);
-        vault.borrow(100e6);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
-        vm.stopPrank();
-
-        timestamp = timestamp + (60 * ProtocolTimeLibrary.WEEK);
-        vm.warp(timestamp);
-
-        vault.sync();
-        vault.updateUserDebtBalance(user1);
-
-        uint256 debt = vault.getDebtBalance(user1);
-        console.log("Debt after very stale recovery:", debt);
-    }
-
-    // ============ Multiple Concurrent Borrowers Test ============
-
-    function testMultipleConcurrentBorrowersSettling() public {
+    function testTotalDebtBalanceTracksCorrectly() public {
         address user2 = address(0x3);
-        address user3 = address(0x4);
-        address user4 = address(0x5);
 
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
+        vm.prank(user1);
+        vault.borrow(300e6);
+        assertEq(vault.getTotalDebtBalance(), 300e6);
+
+        vm.prank(user2);
+        vault.borrow(200e6);
+        assertEq(vault.getTotalDebtBalance(), 500e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repay(100e6);
+        vm.stopPrank();
+
+        assertEq(vault.getTotalDebtBalance(), 400e6);
+    }
+
+    function testTotalDebtBalanceAfterRewardDistribution() public {
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Before vesting, debt unchanged
+        assertEq(vault.getTotalDebtBalance(), 500e6, "Total debt unchanged before vesting");
+
+        // After vesting + settle
+        _warpAndSettle(user1);
+
+        uint256 debt = vault.getDebtBalance(user1);
+        assertEq(vault.getTotalDebtBalance(), debt, "totalDebtBalance should match user debt after settle");
+    }
+
+    function testTransferDebtDoesNotChangeTotal() public {
+        address user2 = address(0x3);
+
+        vm.prank(user1);
+        vault.borrow(300e6);
+
+        uint256 totalBefore = vault.getTotalDebtBalance();
+
+        vm.prank(user1);
+        vault.transferDebt(user1, user2, 100e6);
+
+        assertEq(vault.getTotalDebtBalance(), totalBefore, "Total debt unchanged after transfer");
+        assertEq(vault.getDebtBalance(user1), 200e6);
+        assertEq(vault.getDebtBalance(user2), 100e6);
+    }
+
+    // ============ Edge Cases ============
+
+    function testRepayWithRewardsNoDebt() public {
+        // User has no debt — should not revert, rewards stream and excess paid on settle
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        assertEq(vault.getDebtBalance(user1), 0, "Still no debt");
+
+        // After vesting, excess should be returned
+        _warpAndSettle(user1);
+
+        assertEq(vault.getDebtBalance(user1), 0, "Still no debt after settle");
+        // Borrower portion returned as excess USDC
+        assertGt(usdc.balanceOf(user1), 0, "Should receive borrower portion as excess");
+    }
+
+    function testExcessRewardsPaidAsUSDC() public {
+        vm.prank(user1);
+        vault.borrow(50e6);
+
+        uint256 user1UsdcBefore = usdc.balanceOf(user1);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
+        vm.stopPrank();
+
+        // Warp and settle — excess sent as USDC
+        _warpAndSettle(user1);
+
+        assertEq(vault.getDebtBalance(user1), 0, "Debt should be fully paid");
+        assertGt(usdc.balanceOf(user1), user1UsdcBefore, "Should receive USDC for excess");
+    }
+
+    function testMultipleUsersRepayWithRewardsEarlyRepayerGetsUSDC() public {
+        address user2 = address(0x3);
 
         vm.prank(user1);
         vault.borrow(100e6);
 
         vm.prank(user2);
-        vault.borrow(150e6);
-
-        vm.prank(user3);
         vault.borrow(200e6);
 
-        vm.prank(user4);
-        vault.borrow(100e6);
-
-        assertEq(vault.totalLoanedAssets(), 550e6);
-
+        // User1 deposits 200 rewards against 100 debt
         vm.startPrank(user1);
-        deal(address(usdc), user1, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
         vm.stopPrank();
 
+        // Warp and settle user1 — should get excess
+        _warpAndSettle(user1);
+
+        assertEq(vault.getDebtBalance(user1), 0, "User1 debt should be fully paid");
+        assertGt(usdc.balanceOf(user1), 0, "User1 should receive USDC for excess rewards");
+
+        // User2 deposits 100 rewards against 200 debt
         vm.startPrank(user2);
-        deal(address(usdc), user2, 75e6);
-        usdc.approve(address(vault), 75e6);
-        vault.repayWithRewards(75e6);
-        vm.stopPrank();
-
-        vm.startPrank(user3);
-        deal(address(usdc), user3, 100e6);
+        deal(address(usdc), user2, 100e6);
         usdc.approve(address(vault), 100e6);
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        vm.startPrank(user4);
-        deal(address(usdc), user4, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
-        vm.stopPrank();
+        // Warp and settle user2
+        vm.warp(EPOCH_4);
+        vault.settleRewards(user2);
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
-
-        vault.sync();
-
-        vault.updateUserDebtBalance(user1);
-        vault.updateUserDebtBalance(user2);
-        vault.updateUserDebtBalance(user3);
-        vault.updateUserDebtBalance(user4);
-
-        uint256 debt1 = vault.getDebtBalance(user1);
-        uint256 debt2 = vault.getDebtBalance(user2);
-        uint256 debt3 = vault.getDebtBalance(user3);
-        uint256 debt4 = vault.getDebtBalance(user4);
-
-        assertLt(debt1, 100e6, "User1 debt should be reduced");
-        assertLt(debt2, 150e6, "User2 debt should be reduced");
-        assertLt(debt3, 200e6, "User3 debt should be reduced");
-        assertLt(debt4, 100e6, "User4 debt should be reduced");
-
-        uint256 totalDebt = debt1 + debt2 + debt3 + debt4;
-        assertLt(totalDebt, 550e6, "Total debt should be reduced");
-
-        // With the new design, totalLoanedAssets is NOT reduced when rewards vest
-        // Instead, totalVestedRewardsApplied tracks the vested rewards applied to individual debts
-        // The invariant is: sum(debtBalance) = totalLoanedAssets - totalVestedRewardsApplied
-        uint256 expectedTotalDebt = vault.totalLoanedAssets() - vault.totalVestedRewardsApplied();
-        assertEq(totalDebt, expectedTotalDebt, "Total debt should match invariant");
+        assertLt(vault.getDebtBalance(user2), 200e6, "User2 debt should be reduced");
+        assertGt(vault.getDebtBalance(user2), 0, "User2 should still have remaining debt");
     }
 
-    // ============ Mid-Epoch Fee Change Tests ============
-
-    function testMidEpochFeeDropLenderPremiumAlwaysIncreases() public {
-        // Scenario: fee is 80% on day 1, drops to 20% on day 2
-        // Lender premium should always increase as rewards vest (never stagnate to 0)
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
-        vm.warp(epoch1);
-
-        // Set up: borrow to create utilization
+    function testFeeRatioBoundsAfterBorrowAndRewards() public {
         vm.prank(user1);
         vault.borrow(500e6);
 
-        // Day 1: Set fee to 80%, deposit 100 USDC rewards
-        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(highFee));
-
         vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
         vm.stopPrank();
 
-        // Record lender premium after day 1 deposit
-        uint256 vaultCheckpointAfterDay1 = vault.numCheckpoints(address(vault)) > 0
-            ? _getLatestCheckpointBalance(address(vault))
-            : 0;
-        assertGt(vaultCheckpointAfterDay1, 0, "Vault should have premium after day 1");
+        // Fee ratio should stay within bounds
+        uint256 utilization = vault.getUtilizationPercent();
+        uint256 feeRatio = vault.getVaultRatioBps(utilization);
+        assertGe(feeRatio, 500, "Fee ratio should be at least 5%");
+        assertLe(feeRatio, 9500, "Fee ratio should be at most 95%");
 
-        // Day 2: Drop fee to 20%, deposit another 100 USDC rewards
-        vm.warp(epoch1 + dayDuration);
-        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(lowFee));
+        // Settle and check after partial repay
+        _warpAndSettle(user1);
 
         vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        uint256 debt = vault.getDebtBalance(user1);
+        deal(address(usdc), user1, debt / 2);
+        usdc.approve(address(vault), debt / 2);
+        vault.repay(debt / 2);
         vm.stopPrank();
 
-        // Vault checkpoint should have INCREASED (not decreased)
-        uint256 vaultCheckpointAfterDay2 = _getLatestCheckpointBalance(address(vault));
-        assertGt(
-            vaultCheckpointAfterDay2,
-            vaultCheckpointAfterDay1,
-            "Vault checkpoint should increase after day 2 deposit even with lower fee"
-        );
-
-        // Now vest rewards through the epoch and verify lender premium always increases
-        uint256 previousLenderPremium = 0;
-        for (uint256 day = 2; day <= 7; day++) {
-            vm.warp(epoch1 + (day * dayDuration));
-            vault.sync();
-
-            uint256 currentLenderPremium = vault.tokenClaimedPerEpoch(
-                address(vault),
-                epoch1
-            );
-            assertGe(
-                currentLenderPremium,
-                previousLenderPremium,
-                "Lender premium should never decrease as rewards vest"
-            );
-            previousLenderPremium = currentLenderPremium;
-        }
-
-        // Move to next epoch — all rewards fully vested
-        vm.warp(epoch2);
-        vault.sync();
-
-        uint256 finalLenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
-        assertGt(finalLenderPremium, 0, "Lender should have earned premium");
-
-        // Verify lender premium is between 20% and 80% of total rewards (blended rate)
-        uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(epoch1);
-        assertEq(totalRewards, 200e6, "Total rewards should be 200 USDC");
-        // With effective supply tracking:
-        // Day 1: 100 USDC at 80% → vault gets 100*8000/2000 = 400 share units
-        //         Effective borrower supply = 100 (prior-epoch checkpoint for new user)
-        // Day 2: 100 USDC at 20% → vault gets 100*2000/8000 = 25 share units
-        //         Effective borrower supply unchanged (same epoch) = 100
-        // Vault total = 425, total supply = 100 + 425 = 525
-        // Lender premium = 425/525 * 200 ≈ 161.9 USDC
-        assertGt(finalLenderPremium, 200e6 * 2000 / 10000, "Premium should be above pure 20% rate");
-        assertLt(finalLenderPremium, 200e6, "Premium should be less than total rewards");
+        utilization = vault.getUtilizationPercent();
+        feeRatio = vault.getVaultRatioBps(utilization);
+        assertGe(feeRatio, 500, "Fee ratio should be at least 5% after repay");
+        assertLe(feeRatio, 9500, "Fee ratio should be at most 95% after repay");
     }
 
-    function testMidEpochFeeIncreaseLenderPremiumAccelerates() public {
-        // Scenario: fee is 20% on day 1, increases to 80% on day 2
-        // Lender premium should accelerate on day 2's rewards
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
-        vm.warp(epoch1);
+    function testTwoBorrowersHighUtilThenLowUtil() public {
+        address user2 = address(0x3);
+        address depositor = address(0x4);
+
+        // --- Phase 0: Scale up vault ---
+        usdc.mint(address(this), 99_000e6);
+        usdc.approve(address(vault), 99_000e6);
+        vault.deposit(99_000e6, address(this));
+
+        // --- Phase 1: Both borrowers borrow → ~79% utilization ---
+        vm.prank(user1);
+        vault.borrow(29_000e6);
+        vm.prank(user2);
+        vault.borrow(50_000e6);
+
+        uint256 utilHigh = vault.getUtilizationPercent();
+        assertEq(utilHigh, 7900, "Utilization should be 79%");
+
+        uint256 feeRateHigh = vault.getCurrentVaultRatioBps();
+        assertGt(feeRateHigh, 2000, "Fee rate at 79% util should exceed flat 20% zone");
+
+        // --- Phase 2: Borrower1 deposits 100e6 rewards at HIGH utilization ---
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Warp and settle to see debt reduction at high util
+        _warpAndSettle(user1);
+
+        uint256 borrower1DebtAfter = vault.getDebtBalance(user1);
+        uint256 borrower1DebtReduction = 29_000e6 - borrower1DebtAfter;
+        uint256 lenderPremium1 = 100e6 - borrower1DebtReduction;
+
+        // At high utilization, lender gets MORE than flat 20%
+        uint256 flatLenderPremium1 = 100e6 * 2000 / 10000;
+        assertGt(lenderPremium1, flatLenderPremium1, "Lender premium at high util should exceed flat 20%");
+
+        // --- Phase 3: Depositor adds liquidity → util drops ---
+        usdc.mint(depositor, 200_000e6);
+        vm.startPrank(depositor);
+        usdc.approve(address(vault), 200_000e6);
+        vault.deposit(200_000e6, depositor);
+        vm.stopPrank();
+
+        uint256 utilLow = vault.getUtilizationPercent();
+        uint256 feeRateLow = vault.getCurrentVaultRatioBps();
+        assertLt(utilLow, 7000, "Utilization should be below 70%");
+        assertEq(feeRateLow, 2000, "Fee rate should be flat 20% in 10-70% zone");
+
+        // --- Phase 4: Borrower2 deposits 200e6 rewards at LOW utilization ---
+        vm.startPrank(user2);
+        deal(address(usdc), user2, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(200e6);
+        vm.stopPrank();
+
+        // Warp and settle
+        vm.warp(EPOCH_4);
+        vault.settleRewards(user2);
+
+        uint256 borrower2DebtAfter = vault.getDebtBalance(user2);
+        uint256 borrower2DebtReduction = 50_000e6 - borrower2DebtAfter;
+        uint256 lenderPremium2 = 200e6 - borrower2DebtReduction;
+
+        // At low utilization, lender gets ~20%
+        assertApproxEqAbs(lenderPremium2, 200e6 * 2000 / 10000, 1e6, "Lender premium at low util should be ~20%");
+
+        // --- Phase 5: Verify key relationships ---
+        uint256 borrower1EffectiveBps = (borrower1DebtReduction * 10000) / 100e6;
+        uint256 borrower2EffectiveBps = (borrower2DebtReduction * 10000) / 200e6;
+        assertLt(borrower1EffectiveBps, borrower2EffectiveBps,
+            "High-util borrower should keep less per reward dollar");
+
+        uint256 lenderRate1 = (lenderPremium1 * 10000) / 100e6;
+        uint256 lenderRate2 = (lenderPremium2 * 10000) / 200e6;
+        assertGt(lenderRate1, lenderRate2, "Lender premium rate should be higher at high utilization");
+
+        // Warp to fully vest all premiums
+        vm.warp(EPOCH_5);
+
+        // Share price should exceed 1:1
+        uint256 sharePriceNow = (vault.totalAssets() * 1e18) / vault.totalSupply();
+        assertGt(sharePriceNow, 1e18, "Share price should exceed 1:1 from lender premiums");
+    }
+
+    // ============ Epoch-Based Lender Premium Vesting Tests ============
+
+    function testLenderPremiumNotAvailableInDepositEpoch() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
         vm.prank(user1);
         vault.borrow(500e6);
 
-        // Day 1: 20% fee, deposit 100 USDC
-        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(lowFee));
+        uint256 totalAssetsBefore = vault.totalAssets();
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
@@ -1346,54 +1283,22 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        uint256 vaultCheckpointAfterDay1 = _getLatestCheckpointBalance(address(vault));
+        // totalAssets should NOT increase (rewards are unsettled)
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets should NOT increase in deposit epoch");
 
-        // Day 2: 80% fee, deposit 100 USDC
-        vm.warp(epoch1 + dayDuration);
-        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(highFee));
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        uint256 vaultCheckpointAfterDay2 = _getLatestCheckpointBalance(address(vault));
-
-        // Day 2's increment should be much larger than day 1's (80% vs 20%)
-        uint256 day2Increment = vaultCheckpointAfterDay2 - vaultCheckpointAfterDay1;
-        // Day 1: 100 * 2000/8000 = 25
-        // Day 2: 100 * 8000/2000 = 400
-        assertGt(day2Increment, vaultCheckpointAfterDay1, "Day 2 increment should exceed day 1 (higher fee)");
-
-        // Move to next epoch and verify final premium
-        vm.warp(epoch2);
-        vault.sync();
-
-        uint256 finalLenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
-        // With effective supply tracking:
-        // Vault = 25 + 400 = 425, effective borrower supply = 100, total = 525
-        // Lender premium = 425/525 * 200 ≈ 161.9 USDC
-        assertGt(finalLenderPremium, 200e6 * 2000 / 10000, "Premium should exceed pure 20% rate");
-        assertLt(finalLenderPremium, 200e6, "Premium should be less than total rewards");
+        // lenderPremiumUnlockedThisEpoch should be 0 (nothing vested globally yet)
+        assertEq(vault.lenderPremiumUnlockedThisEpoch(), 0, "No premium unlocked in deposit epoch");
     }
 
-    function testMidEpochFeeDropBorrowerStillGetsRewards() public {
-        // Verify borrower rewards are not broken by mid-epoch fee change
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
-        vm.warp(epoch1);
+    function testLenderPremiumVestsLinearly() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
         vm.prank(user1);
         vault.borrow(500e6);
 
-        // Day 1: 80% fee, 100 USDC rewards
-        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(highFee));
+        uint256 totalAssetsBefore = vault.totalAssets();
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
@@ -1401,54 +1306,42 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        // Day 2: Drop to 20% fee, 100 USDC more
-        vm.warp(epoch1 + dayDuration);
-        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(lowFee));
+        // Lender premium = 20% of 100 = 20 USDC
+        uint256 expectedPremium = 20e6;
 
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        // Move to next epoch, vest all rewards
-        vm.warp(epoch2);
+        // Warp to end of stream epoch — global vesting extracts premium into vestingEpochPremium
+        // Premium vests in the SAME epoch it's extracted (EPOCH_3)
+        vm.warp(EPOCH_3);
         vault.sync();
-        vault.updateUserDebtBalance(user1);
 
-        uint256 debtAfter = vault.getDebtBalance(user1);
-        uint256 debtReduction = 500e6 - debtAfter;
-        uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
+        // At 25% elapsed in vesting epoch (EPOCH_3)
+        vm.warp(EPOCH_3 + WEEK / 4);
+        uint256 totalAssets25 = vault.totalAssets();
+        uint256 vested25 = totalAssets25 - totalAssetsBefore;
+        assertApproxEqAbs(vested25, expectedPremium / 4, 1e5, "25% should be vested at 25% elapsed");
 
-        // Borrower and lender should both receive rewards
-        assertGt(debtReduction, 0, "Borrower should still get debt reduction");
-        assertGt(lenderPremium, 0, "Lender should still get premium");
+        // At 50% elapsed
+        vm.warp(EPOCH_3 + WEEK / 2);
+        uint256 totalAssets50 = vault.totalAssets();
+        uint256 vested50 = totalAssets50 - totalAssetsBefore;
+        assertApproxEqAbs(vested50, expectedPremium / 2, 1e5, "50% should be vested at 50% elapsed");
 
-        // With effective supply tracking, all rewards should be fully distributed
-        // (no dead supply from mid-epoch checkpoint inflation)
-        assertApproxEqAbs(
-            debtReduction + lenderPremium,
-            200e6,
-            2e6,
-            "All rewards should be distributed (no dead supply)"
-        );
+        // At 100% elapsed (fully vested)
+        vm.warp(EPOCH_4);
+        uint256 totalAssets100 = vault.totalAssets();
+        uint256 vested100 = totalAssets100 - totalAssetsBefore;
+        assertApproxEqAbs(vested100, expectedPremium, 1e5, "100% should be vested after full epoch");
     }
 
-    function testMidEpochNoNewRewardsRebalanceIsNoop() public {
-        // When fee changes but no new rewards are deposited, vault balance should not change
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
-        vm.warp(epoch1);
+    function testLenderPremiumFullyVestedAfterTwoEpochs() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
         vm.prank(user1);
         vault.borrow(500e6);
 
-        // Deposit rewards at 80% fee
-        FlatFeeCalculator highFee = new FlatFeeCalculator(8000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(highFee));
+        uint256 totalAssetsBefore = vault.totalAssets();
 
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
@@ -1456,89 +1349,121 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        uint256 vaultBalanceBefore = _getLatestCheckpointBalance(address(vault));
-
-        // Change fee to 20% but DON'T deposit new rewards — just trigger a sync
-        vm.warp(epoch1 + dayDuration);
-        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000);
-        vm.prank(owner);
-        vault.setFeeCalculator(address(lowFee));
-
-        // Sync triggers _updateSettlementCheckpoint → _getReward(vault) → _rebalance
+        // EPOCH_2: rewards deposited (streaming)
+        // EPOCH_3: sync extracts premium → vestingEpochPremium (vests in same epoch)
+        // EPOCH_4: fully vested
+        vm.warp(EPOCH_3);
         vault.sync();
+        vm.warp(EPOCH_4);
 
-        uint256 vaultBalanceAfter = _getLatestCheckpointBalance(address(vault));
-        assertEq(
-            vaultBalanceAfter,
-            vaultBalanceBefore,
-            "Vault balance should not change when no new rewards are deposited"
-        );
+        // Premium should be fully vested
+        assertEq(vault.getUnvestedLenderPremium(), 0, "All premium should be vested");
+
+        uint256 totalAssetsAfter = vault.totalAssets();
+        uint256 increase = totalAssetsAfter - totalAssetsBefore;
+        assertApproxEqAbs(increase, 20e6, 1e6, "Full lender premium should be reflected in totalAssets");
     }
 
-    function testMultipleDepositsPerEpochNoDeadSupply() public {
-        // When a user deposits multiple times in the same epoch, _earned() uses
-        // the prior-epoch checkpoint balance (only the first deposit). The denominator
-        // (totalSupplyPerEpoch) must match what _earned() actually uses, not the
-        // inflated current-epoch balance. Otherwise rewards go undistributed.
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        vm.warp(epoch1);
+    function testMultipleDepositsInSameEpochAccumulate() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
         vm.prank(user1);
         vault.borrow(500e6);
 
-        // Deposit 100 USDC rewards on day 1
+        uint256 totalAssetsBefore = vault.totalAssets();
+
+        // Two reward deposits in same block
         vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.repayWithRewards(100e6);
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        // Deposit another 100 USDC rewards on day 2 (same epoch)
-        uint256 dayDuration = ProtocolTimeLibrary.WEEK / 7;
-        vm.warp(epoch1 + dayDuration);
+        // totalAssets unchanged
+        assertEq(vault.totalAssets(), totalAssetsBefore, "totalAssets unchanged in deposit epoch");
+        assertEq(vault.getTotalUnsettledRewards(), 200e6, "Both deposits should be unsettled");
 
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 100e6);
-        usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
-        vm.stopPrank();
-
-        // Move to next epoch so all rewards vest
-        vm.warp(epoch2);
+        // Warp, sync to extract premium, then wait for full vesting
+        // EPOCH_3: sync extracts premium → vestingEpochPremium (vests in same epoch)
+        // EPOCH_4: fully vested
+        vm.warp(EPOCH_3);
         vault.sync();
-        vault.updateUserDebtBalance(user1);
+        vm.warp(EPOCH_4);
 
-        uint256 debtAfter = vault.getDebtBalance(user1);
-        uint256 debtReduction = 500e6 - debtAfter;
-        uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch1);
-
-        // All 200 USDC of rewards should be fully distributed between borrower and lender
-        assertGt(debtReduction, 0, "Borrower should get debt reduction");
-        assertGt(lenderPremium, 0, "Lender should get premium");
-        assertApproxEqAbs(
-            debtReduction + lenderPremium,
-            200e6,
-            2e6,
-            "All rewards should be distributed with no dead supply"
-        );
+        uint256 increase = vault.totalAssets() - totalAssetsBefore;
+        assertApproxEqAbs(increase, 40e6, 2e6, "Full accumulated premium should vest (~20% of 200)");
     }
 
-    // Helper to read the latest checkpoint balance for an address
-    function _getLatestCheckpointBalance(address _owner) internal view returns (uint256) {
-        uint256 n = vault.numCheckpoints(_owner);
-        if (n == 0) return 0;
-        (, uint256 balance) = vault.checkpoints(_owner, n - 1);
-        return balance;
+    function testLenderPremiumVestingPreventsFrontRunning() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
+
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        // Front-runner deposits into the vault right before rewards
+        address frontRunner = address(0x999);
+        deal(address(usdc), frontRunner, 1000e6);
+        vm.startPrank(frontRunner);
+        usdc.approve(address(vault), 1000e6);
+        vault.deposit(1000e6, frontRunner);
+        vm.stopPrank();
+
+        uint256 frontRunnerShares = vault.balanceOf(frontRunner);
+        uint256 sharePriceBefore = vault.totalAssets() * 1e18 / vault.totalSupply();
+
+        // Rewards deposited
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Share price should NOT have jumped (rewards are unsettled)
+        uint256 sharePriceAfter = vault.totalAssets() * 1e18 / vault.totalSupply();
+        assertEq(sharePriceAfter, sharePriceBefore, "Share price should NOT jump immediately after rewards");
+
+        // Front-runner tries to withdraw next block
+        vm.roll(block.number + 1);
+        vm.prank(frontRunner);
+        uint256 assetsReceived = vault.redeem(frontRunnerShares, frontRunner, frontRunner);
+
+        assertApproxEqAbs(assetsReceived, 1000e6, 1e6, "Front-runner should not capture lender premium");
     }
 
-    function testRetroactiveCheckpointOverDistribution() public {
-        // Verifies that new users cannot claim rewards from epochs before their first participation.
-        address newUser = address(0x99);
+    // ============ View Function Tests ============
 
-        // Epoch 1: existing user deposits rewards (newUser not yet participating)
-        uint256 epoch1 = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(epoch1);
+    function testGetPendingRewards() public {
+        vm.prank(user1);
+        vault.borrow(500e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Pending should be approximately the full amount (minus rounding from rate)
+        uint256 pending = vault.getPendingRewards(user1);
+        assertApproxEqAbs(pending, 100e6, 1e6, "Pending should be ~100");
+
+        // Vested pending should be 0 (same block)
+        assertEq(vault.getVestedPendingRewards(user1), 0, "Nothing vested yet");
+
+        // Warp halfway
+        vm.warp(EPOCH_2 + (EPOCH_3 - EPOCH_2) / 2);
+        uint256 vested = vault.getVestedPendingRewards(user1);
+        assertApproxEqAbs(vested, 50e6, 1e6, "~50% should be vested at halfway");
+    }
+
+    function testGlobalVestingOnDeposit() public {
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
 
         vm.prank(user1);
         vault.borrow(500e6);
@@ -1549,57 +1474,39 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        uint256 epoch1Rewards = vault.rewardTotalAssetsPerEpoch(epoch1);
+        // Warp to end of epoch
+        vm.warp(EPOCH_3);
 
-        // Epoch 2: newUser joins by depositing rewards
-        uint256 epoch2 = ProtocolTimeLibrary.epochNext(epoch1);
-        vm.warp(epoch2);
-
-        vm.prank(newUser);
-        vault.borrow(200e6);
-
-        vm.startPrank(newUser);
-        deal(address(usdc), newUser, 50e6);
-        usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        // A lender deposit triggers _processGlobalVesting
+        address lender = address(0x777);
+        deal(address(usdc), lender, 100e6);
+        vm.startPrank(lender);
+        usdc.approve(address(vault), 100e6);
+        vault.deposit(100e6, lender);
         vm.stopPrank();
 
-        // Verify firstRewardEpoch is set correctly
-        assertEq(vault.getFirstRewardEpoch(newUser), epoch2, "newUser's first reward epoch should be epoch2");
-
-        // Epoch 3: settle all rewards
-        uint256 epoch3 = ProtocolTimeLibrary.epochNext(epoch2);
-        vm.warp(epoch3);
-
-        vault.sync();
-
-        // Check what newUser claims from epoch1 (should be 0 — they weren't participating)
-        uint256 newUserClaimedE1 = vault.tokenClaimedPerEpoch(newUser, epoch1);
-        assertEq(newUserClaimedE1, 0, "New user should NOT claim rewards from epoch before they joined");
-
-        // Settle user1 and newUser
-        vault.updateUserDebtBalance(user1);
-        vault.updateUserDebtBalance(newUser);
-
-        // Verify no over-distribution: total claimed from epoch1 should not exceed epoch1 rewards
-        uint256 user1ClaimedE1 = vault.tokenClaimedPerEpoch(user1, epoch1);
-        uint256 vaultClaimedE1 = vault.tokenClaimedPerEpoch(address(vault), epoch1);
-        uint256 totalClaimedE1 = user1ClaimedE1 + vaultClaimedE1 + newUserClaimedE1;
-        assertLe(totalClaimedE1, epoch1Rewards, "Total claimed from epoch1 should not exceed epoch1 rewards");
+        // Global vesting should have processed — lender premium extracted
+        // globalBorrowerPending should be > 0 (borrower credit accumulated but not per-user settled)
+        assertGt(vault.getGlobalBorrowerPending(), 0, "Global borrower pending should be > 0 after deposit triggers vesting");
     }
 
-    function testConcurrentSettlementOrder() public {
+    // ============ Sync Frequency Equivalence Tests ============
+
+    /// @notice Two users deposit equal rewards at epoch start. User1 syncs at mid-epoch + end,
+    ///         user2 syncs only at end. A large lender deposit mid-epoch drops utilization
+    ///         significantly, changing the fee ratio. Both users should receive approximately
+    ///         equal debt reduction despite different sync frequencies.
+    function testDailySyncVsEndOfEpochSync_EqualRewards() public {
         address user2 = address(0x3);
 
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
+        // Both users borrow 200 USDC each (40% utilization → ratio = 2000 bps in flat zone)
         vm.prank(user1);
         vault.borrow(200e6);
-
         vm.prank(user2);
         vault.borrow(200e6);
+        assertEq(vault.getUtilizationPercent(), 4000, "40% utilization");
 
+        // Both deposit 100 USDC rewards at epoch start
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
@@ -1612,71 +1519,120 @@ contract DynamicFeesVaultTest is Test {
         vault.repayWithRewards(100e6);
         vm.stopPrank();
 
-        timestamp = ProtocolTimeLibrary.epochNext(timestamp);
-        vm.warp(timestamp);
+        uint256 debtUser1Before = vault.getDebtBalance(user1);
+        uint256 debtUser2Before = vault.getDebtBalance(user2);
+        assertEq(debtUser1Before, 200e6);
+        assertEq(debtUser2Before, 200e6);
 
-        uint256 user1DebtBefore = vault.getDebtBalance(user1);
-        uint256 user2DebtBefore = vault.getDebtBalance(user2);
+        // === Mid-epoch: User1 syncs, then utilization drops ===
+        uint256 midEpoch = EPOCH_2 + (WEEK / 2);
+        vm.warp(midEpoch);
 
-        vault.updateUserDebtBalance(user1);
-        uint256 user1DebtAfter = vault.getDebtBalance(user1);
+        // User1 settles at mid-epoch (triggers global vesting for first half at high util)
+        vault.settleRewards(user1);
+        uint256 debtUser1AtMid = vault.getDebtBalance(user1);
+        assertLt(debtUser1AtMid, debtUser1Before, "User1 debt should decrease at mid-epoch");
 
-        vault.updateUserDebtBalance(user2);
-        uint256 user2DebtAfter = vault.getDebtBalance(user2);
-
-        uint256 user1Reduction = user1DebtBefore - user1DebtAfter;
-        uint256 user2Reduction = user2DebtBefore - user2DebtAfter;
-
-        assertApproxEqAbs(user1Reduction, user2Reduction, 1e6, "Both users should have similar debt reduction");
-    }
-
-    function testIncrementalCursorPreservesRewardsOver52Weeks() public {
-        uint256 timestamp = ProtocolTimeLibrary.epochStart(block.timestamp);
-        vm.warp(timestamp);
-
-        address user2 = address(0x3);
-
-        // User1 borrows and deposits initial rewards to establish checkpoint
-        vm.prank(user1);
-        vault.borrow(100e6);
-
-        vm.startPrank(user1);
-        deal(address(usdc), user1, 10e6);
-        usdc.approve(address(vault), 10e6);
-        vault.repayWithRewards(10e6);
+        // A large lender deposit drops utilization from ~40% to ~4%
+        address bigLender = address(0x888);
+        deal(address(usdc), bigLender, 9000e6);
+        vm.startPrank(bigLender);
+        usdc.approve(address(vault), 9000e6);
+        vault.deposit(9000e6, bigLender);
         vm.stopPrank();
 
-        // User2 borrows too
-        vm.prank(user2);
-        vault.borrow(100e6);
+        // Verify utilization dropped significantly
+        assertLt(vault.getUtilizationPercent(), 1000, "Utilization should be < 10%");
 
-        // Advance 60 weeks. User2 deposits rewards each week.
-        // User1 does NOT interact — their checkpoint stays at epoch 0.
-        for (uint256 i = 1; i <= 60; i++) {
-            vm.warp(timestamp + i * ProtocolTimeLibrary.WEEK);
-            vm.startPrank(user2);
-            deal(address(usdc), user2, 10e6);
-            usdc.approve(address(vault), 10e6);
-            vault.repayWithRewards(10e6);
-            vm.stopPrank();
+        // === End of epoch: Both users settle ===
+        vm.warp(EPOCH_3);
+
+        // User1 settles again (second half at lower utilization ratio)
+        vault.settleRewards(user1);
+
+        // User2 settles for the first time (full stream, capped at globalBorrowerPending)
+        vault.settleRewards(user2);
+
+        // Compare debt reductions
+        uint256 debtReduction1 = debtUser1Before - vault.getDebtBalance(user1);
+        uint256 debtReduction2 = debtUser2Before - vault.getDebtBalance(user2);
+
+        // Both should receive approximately the same debt reduction
+        // Difference is only from minor ratio drift between _processGlobalVesting and _settleRewards
+        assertApproxEqAbs(
+            debtReduction1,
+            debtReduction2,
+            1e6, // 1 USDC tolerance for ratio drift dust
+            "Both users should receive approximately equal debt reduction regardless of sync frequency"
+        );
+
+        // Both should have meaningful debt reduction (not zero)
+        assertGt(debtReduction1, 50e6, "User1 should have significant debt reduction");
+        assertGt(debtReduction2, 50e6, "User2 should have significant debt reduction");
+    }
+
+    /// @notice Same setup but with 7 daily syncs for user1 to simulate actual daily settlement.
+    ///         Verifies the principle holds with more granular sync frequency.
+    function testSevenDailySyncsVsSingleSync_EqualRewards() public {
+        address user2 = address(0x3);
+
+        // Both users borrow 200 USDC each
+        vm.prank(user1);
+        vault.borrow(200e6);
+        vm.prank(user2);
+        vault.borrow(200e6);
+
+        // Both deposit 100 USDC rewards at epoch start
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        deal(address(usdc), user2, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 debtUser1Before = vault.getDebtBalance(user1);
+        uint256 debtUser2Before = vault.getDebtBalance(user2);
+
+        uint256 dayDuration = WEEK / 7; // ~86400 seconds
+
+        // User1 syncs every day. On day 3, a big deposit drops utilization.
+        for (uint256 i = 1; i <= 7; i++) {
+            uint256 dayTime = EPOCH_2 + (dayDuration * i);
+            vm.warp(dayTime);
+
+            // User1 settles daily
+            vault.settleRewards(user1);
+
+            // On day 3: big lender deposit drops utilization
+            if (i == 3) {
+                address bigLender = address(0x888);
+                deal(address(usdc), bigLender, 9000e6);
+                vm.startPrank(bigLender);
+                usdc.approve(address(vault), 9000e6);
+                vault.deposit(9000e6, bigLender);
+                vm.stopPrank();
+            }
         }
 
-        // User1 hasn't interacted for 60 epochs.
-        // First sync processes up to 52 epochs (MAX_EPOCH_ITERATIONS)
-        uint256 debtBefore = vault.getDebtBalance(user1);
-        vault.updateUserDebtBalance(user1);
-        uint256 debtAfterFirst = vault.getDebtBalance(user1);
-        uint256 firstReduction = debtBefore - debtAfterFirst;
+        // User2 settles only once at end of epoch
+        vault.settleRewards(user2);
 
-        // Second sync should process remaining epochs from cursor
-        vault.updateUserDebtBalance(user1);
-        uint256 debtAfterSecond = vault.getDebtBalance(user1);
-        uint256 secondReduction = debtAfterFirst - debtAfterSecond;
+        uint256 debtReduction1 = debtUser1Before - vault.getDebtBalance(user1);
+        uint256 debtReduction2 = debtUser2Before - vault.getDebtBalance(user2);
 
-        uint256 totalReduction = firstReduction + secondReduction;
-        assertGt(totalReduction, 0, "Should have reduced debt from rewards");
-        assertGt(firstReduction, 0, "First sync should process rewards");
-        // With cursor, second call picks up remaining epochs beyond the 52-epoch cap
-        assertGt(secondReduction, 0, "Second sync should process remaining epochs via cursor");
+        assertApproxEqAbs(
+            debtReduction1,
+            debtReduction2,
+            1e6,
+            "Daily syncer and end-of-epoch syncer should receive approximately equal debt reduction"
+        );
+
+        assertGt(debtReduction1, 50e6, "User1 should have significant debt reduction");
+        assertGt(debtReduction2, 50e6, "User2 should have significant debt reduction");
     }
 }

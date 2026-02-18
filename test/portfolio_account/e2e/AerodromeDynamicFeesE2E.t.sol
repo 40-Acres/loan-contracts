@@ -293,11 +293,14 @@ contract AerodromeDynamicFeesE2E is Test {
         console.log("\n--- Step 3: Simulate rewards over epochs ---");
         uint256 currentDebt = vault.getDebtBalance(portfolioAccount);
         if (currentDebt > 0) {
+            // Pre-compute epoch boundaries to avoid via-ir block.timestamp caching
+            uint256 initialEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
+
             // Simulate 3 epochs of reward payments
             for (uint256 i = 0; i < 3; i++) {
-                // Move to next epoch
-                uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-                vm.warp(nextEpoch + 1 hours);
+                // Move to next epoch (pre-computed to avoid caching)
+                uint256 rewardEpoch = initialEpoch + (i * 1 weeks);
+                vm.warp(rewardEpoch + 1 hours);
 
                 // Simulate reward payment (25% of original debt per epoch)
                 uint256 rewardAmount = borrowAmount / 4;
@@ -306,13 +309,12 @@ contract AerodromeDynamicFeesE2E is Test {
                 console.log("Epoch", i + 1, "- Rewards deposited:", rewardAmount);
             }
 
-            // Move to next epoch to allow rewards to vest
-            uint256 finalEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
+            // Move to next epoch to allow rewards to vest and settle (pre-computed)
+            uint256 finalEpoch = initialEpoch + (3 * 1 weeks);
             vm.warp(finalEpoch + 1 hours);
 
-            // Sync and update debt balance
+            vault.settleRewards(portfolioAccount);
             vault.sync();
-            vault.updateUserDebtBalance(portfolioAccount);
 
             uint256 debtAfterRewards = vault.getDebtBalance(portfolioAccount);
             uint256 cachedDebt = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
@@ -379,22 +381,18 @@ contract AerodromeDynamicFeesE2E is Test {
             uint256 epochN1 = ProtocolTimeLibrary.epochNext(block.timestamp);
             vm.warp(epochN1 + 1 hours);
 
+            uint256 portfolioUsdcBefore = usdc.balanceOf(portfolioAccount);
+
             // Repay with rewards that EXCEED the debt (200% of debt)
             uint256 excessiveRewards = initialDebt * 2;
             _repayWithRewards(excessiveRewards);
 
             console.log("Rewards deposited (2x debt):", excessiveRewards);
 
-            // Move to next epoch for rewards to vest (epoch N+2)
-            // Use epochN1 + WEEK to ensure we move forward, not re-calculate from block.timestamp
-            uint256 epochN2 = epochN1 + 7 days;
-            vm.warp(epochN2 + 1 hours);
-
-            // Record portfolio account USDC balance before update
-            uint256 portfolioUsdcBefore = usdc.balanceOf(portfolioAccount);
-
-            // Update debt balance - this should pay excess as USDC
-            vault.updateUserDebtBalance(portfolioAccount);
+            // Warp to end of epoch and settle to apply rewards (pre-computed to avoid via-ir caching)
+            uint256 settleEpoch = epochN1 + 1 weeks;
+            vm.warp(settleEpoch + 1 hours);
+            vault.settleRewards(portfolioAccount);
 
             uint256 portfolioUsdcAfter = usdc.balanceOf(portfolioAccount);
             uint256 finalDebt = vault.getDebtBalance(portfolioAccount);
@@ -441,27 +439,28 @@ contract AerodromeDynamicFeesE2E is Test {
 
             // Repay with rewards
             uint256 rewardAmount = borrowAmount / 2;
+            uint256 debtBefore = vault.getDebtBalance(portfolioAccount);
             _repayWithRewards(rewardAmount);
 
-            // Move epoch forward and sync
-            uint256 vestingEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-            vm.warp(vestingEpoch + 1 hours);
+            // Warp to end of epoch and settle to apply rewards (pre-computed to avoid via-ir caching)
+            uint256 settleEpoch = nextEpoch + 1 weeks;
+            vm.warp(settleEpoch + 1 hours);
+            vault.settleRewards(portfolioAccount);
 
-            vault.sync();
+            uint256 debtAfter = vault.getDebtBalance(portfolioAccount);
 
-            // Check that lender premium was applied
-            uint256 previousEpoch = vestingEpoch - ProtocolTimeLibrary.WEEK;
-            uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(previousEpoch);
-            uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), previousEpoch);
+            uint256 debtReduction = debtBefore - debtAfter;
+            uint256 lenderPremium = rewardAmount - debtReduction;
 
-            console.log("Total rewards in epoch:", totalRewards);
+            console.log("Reward amount:", rewardAmount);
+            console.log("Debt reduction:", debtReduction);
             console.log("Lender premium:", lenderPremium);
 
-            if (totalRewards > 0) {
-                uint256 actualFeeRatio = (lenderPremium * 10000) / totalRewards;
+            // Lender premium should be within expected fee range
+            if (rewardAmount > 0) {
+                uint256 actualFeeRatio = (lenderPremium * 10000) / rewardAmount;
                 console.log("Actual fee ratio applied (bps):", actualFeeRatio);
 
-                // Fee ratio should be within expected range
                 assertGe(actualFeeRatio, 400, "Actual fee should be >= 4%");
                 assertLe(actualFeeRatio, 9600, "Actual fee should be <= 96%");
             }
@@ -516,8 +515,8 @@ contract AerodromeDynamicFeesE2E is Test {
         console.log("User2 debt:", vault.getDebtBalance(portfolioAccount2));
 
         // Move to next epoch
-        uint256 nextEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
-        vm.warp(nextEpoch + 1 hours);
+        uint256 rewardEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
+        vm.warp(rewardEpoch + 1 hours);
 
         // Both users repay with rewards
         if (borrow1 > 0) {
@@ -536,13 +535,13 @@ contract AerodromeDynamicFeesE2E is Test {
             vm.stopPrank();
         }
 
-        // Move to next epoch for vesting
-        uint256 vestingEpoch = ProtocolTimeLibrary.epochNext(block.timestamp);
+        // Move to next epoch for vesting and settle both users (pre-computed to avoid via-ir caching)
+        uint256 vestingEpoch = rewardEpoch + 1 weeks;
         vm.warp(vestingEpoch + 1 hours);
 
+        vault.settleRewards(portfolioAccount);
+        vault.settleRewards(portfolioAccount2);
         vault.sync();
-        vault.updateUserDebtBalance(portfolioAccount);
-        vault.updateUserDebtBalance(portfolioAccount2);
 
         uint256 debt1After = vault.getDebtBalance(portfolioAccount);
         uint256 debt2After = vault.getDebtBalance(portfolioAccount2);
@@ -589,12 +588,10 @@ contract AerodromeDynamicFeesE2E is Test {
             uint256 excessRewards = borrowAmount * 3;
             _repayWithRewards(excessRewards);
 
-            // Move to next epoch for vesting (epoch N+2)
-            // Use explicit calculation to ensure we actually advance
+            // Move to next epoch for vesting and settle
             uint256 epochN2 = epochN1 + 7 days;
             vm.warp(epochN2 + 1 hours);
-
-            vault.updateUserDebtBalance(portfolioAccount);
+            vault.settleRewards(portfolioAccount);
 
             uint256 totalSupplyAfter = vault.totalSupply();
             uint256 totalAssetsAfter = vault.totalAssets();
