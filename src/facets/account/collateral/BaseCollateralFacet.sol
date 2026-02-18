@@ -84,18 +84,25 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
     }
 
-    function removeCollateralTo(uint256 tokenId, address toPortfolio) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function removeCollateralTo(uint256 tokenId, address targetPortfolioFactory) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
         if (listing.owner != address(0)) {
             revert ListingActive(tokenId);
         }
-        // Verify the destination portfolio is owned by the same user
-        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
+
+        // Validate target factory is registered in the same PortfolioManager
+        PortfolioManager portfolioManager = _portfolioFactory.portfolioManager();
+        require(portfolioManager.isRegisteredFactory(targetPortfolioFactory), "Target factory not registered");
+
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        address targetFactory = manager.getFactoryForPortfolio(toPortfolio);
-        require(targetFactory != address(0), "Target portfolio not registered");
-        address targetOwner = PortfolioFactory(targetFactory).ownerOf(toPortfolio);
-        require(portfolioOwner == targetOwner, "Must own both portfolios");
+        PortfolioFactory targetFactory = PortfolioFactory(targetPortfolioFactory);
+
+        // get the portfolio address for the owner in the target factory
+        address toPortfolio = targetFactory.portfolioOf(portfolioOwner);
+        if(toPortfolio == address(0)) {
+            // if the portfolio doesn't exist yet, create it
+            toPortfolio = targetFactory.createAccount(portfolioOwner);
+        }
 
         IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), toPortfolio, tokenId);
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
