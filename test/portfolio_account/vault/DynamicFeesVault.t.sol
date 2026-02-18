@@ -314,6 +314,9 @@ contract DynamicFeesVaultTest is Test {
     }
 
     function testWithdrawLimitedByLiquidity() public {
+        // Roll past deposit block to clear flash loan guard
+        vm.roll(block.number + 1);
+
         vm.prank(user1);
         vault.borrow(500e6);
 
@@ -321,13 +324,11 @@ contract DynamicFeesVaultTest is Test {
         uint256 vaultBalance = usdc.balanceOf(address(vault));
         assertEq(vaultBalance, 500e6, "Vault should have 500e6 USDC after borrow");
 
-        // ERC4626's maxWithdraw returns based on shares, not liquidity
-        // The actual withdrawal will fail if liquidity is insufficient (tested in testCannotWithdrawMoreThanLiquid)
+        // maxWithdraw is now capped at liquid USDC in the vault
         uint256 maxWithdrawable = vault.maxWithdraw(address(this));
 
-        // User shares still represent full value since totalAssets includes loaned assets
-        // So maxWithdraw will return more than available liquidity
         assertGt(maxWithdrawable, 0, "Should have some max withdrawable amount");
+        assertLe(maxWithdrawable, vaultBalance, "maxWithdraw should be capped at liquid USDC");
     }
 
     function testCannotBorrowWhenUtilizationAt80Percent() public {
@@ -790,10 +791,12 @@ contract DynamicFeesVaultTest is Test {
     }
 
     function testCannotWithdrawWhenPaused() public {
+        vm.roll(block.number + 1);
         vm.prank(owner);
         vault.pause();
 
-        vm.expectRevert(DynamicFeesVault.ContractPaused.selector);
+        // maxWithdraw returns 0 when paused, so ERC4626 base reverts before _withdraw
+        vm.expectRevert();
         vault.withdraw(100e6, address(this), address(this));
     }
 

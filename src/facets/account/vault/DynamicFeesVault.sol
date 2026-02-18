@@ -826,6 +826,25 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ ERC4626 Overrides ============
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        if ($.paused) return 0;
+        if ($.lastDepositBlock[owner] >= block.number) return 0;
+        uint256 assets = convertToAssets(balanceOf(owner));
+        uint256 liquid = IERC20(asset()).balanceOf(address(this));
+        return assets < liquid ? assets : liquid;
+    }
+
+    function maxRedeem(address owner) public view override returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        if ($.paused) return 0;
+        if ($.lastDepositBlock[owner] >= block.number) return 0;
+        uint256 shares = balanceOf(owner);
+        uint256 liquid = IERC20(asset()).balanceOf(address(this));
+        uint256 maxShares = convertToShares(liquid);
+        return shares < maxShares ? shares : maxShares;
+    }
+
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
