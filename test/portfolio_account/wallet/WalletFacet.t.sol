@@ -104,7 +104,7 @@ contract WalletFacetTest is Test, Setup {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             BaseLendingFacet.borrowTo.selector,
-            _walletPortfolio,
+            address(_walletFactory),
             amount
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);

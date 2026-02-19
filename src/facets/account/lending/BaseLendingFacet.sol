@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {IPortfolioFactory} from "../../../accounts/IPortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -74,26 +75,20 @@ abstract contract BaseLendingFacet is AccessControl {
     }
 
     /**
-     * @dev Borrow funds to a specific address within the 40acres ecosystem
-     * @param to The address to borrow funds to
+     * @dev Borrow funds to the caller's portfolio on a different factory
+     * @param toFactory The PortfolioFactory where the destination portfolio lives
      * @param amount The amount of funds to borrow
-     * @notice Borrow funds to a specific address within the 40acres ecosystem
      */
-    function borrowTo(address to, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+    function borrowTo(IPortfolioFactory toFactory, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
-        // 1. Verify existence and get the specific factory for the 'to' portfolio
-        require(manager.isPortfolioRegistered(to), "To address is not part of 40acres");
-        address toFactoryAddress = manager.getFactoryForPortfolio(to);
-
-        // 2. Get the owner from the correct factory
-        address portfolioOwner = PortfolioFactory(toFactoryAddress).ownerOf(to);
-
-        // 3. Verify ownership matches the current portfolio's owner
-        require(portfolioOwner == _portfolioFactory.ownerOf(address(this)), "not the same owner for to address and current portfolio");
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        address toPortfolio = toFactory.portfolioOf(portfolioOwner);
+        require(toPortfolio != address(0), "No portfolio on target factory");
+        require(manager.isPortfolioRegistered(toPortfolio), "Target portfolio not registered");
 
         (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioAccountConfig), amount);
-        _lendingToken.safeTransfer(to, amountAfterFees);
-        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
+        _lendingToken.safeTransfer(toPortfolio, amountAfterFees);
+        emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, toPortfolio);
     }
 
     function pay(uint256 amount) public nonReentrant returns (uint256) {

@@ -12,6 +12,7 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
+import {IPortfolioFactory} from "../../../src/accounts/IPortfolioFactory.sol";
 
 contract LendingFacetTest is Test, Setup {
 
@@ -714,35 +715,29 @@ contract LendingFacetTest is Test, Setup {
             address(_asset)
         );
 
-        //  Create a dummy "to" address
-        address to = makeAddr("receiver");
-
-      // Mock the isPortfolioOwner call to pass the first require
-        vm.mockCall(
-            address(_portfolioManager),
-            abi.encodeWithSignature("isPortfolioOwner(address)", to),
-            abi.encode(true)
-        );
-
-        // Mock getFactoryForPortfolio to return the portfolio factory
-        vm.mockCall(
-            address(_portfolioManager),
-            abi.encodeWithSignature("getFactoryForPortfolio(address)", to),
-            abi.encode(address(_portfolioFactory))
-        );
+        // Create a dummy factory that returns no portfolio for the owner
+        IPortfolioFactory toFactory = IPortfolioFactory(makeAddr("toFactory"));
 
         // mock ownerOf for the facet contract address (address(this) in the facet)
         vm.mockCall(
             address(_portfolioFactory),
             abi.encodeWithSignature("ownerOf(address)", address(facet)),
+            abi.encode(_user)
+        );
+
+        // Mock portfolioOf on toFactory to return address(0) (no portfolio)
+        vm.mockCall(
+            address(toFactory),
+            abi.encodeWithSignature("portfolioOf(address)", _user),
             abi.encode(address(0))
         );
+
         vm.startPrank(address(_portfolioManager));
 
-        // Expect Revert
+        // Expect Revert because no portfolio exists on target factory
         deal(address(_asset), _vault, 1000);
-        vm.expectRevert("To address is not part of 40acres"); 
-        facet.borrowTo(to, 100);
+        vm.expectRevert("No portfolio on target factory");
+        facet.borrowTo(toFactory, 100);
     }
 
 
@@ -754,22 +749,9 @@ contract LendingFacetTest is Test, Setup {
             address(_asset)
         );
 
-        //  Create a dummy "to" address
-        address to = _portfolioAccount;
-
-        // Mock the isPortfolioRegistered call to pass the first require
-        vm.mockCall(
-            address(_portfolioManager),
-            abi.encodeWithSignature("isPortfolioRegistered(address)", to),
-            abi.encode(true)
-        );
-
-        // Mock getFactoryForPortfolio to return the portfolio factory
-        vm.mockCall(
-            address(_portfolioManager),
-            abi.encodeWithSignature("getFactoryForPortfolio(address)", to),
-            abi.encode(address(_portfolioFactory))
-        );
+        // Create a dummy target factory
+        IPortfolioFactory toFactory = IPortfolioFactory(makeAddr("toFactory"));
+        address toPortfolio = _portfolioAccount;
 
         // mock ownerOf for the facet contract address (address(this) in the facet)
         vm.mockCall(
@@ -778,11 +760,25 @@ contract LendingFacetTest is Test, Setup {
             abi.encode(address(_user))
         );
 
+        // Mock portfolioOf on toFactory to return the destination portfolio
+        vm.mockCall(
+            address(toFactory),
+            abi.encodeWithSignature("portfolioOf(address)", _user),
+            abi.encode(toPortfolio)
+        );
+
+        // Mock the isPortfolioRegistered call to pass
+        vm.mockCall(
+            address(_portfolioManager),
+            abi.encodeWithSignature("isPortfolioRegistered(address)", toPortfolio),
+            abi.encode(true)
+        );
+
         // Fund the facet contract with tokens so it can transfer them
         deal(address(_asset), address(_vault), 1000);
 
         vm.startPrank(address(_portfolioManager));
-        facet.borrowTo(_portfolioAccount, 100);
+        facet.borrowTo(toFactory, 100);
     }
 
     function testPayExcess() public {
