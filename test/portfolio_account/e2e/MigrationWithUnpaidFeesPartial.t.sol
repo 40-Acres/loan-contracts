@@ -103,8 +103,9 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         
         // Set loan contract in config
         portfolioAccountConfig.setLoanContract(BASE_LOAN_CONTRACT);
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
         vm.stopPrank();
-        
+
         // Set portfolio factory on loan contract (if not already set)
         // Use try-catch in case getPortfolioFactory() reverts (e.g., if not implemented on forked contract)
         if(loanContract.getPortfolioFactory()== address(0)) {

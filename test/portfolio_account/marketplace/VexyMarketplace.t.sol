@@ -14,12 +14,58 @@ import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {IVexyMarketplace} from "../../../src/interfaces/external/IVexyMarketplace.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
-import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
+import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
+import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
+import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
 
 contract VexyMarketplaceTest is Test, Setup {
     uint256 constant VEXY_LISTING_ID = 3933;
     address constant VEXY = 0x6b478209974BD27e6cf661FEf86C68072b0d6738;
     MockOdosRouterRL public mockRouter;
+
+    PortfolioFactory public _walletFactory;
+    FacetRegistry public _walletFacetRegistry;
+    address public _walletPortfolio;
+
+    function setUp() public override {
+        super.setUp();
+
+        // Deploy wallet factory
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        (_walletFactory, _walletFacetRegistry) = _portfolioManager.deployFactory(
+            bytes32(keccak256(abi.encodePacked("wallet")))
+        );
+
+        // Register WalletFacet on wallet factory
+        WalletFacet walletFacet = new WalletFacet(
+            address(_walletFactory),
+            address(_portfolioAccountConfig),
+            address(_swapConfig)
+        );
+        bytes4[] memory walletSelectors = new bytes4[](6);
+        walletSelectors[0] = WalletFacet.transferERC20.selector;
+        walletSelectors[1] = WalletFacet.transferNFT.selector;
+        walletSelectors[2] = WalletFacet.receiveERC20.selector;
+        walletSelectors[3] = WalletFacet.swap.selector;
+        walletSelectors[4] = WalletFacet.enforceCollateralRequirements.selector;
+        walletSelectors[5] = WalletFacet.onERC721Received.selector;
+        _walletFacetRegistry.registerFacet(address(walletFacet), walletSelectors, "WalletFacet");
+
+        // Register VexyFacet on wallet factory
+        VexyFacet vexyFacet = new VexyFacet(
+            address(_walletFactory),
+            address(_portfolioAccountConfig),
+            address(_ve)
+        );
+        bytes4[] memory vexySelectors = new bytes4[](1);
+        vexySelectors[0] = VexyFacet.buyVexyListing.selector;
+        _walletFacetRegistry.registerFacet(address(vexyFacet), vexySelectors, "VexyFacet");
+
+        vm.stopPrank();
+
+        // Create wallet portfolio for user
+        _walletPortfolio = _walletFactory.createAccount(_user);
+    }
 
     // Helper function to add collateral via PortfolioManager multicall
     function addCollateralViaMulticall(uint256 tokenId) internal {
@@ -50,11 +96,6 @@ contract VexyMarketplaceTest is Test, Setup {
     }
 
     function testBuyVexyListingNoLoan() public {
-        // assert the getLockedCollateral returns the correct collateral
-        (uint256 prevMaxLoan, uint256 prevMaxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
-        assertEq(prevMaxLoan, 0);
-        assertEq(prevMaxLoanIgnoreSupply, 0);
-
         // ensure vexy listing is still available, and get the price/currency
         (
             ,
@@ -72,32 +113,25 @@ contract VexyMarketplaceTest is Test, Setup {
 
         assertEq(soldTime, 0, "Listing should not be sold");
 
-        deal(currency, _user, price);
+        // Fund wallet portfolio with currency (internal balance)
+        deal(currency, _walletPortfolio, price);
 
         vm.startPrank(_user);
-        IERC20(currency).approve(_portfolioAccount, price);
         address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[0] = address(_walletFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
             VexyFacet.buyVexyListing.selector,
-            VEXY_LISTING_ID,
-            _user
+            VEXY_LISTING_ID
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
-        // assert the getLockedCollateral returns the correct collateral
-        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
-        assertTrue(maxLoanIgnoreSupply > prevMaxLoanIgnoreSupply);
+        // Assert NFT is now owned by wallet portfolio
+        assertEq(IVotingEscrow(nftCollection).ownerOf(nftId), _walletPortfolio, "Wallet should own the NFT");
     }
 
     function testBuyVexyListingWithSwap() public {
-        // assert the getLockedCollateral returns the correct collateral
-        (uint256 prevMaxLoan, uint256 prevMaxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
-        assertEq(prevMaxLoan, 0);
-        assertEq(prevMaxLoanIgnoreSupply, 0);
-
         // ensure vexy listing is still available, and get the price/currency
         (
             ,
@@ -118,37 +152,33 @@ contract VexyMarketplaceTest is Test, Setup {
         // Deploy MockOdosRouter
         mockRouter = new MockOdosRouterRL();
         mockRouter.initMock(address(this));
-        
+
         // Approve the mock router as a swap target (requires owner)
         vm.startPrank(_owner);
         _swapConfig.setApprovedSwapTarget(address(mockRouter), true);
         vm.stopPrank();
 
-        // Fund user with USDC (input token for swap) and currency (for buyVexyListing approval)
-        deal(address(_usdc), _user, price);
-        deal(currency, _user, price);
+        // Fund wallet portfolio with USDC (input token for swap)
+        deal(address(_usdc), _walletPortfolio, price);
 
         vm.startPrank(_user);
-        // Approve portfolio account to pull tokens (userSwap will transferFrom USDC, buyVexyListing will transferFrom currency)
-        IERC20(address(_usdc)).approve(_portfolioAccount, price);
-        IERC20(currency).approve(_portfolioAccount, price);
         address[] memory portfolioFactories = new address[](2);
-        portfolioFactories[0] = address(_portfolioFactory);
-        portfolioFactories[1] = address(_portfolioFactory);
+        portfolioFactories[0] = address(_walletFactory);
+        portfolioFactories[1] = address(_walletFactory);
         bytes[] memory calldatas = new bytes[](2);
 
         // Create swap data to call executeSwap on MockOdosRouter
         bytes memory swapData = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwap.selector,
             _usdc,            // inputToken
-            currency,             // outputToken (same for now, but could be different)
+            currency,             // outputToken
             price,               // inputAmount
             price,               // amountOut
-            _portfolioAccount    // receiver
+            _walletPortfolio     // receiver
         );
 
         calldatas[0] = abi.encodeWithSelector(
-            SwapFacet.userSwap.selector,
+            WalletFacet.swap.selector,
             address(mockRouter),  // swapTarget
             swapData,            // swapData
             _usdc,            // inputToken
@@ -158,17 +188,14 @@ contract VexyMarketplaceTest is Test, Setup {
         );
         calldatas[1] = abi.encodeWithSelector(
             VexyFacet.buyVexyListing.selector,
-            VEXY_LISTING_ID,
-            _user
+            VEXY_LISTING_ID
         );
 
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
-
-        // assert the getLockedCollateral returns the correct collateral
-        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
-        assertTrue(maxLoanIgnoreSupply > prevMaxLoanIgnoreSupply);
+        // Assert NFT is now owned by wallet portfolio
+        assertEq(IVotingEscrow(nftCollection).ownerOf(nftId), _walletPortfolio, "Wallet should own the NFT");
     }
 
 }

@@ -7,7 +7,7 @@ import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 
@@ -15,7 +15,7 @@ import {AccessControl} from "../utils/AccessControl.sol";
  * @title DynamicVotingEscrowFacet
  * @dev VotingEscrowFacet variant that uses DynamicCollateralManager for storage.
  */
-contract DynamicVotingEscrowFacet is AccessControl {
+contract DynamicVotingEscrowFacet is AccessControl, IERC721Receiver {
     using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
@@ -56,14 +56,23 @@ contract DynamicVotingEscrowFacet is AccessControl {
         emit LockCreated(tokenId, amount, from);
     }
 
-    function merge(uint256 from, uint256 to) external {
-        require(_votingEscrow.ownerOf(to) == address(this));
+    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
+        if (msg.sender == address(_votingEscrow)) {
+            DynamicCollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
+        }
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
+    function merge(uint256 fromToken, uint256 toToken) external {
+        require(_votingEscrow.ownerOf(toToken) == address(this));
+        require(_votingEscrow.ownerOf(fromToken) != address(this));
         address owner = _portfolioFactory.ownerOf(address(this));
-        require(_votingEscrow.ownerOf(from) == owner);
-        int128 beginningBalance = _votingEscrow.locked(to).amount;
-        _votingEscrow.merge(from, to);
-        int128 weightIncrease = _votingEscrow.locked(to).amount - beginningBalance;
-        DynamicCollateralManager.updateLockedCollateral(address(_accountConfigStorage), to, address(_votingEscrow));
-        emit LockMerged(from, to, uint256(uint128(weightIncrease)), owner);
+        int128 beginningBalance = _votingEscrow.locked(toToken).amount;
+        _votingEscrow.merge(fromToken, toToken);
+        int128 weightIncrease = _votingEscrow.locked(toToken).amount - beginningBalance;
+        // Remove stale collateral record for fromToken (burned after merge)
+        DynamicCollateralManager.removeLockedCollateral(fromToken, address(_accountConfigStorage));
+        DynamicCollateralManager.updateLockedCollateral(address(_accountConfigStorage), toToken, address(_votingEscrow));
+        emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);
     }
 }

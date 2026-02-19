@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-import {console} from "forge-std/console.sol";
 
 /**
  * @title AccessControl

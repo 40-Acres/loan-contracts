@@ -116,6 +116,7 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         
         address loanContract = address(loanProxy);
         portfolioAccountConfig.setLoanContract(loanContract);
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
         // Note: We don't make loan/vault persistent here because they reference USDC
         // and we'll switch to INK fork where USDC doesn't exist
         

@@ -6,6 +6,7 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
@@ -18,11 +19,11 @@ import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
  * The veNFT must be locked as collateral in the portfolio.
  *
  * Usage:
- * 1. With parameters: forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run(uint256,uint256,address,uint256,uint256,address)" <TOKEN_ID> <PRICE> <PAYMENT_TOKEN> <DEBT_ATTACHED> <EXPIRES_AT> <ALLOWED_BUYER> --rpc-url $RPC_URL --broadcast
- * 2. From env vars: TOKEN_ID=1 PRICE=1000000 PAYMENT_TOKEN=0x... DEBT_ATTACHED=0 EXPIRES_AT=0 ALLOWED_BUYER=0x0 forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run()" --rpc-url $RPC_URL --broadcast
+ * 1. With parameters: forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run(uint256,uint256,address,uint256,address)" <TOKEN_ID> <PRICE> <PAYMENT_TOKEN> <EXPIRES_AT> <ALLOWED_BUYER> --rpc-url $RPC_URL --broadcast
+ * 2. From env vars: TOKEN_ID=1 PRICE=1000000 PAYMENT_TOKEN=0x... EXPIRES_AT=0 ALLOWED_BUYER=0x0 forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run()" --rpc-url $RPC_URL --broadcast
  *
  * Example:
- * forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run(uint256,uint256,address,uint256,uint256,address)" 109384 1000000000 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 0 0 0x0000000000000000000000000000000000000000 --rpc-url $BASE_RPC_URL --broadcast
+ * forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run(uint256,uint256,address,uint256,address)" 109384 1000000000 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 0 0x0000000000000000000000000000000000000000 --rpc-url $BASE_RPC_URL --broadcast
  */
 contract MakeListing is Script {
     using stdJson for string;
@@ -32,7 +33,6 @@ contract MakeListing is Script {
      * @param tokenId The veNFT token ID to list
      * @param price The listing price
      * @param paymentToken The token address for payment (e.g., USDC)
-     * @param debtAttached Amount of debt to attach to the listing (0 = buyer pays off debt)
      * @param expiresAt Unix timestamp when listing expires (0 = never expires)
      * @param allowedBuyer Restrict to specific buyer (address(0) = anyone can buy)
      * @param owner The owner address (for getting portfolio from factory)
@@ -41,7 +41,6 @@ contract MakeListing is Script {
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 debtAttached,
         uint256 expiresAt,
         address allowedBuyer,
         address owner
@@ -51,7 +50,7 @@ contract MakeListing is Script {
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = MarketplaceFacet.makeListing.selector;
+        bytes4 selector = BaseMarketplaceFacet.makeListing.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "MarketplaceFacet.makeListing not registered in FacetRegistry. Please deploy facets first.");
 
@@ -73,7 +72,6 @@ contract MakeListing is Script {
             tokenId,
             price,
             paymentToken,
-            debtAttached,
             expiresAt,
             allowedBuyer
         );
@@ -85,7 +83,6 @@ contract MakeListing is Script {
         console.log("Token ID:", tokenId);
         console.log("Price:", price);
         console.log("Payment Token:", paymentToken);
-        console.log("Debt Attached:", debtAttached);
         console.log("Expires At:", expiresAt);
         console.log("Allowed Buyer:", allowedBuyer);
     }
@@ -95,7 +92,6 @@ contract MakeListing is Script {
      * @param tokenId The veNFT token ID to list
      * @param price The listing price
      * @param paymentToken The token address for payment
-     * @param debtAttached Amount of debt to attach
      * @param expiresAt Unix timestamp when listing expires
      * @param allowedBuyer Restrict to specific buyer
      */
@@ -103,26 +99,24 @@ contract MakeListing is Script {
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 debtAttached,
         uint256 expiresAt,
         address allowedBuyer
     ) external {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
         vm.startBroadcast(privateKey);
-        makeListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer, owner);
+        makeListing(tokenId, price, paymentToken, expiresAt, allowedBuyer, owner);
         vm.stopBroadcast();
     }
 
     /**
      * @dev Alternative run function that reads parameters from environment variables
-     * Usage: PRIVATE_KEY=0x... TOKEN_ID=1 PRICE=1000000 PAYMENT_TOKEN=0x... DEBT_ATTACHED=0 EXPIRES_AT=0 ALLOWED_BUYER=0x0 forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run()" --rpc-url $RPC_URL --broadcast
+     * Usage: PRIVATE_KEY=0x... TOKEN_ID=1 PRICE=1000000 PAYMENT_TOKEN=0x... EXPIRES_AT=0 ALLOWED_BUYER=0x0 forge script script/portfolio_account/helper/MakeListing.s.sol:MakeListing --sig "run()" --rpc-url $RPC_URL --broadcast
      */
     function run() external {
         uint256 tokenId = vm.envUint("TOKEN_ID");
         uint256 price = vm.envUint("PRICE");
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
-        uint256 debtAttached = vm.envOr("DEBT_ATTACHED", uint256(0));
         uint256 expiresAt = vm.envOr("EXPIRES_AT", uint256(0));
         address allowedBuyer = vm.envOr("ALLOWED_BUYER", address(0));
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
@@ -131,7 +125,7 @@ contract MakeListing is Script {
         address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
 
         vm.startBroadcast(privateKey);
-        makeListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer, owner);
+        makeListing(tokenId, price, paymentToken, expiresAt, allowedBuyer, owner);
         vm.stopBroadcast();
     }
 }

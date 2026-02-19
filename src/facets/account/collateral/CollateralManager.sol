@@ -3,10 +3,12 @@ pragma solidity ^0.8.28;
 
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import { LoanUtils } from "../../../LoanUtils.sol";
-import {LoanConfig} from "../config/LoanConfig.sol";
+import {ILoanConfig} from "../config/ILoanConfig.sol";
 
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -22,6 +24,7 @@ library CollateralManager {
     error InvalidLockedCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    error NotPortfolioManager();
     event CollateralAdded(uint256 indexed tokenId, address indexed owner);
     event CollateralRemoved(uint256 indexed tokenId, address indexed owner);
 
@@ -65,6 +68,8 @@ library CollateralManager {
     }
 
     function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        if(collateralManagerData.lockedCollaterals[tokenId] != 0) return;
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
     }
 
@@ -72,7 +77,6 @@ library CollateralManager {
         // require the token to be in the portfolio account
         require(IVotingEscrow(address(ve)).ownerOf(tokenId) == address(this), "Token not in portfolio account");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        require(ve != address(0), "Voting escrow address cannot be zero");
 
         int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
         require(newLockedCollateralInt > 0, "Locked collateral amount must be greater than 0");
@@ -116,7 +120,7 @@ library CollateralManager {
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
-        require(newLockedCollateralInt >= 0, "Locked collateral amount must be greater than 0");
+        require(newLockedCollateralInt >= 0);
         uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
         if(newLockedCollateral > previousLockedCollateral) {
             uint256 difference = newLockedCollateral - previousLockedCollateral;
@@ -148,6 +152,10 @@ library CollateralManager {
     
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
+        address factory = PortfolioAccountConfig(portfolioAccountConfig).getPortfolioFactory();
+        PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
+        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
@@ -158,7 +166,7 @@ library CollateralManager {
 
         uint256 projectedTotalDebt = collateralManagerData.debt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
         collateralManagerData.debt += amount;
         originationFee = lendingPool.borrowFromPortfolio(amount);
@@ -176,7 +184,7 @@ library CollateralManager {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
 
         // get the total debt to ensure we don't overpay
-        uint256 totalDebt = collateralManagerData.debt;
+        uint256 totalDebt = collateralManagerData.debt + collateralManagerData.unpaidFees;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
         excess = amount - balancePayment;
 
@@ -206,7 +214,7 @@ library CollateralManager {
 
     function getMaxLoan(address portfolioAccountConfig) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalLockedCollateral = getTotalLockedCollateral();
-        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
 
@@ -329,6 +337,13 @@ library CollateralManager {
                 collateralManagerData.undercollateralizedDebt -= difference;
             }
         }
+
+        // NOTE: When previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply (e.g., repayment
+        // where only debt changes), the delta is 0 and undercollateralizedDebt is unchanged.
+        // This can leave a stale value that overstates the actual shortfall. However, it does
+        // NOT affect transaction outcomes — the early return above already zeroes
+        // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
+        // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
 
@@ -348,7 +363,7 @@ library CollateralManager {
 
         uint256 newTotalCollateral = data.totalLockedCollateral - nftCollateral;
 
-        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
 
@@ -372,8 +387,12 @@ library CollateralManager {
     function addDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         (,uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        require(amount <= maxLoanIgnoreSupply, "Amount exceeds max loan ignore supply");
-        // Add debt and unpaid fees
+
+        uint256 projectedTotalDebt = collateralManagerData.debt + amount;
+        if (projectedTotalDebt > maxLoanIgnoreSupply) {
+            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
+        }
+
         collateralManagerData.debt += amount;
         collateralManagerData.unpaidFees += unpaidFees;
     }
@@ -390,25 +409,17 @@ library CollateralManager {
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         // Cap the amount to actual total debt
         uint256 debtToTransfer = amount > collateralManagerData.debt ? collateralManagerData.debt : amount;
-        
+
         if (debtToTransfer == 0) {
             return;
         }
-        
-        // Decrease over-supplied vault debt proportionally if it exists
-        if (collateralManagerData.overSuppliedVaultDebt > 0) {
-            uint256 overSuppliedToTransfer = collateralManagerData.overSuppliedVaultDebt > debtToTransfer 
-                ? debtToTransfer 
-                : collateralManagerData.overSuppliedVaultDebt;
-            collateralManagerData.overSuppliedVaultDebt -= overSuppliedToTransfer;
-        }
-        
+
         // Decrease unpaid fees (cap to actual unpaid fees)
-        uint256 feesToTransfer = unpaidFees > collateralManagerData.unpaidFees 
-            ? collateralManagerData.unpaidFees 
+        uint256 feesToTransfer = unpaidFees > collateralManagerData.unpaidFees
+            ? collateralManagerData.unpaidFees
             : unpaidFees;
         collateralManagerData.unpaidFees -= feesToTransfer;
-        
+
         // Decrease debt
         collateralManagerData.debt -= debtToTransfer;
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);

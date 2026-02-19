@@ -75,30 +75,35 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     }
 
     function removeCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
-        if (listing.owner != address(0)) {
+        if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             revert ListingActive(tokenId);
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
     }
 
-    function removeCollateralTo(uint256 tokenId, address toPortfolio) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
-        if (listing.owner != address(0)) {
+    function removeCollateralTo(uint256 tokenId, address targetPortfolioFactory) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             revert ListingActive(tokenId);
         }
-        // Verify the destination portfolio is owned by the same user
-        PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
-        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        address targetFactory = manager.getFactoryForPortfolio(toPortfolio);
-        require(targetFactory != address(0), "Target portfolio not registered");
-        address targetOwner = PortfolioFactory(targetFactory).ownerOf(toPortfolio);
-        require(portfolioOwner == targetOwner, "Must own both portfolios");
 
-        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), toPortfolio, tokenId);
+        // Validate target factory is registered in the same PortfolioManager
+        PortfolioManager portfolioManager = _portfolioFactory.portfolioManager();
+        require(portfolioManager.isRegisteredFactory(targetPortfolioFactory), "Target factory not registered");
+
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        PortfolioFactory targetFactory = PortfolioFactory(targetPortfolioFactory);
+
+        // get the portfolio address for the owner in the target factory
+        address toPortfolio = targetFactory.portfolioOf(portfolioOwner);
+        if(toPortfolio == address(0)) {
+            // if the portfolio doesn't exist yet, create it
+            toPortfolio = targetFactory.createAccount(portfolioOwner);
+        }
+
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), toPortfolio, tokenId);
     }
 
     function getMaxLoan() public view returns (uint256, uint256) {

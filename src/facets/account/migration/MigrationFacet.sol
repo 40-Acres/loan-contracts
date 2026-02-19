@@ -5,7 +5,6 @@ import {ILoan} from "../../../interfaces/ILoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {CollateralStorage} from "../../../storage/CollateralStorage.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
 import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";  
@@ -17,7 +16,6 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
  */
 contract MigrationFacet {
     PortfolioFactory public immutable _portfolioFactory;
-    AccountConfigStorage public immutable _accountConfigStorage;
     IVotingEscrow public immutable _ve;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
 
@@ -37,7 +35,7 @@ contract MigrationFacet {
         require(borrower == _portfolioFactory.ownerOf(address(this)));
 
 
-        CollateralManager.migrateDebt(address(_accountConfigStorage), balance, unpaidFees);
+        CollateralManager.migrateDebt(address(_portfolioAccountConfig), balance, unpaidFees);
     }
 
     modifier onlyLoanContract(address loanContract) {

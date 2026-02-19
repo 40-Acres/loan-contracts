@@ -64,6 +64,8 @@ contract VotingFacet is IVotingFacet, AccessControl {
         }
         address owner = _portfolioFactory.ownerOf(address(this));
         _voter.vote(tokenId, pools, weights);
+        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        UserVotingConfig.setVotingMode(tokenId, true);
         emit Voted(tokenId, pools, weights, owner);
     }
 

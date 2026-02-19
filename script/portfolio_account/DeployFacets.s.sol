@@ -10,8 +10,7 @@ import {DeployVotingFacet} from "./facets/DeployVotingFacet.s.sol";
 import {DeployVotingEscrowFacet} from "./facets/DeployVotingEscrowFacet.s.sol";
 import {DeploySwapFacet} from "./facets/DeploySwapFacet.s.sol";
 import {DeployMigrationFacet} from "./facets/DeployMigrationFacet.s.sol";
-import {DeployVexyFacet, DeployOpenXFacet, DeployMarketplaceFacet} from "./facets/DeployMarketplaceFacets.s.sol";
-import {DeployERC721ReceiverFacet} from "./facets/DeployERC721ReceiverFacet.s.sol";
+import {DeployMarketplaceFacet} from "./facets/DeployMarketplaceFacets.s.sol";
 import {DeployRewardsProcessingFacet} from "./facets/DeployRewardsProcessingFacet.s.sol";
 
 contract DeployFacets is AccountFacetsDeploy {
@@ -23,9 +22,6 @@ contract DeployFacets is AccountFacetsDeploy {
     DeployVotingEscrowFacet deployVotingEscrowFacet = new DeployVotingEscrowFacet();
     DeploySwapFacet deploySwapFacet = new DeploySwapFacet();
     DeployMigrationFacet deployMigrationFacet = new DeployMigrationFacet();
-    DeployVexyFacet deployVexyFacet = new DeployVexyFacet();
-    DeployOpenXFacet deployOpenXFacet = new DeployOpenXFacet();
-    DeployERC721ReceiverFacet deployERC721ReceiverFacet = new DeployERC721ReceiverFacet();
     DeployRewardsProcessingFacet deployRewardsProcessingFacet = new DeployRewardsProcessingFacet();
     DeployMarketplaceFacet deployMarketplaceFacet = new DeployMarketplaceFacet();
 
@@ -38,9 +34,6 @@ contract DeployFacets is AccountFacetsDeploy {
         deployVotingEscrowFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter);
         deploySwapFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig);
         deployMigrationFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
-        deployVexyFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
-        deployOpenXFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
-        deployERC721ReceiverFacet.deploy(portfolioFactory);
         deployRewardsProcessingFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
         deployMarketplaceFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
     }

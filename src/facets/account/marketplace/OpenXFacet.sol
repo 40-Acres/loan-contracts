@@ -6,7 +6,6 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { AccessControl } from "../utils/AccessControl.sol";
-import { CollateralManager } from "../collateral/CollateralManager.sol";
 import { IVotingEscrow } from "../../../interfaces/IVotingEscrow.sol";
 import { PortfolioAccountConfig } from "../config/PortfolioAccountConfig.sol";
 
@@ -23,9 +22,7 @@ contract OpenXFacet is AccessControl {
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
     }
 
-    function buyOpenXListing(uint256 listingId, address buyer) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        require(buyer != address(this), "Buyer cannot be the portfolio account");
-
+    function buyOpenXListing(uint256 listingId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         (
             ,
             ,
@@ -40,18 +37,13 @@ contract OpenXFacet is AccessControl {
         require(sold == 0, "Listing sold");
         require(price > 0, "Invalid listing price");
 
-        // Check if portfolio owner has sufficient balance and approval
         IERC20 currencyToken = IERC20(currency);
-        require(currencyToken.balanceOf(buyer) >= price, "Insufficient balance");
-        require(currencyToken.allowance(buyer, address(this)) >= price, "Insufficient allowance");
-        
-        // transfer funds from buyer to this contract
-        currencyToken.safeTransferFrom(buyer, address(this), price);
+        require(currencyToken.balanceOf(address(this)) >= price, "Insufficient balance");
         // approve the marketplace to spend the funds
         currencyToken.approve(address(_openx), price);
         // buy the listing
         _openx.buyNFT(listingId);
-        // add the collateral to the collateral manager
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), nftId, address(_votingEscrow));
+        // clear remaining approval
+        currencyToken.approve(address(_openx), 0);
     }
 }

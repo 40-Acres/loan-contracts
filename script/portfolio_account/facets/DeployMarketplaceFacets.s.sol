@@ -5,7 +5,10 @@ import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
+import {FortyAcresMarketplaceFacet} from "../../../src/facets/account/marketplace/FortyAcresMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
+import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 
 contract DeployVexyFacet is AccountFacetsDeploy {
     function run() external {
@@ -61,31 +64,42 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
         address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
+        address portfolioMgr = address(PortfolioFactory(PORTFOLIO_FACTORY).portfolioManager());
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(PORTFOLIO_FACTORY, VOTING_ESCROW, 100, DEPLOYER_ADDRESS);
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, VOTING_ESCROW, 100, DEPLOYER_ADDRESS);
         MarketplaceFacet facet = new MarketplaceFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, address(portfolioMarketplace));
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "MarketplaceFacet", false);
         vm.stopBroadcast();
     }
 
     function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioFactory, votingEscrow, 100, DEPLOYER_ADDRESS);
+        address portfolioMgr = address(PortfolioFactory(portfolioFactory).portfolioManager());
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, votingEscrow, 100, DEPLOYER_ADDRESS);
         MarketplaceFacet newFacet = new MarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, address(portfolioMarketplace));
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "MarketplaceFacet", true);
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](10);
-        selectors[0] = MarketplaceFacet.processPayment.selector;
-        selectors[1] = MarketplaceFacet.finalizePurchase.selector;
-        selectors[2] = MarketplaceFacet.buyMarketplaceListing.selector;
-        selectors[3] = MarketplaceFacet.getListing.selector;
-        selectors[4] = MarketplaceFacet.transferDebtToBuyer.selector;
-        selectors[5] = MarketplaceFacet.makeListing.selector;
-        selectors[6] = MarketplaceFacet.cancelListing.selector;
-        selectors[7] = MarketplaceFacet.marketplace.selector;
-        selectors[8] = MarketplaceFacet.getListingNonce.selector;
-        selectors[9] = MarketplaceFacet.isListingValid.selector;
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        selectors[1] = BaseMarketplaceFacet.makeListing.selector;
+        selectors[2] = BaseMarketplaceFacet.cancelListing.selector;
+        selectors[3] = BaseMarketplaceFacet.marketplace.selector;
+        selectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        selectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        return selectors;
+    }
+}
+
+contract DeployFortyAcresMarketplaceFacet is AccountFacetsDeploy {
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace) external {
+        FortyAcresMarketplaceFacet newFacet = new FortyAcresMarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, marketplace);
+        registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "FortyAcresMarketplaceFacet", true);
+    }
+
+    function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
         return selectors;
     }
 }

@@ -41,7 +41,7 @@ contract MockLendingPool is ILendingPool {
         return 0; // No origination fee for testing
     }
 
-    function payFromPortfolio(uint256, uint256) external pure {}
+    function payFromPortfolio(uint256 totalPayment, uint256) external pure returns (uint256) { return totalPayment; }
 
     function lendingAsset() external view returns (address) {
         return _lendingAsset;
@@ -147,6 +147,7 @@ contract YieldBasisVotingFacetTest is Test {
 
         // Configure the PortfolioAccountConfig with the mock lending pool
         portfolioAccountConfig.setLoanContract(address(mockLendingPool));
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the mock vault with USDC so getMaxLoan calculations work
         deal(USDC, address(mockVault), 1_000_000 * 1e6); // 1M USDC

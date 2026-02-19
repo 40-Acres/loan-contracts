@@ -124,6 +124,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         loanConfig.setMultiplier(1e12); // 1x multiplier
 
         portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the vault with USDC from depositor
         deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);
@@ -359,12 +360,11 @@ contract YieldBasisDynamicFeesE2E is Test {
                 console.log("Epoch", i + 1, "- Rewards deposited:", rewardAmount);
             }
 
-            // Move to next epoch to allow rewards to vest
+            // Move to next epoch to allow rewards to vest and settle
             vm.warp(rewardsEpochStart + (3 * 1 weeks) + 1 hours);
 
-            // Sync and update debt balance
+            vault.settleRewards(portfolioAccount);
             vault.sync();
-            vault.updateUserDebtBalance(portfolioAccount);
 
             uint256 debtAfterRewards = vault.getDebtBalance(portfolioAccount);
             console.log("Debt after rewards vesting:", debtAfterRewards);
@@ -432,20 +432,18 @@ contract YieldBasisDynamicFeesE2E is Test {
             // Move to next epoch
             vm.warp(epoch1Start + 1 hours);
 
+            uint256 portfolioUsdcBefore = usdc.balanceOf(portfolioAccount);
+
             // Repay with rewards that EXCEED the debt (200% of debt)
             uint256 excessiveRewards = initialDebt * 2;
             _repayWithRewards(excessiveRewards);
 
             console.log("Rewards deposited (2x debt):", excessiveRewards);
 
-            // Move to next epoch for rewards to vest
-            vm.warp(epoch2Start + 1 hours);
-
-            // Record portfolio account USDC balance before update
-            uint256 portfolioUsdcBefore = usdc.balanceOf(portfolioAccount);
-
-            // Update debt balance - this should pay excess as USDC
-            vault.updateUserDebtBalance(portfolioAccount);
+            // Warp to end of epoch and settle to apply rewards (pre-computed to avoid via-ir caching)
+            uint256 settleEpoch = epoch1Start + 1 weeks;
+            vm.warp(settleEpoch + 1 hours);
+            vault.settleRewards(portfolioAccount);
 
             uint256 portfolioUsdcAfter = usdc.balanceOf(portfolioAccount);
             uint256 finalDebt = vault.getDebtBalance(portfolioAccount);
@@ -494,32 +492,34 @@ contract YieldBasisDynamicFeesE2E is Test {
             uint256 epoch2Start = epoch1Start + 1 weeks;
             uint256 epoch3Start = epoch2Start + 1 weeks;
 
-            // Epoch 1: First reward deposit (vault gets no premium for this epoch)
+            // Epoch 1: First reward deposit
             vm.warp(epoch1Start + 1 hours);
             uint256 rewardAmount = borrowAmount / 4;
             _repayWithRewards(rewardAmount);
 
-            // Epoch 2: Second reward deposit (vault CAN earn premium for this epoch)
+            // Epoch 2: Settle stream1 first, then deposit stream2
             vm.warp(epoch2Start + 1 hours);
+            vault.settleRewards(portfolioAccount); // settle stream1 so debtBefore is accurate
+            uint256 debtBefore = vault.getDebtBalance(portfolioAccount);
             _repayWithRewards(rewardAmount);
 
-            // Move to epoch 3 for full vesting
+            // Warp to end of epoch and settle stream2
             vm.warp(epoch3Start + 1 hours);
+            vault.settleRewards(portfolioAccount);
+            uint256 debtAfter = vault.getDebtBalance(portfolioAccount);
 
-            vault.sync();
+            uint256 debtReduction = debtBefore - debtAfter;
+            uint256 lenderPremium = rewardAmount - debtReduction;
 
-            // Check that lender premium was applied for epoch 2
-            uint256 totalRewards = vault.rewardTotalAssetsPerEpoch(epoch2Start);
-            uint256 lenderPremium = vault.tokenClaimedPerEpoch(address(vault), epoch2Start);
+            console.log("Reward amount:", rewardAmount);
+            console.log("Debt reduction:", debtReduction);
+            console.log("Lender premium:", lenderPremium);
 
-            console.log("Total rewards in epoch 2:", totalRewards);
-            console.log("Lender premium in epoch 2:", lenderPremium);
-
-            if (totalRewards > 0) {
-                uint256 actualFeeRatio = (lenderPremium * 10000) / totalRewards;
+            // Lender premium should be within expected fee range
+            if (rewardAmount > 0) {
+                uint256 actualFeeRatio = (lenderPremium * 10000) / rewardAmount;
                 console.log("Actual fee ratio applied (bps):", actualFeeRatio);
 
-                // Fee ratio should be within expected range (~2000 bps at 40% utilization)
                 assertGe(actualFeeRatio, 400, "Actual fee should be >= 4%");
                 assertLe(actualFeeRatio, 9600, "Actual fee should be <= 96%");
             }
@@ -597,12 +597,12 @@ contract YieldBasisDynamicFeesE2E is Test {
             vm.stopPrank();
         }
 
-        // Move to next epoch for vesting
+        // Move to next epoch for vesting and settle both users
         vm.warp(epoch2Start + 1 hours);
 
+        vault.settleRewards(portfolioAccount);
+        vault.settleRewards(portfolioAccount2);
         vault.sync();
-        vault.updateUserDebtBalance(portfolioAccount);
-        vault.updateUserDebtBalance(portfolioAccount2);
 
         uint256 debt1After = vault.getDebtBalance(portfolioAccount);
         uint256 debt2After = vault.getDebtBalance(portfolioAccount2);
@@ -653,10 +653,9 @@ contract YieldBasisDynamicFeesE2E is Test {
             uint256 excessRewards = borrowAmount * 3;
             _repayWithRewards(excessRewards);
 
-            // Move to next epoch for vesting
+            // Move to next epoch for vesting and settle
             vm.warp(epoch2Start + 1 hours);
-
-            vault.updateUserDebtBalance(portfolioAccount);
+            vault.settleRewards(portfolioAccount);
 
             uint256 totalSupplyAfter = vault.totalSupply();
             uint256 totalAssetsAfter = vault.totalAssets();

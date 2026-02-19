@@ -61,11 +61,12 @@ contract WalletFacetTest is Test, Setup {
         );
 
         // Register WalletFacet selectors
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = WalletFacet.transferERC20.selector;
         selectors[1] = WalletFacet.transferNFT.selector;
-        selectors[2] = WalletFacet.swap.selector;
-        selectors[3] = WalletFacet.enforceCollateralRequirements.selector;
+        selectors[2] = WalletFacet.receiveERC20.selector;
+        selectors[3] = WalletFacet.swap.selector;
+        selectors[4] = WalletFacet.enforceCollateralRequirements.selector;
         _walletFacetRegistry.registerFacet(address(newWalletFacet), selectors, "WalletFacet");
 
         vm.stopPrank();
@@ -138,8 +139,8 @@ contract WalletFacetTest is Test, Setup {
         return abi.decode(results[0], (uint256));
     }
 
-    // Helper to remove collateral to wallet via PortfolioManager multicall (on main portfolio)
-    function removeCollateralToViaMulticall(uint256 tokenId, address toPortfolio) internal {
+    // Helper to remove collateral to target factory's portfolio via PortfolioManager multicall (on main portfolio)
+    function removeCollateralToViaMulticall(uint256 tokenId, address targetFactory) internal {
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
@@ -147,7 +148,7 @@ contract WalletFacetTest is Test, Setup {
         calldatas[0] = abi.encodeWithSelector(
             BaseCollateralFacet.removeCollateralTo.selector,
             tokenId,
-            toPortfolio
+            targetFactory
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
@@ -220,8 +221,8 @@ contract WalletFacetTest is Test, Setup {
         console.log("Main portfolio collateral:", initialCollateral);
         console.log("veNFT owner:", _ve.ownerOf(_tokenId));
 
-        // Step 2: Remove collateral to wallet using removeCollateralTo
-        removeCollateralToViaMulticall(_tokenId, _walletPortfolio);
+        // Step 2: Remove collateral to wallet using removeCollateralTo (pass wallet factory)
+        removeCollateralToViaMulticall(_tokenId, address(_walletFactory));
 
         // Verify veNFT is now in wallet
         assertEq(_ve.ownerOf(_tokenId), _walletPortfolio, "Wallet should now own veNFT");
@@ -256,13 +257,13 @@ contract WalletFacetTest is Test, Setup {
     }
 
     /**
-     * @dev Test that removeCollateralTo fails when target is not owned by same user
+     * @dev Test that removeCollateralTo fails when target factory is not registered
      */
-    function testRemoveCollateralToFailsWithDifferentOwner() public {
+    function testRemoveCollateralToFailsWithUnregisteredFactory() public {
         // Add collateral first
         addCollateralViaMulticall(_tokenId);
 
-        // Try to remove to an unregistered address
+        // Try to remove to an unregistered factory address
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
@@ -270,10 +271,10 @@ contract WalletFacetTest is Test, Setup {
         calldatas[0] = abi.encodeWithSelector(
             BaseCollateralFacet.removeCollateralTo.selector,
             _tokenId,
-            address(0x1234) // Not a registered portfolio
+            address(0x1234) // Not a registered factory
         );
 
-        vm.expectRevert("Target portfolio not registered");
+        vm.expectRevert("Target factory not registered");
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }

@@ -428,4 +428,123 @@ contract CollateralFacetTest is Test, Setup {
         // The modifier should allow operations where debt and maxLoanIgnoreSupply stay the same
         // because overcollateralization doesn't increase
     }
+
+    function testDebtFromUnpaidFees() public {
+        // Step 1: Setup - add collateral and borrow
+        addCollateralViaMulticall(_tokenId);
+        uint256 borrowAmount = 100e6; // 100 USDC
+
+        // Fund vault so borrow can succeed
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, 200e6);
+
+        borrowViaMulticall(borrowAmount);
+
+        uint256 debtAfterBorrow = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(debtAfterBorrow, borrowAmount, "Debt should equal borrow amount");
+        assertEq(CollateralFacet(_portfolioAccount).getUnpaidFees(), 0, "No unpaid fees yet");
+
+        // Step 2: Simulate migrated unpaid fees using vm.store
+        // CollateralManager storage layout: keccak256("storage.CollateralManager")
+        //   slot+0: mapping lockedCollaterals
+        //   slot+1: mapping originTimestamps
+        //   slot+2: totalLockedCollateral
+        //   slot+3: debt
+        //   slot+4: unpaidFees
+        uint256 unpaidFees = 30e6; // 30 USDC in unpaid fees
+        bytes32 baseSlot = keccak256("storage.CollateralManager");
+        bytes32 unpaidFeesSlot = bytes32(uint256(baseSlot) + 4);
+        vm.store(_portfolioAccount, unpaidFeesSlot, bytes32(unpaidFees));
+
+        assertEq(CollateralFacet(_portfolioAccount).getUnpaidFees(), unpaidFees, "Unpaid fees should be set");
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), borrowAmount, "Debt unchanged");
+
+        // Step 3: User pays debt + unpaidFees - should clear everything
+        uint256 totalObligation = debtAfterBorrow + unpaidFees; // 130e6
+        deal(address(_asset), _user, totalObligation);
+
+        vm.startPrank(_user);
+        IERC20(address(_asset)).approve(_portfolioAccount, totalObligation);
+        vm.stopPrank();
+        pay(_portfolioAccount, totalObligation);
+
+        // Step 4: Assert - both debt and unpaidFees should be zero
+        uint256 remainingDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 remainingFees = CollateralFacet(_portfolioAccount).getUnpaidFees();
+
+        console.log("Debt after paying full obligation:", remainingDebt);
+        console.log("Unpaid fees after paying full obligation:", remainingFees);
+
+        // This is the critical assertion:
+        // After paying debt + unpaidFees, both should be zero.
+        // Currently fails because balancePayment is capped at debt (not debt+fees),
+        // so fees eat into principal repayment, leaving phantom debt.
+        assertEq(remainingDebt, 0, "C-01: Phantom debt remains after paying full obligation (debt + unpaidFees)");
+        assertEq(remainingFees, 0, "Unpaid fees should be zero after full payment");
+    }
+
+    /// @notice Multicall [removeCollateral, pay] and [pay, removeCollateral] both succeed
+    ///         when payment fully covers the shortfall from removing collateral.
+    /// @dev The early return in _updateUndercollateralizedDebt (totalDebt <= maxLoanIgnoreSupply → 0)
+    ///      ensures undercollateralizedDebt is zeroed regardless of operation order.
+    function testRemoveCollateralAndPayOrderIndependent() public {
+        uint256 tokenId2 = 84298;
+
+        // Transfer token2 to portfolio account
+        vm.startPrank(IVotingEscrow(_ve).ownerOf(tokenId2));
+        IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(tokenId2), _portfolioAccount, tokenId2);
+        vm.stopPrank();
+
+        // Add both tokens as collateral
+        addCollateralViaMulticall(_tokenId);
+        addCollateralViaMulticall(tokenId2);
+
+        // Get each token's contribution to maxLoanIgnoreSupply
+        uint256 locked1 = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId);
+        uint256 locked2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+
+        uint256 M1 = (((locked1 * rewardsRate) / 1e6) * multiplier) / 1e12;
+        uint256 M2 = (((locked2 * rewardsRate) / 1e6) * multiplier) / 1e12;
+
+        // Borrow D = M1 + M2/2 (exceeds single-token capacity, within both)
+        uint256 D = M1 + (M2 / 2);
+
+        // Fund vault with enough liquidity
+        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address vault = ILoan(loanContract)._vault();
+        deal(address(_asset), vault, D * 10);
+
+        borrowViaMulticall(D);
+
+        // Payment P = D - M1 = M2/2 (exactly covers shortfall from removing token2)
+        uint256 P = D - M1;
+
+        // --- Order 1: [removeCollateral, pay] ---
+        deal(address(_asset), _user, P);
+        vm.startPrank(_user);
+        IERC20(address(_asset)).approve(_portfolioAccount, P);
+
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseCollateralFacet.removeCollateral.selector,
+            tokenId2
+        );
+        calldatas[1] = abi.encodeWithSelector(
+            BaseLendingFacet.pay.selector,
+            P
+        );
+
+        // Should succeed: after both ops, debt = M1, maxLoanIgnoreSupply = M1
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), M1, "Debt should equal M1");
+        assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), locked1, "Only token1 collateral remains");
+    }
 }

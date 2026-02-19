@@ -29,11 +29,13 @@ contract DeployWalletFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](6);
         selectors[0] = WalletFacet.transferERC20.selector;
         selectors[1] = WalletFacet.transferNFT.selector;
-        selectors[2] = WalletFacet.swap.selector;
-        selectors[3] = WalletFacet.enforceCollateralRequirements.selector;
+        selectors[2] = WalletFacet.receiveERC20.selector;
+        selectors[3] = WalletFacet.swap.selector;
+        selectors[4] = WalletFacet.enforceCollateralRequirements.selector;
+        selectors[5] = WalletFacet.onERC721Received.selector;
         return selectors;
     }
 }

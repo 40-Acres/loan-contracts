@@ -4,9 +4,11 @@ pragma solidity ^0.8.28;
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {LoanConfig} from "../config/LoanConfig.sol";
+import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
 /**
  * @title ERC4626CollateralManager
@@ -20,6 +22,7 @@ library ERC4626CollateralManager {
     error InsufficientCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    error NotPortfolioManager();
 
     event ERC4626CollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event ERC4626CollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -52,9 +55,8 @@ library ERC4626CollateralManager {
     function addCollateral(address portfolioAccountConfig, address vault, uint256 shares) external {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
-        require(IERC20(vault).balanceOf(address(this)) >= shares, "Insufficient shares in wallet");
-
         ERC4626CollateralData storage data = _getStorage();
+        require(IERC20(vault).balanceOf(address(this)) >= data.shares + shares, "Insufficient shares in wallet");
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
 
@@ -162,6 +164,10 @@ library ERC4626CollateralManager {
      */
     function increaseTotalDebt(address portfolioAccountConfig, address vault, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         ERC4626CollateralData storage data = _getStorage();
+        // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
+        address factory = PortfolioAccountConfig(portfolioAccountConfig).getPortfolioFactory();
+        PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
+        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
@@ -172,7 +178,7 @@ library ERC4626CollateralManager {
 
         uint256 projectedTotalDebt = data.debt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            data.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            data.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
 
         data.debt += amount;
@@ -226,7 +232,7 @@ library ERC4626CollateralManager {
      */
     function getMaxLoan(address portfolioAccountConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalCollateralValue = getTotalCollateralValue(vault);
-        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
 
         // Get loan-to-value ratio (LTV) from multiplier - e.g., 7000 = 70%
         uint256 ltv = loanConfig.getMultiplier();
@@ -316,6 +322,13 @@ library ERC4626CollateralManager {
                 data.undercollateralizedDebt -= difference;
             }
         }
+
+        // NOTE: When previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply (e.g., repayment
+        // where only debt changes), the delta is 0 and undercollateralizedDebt is unchanged.
+        // This can leave a stale value that overstates the actual shortfall. However, it does
+        // NOT affect transaction outcomes — the early return above already zeroes
+        // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
+        // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
     /**
@@ -340,13 +353,6 @@ library ERC4626CollateralManager {
 
         if (debtToTransfer == 0) {
             return;
-        }
-
-        if (data.overSuppliedVaultDebt > 0) {
-            uint256 overSuppliedToTransfer = data.overSuppliedVaultDebt > debtToTransfer
-                ? debtToTransfer
-                : data.overSuppliedVaultDebt;
-            data.overSuppliedVaultDebt -= overSuppliedToTransfer;
         }
 
         uint256 feesToTransfer = unpaidFees > data.unpaidFees

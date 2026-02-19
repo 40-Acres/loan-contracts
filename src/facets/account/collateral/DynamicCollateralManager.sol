@@ -3,16 +3,19 @@ pragma solidity ^0.8.28;
 
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import { LoanUtils } from "../../../LoanUtils.sol";
-import {LoanConfig} from "../config/LoanConfig.sol";
+import {ILoanConfig} from "../config/ILoanConfig.sol";
 
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IDynamicFeesVault {
     function getDebtBalance(address borrower) external view returns (uint256);
+    function transferDebt(address from, address to, uint256 amount) external;
 }
 
 /**
@@ -26,6 +29,7 @@ library DynamicCollateralManager {
     error InvalidLockedCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    error NotPortfolioManager();
     error NotSupported();
     event CollateralAdded(uint256 indexed tokenId, address indexed owner);
     event CollateralRemoved(uint256 indexed tokenId, address indexed owner);
@@ -68,6 +72,8 @@ library DynamicCollateralManager {
     }
 
     function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        if(collateralManagerData.lockedCollaterals[tokenId] != 0) return;
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
     }
 
@@ -119,7 +125,7 @@ library DynamicCollateralManager {
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
         int128 newLockedCollateralInt = IVotingEscrow(address(ve)).locked(tokenId).amount;
-        require(newLockedCollateralInt >= 0, "Locked collateral amount must be greater than 0");
+        require(newLockedCollateralInt >= 0);
         uint256 newLockedCollateral = uint256(uint128(newLockedCollateralInt));
         if(newLockedCollateral > previousLockedCollateral) {
             uint256 difference = newLockedCollateral - previousLockedCollateral;
@@ -150,6 +156,10 @@ library DynamicCollateralManager {
 
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
+        address factory = PortfolioAccountConfig(portfolioAccountConfig).getPortfolioFactory();
+        PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
+        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
@@ -162,7 +172,7 @@ library DynamicCollateralManager {
         uint256 currentVaultDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
         uint256 projectedTotalDebt = currentVaultDebt + amount;
         if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt += projectedTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
 
         // Borrow from vault — vault tracks the debt internally
@@ -189,13 +199,9 @@ library DynamicCollateralManager {
         }
 
         if (balancePayment > 0) {
-            // Measure USDC balance before/after to determine exact amount paid
-            // (vault may reduce debt via rewards vesting during the call)
-            uint256 usdcBefore = IERC20(lendingAsset).balanceOf(address(this));
             IERC20(lendingAsset).approve(address(lendingPool), balancePayment);
-            lendingPool.payFromPortfolio(balancePayment, 0);
+            uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
             IERC20(lendingAsset).approve(address(lendingPool), 0);
-            uint256 actualPaid = usdcBefore - IERC20(lendingAsset).balanceOf(address(this));
             excess = amount - actualPaid;
         }
 
@@ -207,7 +213,7 @@ library DynamicCollateralManager {
 
     function getMaxLoan(address portfolioAccountConfig) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalLockedCollateral = getTotalLockedCollateral();
-        LoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
 
@@ -308,10 +314,71 @@ library DynamicCollateralManager {
                 collateralManagerData.undercollateralizedDebt -= difference;
             }
         }
+
+        // NOTE: When previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply (e.g., repayment
+        // where only debt changes), the delta is 0 and undercollateralizedDebt is unchanged.
+        // This can leave a stale value that overstates the actual shortfall. However, it does
+        // NOT affect transaction outcomes — the early return above already zeroes
+        // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
+        // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
-    function addDebt(address, uint256, uint256) external pure {
-        revert NotSupported();
+    /**
+     * @dev Calculate the minimum payment needed to keep account in good standing after removing a specific token's collateral
+     * @param portfolioAccountConfig The portfolio account config address
+     * @param tokenId The token ID whose collateral will be removed
+     * @return requiredPayment The minimum amount to pass to decreaseTotalDebt
+     */
+    function getRequiredPaymentForCollateralRemoval(address portfolioAccountConfig, uint256 tokenId) public view returns (uint256) {
+        CollateralManagerData storage data = _getCollateralManagerData();
+        uint256 currentDebt = getTotalDebt(portfolioAccountConfig);
+        if (currentDebt == 0) return 0;
+
+        uint256 nftCollateral = data.lockedCollaterals[tokenId];
+        if (nftCollateral == 0) return 0;
+
+        uint256 newTotalCollateral = data.totalLockedCollateral - nftCollateral;
+
+        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        uint256 rewardsRate = loanConfig.getRewardsRate();
+        uint256 multiplier = loanConfig.getMultiplier();
+
+        uint256 newMaxLoanIgnoreSupply = (((newTotalCollateral * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        if (currentDebt <= newMaxLoanIgnoreSupply) return 0;
+
+        // No unpaidFees for DynamicCollateralManager (fees handled by vault)
+        return currentDebt - newMaxLoanIgnoreSupply;
+    }
+
+    /**
+     * @dev Sync undercollateralizedDebt after debt has been added externally (e.g., via vault.transferDebt)
+     *      Does NOT add debt to the vault — the vault already tracks it.
+     * @param portfolioAccountConfig The portfolio account config address
+     */
+    function addDebt(address portfolioAccountConfig, uint256, uint256) external {
+        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        uint256 currentDebt = getTotalDebt(portfolioAccountConfig);
+        if (currentDebt > maxLoanIgnoreSupply) {
+            collateralManagerData.undercollateralizedDebt = currentDebt - maxLoanIgnoreSupply;
+        }
+    }
+
+    /**
+     * @dev Transfer debt from this portfolio to another via the vault's transferDebt
+     * @param portfolioAccountConfig The portfolio account config address
+     * @param to The recipient portfolio account address
+     * @param amount The amount of debt to transfer
+     */
+    function transferDebtToAddress(address portfolioAccountConfig, address to, uint256 amount) external {
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+
+        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        IDynamicFeesVault(address(lendingPool)).transferDebt(address(this), to, amount);
+
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        _updateUndercollateralizedDebt(portfolioAccountConfig, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 
     function transferDebtAway(address, uint256, uint256) external pure {

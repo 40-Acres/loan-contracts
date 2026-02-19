@@ -1292,9 +1292,10 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         delete _loanDetails[tokenId];
     }
 
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external returns (uint256 actualPaid) {
         uint256 capitalReduction = PortfolioLoanLib.payFromPortfolio(totalPayment, feesToPay, getPortfolioFactory(), _asset, _vault, owner());
         _outstandingCapital -= capitalReduction;
+        actualPaid = totalPayment;
     }
 
     function borrowFromPortfolio(uint256 amount) external returns (uint256 originationFee) {

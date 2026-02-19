@@ -1,72 +1,41 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {UserMarketplaceModule} from "../facets/account/marketplace/UserMarketplaceModule.sol";
-
 /**
  * @title IMarketplaceFacet
- * @dev Interface for marketplace operations on portfolio accounts
+ * @dev Interface for marketplace operations on portfolio accounts.
+ *      Sale authorization is stored locally; full listings live in PortfolioMarketplace.
  */
 interface IMarketplaceFacet {
     /**
-     * @notice Get listing details for a token
+     * @notice Get sale authorization for a token
      * @param tokenId The token ID
-     * @return listing The listing details
+     * @return price The authorized sale price
+     * @return paymentToken The payment token address
      */
-    function getListing(uint256 tokenId) external view returns (UserMarketplaceModule.Listing memory);
+    function getSaleAuthorization(uint256 tokenId) external view returns (uint256 price, address paymentToken);
 
     /**
-     * @notice Get the current nonce for a token's listing
+     * @notice Check if a sale authorization exists for a token
      * @param tokenId The token ID
-     * @return nonce The current nonce
+     * @return True if authorization exists (price > 0)
      */
-    function getListingNonce(uint256 tokenId) external view returns (uint256);
+    function hasSaleAuthorization(uint256 tokenId) external view returns (bool);
 
     /**
-     * @notice Check if a listing has a valid nonce
-     * @param tokenId The token ID
-     * @return valid True if listing exists and has the current (highest) nonce
-     */
-    function isListingValid(uint256 tokenId) external view returns (bool);
-
-    /**
-     * @notice Processes payment from marketplace, pays down debt if needed, and transfers remaining to seller
-     * @dev Called by marketplace after taking funds from buyer
+     * @notice Called by PortfolioMarketplace to deliver sale proceeds and transfer the NFT
      * @param tokenId The ID of the veNFT being sold
-     * @param buyer The address of the buyer
-     * @param paymentAmount The amount being paid (should match listing price)
+     * @param buyerPortfolio The buyer's portfolio account address
+     * @param paymentAmount The net amount being paid (after protocol fee)
      */
-    function processPayment(
+    function receiveSaleProceeds(
         uint256 tokenId,
-        address buyer,
+        address buyerPortfolio,
         uint256 paymentAmount
     ) external;
 
     /**
-     * @notice Finalize purchase by transferring NFT and debt from seller
-     * @param seller The seller's portfolio account address
-     * @param tokenId The token ID being purchased
-     * @param debtAmount The amount of debt to transfer
+     * @notice Get the marketplace address
      */
-    function finalizePurchase(
-        address seller,
-        uint256 tokenId,
-        uint256 debtAmount
-    ) external;
-
-    /**
-     * @notice Transfer debt away from this portfolio account (seller) to buyer
-     * @dev Called by buyer's finalizePurchase to transfer debt
-     * @param tokenId The token ID being purchased
-     * @param buyer The buyer's portfolio account address
-     * @param debtAmount The amount of debt to transfer
-     * @param unpaidFees The unpaid fees to transfer
-     */
-    function transferDebtToBuyer(
-        uint256 tokenId,
-        address buyer,
-        uint256 debtAmount,
-        uint256 unpaidFees
-    ) external;
+    function marketplace() external view returns (address);
 }
-

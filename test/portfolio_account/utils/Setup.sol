@@ -124,9 +124,10 @@ contract Setup is Test {
         // Set portfolio factory on loan contract
         loanV2.setPortfolioFactory(address(_portfolioFactory));
         
-        // Set loan contract and loan config in PortfolioAccountConfig
+        // Set loan contract, loan config, and portfolio factory in PortfolioAccountConfig
         _portfolioAccountConfig.setLoanContract(_loanContract);
         _portfolioAccountConfig.setLoanConfig(address(_loanConfig));
+        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
     }
 
 }

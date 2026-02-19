@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
-import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
+import {ILoanConfig} from "../../../src/facets/account/config/ILoanConfig.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
@@ -44,7 +44,7 @@ contract SetLoanConfigDefaults is Script {
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
 
         // Get LoanConfig from PortfolioAccountConfig
-        LoanConfig loanConfig = PortfolioHelperUtils.getConfigFromFactory(factory).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioHelperUtils.getConfigFromFactory(factory).getLoanConfig();
         require(address(loanConfig) != address(0), "LoanConfig not set in PortfolioAccountConfig");
 
         // Set the values

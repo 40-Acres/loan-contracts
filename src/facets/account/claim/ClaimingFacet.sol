@@ -7,7 +7,7 @@ import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IRewardsDistributor} from "../../../interfaces/IRewardsDistributor.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
-import {LoanConfig} from "../config/LoanConfig.sol";
+import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
@@ -27,7 +27,7 @@ contract ClaimingFacet is AccessControl {
     IVotingEscrow public immutable _votingEscrow;
     IVoter public immutable _voter;
     IRewardsDistributor public immutable _rewardsDistributor;
-    LoanConfig public immutable _loanConfig;
+    ILoanConfig public immutable _loanConfig;
     SwapConfig public immutable _swapConfig;
     IERC4626 public immutable _vault;
     error InvalidClaim(address token);
@@ -42,7 +42,7 @@ contract ClaimingFacet is AccessControl {
         _votingEscrow = IVotingEscrow(votingEscrow);
         _voter = IVoter(voter);
         _rewardsDistributor = IRewardsDistributor(rewardsDistributor);
-        _loanConfig = LoanConfig(loanConfig);
+        _loanConfig = ILoanConfig(loanConfig);
         _swapConfig = SwapConfig(swapConfig);
         // vault can be zero address if there is no vault (no lending)
         _vault = IERC4626(vault);
@@ -54,7 +54,7 @@ contract ClaimingFacet is AccessControl {
         for(uint256 i = 0; i < tokens.length; i++) {
             for(uint256 j = 0; j < tokens[i].length; j++) {
                 if(tokens[i][j] == launchpadToken) {
-                    return;
+                    revert InvalidClaim(tokens[i][j]);
                 }
             }
         }
@@ -116,6 +116,7 @@ contract ClaimingFacet is AccessControl {
 
             // from the total amount of output amount, calculate the treasury fee and lender premium
             uint256 totalFees = treasuryFee + lenderPremium;
+            require(totalFees > 0, "Fees not configured");
 
             uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
             uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;

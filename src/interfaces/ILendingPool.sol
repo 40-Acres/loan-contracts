@@ -20,7 +20,7 @@ interface ILendingPool {
      * @param totalPayment The total payment amount
      * @param feesToPay The portion of payment that goes to protocol fees
      */
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external;
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external returns (uint256 actualPaid);
 
     /**
      * @notice Get the lending asset (e.g., USDC)

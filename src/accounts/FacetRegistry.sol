@@ -39,6 +39,10 @@ contract FacetRegistry is Ownable2Step {
         version = 1;
     }
 
+    function renounceOwnership() public pure override {
+        revert("FacetRegistry: Cannot renounce ownership");
+    }
+
     /**
      * @dev Register a new facet
      * @param facet The facet address

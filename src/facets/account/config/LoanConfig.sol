@@ -4,11 +4,17 @@ pragma solidity ^0.8.28;
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ILoanConfig} from "./ILoanConfig.sol";
 
 /**
  * @title LoanConfig
  */
-contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
+    uint256 public constant MAX_FEE_BPS = 100_00; // 100% in basis points
+    uint256 public constant MAX_COMBINED_FEES = 50_00; // 50% in basis points
+
+    error TooHigh(uint256 value, uint256 max);
+    error CombinedFeesTooHigh(uint256 combined, uint256 max);
     constructor() {
         _disableInitializers();
     }
@@ -54,6 +60,12 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setRewardsRate(uint256 rewardsRate) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+
+        // require rewards rate is less than double the current rewards rate to prevent drastic changes
+        // also take into account the rewards rate could be 0, so set a minimum rewards rate of 100 basis points (1%) to prevent division by zero errors in the rewards calculation
+        if(collateralStorage.rewardsRate > 0) {
+            require(rewardsRate <= collateralStorage.rewardsRate * 2, TooHigh(rewardsRate, collateralStorage.rewardsRate * 2));
+        }
         collateralStorage.rewardsRate = rewardsRate;
     }
 
@@ -64,6 +76,10 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setMultiplier(uint256 multiplier) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+
+        if(collateralStorage.multiplier > 0) {
+            require(multiplier <= collateralStorage.multiplier * 2, TooHigh(multiplier, collateralStorage.multiplier * 2));
+        }
         collateralStorage.multiplier = multiplier;
     }
 
@@ -74,6 +90,9 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setLenderPremium(uint256 lenderPremium) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+        require(lenderPremium <= MAX_FEE_BPS, "Lender premium cannot exceed max fee");
+        uint256 combined = lenderPremium + collateralStorage.treasuryFee;
+        require(combined <= MAX_COMBINED_FEES, CombinedFeesTooHigh(combined, MAX_COMBINED_FEES));
         collateralStorage.lenderPremium = lenderPremium;
     }
 
@@ -84,6 +103,9 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setTreasuryFee(uint256 treasuryFee) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+        require(treasuryFee <= MAX_FEE_BPS, "Treasury fee cannot exceed max fee");
+        uint256 combined = collateralStorage.lenderPremium + treasuryFee;
+        require(combined <= MAX_COMBINED_FEES, CombinedFeesTooHigh(combined, MAX_COMBINED_FEES));
         collateralStorage.treasuryFee = treasuryFee;
     }
 
@@ -94,6 +116,7 @@ contract LoanConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
 
     function setZeroBalanceFee(uint256 zeroBalanceFee) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+        require(zeroBalanceFee <= MAX_FEE_BPS, "Zero balance fee cannot exceed max fee");
         collateralStorage.zeroBalanceFee = zeroBalanceFee;
     }
 
