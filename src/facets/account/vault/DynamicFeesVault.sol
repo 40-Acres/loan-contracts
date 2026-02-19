@@ -34,7 +34,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event RewardsMinted(address indexed to, uint256 amount);
     event FeeCalculatorUpdated(address indexed oldCalculator, address indexed newCalculator);
     event ExcessRewardsPaid(address indexed borrower, uint256 amount);
-    event DebtTransferred(address indexed from, address indexed to, uint256 amount);
 
     // ============ Errors ============
     error ContractPaused();
@@ -83,8 +82,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 globalLastUpdateTime;    // last global vesting computation
         uint256 totalUnsettledRewards;   // raw reward deposits not yet processed
         uint256 globalBorrowerPending;   // borrower portion computed globally, not yet applied per-user
-        uint256 lastGlobalRatio;         // cached ratio from last _processGlobalVesting for per-user consistency
+        uint256 borrowerCreditPerRate;   // accumulated borrower credit per unit of stream rate, scaled by 1e18
         uint8 sharesDecimalsOffset;      // asset decimals used as virtual share offset for inflation attack prevention
+        mapping(address => uint256) userBorrowerCreditPerRatePaid; // per-user snapshot of borrowerCreditPerRate
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -337,12 +337,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function _processGlobalVesting() internal {
         DynamicFeesVaultStorage storage $ = _getStorage();
 
-        if ($.activeEpochRate == 0) return;
+        uint256 currentRate = $.activeEpochRate;
+        if (currentRate == 0) return;
 
         uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
         if (currentTime <= $.globalLastUpdateTime) return;
 
-        uint256 globalVested = $.activeEpochRate * (currentTime - $.globalLastUpdateTime);
+        uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
         $.globalLastUpdateTime = currentTime;
 
         // If past epoch end, clear the rate
@@ -356,9 +357,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             globalVested = $.totalUnsettledRewards;
         }
 
-        // Compute fee split using current ratio and cache for per-user consistency
+        // Compute fee split using current ratio
         uint256 ratio = getCurrentVaultRatioBps();
-        $.lastGlobalRatio = ratio;
         uint256 lenderPremium = (globalVested * ratio) / 10000;
         uint256 borrowerCredit = globalVested - lenderPremium;
 
@@ -369,6 +369,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             if ($.currentEpochStart == 0) {
                 $.currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
             }
+        }
+
+        // Accumulate borrower credit per unit of stream rate (Synthetix-style)
+        // Use captured currentRate since activeEpochRate may have been cleared above
+        if (borrowerCredit > 0 && currentRate > 0) {
+            $.borrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
         }
 
         $.totalUnsettledRewards -= globalVested;
@@ -390,7 +396,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 currentTime = block.timestamp < $.userPeriodFinish[user] ? block.timestamp : $.userPeriodFinish[user];
         if (currentTime <= $.userLastSettledTime[user]) return;
 
-        uint256 userVested = rate * (currentTime - $.userLastSettledTime[user]);
         $.userLastSettledTime[user] = currentTime;
 
         // If past period finish, clear user stream and defensively clean up global rate
@@ -402,8 +407,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.userPeriodFinish[user] = 0;
         }
 
-        // Compute borrower reward using cached global ratio for consistency
-        uint256 borrowerReward = userVested - (userVested * $.lastGlobalRatio) / 10000;
+        // Compute borrower reward using Synthetix-style accumulator for exact proportional split
+        uint256 accumulatorDelta = $.borrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[user];
+        uint256 borrowerReward = (rate * accumulatorDelta) / 1e18;
+        $.userBorrowerCreditPerRatePaid[user] = $.borrowerCreditPerRate;
         if (borrowerReward > $.globalBorrowerPending) {
             borrowerReward = $.globalBorrowerPending;
         }
@@ -495,6 +502,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 actualVesting = newRate * duration;
         $.totalUnsettledRewards = $.totalUnsettledRewards - remaining + actualVesting;
 
+        // Snapshot accumulator for the new stream rate
+        $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;
+
         emit RewardsMinted(msg.sender, amount);
     }
 
@@ -562,20 +572,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return _getStorage().totalLoanedAssets;
     }
 
-    function transferDebt(address from, address to, uint256 amount) external onlyPortfolio {
-        _settleRewards(from);
-        _settleRewards(to);
-
-        DynamicFeesVaultStorage storage $ = _getStorage();
-
-        uint256 fromBalance = $.debtBalance[from];
-        uint256 transferAmount = amount > fromBalance ? fromBalance : amount;
-
-        $.debtBalance[from] -= transferAmount;
-        $.debtBalance[to] += transferAmount;
-
-        emit DebtTransferred(from, to, transferAmount);
-    }
 
     function sync() public {
         _processGlobalVesting();
@@ -695,6 +691,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     // ============ ERC4626 Inflation Attack Prevention ============
     function _decimalsOffset() internal view override returns (uint8) {
         return _getStorage().sharesDecimalsOffset;
+    }
+
+    function getPortfolioFactory() external view returns (address) {
+        return _getStorage().portfolioFactory;
     }
 
     // ============ Access Control ============

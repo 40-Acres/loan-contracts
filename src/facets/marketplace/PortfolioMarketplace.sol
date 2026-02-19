@@ -25,6 +25,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     uint256 public protocolFeeBps;
     address public feeRecipient;
     uint256 public nextNonce;
+    mapping(address => bool) public allowedPaymentTokens;
 
     struct Listing {
         address owner;           // seller portfolio address
@@ -99,6 +100,11 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         feeRecipient = _feeRecipient;
     }
 
+    function setAllowedPaymentToken(address token, bool allowed) external onlyOwner {
+        require(token != address(0), "Invalid token");
+        allowedPaymentTokens[token] = allowed;
+    }
+
     // ──────────────────────────────────────────────
     // Listing Management (called by portfolio accounts)
     // ──────────────────────────────────────────────
@@ -114,7 +120,15 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         address allowedBuyer
     ) external {
         require(portfolioManager.isPortfolioRegistered(msg.sender), InvalidPortfolio());
-        require(listings[tokenId].owner == address(0), "Listing already exists");
+        require(allowedPaymentTokens[paymentToken], "Payment token not allowed");
+
+        Listing storage existing = listings[tokenId];
+        if (existing.owner != address(0)) {
+            // Allow overwriting only if expired; active listings must be canceled first
+            require(existing.expiresAt > 0 && existing.expiresAt <= block.timestamp, "Listing already exists");
+            // Clean up expired listing
+            delete listings[tokenId];
+        }
 
         uint256 nonce = nextNonce++;
         listings[tokenId] = Listing({
@@ -140,6 +154,20 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         delete listings[tokenId];
         _listingIds.remove(tokenId);
         emit ListingCanceled(msg.sender, tokenId);
+    }
+
+    /**
+     * @notice Remove expired listings so tokenIds can be re-listed.
+     */
+    function cleanExpiredListings(uint256[] calldata tokenIds) external {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            Listing storage listing = listings[tokenIds[i]];
+            if (listing.expiresAt > 0 && listing.expiresAt <= block.timestamp) {
+                emit ListingCanceled(listing.owner, tokenIds[i]);
+                delete listings[tokenIds[i]];
+                _listingIds.remove(tokenIds[i]);
+            }
+        }
     }
 
     /**
@@ -268,6 +296,6 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
 
     function recoverTokens(address token, address to, uint256 amount) external onlyOwner {
         require(to != address(0), "Invalid recipient");
-        IERC20(token).transfer(to, amount);
+        IERC20(token).safeTransfer(to, amount);
     }
 }

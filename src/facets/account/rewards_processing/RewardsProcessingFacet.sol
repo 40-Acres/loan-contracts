@@ -270,9 +270,15 @@ contract RewardsProcessingFacet is AccessControl {
     function _payDebt(uint256 tokenId, uint256 amountToPay, address asset) internal returns (uint256 amountPaid) {
         address recipient = _getRecipient();
 
-        // ensure the recipient is a portfolio account (can be from any factory)
+        // ensure the recipient is a portfolio account owned by the same user
         IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
         if (!portfolioManager.isPortfolioRegistered(recipient)) {
+            return 0;
+        }
+        address recipientFactory = portfolioManager.getFactoryForPortfolio(recipient);
+        address recipientOwner = PortfolioFactory(recipientFactory).ownerOf(recipient);
+        address thisOwner = _portfolioFactory.ownerOf(address(this));
+        if (recipientOwner != thisOwner) {
             return 0;
         }
 

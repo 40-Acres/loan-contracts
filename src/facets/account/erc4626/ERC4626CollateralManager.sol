@@ -7,6 +7,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
 /**
  * @title ERC4626CollateralManager
@@ -20,6 +22,7 @@ library ERC4626CollateralManager {
     error InsufficientCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    error NotPortfolioManager();
 
     event ERC4626CollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event ERC4626CollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -161,6 +164,10 @@ library ERC4626CollateralManager {
      */
     function increaseTotalDebt(address portfolioAccountConfig, address vault, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         ERC4626CollateralData storage data = _getStorage();
+        // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
+        address factory = PortfolioAccountConfig(portfolioAccountConfig).getPortfolioFactory();
+        PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
+        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);

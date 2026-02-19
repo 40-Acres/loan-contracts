@@ -7,6 +7,8 @@ import {ILoanConfig} from "../config/ILoanConfig.sol";
 
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -27,6 +29,7 @@ library DynamicCollateralManager {
     error InvalidLockedCollateral();
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
+    error NotPortfolioManager();
     error NotSupported();
     event CollateralAdded(uint256 indexed tokenId, address indexed owner);
     event CollateralRemoved(uint256 indexed tokenId, address indexed owner);
@@ -153,6 +156,10 @@ library DynamicCollateralManager {
 
     function increaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
+        // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
+        address factory = PortfolioAccountConfig(portfolioAccountConfig).getPortfolioFactory();
+        PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
+        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);

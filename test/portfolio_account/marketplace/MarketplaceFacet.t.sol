@@ -713,6 +713,125 @@ contract MarketplaceFacetTest is Test, Setup {
         assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerWallet, "NFT should be in buyer's wallet");
     }
 
+    // ============ Collateral Enforcement After Sale Tests ============
+
+    /**
+     * @notice Seller has 1 token with debt, lists below debt amount.
+     *         After protocol fee, net proceeds < total debt.
+     *         Sale should revert because seller ends up with 0 collateral but remaining debt.
+     */
+    function testRevertSaleOneTokenPriceBelowDebt() public {
+        // Borrow against the single token
+        uint256 borrowAmount = 500e6;
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(totalDebt, 0, "Should have debt");
+
+        // List at a price where net proceeds (after 1% fee) are less than debt
+        // e.g. list at half the debt — net = half * 0.99, well below totalDebt
+        uint256 lowPrice = totalDebt / 2;
+
+        makeListingViaMulticall(
+            _tokenId,
+            lowPrice,
+            address(_usdc),
+            0,
+            address(0)
+        );
+
+        // Fund buyer's wallet
+        address buyerWallet = _walletFactory.portfolioOf(buyer);
+        deal(address(_usdc), buyerWallet, lowPrice);
+
+        uint256 nonce = portfolioMarketplace.getListing(_tokenId).nonce;
+
+        // Purchase should revert — seller would have 0 collateral but remaining debt
+        vm.startPrank(buyer);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_walletFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(
+            FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
+            _tokenId,
+            nonce
+        );
+        vm.expectRevert();
+        _portfolioManager.multicall(cd, pf);
+        vm.stopPrank();
+
+        // Verify NFT stayed with seller
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount, "NFT should remain with seller");
+    }
+
+    /**
+     * @notice Seller has 2 tokens with debt, sells 1 at sufficient price.
+     *         Remaining token's collateral covers remaining debt.
+     *         Sale should succeed.
+     */
+    function testSaleTwoTokensOneRemainingCoversDebt() public {
+        // Add second token to portfolio
+        uint256 tokenId2 = 84298;
+        address token2Owner = IVotingEscrow(_ve).ownerOf(tokenId2);
+        vm.startPrank(token2Owner);
+        IVotingEscrow(_ve).transferFrom(token2Owner, _portfolioAccount, tokenId2);
+        vm.stopPrank();
+        addCollateralViaMulticall(tokenId2);
+
+        // Borrow a moderate amount — should be covered by remaining token after sale
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        // Borrow less than what token2 alone can support
+        uint256 borrowAmount = maxLoanToken2Only / 2;
+        if (borrowAmount == 0) borrowAmount = 1e6;
+
+        // Ensure vault has funds
+        deal(address(_usdc), _vault, 100000e6);
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(totalDebt, 0, "Should have debt");
+
+        // List token1 at a price well above any required payment
+        uint256 listingPrice = LISTING_PRICE;
+
+        makeListingViaMulticall(
+            _tokenId,
+            listingPrice,
+            address(_usdc),
+            0,
+            address(0)
+        );
+
+        // Fund buyer's wallet
+        address buyerWallet = _walletFactory.portfolioOf(buyer);
+        deal(address(_usdc), buyerWallet, listingPrice);
+
+        uint256 sellerBalanceBefore = IERC20(_usdc).balanceOf(_user);
+
+        // Purchase should succeed — remaining token2 covers remaining debt
+        purchaseListingViaMulticall(buyer, _tokenId, listingPrice);
+
+        // Verify NFT transferred to buyer
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerWallet, "NFT should be in buyer's wallet");
+
+        // Verify seller received proceeds
+        uint256 sellerReceived = IERC20(_usdc).balanceOf(_user) - sellerBalanceBefore;
+        assertGt(sellerReceived, 0, "Seller should receive remaining proceeds");
+
+        // Verify seller still has token2 as collateral
+        uint256 remainingCollateral = CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertGt(remainingCollateral, 0, "Seller should still have collateral from token2");
+
+        // Verify remaining debt is covered by remaining collateral
+        uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
+        (, uint256 maxLoanAfter) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        assertLe(debtAfter, maxLoanAfter, "Remaining debt should be within collateral limits");
+    }
+
     // ============ Cross-Factory Purchase Test ============
 
     function testCrossFactoryPurchase() public {

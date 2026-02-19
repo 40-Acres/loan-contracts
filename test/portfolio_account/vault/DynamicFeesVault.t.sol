@@ -1055,22 +1055,6 @@ contract DynamicFeesVaultTest is Test {
         assertEq(vault.getTotalDebtBalance(), debt, "totalDebtBalance should match user debt after settle");
     }
 
-    function testTransferDebtDoesNotChangeTotal() public {
-        address user2 = address(0x3);
-
-        vm.prank(user1);
-        vault.borrowFromPortfolio(300e6);
-
-        uint256 totalBefore = vault.getTotalDebtBalance();
-
-        vm.prank(user1);
-        vault.transferDebt(user1, user2, 100e6);
-
-        assertEq(vault.getTotalDebtBalance(), totalBefore, "Total debt unchanged after transfer");
-        assertEq(vault.getDebtBalance(user1), 200e6);
-        assertEq(vault.getDebtBalance(user2), 100e6);
-    }
-
     // ============ Edge Cases ============
 
     function testRepayWithRewardsNoDebt() public {
@@ -1145,6 +1129,177 @@ contract DynamicFeesVaultTest is Test {
 
         assertLt(vault.getDebtBalance(user2), 200e6, "User2 debt should be reduced");
         assertGt(vault.getDebtBalance(user2), 0, "User2 should still have remaining debt");
+    }
+
+    // ============ H-09 / H-10 Regression Tests ============
+
+    /// @notice H-09: Ratio change between settlements doesn't skew distribution.
+    ///         Two users deposit equal rewards. Utilization changes mid-epoch.
+    ///         Both should receive approximately equal borrower credit.
+    function testH09_UtilizationChangeDoesNotSkewFeeSplit() public {
+        address user2 = address(0x3);
+
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000); // 20% lender at low util
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
+
+        // Both users borrow 200 USDC each
+        vm.prank(user1);
+        vault.borrowFromPortfolio(200e6);
+        vm.prank(user2);
+        vault.borrowFromPortfolio(200e6);
+
+        // Both deposit 100 USDC rewards at epoch start
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        deal(address(usdc), user2, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 debtUser1Before = vault.getDebtBalance(user1);
+        uint256 debtUser2Before = vault.getDebtBalance(user2);
+
+        // Mid-epoch: settle user1, then change fee calculator to simulate ratio change
+        uint256 midEpoch = EPOCH_2 + (WEEK / 2);
+        vm.warp(midEpoch);
+        vault.settleRewards(user1);
+
+        // Switch to high fee calculator (60% lender) — simulates utilization-driven ratio change
+        FlatFeeCalculator highFee = new FlatFeeCalculator(6000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        // End of epoch: settle both users
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+        vault.settleRewards(user2);
+
+        uint256 debtReduction1 = debtUser1Before - vault.getDebtBalance(user1);
+        uint256 debtReduction2 = debtUser2Before - vault.getDebtBalance(user2);
+
+        // Both users had equal rates over the same interval, so their borrower credit
+        // should be approximately equal (within rounding tolerance)
+        assertApproxEqAbs(
+            debtReduction1,
+            debtReduction2,
+            1e6, // 1 USDC tolerance for rounding
+            "H-09: Equal streams should receive equal borrower credit regardless of settlement timing"
+        );
+
+        // Both should have meaningful debt reduction
+        assertGt(debtReduction1, 30e6, "User1 should have significant debt reduction");
+        assertGt(debtReduction2, 30e6, "User2 should have significant debt reduction");
+    }
+
+    /// @notice H-10: globalBorrowerPending drains to ~0 when all users settle.
+    ///         Three users deposit rewards, all settle at epoch end.
+    function testH10_GlobalBorrowerPendingDrainsToZero() public {
+        address user2 = address(0x3);
+        address user3 = address(0x4);
+
+        FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(flatFee));
+
+        // Three users borrow
+        vm.prank(user1);
+        vault.borrowFromPortfolio(100e6);
+        vm.prank(user2);
+        vault.borrowFromPortfolio(200e6);
+        vm.prank(user3);
+        vault.borrowFromPortfolio(300e6);
+
+        // All three deposit rewards
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
+        vm.stopPrank();
+
+        vm.startPrank(user2);
+        deal(address(usdc), user2, 80e6);
+        usdc.approve(address(vault), 80e6);
+        vault.repayWithRewards(80e6);
+        vm.stopPrank();
+
+        vm.startPrank(user3);
+        deal(address(usdc), user3, 120e6);
+        usdc.approve(address(vault), 120e6);
+        vault.repayWithRewards(120e6);
+        vm.stopPrank();
+
+        // Warp to epoch end, settle all
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+        vault.settleRewards(user2);
+        vault.settleRewards(user3);
+
+        // globalBorrowerPending should be drained to ~0 (only rounding dust)
+        uint256 residue = vault.getGlobalBorrowerPending();
+        assertLe(residue, 3, "H-10: globalBorrowerPending should drain to ~0 after all users settle");
+    }
+
+    /// @notice Accumulator handles multiple _processGlobalVesting() calls with different ratios.
+    ///         User deposits rewards, ratio changes mid-epoch, borrower credit reflects weighted average.
+    function testAccumulatorConsistentAcrossMultipleVestingTicks() public {
+        FlatFeeCalculator lowFee = new FlatFeeCalculator(2000); // 80% borrower
+        vm.prank(owner);
+        vault.setFeeCalculator(address(lowFee));
+
+        vm.prank(user1);
+        vault.borrowFromPortfolio(500e6);
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 debtBefore = vault.getDebtBalance(user1);
+
+        // Warp to 25% through epoch → trigger global vesting at R1=2000 (80% borrower)
+        uint256 quarter = EPOCH_2 + WEEK / 4;
+        vm.warp(quarter);
+        vault.sync(); // triggers _processGlobalVesting
+
+        // Switch to 60% lender (40% borrower)
+        FlatFeeCalculator highFee = new FlatFeeCalculator(6000);
+        vm.prank(owner);
+        vault.setFeeCalculator(address(highFee));
+
+        // Warp to 75% through epoch → trigger global vesting at R2=6000 (40% borrower)
+        uint256 threeQuarter = EPOCH_2 + 3 * WEEK / 4;
+        vm.warp(threeQuarter);
+        vault.sync(); // triggers _processGlobalVesting again
+
+        // Warp to epoch end and settle
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+
+        uint256 debtReduction = debtBefore - vault.getDebtBalance(user1);
+
+        // Expected: 25% of epoch at 80% borrower + 50% of epoch at 40% borrower + 25% at 40% borrower
+        // First 25%:  ~25 USDC vested * 80% = ~20 borrower credit
+        // Next 50%:   ~50 USDC vested * 40% = ~20 borrower credit
+        // Last 25%:   ~25 USDC vested * 40% = ~10 borrower credit
+        // Total: ~50 USDC borrower credit
+        // Note: rate truncation may cause slight variation
+        uint256 expectedBorrowerCredit = 50e6; // weighted average
+        assertApproxEqAbs(
+            debtReduction,
+            expectedBorrowerCredit,
+            3e6, // 3 USDC tolerance for rate truncation
+            "Borrower credit should reflect weighted average of different ratios"
+        );
+
+        // globalBorrowerPending should be ~0 after single user settles
+        assertLe(vault.getGlobalBorrowerPending(), 1, "No residue after settle");
     }
 
     function testFeeRatioBoundsAfterBorrowAndRewards() public {

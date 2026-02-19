@@ -24,6 +24,19 @@ abstract contract BaseLendingFacet is AccessControl {
 
     error NotOwnerOfToken();
     error NotPortfolioOwner();
+    error ReentrantCall();
+
+    bytes32 private constant _LENDING_REENTRANCY_SLOT = keccak256("fortyacres.lending.reentrancy");
+
+    modifier nonReentrant() {
+        bytes32 slot = _LENDING_REENTRANCY_SLOT;
+        uint256 status;
+        assembly { status := sload(slot) }
+        if (status == 2) revert ReentrantCall();
+        assembly { sstore(slot, 2) }
+        _;
+        assembly { sstore(slot, 1) }
+    }
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event BorrowedTo(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner, address indexed to);
@@ -83,7 +96,7 @@ abstract contract BaseLendingFacet is AccessControl {
         emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, to);
     }
 
-    function pay(uint256 amount) public returns (uint256) {
+    function pay(uint256 amount) public nonReentrant returns (uint256) {
         // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
 

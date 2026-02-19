@@ -124,6 +124,8 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
 
         UserMarketplaceModule.SaleAuthorization memory auth = UserMarketplaceModule.getSaleAuthorization(tokenId);
 
+        UserMarketplaceModule.removeSaleAuthorization(tokenId);
+
         // Pull funds from marketplace
         IERC20(auth.paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
 
@@ -148,14 +150,14 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Transfer NFT to buyer portfolio
         _votingEscrow.transferFrom(address(this), buyerPortfolio, tokenId);
 
+        // Enforce collateral requirements on seller after collateral removal
+        ICollateralFacet(address(this)).enforceCollateralRequirements();
+
         // Send remaining USDC to portfolio owner
         uint256 remaining = paymentAmount - debtPaid;
         if (remaining > 0) {
             IERC20(auth.paymentToken).safeTransfer(portfolioOwner, remaining);
         }
-
-        // Remove local sale authorization
-        UserMarketplaceModule.removeSaleAuthorization(tokenId);
 
         emit SaleProceeded(tokenId, buyerPortfolio, paymentAmount, debtPaid);
     }
