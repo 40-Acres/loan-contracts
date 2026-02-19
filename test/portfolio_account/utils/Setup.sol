@@ -1,7 +1,6 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol";
 import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
 import {PortfolioFactoryDeploy} from "../../../script/portfolio_account/PortfolioFactoryDeploy.s.sol";
@@ -23,7 +22,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Vault} from "../../../src/VaultV2.sol";
 
 contract Setup is Test {
-    ClaimingFacet public _claimingFacet;
     PortfolioFactory public _portfolioFactory;
 
     // config addresses
