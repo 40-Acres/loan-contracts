@@ -109,6 +109,7 @@ contract AerodromeDynamicFeesE2E is Test {
         loanConfig.setMultiplier(52); // 52x multiplier
 
         portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the vault with USDC from depositor
         deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);

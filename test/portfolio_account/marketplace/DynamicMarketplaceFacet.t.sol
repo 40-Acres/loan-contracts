@@ -121,6 +121,7 @@ contract DynamicMarketplaceFacetTest is Test {
         loanConfig.setRewardsRate(10000); // 1%
         loanConfig.setMultiplier(100);
         portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
         portfolioManager.setAuthorizedCaller(address(0xaaaaa), true);
 
         // Deploy PortfolioMarketplace
@@ -130,6 +131,7 @@ contract DynamicMarketplaceFacetTest is Test {
             PROTOCOL_FEE_BPS,
             feeRecipient
         );
+        portfolioMarketplace.setAllowedPaymentToken(USDC, true);
 
         // Deploy all facets
         _deployFacets();

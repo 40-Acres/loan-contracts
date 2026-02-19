@@ -95,11 +95,15 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     }
 
     /**
-     * @notice Cancel a listing: removes local authorization + cancels centralized listing
+     * @notice Cancel a listing: removes local authorization + cancels centralized listing.
      */
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         UserMarketplaceModule.removeSaleAuthorization(tokenId);
-        PortfolioMarketplace(_marketplace).cancelListing(tokenId);
+        // Only cancel centralized listing if it still belongs to this portfolio
+        PortfolioMarketplace.Listing memory listing = PortfolioMarketplace(_marketplace).getListing(tokenId);
+        if (listing.owner == address(this)) {
+            PortfolioMarketplace(_marketplace).cancelListing(tokenId);
+        }
     }
 
     // ──────────────────────────────────────────────

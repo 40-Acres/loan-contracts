@@ -501,9 +501,9 @@ contract LendingFacetTest is Test, Setup {
         vm.stopPrank();
     }
 
-    // Helper function to call topUp directly (user-initiated action, similar to pay())
+    // Helper function to call topUp as authorized caller (keeper/bot pattern)
     function topUp() internal {
-        vm.startPrank(_user);
+        vm.startPrank(_authorizedCaller);
         LendingFacet(_portfolioAccount).topUp();
         vm.stopPrank();
     }

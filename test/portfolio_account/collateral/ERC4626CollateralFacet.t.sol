@@ -93,6 +93,7 @@ contract ERC4626CollateralFacetTest is Test {
         _loanConfig.setZeroBalanceFee(100);
         _portfolioAccountConfig.setLoanContract(_loanContract);
         _portfolioAccountConfig.setLoanConfig(address(_loanConfig));
+        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
 
         // Set authorized caller
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);

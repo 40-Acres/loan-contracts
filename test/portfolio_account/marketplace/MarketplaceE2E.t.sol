@@ -56,6 +56,7 @@ contract MarketplaceE2ETest is Test, Setup {
         vm.startPrank(marketplaceOwner);
         portfolioMarketplace.setProtocolFee(PROTOCOL_FEE_BPS);
         portfolioMarketplace.setFeeRecipient(address(0x5678));
+        portfolioMarketplace.setAllowedPaymentToken(address(_usdc), true);
         vm.stopPrank();
 
         // Deploy wallet factory

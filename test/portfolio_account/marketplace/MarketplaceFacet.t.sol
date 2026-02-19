@@ -45,11 +45,12 @@ contract MarketplaceFacetTest is Test, Setup {
 
         portfolioMarketplace = PortfolioMarketplace(address(MarketplaceFacet(address(_portfolioAccount)).marketplace()));
 
-        // Set protocol fee on marketplace (using marketplace owner)
+        // Set protocol fee and allowed payment tokens on marketplace (using marketplace owner)
         address marketplaceOwner = portfolioMarketplace.owner();
         vm.startPrank(marketplaceOwner);
         portfolioMarketplace.setProtocolFee(PROTOCOL_FEE_BPS);
         portfolioMarketplace.setFeeRecipient(feeRecipient);
+        portfolioMarketplace.setAllowedPaymentToken(address(_usdc), true);
         vm.stopPrank();
 
         // Deploy wallet factory for buyer purchases

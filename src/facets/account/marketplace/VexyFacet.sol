@@ -47,5 +47,7 @@ contract VexyFacet is AccessControl {
         currencyToken.approve(address(_vexy), price);
         // buy the listing
         _vexy.buyListing(listingId);
+        // clear remaining approval
+        currencyToken.approve(address(_vexy), 0);
     }
 }

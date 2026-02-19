@@ -108,6 +108,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         // Set loan contract and loan config in PortfolioAccountConfig2
         _portfolioAccountConfig2.setLoanContract(_loanContract2);
         _portfolioAccountConfig2.setLoanConfig(address(_loanConfig2));
+        _portfolioAccountConfig2.setPortfolioFactory(address(_portfolioFactory2));
 
         // Set portfolio factory on loan contract 2
         LoanV2(_loanContract2).setPortfolioFactory(address(_portfolioFactory2));

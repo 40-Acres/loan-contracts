@@ -43,5 +43,7 @@ contract OpenXFacet is AccessControl {
         currencyToken.approve(address(_openx), price);
         // buy the listing
         _openx.buyNFT(listingId);
+        // clear remaining approval
+        currencyToken.approve(address(_openx), 0);
     }
 }
