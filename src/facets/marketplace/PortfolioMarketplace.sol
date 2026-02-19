@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
 import {PortfolioManager} from "../../accounts/PortfolioManager.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -17,6 +18,7 @@ import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
  */
 contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     PortfolioManager public immutable portfolioManager;
     IVotingEscrow public immutable votingEscrow;
@@ -29,21 +31,20 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         uint256 tokenId;
         uint256 price;           // in paymentToken decimals
         address paymentToken;
-        uint256 debtAttached;    // informational: debt that will be paid from sale proceeds
         uint256 expiresAt;       // 0 = never
         address allowedBuyer;    // (optional) allowed buyer address
         uint256 nonce;           // unique nonce for frontrunning protection
     }
 
-    // seller portfolio => tokenId => Listing
-    mapping(address => mapping(uint256 => Listing)) public listings;
+    // tokenId => Listing
+    mapping(uint256 => Listing) public listings;
+    EnumerableSet.UintSet private _listingIds;
 
     event ListingCreated(
         address indexed sellerPortfolio,
         uint256 indexed tokenId,
         uint256 price,
         address paymentToken,
-        uint256 debtAttached,
         uint256 expiresAt,
         address allowedBuyer,
         uint256 nonce
@@ -109,74 +110,69 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 debtAttached,
         uint256 expiresAt,
         address allowedBuyer
     ) external {
         require(portfolioManager.isPortfolioRegistered(msg.sender), InvalidPortfolio());
-        require(listings[msg.sender][tokenId].owner == address(0), "Listing already exists");
+        require(listings[tokenId].owner == address(0), "Listing already exists");
 
         uint256 nonce = nextNonce++;
-        listings[msg.sender][tokenId] = Listing({
+        listings[tokenId] = Listing({
             owner: msg.sender,
             tokenId: tokenId,
             price: price,
             paymentToken: paymentToken,
-            debtAttached: debtAttached,
             expiresAt: expiresAt,
             allowedBuyer: allowedBuyer,
             nonce: nonce
         });
+        _listingIds.add(tokenId);
 
-        emit ListingCreated(msg.sender, tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer, nonce);
+        emit ListingCreated(msg.sender, tokenId, price, paymentToken, expiresAt, allowedBuyer, nonce);
     }
 
     /**
      * @notice Cancel a listing. Only callable by the listing owner portfolio.
      */
     function cancelListing(uint256 tokenId) external {
-        Listing storage listing = listings[msg.sender][tokenId];
+        Listing storage listing = listings[tokenId];
         require(listing.owner == msg.sender, "Not listing owner");
-        delete listings[msg.sender][tokenId];
+        delete listings[tokenId];
+        _listingIds.remove(tokenId);
         emit ListingCanceled(msg.sender, tokenId);
     }
 
     /**
      * @notice Get listing details from centralized storage
      */
-    function getListing(address sellerPortfolio, uint256 tokenId)
+    function getListing(uint256 tokenId)
         external
         view
         returns (Listing memory)
     {
-        return listings[sellerPortfolio][tokenId];
+        return listings[tokenId];
     }
 
     /**
      * @notice Purchase a listing.
-     * @param sellerPortfolio The seller's portfolio account address
      * @param tokenId The token ID being purchased
      * @param nonce The listing nonce for frontrunning protection
      */
     function purchaseListing(
-        address sellerPortfolio,
         uint256 tokenId,
         uint256 nonce
     ) external nonReentrant {
 
-        // Validate seller portfolio
-        require(portfolioManager.isPortfolioRegistered(sellerPortfolio), InvalidPortfolio());
-
         // Get listing from centralized storage
-        Listing memory listing = listings[sellerPortfolio][tokenId];
-
-        // Validate nonce matches to prevent frontrunning
-        require(listing.nonce == nonce, "Nonce mismatch");
+        Listing memory listing = listings[tokenId];
 
         // Validate listing exists
         if (listing.owner == address(0)) {
             revert InvalidListing();
         }
+
+        // Validate nonce matches to prevent frontrunning
+        require(listing.nonce == nonce, "Nonce mismatch");
 
         // Validate listing hasn't expired
         if (listing.expiresAt > 0 && listing.expiresAt <= block.timestamp) {
@@ -192,6 +188,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             }
         }
 
+        address sellerPortfolio = listing.owner;
         uint256 price = listing.price;
         address paymentToken = listing.paymentToken;
 
@@ -217,9 +214,52 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         IERC20(paymentToken).approve(sellerPortfolio, 0);
 
         // Delete listing
-        delete listings[sellerPortfolio][tokenId];
+        delete listings[tokenId];
+        _listingIds.remove(tokenId);
 
         emit ListingPurchased(tokenId, msg.sender, sellerPortfolio, price, fee);
+    }
+
+    // ──────────────────────────────────────────────
+    // Listing Enumeration
+    // ──────────────────────────────────────────────
+
+    /// @notice Get all listing tokenIds (includes expired listings)
+    function getListingIds() external view returns (uint256[] memory) {
+        return _listingIds.values();
+    }
+
+    /// @notice Get the number of listings (includes expired listings)
+    function getListingCount() external view returns (uint256) {
+        return _listingIds.length();
+    }
+
+    /// @notice Get only non-expired listing tokenIds
+    function getActiveListingIds() external view returns (uint256[] memory) {
+        uint256 total = _listingIds.length();
+        uint256[] memory temp = new uint256[](total);
+        uint256 count;
+        for (uint256 i = 0; i < total; i++) {
+            uint256 tokenId = _listingIds.at(i);
+            Listing storage listing = listings[tokenId];
+            if (listing.expiresAt == 0 || listing.expiresAt > block.timestamp) {
+                temp[count++] = tokenId;
+            }
+        }
+        uint256[] memory result = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = temp[i];
+        }
+        return result;
+    }
+
+    /// @notice Get full Listing structs for an array of tokenIds
+    function getListings(uint256[] calldata tokenIds) external view returns (Listing[] memory) {
+        Listing[] memory result = new Listing[](tokenIds.length);
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            result[i] = listings[tokenIds[i]];
+        }
+        return result;
     }
 
     // ──────────────────────────────────────────────

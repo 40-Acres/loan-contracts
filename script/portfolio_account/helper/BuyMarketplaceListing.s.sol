@@ -20,29 +20,28 @@ import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
  *
  * Usage:
  * forge script script/portfolio_account/helper/BuyMarketplaceListing.s.sol:BuyMarketplaceListing \
- *   --sig "run(address,uint256)" <SELLER_PORTFOLIO> <TOKEN_ID> --rpc-url $RPC_URL --broadcast
+ *   --sig "run(uint256)" <TOKEN_ID> --rpc-url $RPC_URL --broadcast
  */
 contract BuyMarketplaceListing is Script {
     using stdJson for string;
 
     function buyMarketplaceListing(
-        address sellerPortfolio,
         uint256 tokenId,
         address walletFactory
     ) internal {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
 
-        // Get listing details from marketplace
-        BaseMarketplaceFacet marketplaceFacet = BaseMarketplaceFacet(sellerPortfolio);
-        address marketplaceAddr = marketplaceFacet.marketplace();
+        // Get marketplace address from any registered portfolio with a marketplace facet
+        address marketplaceAddr = vm.envAddress("MARKETPLACE");
         PortfolioMarketplace marketplace = PortfolioMarketplace(marketplaceAddr);
-        PortfolioMarketplace.Listing memory listing = marketplace.getListing(sellerPortfolio, tokenId);
+        PortfolioMarketplace.Listing memory listing = marketplace.getListing(tokenId);
         require(listing.owner != address(0), "Listing does not exist");
 
         console.log("Listing Details:");
         console.log("  Token ID:", tokenId);
         console.log("  Price:", listing.price);
         console.log("  Payment Token:", listing.paymentToken);
+        console.log("  Seller:", listing.owner);
 
         // Buy via wallet factory multicall
         address[] memory factories = new address[](1);
@@ -50,7 +49,6 @@ contract BuyMarketplaceListing is Script {
         bytes[] memory data = new bytes[](1);
         data[0] = abi.encodeWithSelector(
             FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-            sellerPortfolio,
             tokenId,
             listing.nonce
         );
@@ -60,13 +58,12 @@ contract BuyMarketplaceListing is Script {
     }
 
     function run(
-        address sellerPortfolio,
         uint256 tokenId
     ) external {
         address walletFactory = vm.envAddress("WALLET_FACTORY");
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(privateKey);
-        buyMarketplaceListing(sellerPortfolio, tokenId, walletFactory);
+        buyMarketplaceListing(tokenId, walletFactory);
         vm.stopBroadcast();
     }
 }

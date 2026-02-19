@@ -47,17 +47,15 @@ contract FortyAcresMarketplaceFacet is AccessControl {
      * @dev Only callable via PortfolioManager.multicall. Reads listing from
      *      PortfolioMarketplace, uses internal balance, approves marketplace,
      *      then calls purchaseListing which handles receiveSaleProceeds on the seller.
-     * @param sellerPortfolio The seller's portfolio account address
      * @param tokenId The token ID being purchased
      * @param nonce The listing nonce for frontrunning protection
      */
     function buyFortyAcresListing(
-        address sellerPortfolio,
         uint256 tokenId,
         uint256 nonce
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         // Read listing from PortfolioMarketplace (centralized storage)
-        PortfolioMarketplace.Listing memory listing = _marketplace.getListing(sellerPortfolio, tokenId);
+        PortfolioMarketplace.Listing memory listing = _marketplace.getListing(tokenId);
         require(listing.price > 0, "Listing does not exist");
 
         uint256 price = listing.price;
@@ -69,7 +67,7 @@ contract FortyAcresMarketplaceFacet is AccessControl {
         paymentToken.approve(address(_marketplace), price);
 
         // Purchase through marketplace — nonce prevents frontrunning
-        _marketplace.purchaseListing(sellerPortfolio, tokenId, nonce);
+        _marketplace.purchaseListing(tokenId, nonce);
 
         // Clear remaining approval
         paymentToken.approve(address(_marketplace), 0);

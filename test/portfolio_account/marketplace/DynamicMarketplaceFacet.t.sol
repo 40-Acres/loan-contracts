@@ -308,7 +308,6 @@ contract DynamicMarketplaceFacetTest is Test {
         uint256 _tokenId,
         uint256 price,
         address paymentToken,
-        uint256 debtAttached,
         uint256 expiresAt,
         address allowedBuyer
     ) internal {
@@ -321,7 +320,6 @@ contract DynamicMarketplaceFacetTest is Test {
             _tokenId,
             price,
             paymentToken,
-            debtAttached,
             expiresAt,
             allowedBuyer
         );
@@ -341,11 +339,10 @@ contract DynamicMarketplaceFacetTest is Test {
 
     function purchaseListingViaMulticall(
         address buyerEoa,
-        address sellerPortfolio,
         uint256 _tokenId,
         uint256 price
     ) internal {
-        uint256 nonce = portfolioMarketplace.getListing(sellerPortfolio, _tokenId).nonce;
+        uint256 nonce = portfolioMarketplace.getListing(_tokenId).nonce;
         address buyerWalletPortfolio = walletFactory.portfolioOf(buyerEoa);
         if (buyerWalletPortfolio == address(0)) {
             buyerWalletPortfolio = walletFactory.createAccount(buyerEoa);
@@ -360,7 +357,6 @@ contract DynamicMarketplaceFacetTest is Test {
         bytes[] memory cd = new bytes[](1);
         cd[0] = abi.encodeWithSelector(
             FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-            sellerPortfolio,
             _tokenId,
             nonce
         );
@@ -371,7 +367,7 @@ contract DynamicMarketplaceFacetTest is Test {
     // ============ Listing CRUD Tests ============
 
     function testCreateListing() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         // Verify local sale authorization
         (uint256 price, address paymentToken) = IMarketplaceFacet(portfolioAccount).getSaleAuthorization(tokenId);
@@ -379,39 +375,28 @@ contract DynamicMarketplaceFacetTest is Test {
         assertEq(paymentToken, USDC);
 
         // Verify centralized listing
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(tokenId);
         assertEq(listing.price, LISTING_PRICE);
         assertEq(listing.paymentToken, USDC);
-        assertEq(listing.debtAttached, 0);
-    }
-
-    function testCreateListingWithDebtAttached() public {
-        uint256 debtAmount = 500e6;
-        borrowViaMulticall(debtAmount);
-
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, debtAmount, 0, address(0));
-
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
-        assertEq(listing.debtAttached, debtAmount);
     }
 
     function testCreateListingWithExpiration() public {
         uint256 expiresAt = block.timestamp + 7 days;
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, expiresAt, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, expiresAt, address(0));
 
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(tokenId);
         assertEq(listing.expiresAt, expiresAt);
     }
 
     function testCreateListingWithAllowedBuyer() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, buyer);
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, buyer);
 
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(tokenId);
         assertEq(listing.allowedBuyer, buyer);
     }
 
     function testCancelListing() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         vm.startPrank(user);
         address[] memory factories = new address[](1);
@@ -422,7 +407,7 @@ contract DynamicMarketplaceFacetTest is Test {
         vm.stopPrank();
 
         assertFalse(IMarketplaceFacet(portfolioAccount).hasSaleAuthorization(tokenId), "Sale authorization should be removed");
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(tokenId);
         assertEq(listing.owner, address(0), "Centralized listing should be removed");
     }
 
@@ -438,14 +423,14 @@ contract DynamicMarketplaceFacetTest is Test {
     }
 
     function testRevertCreateListingWhenListingAlreadyExists() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         vm.startPrank(user);
         address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            BaseMarketplaceFacet.makeListing.selector, tokenId, LISTING_PRICE * 2, USDC, 0, 0, address(0)
+            BaseMarketplaceFacet.makeListing.selector, tokenId, LISTING_PRICE * 2, USDC, 0, address(0)
         );
         vm.expectRevert("Listing already exists");
         portfolioManager.multicall(calldatas, factories);
@@ -453,15 +438,15 @@ contract DynamicMarketplaceFacetTest is Test {
     }
 
     function testGetListing() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(tokenId);
         assertEq(listing.price, LISTING_PRICE);
         assertEq(listing.paymentToken, USDC);
     }
 
     function testCannotRemoveCollateralWhenListed() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         vm.expectRevert(abi.encodeWithSelector(BaseCollateralFacet.ListingActive.selector, tokenId));
         removeCollateralViaMulticall(tokenId);
@@ -470,12 +455,12 @@ contract DynamicMarketplaceFacetTest is Test {
     // ============ P2P Purchase Tests (via PortfolioMarketplace.purchaseListing) ============
 
     function testPurchaseListing() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         uint256 sellerBalanceBefore = usdc.balanceOf(user);
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, LISTING_PRICE);
+        purchaseListingViaMulticall(buyer, tokenId, LISTING_PRICE);
 
         address buyerWalletPortfolio = walletFactory.portfolioOf(buyer);
 
@@ -495,7 +480,7 @@ contract DynamicMarketplaceFacetTest is Test {
 
         // Verify both authorizations cleaned up
         assertFalse(IMarketplaceFacet(portfolioAccount).hasSaleAuthorization(tokenId), "Sale authorization should be removed");
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(portfolioAccount, tokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(tokenId);
         assertEq(listing.owner, address(0), "Centralized listing should be removed");
     }
 
@@ -507,11 +492,11 @@ contract DynamicMarketplaceFacetTest is Test {
         assertGt(totalDebt, 0, "Should have debt");
 
         // Listing without debt attached — proceeds pay debt via receiveSaleProceeds
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         uint256 sellerBalanceBefore = usdc.balanceOf(user);
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, LISTING_PRICE);
+        purchaseListingViaMulticall(buyer, tokenId, LISTING_PRICE);
 
         // With only one NFT, all debt must be paid to remove collateral
         uint256 debtAfter = DynamicCollateralFacet(portfolioAccount).getTotalDebt();
@@ -522,9 +507,9 @@ contract DynamicMarketplaceFacetTest is Test {
     }
 
     function testPurchaseListingWithRestrictedBuyer() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, buyer);
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, buyer);
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, LISTING_PRICE);
+        purchaseListingViaMulticall(buyer, tokenId, LISTING_PRICE);
 
         address buyerWalletPortfolio = walletFactory.portfolioOf(buyer);
         assertEq(veAERO.ownerOf(tokenId), buyerWalletPortfolio, "NFT should be in buyer's wallet portfolio");
@@ -536,16 +521,15 @@ contract DynamicMarketplaceFacetTest is Test {
         address otherBuyerWallet = walletFactory.createAccount(otherBuyer);
         deal(USDC, otherBuyerWallet, LISTING_PRICE);
 
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, buyer);
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, buyer);
 
-        uint256 nonce = portfolioMarketplace.getListing(portfolioAccount, tokenId).nonce;
+        uint256 nonce = portfolioMarketplace.getListing(tokenId).nonce;
         vm.startPrank(otherBuyer);
         address[] memory pf = new address[](1);
         pf[0] = address(walletFactory);
         bytes[] memory cd = new bytes[](1);
         cd[0] = abi.encodeWithSelector(
             FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-            portfolioAccount,
             tokenId,
             nonce
         );
@@ -556,9 +540,9 @@ contract DynamicMarketplaceFacetTest is Test {
 
     function testRevertPurchaseExpiredListing() public {
         uint256 expiresAt = block.timestamp + 1 days;
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, expiresAt, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, expiresAt, address(0));
 
-        uint256 nonce = portfolioMarketplace.getListing(portfolioAccount, tokenId).nonce;
+        uint256 nonce = portfolioMarketplace.getListing(tokenId).nonce;
         vm.warp(expiresAt + 1);
 
         address buyerWallet = walletFactory.portfolioOf(buyer);
@@ -572,7 +556,6 @@ contract DynamicMarketplaceFacetTest is Test {
         bytes[] memory cd = new bytes[](1);
         cd[0] = abi.encodeWithSelector(
             FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-            portfolioAccount,
             tokenId,
             nonce
         );
@@ -582,9 +565,9 @@ contract DynamicMarketplaceFacetTest is Test {
     }
 
     function testRevertPurchaseWithInsufficientBalance() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
-        uint256 nonce = portfolioMarketplace.getListing(portfolioAccount, tokenId).nonce;
+        uint256 nonce = portfolioMarketplace.getListing(tokenId).nonce;
         address buyerWallet = walletFactory.portfolioOf(buyer);
         if (buyerWallet == address(0)) {
             buyerWallet = walletFactory.createAccount(buyer);
@@ -597,7 +580,6 @@ contract DynamicMarketplaceFacetTest is Test {
         bytes[] memory cd = new bytes[](1);
         cd[0] = abi.encodeWithSelector(
             FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-            portfolioAccount,
             tokenId,
             nonce
         );
@@ -618,7 +600,6 @@ contract DynamicMarketplaceFacetTest is Test {
         bytes[] memory cd = new bytes[](1);
         cd[0] = abi.encodeWithSelector(
             FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-            portfolioAccount,
             tokenId,
             uint256(0)
         );
@@ -661,12 +642,12 @@ contract DynamicMarketplaceFacetTest is Test {
         uint256 extraForSeller = 500e6;
         uint256 listingPrice = expectedRequiredPayment + extraForSeller;
 
-        makeListingViaMulticall(tokenId, listingPrice, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, listingPrice, USDC, 0, address(0));
 
         deal(USDC, buyer, listingPrice);
         uint256 sellerBalanceBefore = usdc.balanceOf(user);
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, listingPrice);
+        purchaseListingViaMulticall(buyer, tokenId, listingPrice);
 
         uint256 expectedProtocolFee = (listingPrice * PROTOCOL_FEE_BPS) / 10000;
         uint256 paymentAfterFee = listingPrice - expectedProtocolFee;
@@ -685,24 +666,24 @@ contract DynamicMarketplaceFacetTest is Test {
     // ============ Protocol Fee Tests ============
 
     function testProtocolFeeIsCalculatedCorrectly() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, LISTING_PRICE);
+        purchaseListingViaMulticall(buyer, tokenId, LISTING_PRICE);
 
         uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, expectedProtocolFee, "Fee recipient should receive correct protocol fee");
     }
 
     function testProtocolFeeIsDeductedFromPayment() public {
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         uint256 sellerBalanceBefore = usdc.balanceOf(user);
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, LISTING_PRICE);
+        purchaseListingViaMulticall(buyer, tokenId, LISTING_PRICE);
 
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
         uint256 expectedPaymentToSeller = LISTING_PRICE - expectedProtocolFee;
@@ -721,12 +702,12 @@ contract DynamicMarketplaceFacetTest is Test {
         portfolioMarketplace.setProtocolFee(0);
         vm.stopPrank();
 
-        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, 0, address(0));
+        makeListingViaMulticall(tokenId, LISTING_PRICE, USDC, 0, address(0));
 
         uint256 sellerBalanceBefore = usdc.balanceOf(user);
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
-        purchaseListingViaMulticall(buyer, portfolioAccount, tokenId, LISTING_PRICE);
+        purchaseListingViaMulticall(buyer, tokenId, LISTING_PRICE);
 
         uint256 feeReceived = usdc.balanceOf(feeRecipient) - feeRecipientBalanceBefore;
         assertEq(feeReceived, 0, "No fee when protocol fee is 0");

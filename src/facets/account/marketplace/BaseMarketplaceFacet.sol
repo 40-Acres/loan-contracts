@@ -77,7 +77,6 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         uint256 tokenId,
         uint256 price,
         address paymentToken,
-        uint256 debtAttached,
         uint256 expiresAt,
         address allowedBuyer
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
@@ -88,17 +87,11 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Ensure no existing sale authorization
         require(!UserMarketplaceModule.hasSaleAuthorization(tokenId), "Listing already exists");
 
-        // If user has debt, require the payment token to be the same as the debt token
-        if (debtAttached > 0) {
-            require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
-            require(debtAttached <= ICollateralFacet(address(this)).getTotalDebt(), "Debt exceeds actual debt");
-        }
-
         // Store local sale authorization
         UserMarketplaceModule.createSaleAuthorization(tokenId, price, paymentToken);
 
         // Create centralized listing in PortfolioMarketplace
-        PortfolioMarketplace(_marketplace).createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+        PortfolioMarketplace(_marketplace).createListing(tokenId, price, paymentToken, expiresAt, allowedBuyer);
     }
 
     /**

@@ -146,7 +146,6 @@ contract MarketplaceE2ETest is Test, Setup {
                 sellerTokenId,
                 LISTING_PRICE,
                 address(_usdc),
-                0, // no debt attached
                 0, // never expires
                 address(0) // no buyer restriction
             );
@@ -155,7 +154,7 @@ contract MarketplaceE2ETest is Test, Setup {
         vm.stopPrank();
 
         // Verify listing was created
-        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(sellerPortfolio, sellerTokenId);
+        PortfolioMarketplace.Listing memory listing = portfolioMarketplace.getListing(sellerTokenId);
         assertEq(listing.price, LISTING_PRICE, "Listing should be created");
         uint256 nonce = listing.nonce;
 
@@ -177,7 +176,6 @@ contract MarketplaceE2ETest is Test, Setup {
             );
             data[1] = abi.encodeWithSelector(
                 FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-                sellerPortfolio,
                 sellerTokenId,
                 nonce
             );
@@ -251,13 +249,13 @@ contract MarketplaceE2ETest is Test, Setup {
                 sellerTokenId,
                 LISTING_PRICE,
                 address(_usdc),
-                0, 0, address(0)
+                0, address(0)
             );
             _portfolioManager.multicall(data, factories);
         }
         vm.stopPrank();
 
-        uint256 nonce = portfolioMarketplace.getListing(sellerPortfolio, sellerTokenId).nonce;
+        uint256 nonce = portfolioMarketplace.getListing(sellerTokenId).nonce;
 
         // User does everything in a single multicall:
         // 1. Borrow to wallet (aerodrome factory) - extra to cover origination fee
@@ -281,7 +279,6 @@ contract MarketplaceE2ETest is Test, Setup {
             );
             data[1] = abi.encodeWithSelector(
                 FortyAcresMarketplaceFacet.buyFortyAcresListing.selector,
-                sellerPortfolio,
                 sellerTokenId,
                 nonce
             );
