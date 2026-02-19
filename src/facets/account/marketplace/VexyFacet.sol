@@ -6,10 +6,8 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { AccessControl } from "../utils/AccessControl.sol";
-import { CollateralManager } from "../collateral/CollateralManager.sol";
 import { IVotingEscrow } from "../../../interfaces/IVotingEscrow.sol";
 import { PortfolioAccountConfig } from "../config/PortfolioAccountConfig.sol";
-import { SwapMod } from "../swap/SwapMod.sol";
 
 contract VexyFacet is AccessControl {
     using SafeERC20 for IERC20;
@@ -24,9 +22,7 @@ contract VexyFacet is AccessControl {
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
     }
 
-    function buyVexyListing(uint256 listingId, address buyer) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        require(buyer != address(this), "Buyer cannot be the portfolio account");
-
+    function buyVexyListing(uint256 listingId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
         (
             ,
             ,
@@ -44,20 +40,12 @@ contract VexyFacet is AccessControl {
 
         uint256 price = _vexy.listingPrice(listingId);
         require(price > 0, "Invalid listing price");
-        
-        // Check if portfolio owner has sufficient balance and approval
+
         IERC20 currencyToken = IERC20(currency);
-        require(currencyToken.balanceOf(buyer) >= price, "Insufficient balance");
-        require(currencyToken.allowance(buyer, address(this)) >= price, "Insufficient allowance");
-        
-        // transfer funds from portfolio owner to this contract
-        currencyToken.safeTransferFrom(buyer, address(this), price);
+        require(currencyToken.balanceOf(address(this)) >= price, "Insufficient balance");
         // approve the marketplace to spend the funds
         currencyToken.approve(address(_vexy), price);
-        // buy the listings
+        // buy the listing
         _vexy.buyListing(listingId);
-        // add the collateral to the collateral manager
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), nftId, address(_votingEscrow));
     }
 }
-

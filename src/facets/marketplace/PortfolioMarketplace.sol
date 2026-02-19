@@ -2,48 +2,68 @@
 pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
-import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../accounts/PortfolioManager.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IMarketplaceFacet} from "../../interfaces/IMarketplaceFacet.sol";
-import {ICollateralFacet} from "../account/collateral/ICollateralFacet.sol";
-import {UserMarketplaceModule} from "../account/marketplace/UserMarketplaceModule.sol";
+import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
 
 /**
  * @title PortfolioMarketplace
+ * @dev Centralized marketplace for veNFT listings. Listings are stored here;
+ *      portfolio accounts hold only a local SaleAuthorization for consent.
  */
 contract PortfolioMarketplace is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     PortfolioManager public immutable portfolioManager;
     IVotingEscrow public immutable votingEscrow;
     uint256 public protocolFeeBps;
     address public feeRecipient;
+    uint256 public nextNonce;
 
     struct Listing {
-        address owner;
+        address owner;           // seller portfolio address
         uint256 tokenId;
-        uint256 price;                    // in paymentToken decimals
+        uint256 price;           // in paymentToken decimals
         address paymentToken;
-        uint256 debtAttached;             // debt amount that should be paid from sale proceeds
-        uint256 expiresAt;                // 0 = never
-        address allowedBuyer;             // (optional) allowed buyer address
-        uint256 nonce;                    // listing nonce - only highest nonce is valid
+        uint256 debtAttached;    // informational: debt that will be paid from sale proceeds
+        uint256 expiresAt;       // 0 = never
+        address allowedBuyer;    // (optional) allowed buyer address
+        uint256 nonce;           // unique nonce for frontrunning protection
     }
-    
-    event ListingCreated(uint256 indexed tokenId, address indexed owner, uint256 price, address paymentToken, uint256 debtAttached, uint256 expiresAt, address allowedBuyer, uint256 nonce);
-    event ListingCanceled(uint256 indexed tokenId);
-    event ListingSold(uint256 indexed tokenId, address indexed buyer, uint256 price);
-    event ListingPurchased(uint256 indexed tokenId, address indexed buyer, address indexed sellerPortfolio, uint256 price, uint256 protocolFee);
-    
+
+    // seller portfolio => tokenId => Listing
+    mapping(address => mapping(uint256 => Listing)) public listings;
+
+    event ListingCreated(
+        address indexed sellerPortfolio,
+        uint256 indexed tokenId,
+        uint256 price,
+        address paymentToken,
+        uint256 debtAttached,
+        uint256 expiresAt,
+        address allowedBuyer,
+        uint256 nonce
+    );
+    event ListingCanceled(address indexed sellerPortfolio, uint256 indexed tokenId);
+    event ListingPurchased(
+        uint256 indexed tokenId,
+        address indexed buyer,
+        address indexed sellerPortfolio,
+        uint256 price,
+        uint256 protocolFee
+    );
+
     error InvalidListing();
     error ListingExpired();
     error BuyerNotAllowed();
-    error PaymentAmountMismatch();
-    error InsufficientPayment();
-    error TransferFailed();
     error InvalidPortfolio();
-    
+    error ListingAlreadyExists();
+    error NonceMismatch();
+
     constructor(
         address _portfolioManager,
         address _votingEscrow,
@@ -59,71 +79,102 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         feeRecipient = _feeRecipient;
         protocolFeeBps = _protocolFeeBps;
     }
-    
-    /**
-     * @notice Set protocol fee in basis points
-     * @param _protocolFeeBps New protocol fee (max 1000 = 10%)
-     */
+
+    // ──────────────────────────────────────────────
+    // Admin
+    // ──────────────────────────────────────────────
+
     function setProtocolFee(uint256 _protocolFeeBps) external onlyOwner {
         require(_protocolFeeBps <= 1000, "Fee too high");
         protocolFeeBps = _protocolFeeBps;
     }
-    
+
     function protocolFee() external view returns (uint256) {
         return protocolFeeBps;
     }
-    /**
-     * @notice Set fee recipient address
-     * @param _feeRecipient New fee recipient address
-     */
+
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         require(_feeRecipient != address(0), "Invalid address");
         feeRecipient = _feeRecipient;
     }
-    
+
+    // ──────────────────────────────────────────────
+    // Listing Management (called by portfolio accounts)
+    // ──────────────────────────────────────────────
+
     /**
-     * @notice Get listing details from a portfolio account
-     * @param portfolioAccount The portfolio account address
-     * @param tokenId The token ID
-     * @return listing The listing details
+     * @notice Create a centralized listing. Only callable by registered portfolio accounts.
      */
-    function getListing(address portfolioAccount, uint256 tokenId) 
-        external 
-        view 
-        returns (UserMarketplaceModule.Listing memory listing) 
-    {
-        require(portfolioManager.isPortfolioRegistered(portfolioAccount), "Invalid portfolio");
-        return IMarketplaceFacet(portfolioAccount).getListing(tokenId);
+    function createListing(
+        uint256 tokenId,
+        uint256 price,
+        address paymentToken,
+        uint256 debtAttached,
+        uint256 expiresAt,
+        address allowedBuyer
+    ) external {
+        require(portfolioManager.isPortfolioRegistered(msg.sender), InvalidPortfolio());
+        require(listings[msg.sender][tokenId].owner == address(0), "Listing already exists");
+
+        uint256 nonce = nextNonce++;
+        listings[msg.sender][tokenId] = Listing({
+            owner: msg.sender,
+            tokenId: tokenId,
+            price: price,
+            paymentToken: paymentToken,
+            debtAttached: debtAttached,
+            expiresAt: expiresAt,
+            allowedBuyer: allowedBuyer,
+            nonce: nonce
+        });
+
+        emit ListingCreated(msg.sender, tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer, nonce);
     }
-    
+
     /**
-     * @notice Purchase a listing
-     * @param sellerAddress The portfolio account that owns the listing
+     * @notice Cancel a listing. Only callable by the listing owner portfolio.
+     */
+    function cancelListing(uint256 tokenId) external {
+        Listing storage listing = listings[msg.sender][tokenId];
+        require(listing.owner == msg.sender, "Not listing owner");
+        delete listings[msg.sender][tokenId];
+        emit ListingCanceled(msg.sender, tokenId);
+    }
+
+    /**
+     * @notice Get listing details from centralized storage
+     */
+    function getListing(address sellerPortfolio, uint256 tokenId)
+        external
+        view
+        returns (Listing memory)
+    {
+        return listings[sellerPortfolio][tokenId];
+    }
+
+    /**
+     * @notice Purchase a listing.
+     * @param sellerPortfolio The seller's portfolio account address
      * @param tokenId The token ID being purchased
-     * @param paymentToken The token being used for payment (must match listing)
-     * @param paymentAmount The amount to pay (must match listing price)
+     * @param nonce The listing nonce for frontrunning protection
      */
     function purchaseListing(
-        address sellerAddress,
+        address sellerPortfolio,
         uint256 tokenId,
         uint256 nonce
     ) external nonReentrant {
-        // Only callable by a registered portfolio account (cross-factory safe)
-        require(portfolioManager.isPortfolioRegistered(msg.sender), "Only portfolio accounts can call");
 
-        // Validate seller portfolio account (cross-factory safe)
-        require(portfolioManager.isPortfolioRegistered(portfolioAccount), InvalidPortfolio());
+        // Validate seller portfolio
+        require(portfolioManager.isPortfolioRegistered(sellerPortfolio), InvalidPortfolio());
 
-        // Get listing from portfolio account
-        UserMarketplaceModule.Listing memory listing = this.getListing(portfolioAccount, tokenId);
+        // Get listing from centralized storage
+        Listing memory listing = listings[sellerPortfolio][tokenId];
+
+        // Validate nonce matches to prevent frontrunning
+        require(listing.nonce == nonce, "Nonce mismatch");
 
         // Validate listing exists
         if (listing.owner == address(0)) {
-            revert InvalidListing();
-        }
-
-        // Validate listing has valid nonce (only highest nonce listing is purchasable)
-        if (!IMarketplaceFacet(portfolioAccount).isListingValid(tokenId)) {
             revert InvalidListing();
         }
 
@@ -132,65 +183,51 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             revert ListingExpired();
         }
 
-        // Validate buyer if restricted (check both portfolio and EOA)
-        if (listing.allowedBuyer != address(0) && listing.allowedBuyer != buyerEoa && listing.allowedBuyer != buyerPortfolio) {
-            revert BuyerNotAllowed();
+        // Validate buyer if restricted — check both portfolio address and EOA owner
+        if (listing.allowedBuyer != address(0)) {
+            address buyerFactory = portfolioManager.portfolioToFactory(msg.sender);
+            address buyerEoa = PortfolioFactory(buyerFactory).ownerOf(msg.sender);
+            if (listing.allowedBuyer != msg.sender && listing.allowedBuyer != buyerEoa) {
+                revert BuyerNotAllowed();
+            }
         }
 
-        // Validate payment token matches
-        require(paymentToken == listing.paymentToken, "Payment token mismatch");
+        uint256 price = listing.price;
+        address paymentToken = listing.paymentToken;
 
-        // Validate payment amount matches listing price
-        if (paymentAmount != listing.price) {
-            revert PaymentAmountMismatch();
+        // Calculate protocol fee
+        uint256 fee = (price * protocolFeeBps) / 10000;
+        uint256 netPayment = price - fee;
+
+        // Transfer full price from buyer portfolio to this contract
+        IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), price);
+
+        // Send protocol fee to feeRecipient
+        if (fee > 0) {
+            IERC20(paymentToken).safeTransfer(feeRecipient, fee);
         }
 
-        // Get debt amount from listing (nonce ensures we have the correct listing)
-        uint256 debtAmount = listing.debtAttached;
+        // Approve seller portfolio for net payment
+        IERC20(paymentToken).approve(sellerPortfolio, netPayment);
 
-        // Transfer payment from buyer's portfolio to this contract
-        IERC20 paymentTokenContract = IERC20(paymentToken);
-        require(
-            paymentTokenContract.transferFrom(buyerPortfolio, address(this), paymentAmount),
-            TransferFailed()
-        );
+        // Call seller's receiveSaleProceeds — pays debt, transfers NFT, sends excess to owner
+        IMarketplaceFacet(sellerPortfolio).receiveSaleProceeds(tokenId, msg.sender, netPayment);
 
-        // Approve seller's portfolio account to take the full payment
-        paymentTokenContract.approve(portfolioAccount, paymentAmount);
+        // Clear any remaining approval
+        IERC20(paymentToken).approve(sellerPortfolio, 0);
 
-        // Call seller's processPayment function
-        // Pass buyerPortfolio directly so processPayment doesn't need cross-factory lookup
-        IMarketplaceFacet(portfolioAccount).processPayment(tokenId, buyerPortfolio, paymentAmount);
+        // Delete listing
+        delete listings[sellerPortfolio][tokenId];
 
-        // Clear approval
-        paymentTokenContract.approve(portfolioAccount, 0);
-
-        // Finalize purchase: transfer NFT and debt from seller to buyer
-        // Always transfer debt (never pay it down automatically)
-        IMarketplaceFacet(buyerPortfolio).finalizePurchase(
-            portfolioAccount, // seller
-            tokenId,
-            debtAmount
-        );
-        
-        emit ListingPurchased(
-            tokenId,
-            buyerEoa,
-            portfolioAccount,
-            paymentAmount,
-            (paymentAmount * protocolFeeBps) / 10000
-        );
+        emit ListingPurchased(tokenId, msg.sender, sellerPortfolio, price, fee);
     }
-    
-    /**
-     * @notice Emergency function to recover tokens sent to this contract
-     * @param token The token address to recover
-     * @param to The address to send tokens to
-     * @param amount The amount to recover
-     */
+
+    // ──────────────────────────────────────────────
+    // Emergency
+    // ──────────────────────────────────────────────
+
     function recoverTokens(address token, address to, uint256 amount) external onlyOwner {
         require(to != address(0), "Invalid recipient");
         IERC20(token).transfer(to, amount);
     }
 }
-

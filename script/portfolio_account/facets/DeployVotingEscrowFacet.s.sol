@@ -23,10 +23,11 @@ contract DeployVotingEscrowFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](3);
+        bytes4[] memory selectors = new bytes4[](4);
         selectors[0] = VotingEscrowFacet.createLock.selector;
         selectors[1] = VotingEscrowFacet.increaseLock.selector;
         selectors[2] = VotingEscrowFacet.merge.selector;
+        selectors[3] = VotingEscrowFacet.onERC721Received.selector;
         return selectors;
     }
 }

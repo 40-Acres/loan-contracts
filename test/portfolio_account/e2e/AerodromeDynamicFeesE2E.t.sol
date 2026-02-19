@@ -7,7 +7,6 @@ import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCo
 import {DynamicLendingFacet} from "../../../src/facets/account/lending/DynamicLendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {DynamicVotingEscrowFacet} from "../../../src/facets/account/votingEscrow/DynamicVotingEscrowFacet.sol";
-import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
@@ -149,17 +148,12 @@ contract AerodromeDynamicFeesE2E is Test {
             VOTING_ESCROW,
             VOTER
         );
-        bytes4[] memory votingEscrowSelectors = new bytes4[](3);
+        bytes4[] memory votingEscrowSelectors = new bytes4[](4);
         votingEscrowSelectors[0] = DynamicVotingEscrowFacet.increaseLock.selector;
         votingEscrowSelectors[1] = DynamicVotingEscrowFacet.createLock.selector;
         votingEscrowSelectors[2] = DynamicVotingEscrowFacet.merge.selector;
+        votingEscrowSelectors[3] = DynamicVotingEscrowFacet.onERC721Received.selector;
         facetRegistry.registerFacet(address(votingEscrowFacet), votingEscrowSelectors, "DynamicVotingEscrowFacet");
-
-        // Deploy ERC721ReceiverFacet
-        ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
-        bytes4[] memory erc721ReceiverSelectors = new bytes4[](1);
-        erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
-        facetRegistry.registerFacet(address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
         // Deploy DynamicLendingFacet
         DynamicLendingFacet lendingFacet = new DynamicLendingFacet(

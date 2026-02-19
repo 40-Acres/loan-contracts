@@ -75,8 +75,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     }
 
     function removeCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
-        if (listing.owner != address(0)) {
+        if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             revert ListingActive(tokenId);
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
@@ -85,8 +84,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     }
 
     function removeCollateralTo(uint256 tokenId, address targetPortfolioFactory) public onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserMarketplaceModule.Listing memory listing = UserMarketplaceModule.getListing(tokenId);
-        if (listing.owner != address(0)) {
+        if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             revert ListingActive(tokenId);
         }
 

@@ -15,7 +15,8 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 
 
 // WalletFacet is a facet that can handle tokens for the owner, so they can be utilized without having to approve each token individually
-// There should be no other functions on this diamond other than the ones listed here, and it should not hold any collateral or have any borrowing power on its own. It is purely a utility for the owner to manage their tokens across their portfolios
+// It should not hold any collateral or have any borrowing power on its own. 
+// It is purely a utility for the owner to manage their tokens across their portfolios
 contract WalletFacet is AccessControl, IERC721Receiver {
     using SafeERC20 for IERC20;
 
@@ -60,7 +61,12 @@ contract WalletFacet is AccessControl, IERC721Receiver {
         require(targetFactory != address(0), "Target portfolio not registered");
         address targetOwner = PortfolioFactory(targetFactory).ownerOf(to);
         require(walletOwner == targetOwner, "Must own both portfolios");
-        IERC721(nft).transferFrom(address(this), to, tokenId);
+        IERC721(nft).safeTransferFrom(address(this), to, tokenId);
+    }
+
+    function receiveERC20(address token, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address owner = _portfolioFactory.ownerOf(address(this));
+        IERC20(token).safeTransferFrom(owner, address(this), amount);
     }
 
     function swap(address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 amount) {

@@ -6,6 +6,7 @@ import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
+import {FortyAcresMarketplaceFacet} from "../../../src/facets/account/marketplace/FortyAcresMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 
@@ -79,16 +80,26 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](9);
-        selectors[0] = BaseMarketplaceFacet.processPayment.selector;
-        selectors[1] = BaseMarketplaceFacet.finalizePurchase.selector;
-        selectors[2] = BaseMarketplaceFacet.buyMarketplaceListing.selector;
-        selectors[3] = BaseMarketplaceFacet.getListing.selector;
-        selectors[4] = BaseMarketplaceFacet.makeListing.selector;
-        selectors[5] = BaseMarketplaceFacet.cancelListing.selector;
-        selectors[6] = BaseMarketplaceFacet.marketplace.selector;
-        selectors[7] = BaseMarketplaceFacet.getListingNonce.selector;
-        selectors[8] = BaseMarketplaceFacet.isListingValid.selector;
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        selectors[1] = BaseMarketplaceFacet.makeListing.selector;
+        selectors[2] = BaseMarketplaceFacet.cancelListing.selector;
+        selectors[3] = BaseMarketplaceFacet.marketplace.selector;
+        selectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        selectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        return selectors;
+    }
+}
+
+contract DeployFortyAcresMarketplaceFacet is AccountFacetsDeploy {
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace) external {
+        FortyAcresMarketplaceFacet newFacet = new FortyAcresMarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, marketplace);
+        registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "FortyAcresMarketplaceFacet", true);
+    }
+
+    function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
         return selectors;
     }
 }

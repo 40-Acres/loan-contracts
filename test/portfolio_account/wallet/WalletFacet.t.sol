@@ -61,11 +61,12 @@ contract WalletFacetTest is Test, Setup {
         );
 
         // Register WalletFacet selectors
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = WalletFacet.transferERC20.selector;
         selectors[1] = WalletFacet.transferNFT.selector;
-        selectors[2] = WalletFacet.swap.selector;
-        selectors[3] = WalletFacet.enforceCollateralRequirements.selector;
+        selectors[2] = WalletFacet.receiveERC20.selector;
+        selectors[3] = WalletFacet.swap.selector;
+        selectors[4] = WalletFacet.enforceCollateralRequirements.selector;
         _walletFacetRegistry.registerFacet(address(newWalletFacet), selectors, "WalletFacet");
 
         vm.stopPrank();

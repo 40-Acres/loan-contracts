@@ -16,52 +16,63 @@ import {PortfolioMarketplace} from "../../marketplace/PortfolioMarketplace.sol";
 /**
  * @title BaseMarketplaceFacet
  * @dev Abstract base for MarketplaceFacet and DynamicMarketplaceFacet.
+ *      Stores a local SaleAuthorization and delegates full listing to PortfolioMarketplace.
  *      Concrete subclasses implement the internal dispatchers to route
  *      to either CollateralManager or DynamicCollateralManager.
  */
 abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     using SafeERC20 for IERC20;
+
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
     address public immutable _marketplace;
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace_) {
         require(portfolioFactory != address(0));
         require(portfolioAccountConfig != address(0));
         require(votingEscrow != address(0));
-        require(marketplace != address(0));
+        require(marketplace_ != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _votingEscrow = IVotingEscrow(votingEscrow);
-        _marketplace = marketplace;
+        _marketplace = marketplace_;
     }
 
-    event ProtocolFeeTaken(uint256 indexed tokenId, address indexed buyer, uint256 protocolFee);
-    event PurchaseFinalized(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 debtAmount, uint256 unpaidFees);
-    event DebtTransferredToBuyer(uint256 indexed tokenId, address indexed buyer, uint256 debtAmount, uint256 unpaidFees, address indexed seller);
-    event MarketplaceListingBought(uint256 indexed tokenId, address indexed buyer, uint256 price, uint256 debtAttached, address indexed owner);
+    event SaleProceeded(uint256 indexed tokenId, address indexed buyerPortfolio, uint256 paymentAmount, uint256 debtPaid);
 
     // ──────────────────────────────────────────────
     // Abstract internal dispatchers
     // ──────────────────────────────────────────────
 
-    function _addLockedCollateral(address config, uint256 tokenId, address ve) internal virtual;
     function _removeLockedCollateral(uint256 tokenId, address config) internal virtual;
-    function _enforceCollateralRequirements() internal view virtual returns (bool);
     function _decreaseTotalDebt(address config, uint256 amount) internal virtual returns (uint256 excess);
-    function _addDebt(address config, uint256 amount, uint256 unpaidFees) internal virtual;
-    function _transferDebtAway(address config, uint256 amount, uint256 unpaidFees, address buyer) internal virtual;
     function _getRequiredPaymentForCollateralRemoval(address config, uint256 tokenId) internal view virtual returns (uint256);
 
     // ──────────────────────────────────────────────
-    // Public functions
+    // Public view functions
     // ──────────────────────────────────────────────
 
     function marketplace() external view returns (address) {
         return _marketplace;
     }
 
+    function getSaleAuthorization(uint256 tokenId) external view returns (uint256 price, address paymentToken) {
+        UserMarketplaceModule.SaleAuthorization memory auth = UserMarketplaceModule.getSaleAuthorization(tokenId);
+        return (auth.price, auth.paymentToken);
+    }
+
+    function hasSaleAuthorization(uint256 tokenId) external view returns (bool) {
+        return UserMarketplaceModule.hasSaleAuthorization(tokenId);
+    }
+
+    // ──────────────────────────────────────────────
+    // Listing Management (via PortfolioManager multicall)
+    // ──────────────────────────────────────────────
+
+    /**
+     * @notice Create a listing: stores local SaleAuthorization + creates centralized listing
+     */
     function makeListing(
         uint256 tokenId,
         uint256 price,
@@ -74,18 +85,86 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         require(collateralFacet.getLockedCollateral(tokenId) > 0, "Token not locked");
         require(collateralFacet.getOriginTimestamp(tokenId) > 0, "Token not originated");
 
-        // ensure there is no existing listing for this token
-        require(!UserMarketplaceModule.isListingValid(tokenId), "Listing already exists");
+        // Ensure no existing sale authorization
+        require(!UserMarketplaceModule.hasSaleAuthorization(tokenId), "Listing already exists");
 
-        // if user has debt, require the payment token to be the same as the debt token
-        if(debtAttached > 0) {
+        // If user has debt, require the payment token to be the same as the debt token
+        if (debtAttached > 0) {
             require(paymentToken == _portfolioAccountConfig.getDebtToken(), "Payment token must be the same as the debt token");
             require(debtAttached <= ICollateralFacet(address(this)).getTotalDebt(), "Debt exceeds actual debt");
         }
-        UserMarketplaceModule.createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
+
+        // Store local sale authorization
+        UserMarketplaceModule.createSaleAuthorization(tokenId, price, paymentToken);
+
+        // Create centralized listing in PortfolioMarketplace
+        PortfolioMarketplace(_marketplace).createListing(tokenId, price, paymentToken, debtAttached, expiresAt, allowedBuyer);
     }
 
+    /**
+     * @notice Cancel a listing: removes local authorization + cancels centralized listing
+     */
     function cancelListing(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserMarketplaceModule.removeListing(tokenId);
+        UserMarketplaceModule.removeSaleAuthorization(tokenId);
+        PortfolioMarketplace(_marketplace).cancelListing(tokenId);
     }
+
+    // ──────────────────────────────────────────────
+    // Sale Proceeds (called by PortfolioMarketplace)
+    // ──────────────────────────────────────────────
+
+    /**
+     * @notice Called by PortfolioMarketplace to deliver sale proceeds and transfer the NFT.
+     *         Pays only enough debt to stay in good collateral standing, then sends the
+     *         rest to the portfolio owner.
+     * @param tokenId The veNFT being sold
+     * @param buyerPortfolio The buyer's portfolio account
+     * @param paymentAmount The net amount (after protocol fee)
+     */
+    function receiveSaleProceeds(
+        uint256 tokenId,
+        address buyerPortfolio,
+        uint256 paymentAmount
+    ) external {
+        require(msg.sender == _marketplace, "Not marketplace");
+        require(UserMarketplaceModule.hasSaleAuthorization(tokenId), "No sale authorization");
+
+        UserMarketplaceModule.SaleAuthorization memory auth = UserMarketplaceModule.getSaleAuthorization(tokenId);
+
+        // Pull funds from marketplace
+        IERC20(auth.paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
+
+        address configAddress = address(_portfolioAccountConfig);
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        uint256 debtPaid = 0;
+
+        // Pay only enough debt to stay in good standing after NFT removal
+        uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
+        if (totalDebt > 0) {
+            uint256 requiredPayment = _getRequiredPaymentForCollateralRemoval(configAddress, tokenId);
+            if (requiredPayment > 0) {
+                uint256 debtPayment = requiredPayment > paymentAmount ? paymentAmount : requiredPayment;
+                uint256 excess = _decreaseTotalDebt(configAddress, debtPayment);
+                debtPaid = debtPayment - excess;
+            }
+        }
+
+        // Remove collateral from this portfolio
+        _removeLockedCollateral(tokenId, configAddress);
+
+        // Transfer NFT to buyer portfolio
+        _votingEscrow.transferFrom(address(this), buyerPortfolio, tokenId);
+
+        // Send remaining USDC to portfolio owner
+        uint256 remaining = paymentAmount - debtPaid;
+        if (remaining > 0) {
+            IERC20(auth.paymentToken).safeTransfer(portfolioOwner, remaining);
+        }
+
+        // Remove local sale authorization
+        UserMarketplaceModule.removeSaleAuthorization(tokenId);
+
+        emit SaleProceeded(tokenId, buyerPortfolio, paymentAmount, debtPaid);
+    }
+
 }

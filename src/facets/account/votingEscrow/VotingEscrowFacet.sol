@@ -7,13 +7,14 @@ import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 /**
  * @title VotingEscrowFacet
  * @dev Facet that interfaces with voting escrow NFTs
  */
-contract VotingEscrowFacet is AccessControl {
+contract VotingEscrowFacet is AccessControl, IERC721Receiver {
     using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
@@ -54,6 +55,13 @@ contract VotingEscrowFacet is AccessControl {
         tokenId = _votingEscrow.createLock(amount, 4 *365 days);
         CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
         emit LockCreated(tokenId, amount, from);
+    }
+
+    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
+        if (msg.sender == address(_votingEscrow)) {
+            CollateralManager.addLockedCollateral(address(_accountConfigStorage), tokenId, address(_votingEscrow));
+        }
+        return IERC721Receiver.onERC721Received.selector;
     }
 
     function merge(uint256 fromToken, uint256 toToken) external {

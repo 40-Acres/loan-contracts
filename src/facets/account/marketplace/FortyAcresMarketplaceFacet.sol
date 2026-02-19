@@ -13,8 +13,8 @@ import {PortfolioMarketplace} from "../../marketplace/PortfolioMarketplace.sol";
 /**
  * @title FortyAcresMarketplaceFacet
  * @dev Facet that enables portfolio accounts to purchase listings from other
- *      40 Acres portfolio accounts. Follows the same pattern as OpenXFacet/VexyFacet:
- *      pulls payment from buyer EOA, approves marketplace, calls purchaseListing.
+ *      40 Acres portfolio accounts. Uses internal portfolio balance (funded via
+ *      borrowTo), approves marketplace, calls purchaseListing.
  *      Uses PortfolioManager multicall so enforceCollateralRequirements is
  *      called on the buyer after the purchase completes.
  */
@@ -44,38 +44,32 @@ contract FortyAcresMarketplaceFacet is AccessControl {
 
     /**
      * @notice Buy a listing from another 40 Acres portfolio account
-     * @dev Only callable via PortfolioManager.multicall. Pulls payment from buyer EOA,
-     *      approves PortfolioMarketplace, then calls purchaseListing which handles
-     *      processPayment on the seller and finalizePurchase on the buyer.
+     * @dev Only callable via PortfolioManager.multicall. Reads listing from
+     *      PortfolioMarketplace, uses internal balance, approves marketplace,
+     *      then calls purchaseListing which handles receiveSaleProceeds on the seller.
      * @param sellerPortfolio The seller's portfolio account address
      * @param tokenId The token ID being purchased
-     * @param buyer The buyer's EOA address (must own this portfolio)
+     * @param nonce The listing nonce for frontrunning protection
      */
     function buyFortyAcresListing(
+        address sellerPortfolio,
         uint256 tokenId,
-        uint256 sellerPortfolio,
-        uint256 nonce,
-        address buyer
+        uint256 nonce
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        require(buyer != address(this), "Buyer cannot be the portfolio account");
+        // Read listing from PortfolioMarketplace (centralized storage)
+        PortfolioMarketplace.Listing memory listing = _marketplace.getListing(sellerPortfolio, tokenId);
+        require(listing.price > 0, "Listing does not exist");
 
-        // Read listing from seller
-        IMarketplaceFacet sellerFacet = IMarketplaceFacet(sellerPortfolio);
-        uint256 price = sellerFacet.getListing(tokenId).price;
-        address paymentTokenAddr = sellerFacet.getListing(tokenId).paymentToken;
-        require(price > 0, "Listing does not exist");
+        uint256 price = listing.price;
+        IERC20 paymentToken = IERC20(listing.paymentToken);
 
-        IERC20 paymentToken = IERC20(paymentTokenAddr);
-        require(paymentToken.balanceOf(buyer) >= price, "Insufficient balance");
-        require(paymentToken.allowance(buyer, address(this)) >= price, "Insufficient allowance");
-
-        // Pull funds from buyer EOA to this portfolio
-        paymentToken.safeTransferFrom(buyer, address(this), price);
+        require(paymentToken.balanceOf(address(this)) >= price, "Insufficient balance");
 
         // Approve marketplace to pull payment
         paymentToken.approve(address(_marketplace), price);
 
-        _marketplace.purchaseListing(sellerPortfolio, tokenId, paymentTokenAddr, price);
+        // Purchase through marketplace — nonce prevents frontrunning
+        _marketplace.purchaseListing(sellerPortfolio, tokenId, nonce);
 
         // Clear remaining approval
         paymentToken.approve(address(_marketplace), 0);

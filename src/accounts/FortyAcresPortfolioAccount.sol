@@ -68,23 +68,21 @@ contract FortyAcresPortfolioAccount {
         address facet = _getFacetForSelector(msg.sig);
         require(facet != address(0));
 
-        bool isExternal = msg.sender != address(this);
         bytes32 guardSlot = _REENTRANCY_GUARD_SLOT;
 
         assembly {
-            // Reentrancy guard: only for external calls (facet-to-facet via address(this) is allowed)
-            if isExternal {
+            // Check reentrancy guard (read-only): prevents re-entry via fallback while multicall is active.
+            // We only read (sload) here — no sstore — so this works under STATICCALL for view functions.
+            // The multicall() function sets the guard to 2 and resets it, so any callback during
+            // multicall will see status==2 and revert. Direct fallback calls see status==1 and proceed.
+            if iszero(eq(caller(), address())) {
                 let status := sload(guardSlot)
                 if eq(status, 2) { revert(0, 0) }
-                sstore(guardSlot, 2)
             }
 
             calldatacopy(0, 0, calldatasize())
             let result := delegatecall(gas(), facet, 0, calldatasize(), 0, 0)
             returndatacopy(0, 0, returndatasize())
-
-            // Reset guard before returning
-            if isExternal { sstore(guardSlot, 1) }
 
             switch result
             case 0 { revert(0, returndatasize()) }
