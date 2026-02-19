@@ -46,11 +46,11 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 /**
  * @title BaseDeploymentSetup
  * @dev Abstract base contract that mirrors AerodromeRootDeploy._deploy() logic
- *      inside setUp(). All regression tests extend this to share the same deployment.
+ *      inside setUp(). Deploys all contracts locally (no fork required).
  *
- *      Fork: Base chain at block 38869188
- *      External addresses from DeployAerodrome.s.sol
- *      Deploy sequence mirrors the deploy script exactly
+ *      External address constants from DeployAerodrome.s.sol are retained
+ *      for constructor args but no on-chain interactions occur here.
+ *      Tests that need real on-chain state should extend BaseForkSetup.
  */
 abstract contract BaseDeploymentSetup is Test {
     // ─── External addresses (Base chain) ─────────────────────────────
@@ -97,11 +97,7 @@ abstract contract BaseDeploymentSetup is Test {
     // ─── setUp ───────────────────────────────────────────────────────
 
     function setUp() public virtual {
-        // Fork Base at the same block as existing tests
-        uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
-        vm.selectFork(fork);
-        vm.rollFork(38869188);
-
+        _setupExternalMocks();
         vm.startPrank(DEPLOYER);
         _deployCore();
         _deployConfigs();
@@ -111,6 +107,13 @@ abstract contract BaseDeploymentSetup is Test {
         vm.stopPrank();
 
         _createUserPortfolio();
+    }
+
+    /// @dev Mock external contract calls needed during deployment.
+    ///      Override to no-op in BaseForkSetup where real contracts exist.
+    function _setupExternalMocks() internal virtual {
+        vm.mockCall(USDC, abi.encodeWithSignature("decimals()"), abi.encode(uint8(6)));
+        vm.mockCall(USDC, abi.encodeWithSignature("approve(address,uint256)"), abi.encode(true));
     }
 
     // ─── Internal deployment steps ───────────────────────────────────
@@ -319,18 +322,9 @@ abstract contract BaseDeploymentSetup is Test {
         portfolioManager.setAuthorizedCaller(authorizedCaller, true);
     }
 
-    /// @dev Step 6: Create user portfolio and transfer veNFT
-    function _createUserPortfolio() internal {
+    /// @dev Step 6: Create user portfolio (override in BaseForkSetup to transfer veNFT)
+    function _createUserPortfolio() internal virtual {
         portfolioAccount = portfolioFactory.createAccount(user);
-
-        // Transfer veNFT tokenId 84297 to portfolio account
-        address tokenOwner = IVotingEscrow(VOTING_ESCROW).ownerOf(tokenId);
-        vm.startPrank(tokenOwner);
-        IVotingEscrow(VOTING_ESCROW).transferFrom(tokenOwner, portfolioAccount, tokenId);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + 1);
-        vm.roll(block.number + 1);
     }
 
     // ─── Multicall helpers ───────────────────────────────────────────

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {BaseDeploymentSetup} from "./BaseDeploymentSetup.sol";
+import {BaseForkSetup} from "./BaseForkSetup.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
@@ -21,7 +21,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @dev Verifies MarketplaceFacet and PortfolioMarketplace config wiring,
  *      and that listing/purchase flows work correctly with the deployed system.
  */
-contract AerodromeMarketplaceRegression is BaseDeploymentSetup {
+contract AerodromeMarketplaceRegression is BaseForkSetup {
     PortfolioFactory public walletFactory;
     FacetRegistry public walletFacetRegistry;
 

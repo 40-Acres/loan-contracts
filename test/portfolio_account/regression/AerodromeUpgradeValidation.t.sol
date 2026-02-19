@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {BaseDeploymentSetup} from "./BaseDeploymentSetup.sol";
+import {BaseForkSetup} from "./BaseForkSetup.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
@@ -12,7 +12,7 @@ import {Loan as LoanV2} from "../../../src/LoanV2.sol";
  * @dev Tests that facet replacement and loan upgrades preserve state
  *      and that unauthorized upgrades revert.
  */
-contract AerodromeUpgradeValidation is BaseDeploymentSetup {
+contract AerodromeUpgradeValidation is BaseForkSetup {
     // ─── Facet replacement ───────────────────────────────────────────
 
     function testReplaceFacetUpdatesRegistry() public {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {BaseDeploymentSetup} from "./BaseDeploymentSetup.sol";
+import {BaseForkSetup} from "./BaseForkSetup.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
@@ -17,7 +17,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
  * @dev Functional smoke tests that verify the deployed system actually works.
  *      All state-changing calls go through _multicallAsUser / _singleMulticallAsUser.
  */
-contract AerodromePostDeployment is BaseDeploymentSetup {
+contract AerodromePostDeployment is BaseForkSetup {
     // ─── Collateral ──────────────────────────────────────────────────
 
     function testAddCollateral() public {

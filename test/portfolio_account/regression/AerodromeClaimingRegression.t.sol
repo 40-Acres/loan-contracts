@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {BaseDeploymentSetup} from "./BaseDeploymentSetup.sol";
+import {BaseForkSetup} from "./BaseForkSetup.sol";
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
@@ -12,7 +12,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @dev Verifies ClaimingFacet config wiring and that claiming flows
  *      (claimFees, claimRebase) work correctly with the deployed system.
  */
-contract AerodromeClaimingRegression is BaseDeploymentSetup {
+contract AerodromeClaimingRegression is BaseForkSetup {
     // Known data at fork block 38869188
     address constant WETH = 0x4200000000000000000000000000000000000006;
     address[] public bribes = [0x765d935C2F47a06EdA55D07a9b9aE4108F4BBF85];
