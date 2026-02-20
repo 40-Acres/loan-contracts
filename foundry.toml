@@ -11,6 +11,7 @@ bytecode_hash = "none"
 cbor_metadata = false
 always_use_create_2_factory = true
 fs_permissions = [{ access = "read", path = "./addresses" }]
+no_match_path = "test/fork/**"
 
 
 # Resolve external imports
@@ -26,5 +27,11 @@ base = "https://mainnet.base.org"
 [profile.ci]
 fuzz = { runs = 256 }
 verbosity = 2
+
+[profile.fork]
+fuzz = { runs = 256 }
+verbosity = 2
+no_match_path = "NONE"
+match_path = "test/fork/**"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
