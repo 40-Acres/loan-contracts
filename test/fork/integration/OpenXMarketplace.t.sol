@@ -17,6 +17,7 @@ import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
+import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 
 contract OpenXMarketplaceTest is Test, Setup {
     uint256 constant OPENX_LISTING_ID = 10138; // Listing ID for tokenId 10138
@@ -179,12 +180,15 @@ contract OpenXMarketplaceTest is Test, Setup {
 
         calldatas[0] = abi.encodeWithSelector(
             WalletFacet.swap.selector,
-            address(mockRouter),  // swapTarget
-            swapData,            // swapData
-            _usdc,               // inputToken
-            price,               // inputAmount
-            currency,            // outputToken
-            price                // minimumOutputAmount
+            SwapMod.RouteParams({
+                swapConfig: address(0),  // overwritten by WalletFacet
+                swapTarget: address(mockRouter),
+                swapData: swapData,
+                inputToken: address(_usdc),
+                inputAmount: price,
+                outputToken: currency,
+                minimumOutputAmount: price
+            })
         );
         calldatas[1] = abi.encodeWithSelector(
             OpenXFacet.buyOpenXListing.selector,
