@@ -5,8 +5,9 @@ import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
+import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
@@ -52,9 +53,9 @@ contract UserSwap is Script {
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = SwapFacet.userSwap.selector;
-        address facet = facetRegistry.getFacetForSelector(selector);
-        require(facet != address(0), "SwapFacet.userSwap not registered in FacetRegistry. Please deploy facets first.");
+        bytes4 swapSelector = WalletFacet.swap.selector;
+        address facet = facetRegistry.getFacetForSelector(swapSelector);
+        require(facet != address(0), "WalletFacet.swap not registered in FacetRegistry. Please deploy facets first.");
 
         // Get portfolio address from factory
         address portfolioAddress = factory.portfolioOf(owner);
@@ -75,20 +76,27 @@ contract UserSwap is Script {
         console.log("  Output Token:", outputToken);
         console.log("  Minimum Output:", minimumOutputAmount);
 
-        // Use factory address for multicall
-        address[] memory factories = new address[](1);
+        // Use factory address for multicall: receiveERC20 + swap
+        address[] memory factories = new address[](2);
         factories[0] = address(factory);
+        factories[1] = address(factory);
 
-        bytes[] memory calldatas = new bytes[](1);
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            selector,
-            swapTarget,
-            swapData,
+            WalletFacet.receiveERC20.selector,
             inputToken,
-            inputAmount,
-            outputToken,
-            minimumOutputAmount
+            inputAmount
         );
+        SwapMod.RouteParams memory swapParams = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: swapTarget,
+            swapData: swapData,
+            inputToken: inputToken,
+            inputAmount: inputAmount,
+            outputToken: outputToken,
+            minimumOutputAmount: minimumOutputAmount
+        });
+        calldatas[1] = abi.encodeWithSelector(swapSelector, swapParams);
 
         portfolioManager.multicall(calldatas, factories);
 

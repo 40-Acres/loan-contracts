@@ -26,6 +26,8 @@ library UserRewardsConfig {
         RewardsOption rewardsOption;
         uint256 rewardsOptionPercentage;
         address vaultForInvesting;
+        uint256 increaseCollateralPercentage;
+        RewardsOption finalRewardsOption;
     }
 
     function _getUserRewardsConfigData() internal pure returns (UserRewardsConfigData storage collateralManagerData) {
@@ -83,5 +85,25 @@ library UserRewardsConfig {
     function getVaultForInvesting() external view returns (address) {
         UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
         return collateralManagerData.vaultForInvesting;
+    }
+
+    function setIncreaseCollateralPercentage(uint256 percentage) external {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        data.increaseCollateralPercentage = percentage;
+    }
+
+    function getIncreaseCollateralPercentage() external view returns (uint256) {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.increaseCollateralPercentage;
+    }
+
+    function setFinalRewardsOption(RewardsOption rewardsOption) external {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        data.finalRewardsOption = rewardsOption;
+    }
+
+    function getFinalRewardsOption() external view returns (RewardsOption) {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.finalRewardsOption;
     }
 }

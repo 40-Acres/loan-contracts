@@ -69,9 +69,9 @@ contract WalletFacet is AccessControl, IERC721Receiver {
         IERC20(token).safeTransferFrom(owner, address(this), amount);
     }
 
-    function swap(address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 amount) {
-        uint256 swappedAmount = SwapMod.swap(address(_swapConfig), swapTarget, swapData, inputToken, inputAmount, outputToken, minimumOutputAmount);
-        return swappedAmount;
+    function swap(SwapMod.RouteParams memory params) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 amount) {
+        params.swapConfig = address(_swapConfig);
+        return SwapMod.swap(params);
     }
 
     /**

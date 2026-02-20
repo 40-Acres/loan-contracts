@@ -11,7 +11,7 @@ import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {PortfolioAccountConfigDeploy} from "../DeployPortfolioAccountConfig.s.sol";
 import {BridgeFacet} from "../../../src/facets/account/bridge/BridgeFacet.sol";
-import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
+
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
@@ -230,17 +230,6 @@ contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
         //     facetRegistry.replaceFacet(oldBridgeFacet, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
         // }
         
-        // Deploy SwapFacet
-        SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig));
-        bytes4[] memory swapSelectors = new bytes4[](2);
-        swapSelectors[0] = SwapFacet.swap.selector;
-        // Check if facet already exists
-        address oldSwapFacet = facetRegistry.getFacetForSelector(swapSelectors[0]);
-        if (oldSwapFacet == address(0)) {
-            facetRegistry.registerFacet(address(swapFacet), swapSelectors, "SwapFacet");
-        } else {
-            facetRegistry.replaceFacet(oldSwapFacet, address(swapFacet), swapSelectors, "SwapFacet");
-        }
     }
 }
 

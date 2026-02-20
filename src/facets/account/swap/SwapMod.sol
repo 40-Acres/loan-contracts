@@ -14,20 +14,30 @@ library SwapMod {
     error NotApprovedSwapTarget(address swapTarget);
     error SwapFailed();
 
-    function swap(address swapConfig, address swapTarget, bytes memory swapData, address inputToken, uint256 inputAmount, address outputToken, uint256 minimumOutputAmount) public returns (uint256 amount) {
-        // if no minimum output amount, set within an acceptable range
-        uint256 balanceBefore = IERC20(outputToken).balanceOf(address(this));
-        if(!SwapConfig(swapConfig).isApprovedSwapTarget(swapTarget)) {
-            revert NotApprovedSwapTarget(swapTarget);
+    struct RouteParams {
+        address swapConfig;
+        address swapTarget;
+        bytes swapData;
+        address inputToken;
+        uint256 inputAmount;
+        address outputToken;
+        uint256 minimumOutputAmount;
+    }
+
+    function swap(RouteParams memory swapData) public returns (uint256 amount) {
+        uint256 balanceBefore = IERC20(swapData.outputToken).balanceOf(address(this));
+        if(!SwapConfig(swapData.swapConfig).isApprovedSwapTarget(swapData.swapTarget)) {
+            revert NotApprovedSwapTarget(swapData.swapTarget);
         }
-        IERC20(inputToken).approve(swapTarget, inputAmount);
-        (bool success, ) = swapTarget.call(swapData);
+        IERC20(swapData.inputToken).approve(swapData.swapTarget, swapData.inputAmount);
+        (bool success, ) = swapData.swapTarget.call(swapData.swapData);
         require(success, "Swap failed");
-        IERC20(inputToken).approve(swapTarget, 0);
-        uint256 balanceAfter = IERC20(outputToken).balanceOf(address(this));
+        IERC20(swapData.inputToken).approve(swapData.swapTarget, 0);
+        uint256 balanceAfter = IERC20(swapData.outputToken).balanceOf(address(this));
         amount = balanceAfter - balanceBefore;
-        require(amount >= minimumOutputAmount, "Slippage exceeded");
-        emit SwapExecuted(swapTarget, inputToken, inputAmount, outputToken, amount);
+        require(amount >= swapData.minimumOutputAmount, "Slippage exceeded");
+        emit SwapExecuted(swapData.swapTarget, swapData.inputToken, swapData.inputAmount, swapData.outputToken, amount);
         return amount;
     }
+
 }

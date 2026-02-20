@@ -15,6 +15,7 @@ import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract WalletFacetTest is Test, LocalSetup {
@@ -124,15 +125,16 @@ contract WalletFacetTest is Test, LocalSetup {
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_walletFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            WalletFacet.swap.selector,
-            swapTarget,
-            swapData,
-            tokenIn,
-            amountIn,
-            tokenOut,
-            minAmountOut
-        );
+        SwapMod.RouteParams memory swapParams = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: swapTarget,
+            swapData: swapData,
+            inputToken: tokenIn,
+            inputAmount: amountIn,
+            outputToken: tokenOut,
+            minimumOutputAmount: minAmountOut
+        });
+        calldatas[0] = abi.encodeWithSelector(WalletFacet.swap.selector, swapParams);
         bytes[] memory results = _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 

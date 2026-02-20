@@ -28,7 +28,7 @@ import {DynamicMarketplaceFacet} from "../../../src/facets/account/marketplace/D
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
-import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
+
 
 // DynamicFeesVault (real vault, not mock)
 import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
@@ -323,7 +323,7 @@ contract DynamicLocalSetup is Test {
             address(_portfolioFactory), address(_portfolioAccountConfig),
             address(_swapConfig), address(_ve), _vault
         );
-        bytes4[] memory rewardsSel = new bytes4[](10);
+        bytes4[] memory rewardsSel = new bytes4[](15);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsSel[1] = RewardsProcessingFacet.setRewardsOption.selector;
         rewardsSel[2] = RewardsProcessingFacet.getRewardsOption.selector;
@@ -334,16 +334,12 @@ contract DynamicLocalSetup is Test {
         rewardsSel[7] = RewardsProcessingFacet.getRewardsToken.selector;
         rewardsSel[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
         rewardsSel[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSel[10] = RewardsProcessingFacet.setIncreaseCollateralPercentage.selector;
+        rewardsSel[11] = RewardsProcessingFacet.getIncreaseCollateralPercentage.selector;
+        rewardsSel[12] = RewardsProcessingFacet.setFinalRewardsOption.selector;
+        rewardsSel[13] = RewardsProcessingFacet.getFinalRewardsOption.selector;
+        rewardsSel[14] = RewardsProcessingFacet.calculateRoutes.selector;
         _facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
-
-        // ── 9. SwapFacet (2 selectors) ──
-        SwapFacet swapFacet = new SwapFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig)
-        );
-        bytes4[] memory swapSel = new bytes4[](2);
-        swapSel[0] = SwapFacet.swap.selector;
-        swapSel[1] = SwapFacet.userSwap.selector;
-        _facetRegistry.registerFacet(address(swapFacet), swapSel, "SwapFacet");
 
         vm.stopPrank();
     }

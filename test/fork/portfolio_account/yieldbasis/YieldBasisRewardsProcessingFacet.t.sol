@@ -23,6 +23,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {YieldBasisVotingEscrowAdapter} from "../../../../src/adapters/YieldBasisVotingEscrowAdapter.sol";
 import {YieldBasisFaucet} from "../../../../src/faucets/YieldBasisFaucet.sol";
 import {ILendingPool} from "../../../../src/interfaces/ILendingPool.sol";
+import {SwapMod} from "../../../../src/facets/account/swap/SwapMod.sol";
 
 /**
  * @title MockLendingPool
@@ -361,13 +362,12 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards as authorized caller
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             rewardsAmount,
-            address(0), // no swap needed
-            0,
-            "",
+            noSwap,
             0 // no gas reclamation
         );
 
@@ -413,13 +413,12 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            "",
+            noSwap,
             0
         );
 
@@ -463,13 +462,12 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            "",
+            noSwap,
             0
         );
 
@@ -513,14 +511,13 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards with gas reclamation
+        SwapMod.RouteParams[3] memory noSwap;
         uint256 gasReclamation = 2 ether; // 2% of rewards
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            "",
+            noSwap,
             gasReclamation
         );
 
@@ -558,14 +555,13 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Try to reclaim 10% (should be capped at 5%)
+        SwapMod.RouteParams[3] memory noSwap;
         uint256 gasReclamation = 10 ether;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            "",
+            noSwap,
             gasReclamation
         );
 
@@ -590,14 +586,13 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         deal(YB, portfolioAccount, 100 ether);
 
         // Try to process rewards as non-authorized caller
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(user);
         vm.expectRevert();
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             100 ether,
-            address(0),
-            0,
-            "",
+            noSwap,
             0
         );
     }
@@ -619,14 +614,13 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Try to process zero rewards
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(authorizedCaller);
         vm.expectRevert();
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             0,
-            address(0),
-            0,
-            "",
+            noSwap,
             0
         );
     }
@@ -638,14 +632,13 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         // Don't deal any YB to portfolio account
         // Try to process rewards without sufficient balance
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(authorizedCaller);
         vm.expectRevert();
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             100 ether,
-            address(0),
-            0,
-            "",
+            noSwap,
             0
         );
     }
@@ -679,13 +672,12 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards
+        SwapMod.RouteParams[3] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            "",
+            noSwap,
             0
         );
 

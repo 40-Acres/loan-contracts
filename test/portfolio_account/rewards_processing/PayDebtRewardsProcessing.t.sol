@@ -26,6 +26,7 @@ import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Vault} from "../../../src/VaultV2.sol";
+import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 
 /**
  * @title PayDebtRewardsProcessingTest
@@ -379,12 +380,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         vm.expectEmit(false, true, false, false);
         emit RewardsProcessingFacet.DebtPaid(0, _tokenId, 0, _portfolioAccount2, rewardsToken);
 
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0), // no swap
-            0, // minimum output amount
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
@@ -477,12 +477,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         // Note: We expect ZeroBalanceRewardsProcessed event instead of DebtPaid
         // because the pay() call will fail and the full amount will go to finalizeRewards
 
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0), // no swap
-            0, // minimum output amount
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
@@ -563,12 +562,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Execute: Process rewards - should not revert
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0
         );
         vm.stopPrank();
@@ -620,12 +618,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Execute: Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0
         );
         vm.stopPrank();

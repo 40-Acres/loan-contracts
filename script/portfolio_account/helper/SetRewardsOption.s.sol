@@ -15,10 +15,11 @@ import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
  * @dev Helper script to set rewards processing option via PortfolioManager multicall
  *
  * Rewards options:
- * - 0: PayBalance - Use rewards to pay down debt
+ * - 0: PayBalance - Default (pay down balance / send to recipient)
  * - 1: IncreaseCollateral - Use rewards to increase veAERO lock
  * - 2: PayToRecipient - Send rewards to a specified recipient
  * - 3: InvestToVault - Invest rewards into the vault
+ * - 4: PayDebt - Pay down debt on another portfolio
  *
  * Portfolio is automatically determined from the factory using the owner address (from PRIVATE_KEY).
  *
@@ -34,14 +35,14 @@ contract SetRewardsOption is Script {
 
     /**
      * @dev Set rewards option via PortfolioManager multicall
-     * @param option The rewards option (0=PayBalance, 1=IncreaseCollateral, 2=PayToRecipient, 3=InvestToVault)
+     * @param option The rewards option (0=PayBalance, 1=IncreaseCollateral, 2=PayToRecipient, 3=InvestToVault, 4=PayDebt)
      * @param owner The owner address (for getting portfolio from factory)
      */
     function setRewardsOption(
         uint8 option,
         address owner
     ) internal {
-        require(option <= 3, "Invalid rewards option. Must be 0-3");
+        require(option <= 4, "Invalid rewards option. Must be 0-4");
 
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
 
@@ -73,6 +74,7 @@ contract SetRewardsOption is Script {
         else if (option == 1) optionName = "IncreaseCollateral";
         else if (option == 2) optionName = "PayToRecipient";
         else if (option == 3) optionName = "InvestToVault";
+        else if (option == 4) optionName = "PayDebt";
 
         console.log("Rewards option set successfully!");
         console.log("Portfolio Address:", portfolioAddress);

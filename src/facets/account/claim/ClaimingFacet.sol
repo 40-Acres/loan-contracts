@@ -74,7 +74,7 @@ contract ClaimingFacet is AccessControl {
         CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
     }
 
-    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, address tradeContract, bytes calldata tradeData, uint256 expectedOutputAmount) virtual external onlyAuthorizedCaller(_portfolioFactory) {
+    function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, SwapMod.RouteParams memory swapParams) virtual external onlyAuthorizedCaller(_portfolioFactory) {
         IERC20 launchpadToken = IERC20(UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId));
         if(address(launchpadToken) == address(0)) {
             revert("Launchpad token not set");
@@ -99,16 +99,24 @@ contract ClaimingFacet is AccessControl {
         uint256 totalDebt = CollateralManager.getTotalDebt();
         // if account has a balance, swap and pay lenders/treasury
         if(totalDebt > 0) {
-            require(tradeContract != address(0));
-            require(tradeData.length > 0);
-            require(expectedOutputAmount > 0);
+            require(swapParams.swapTarget != address(0));
+            require(swapParams.swapData.length > 0);
+            require(swapParams.minimumOutputAmount > 0);
             IERC4626 vault = _vault;
             address outputToken = vault.asset();
             // Calculate the actual amount of launchpad token received after claiming fees
             uint256 launchpadTokenBalanceAfter = launchpadToken.balanceOf(address(this));
             uint256 launchpadTokenAmountToSwap = launchpadTokenBalanceAfter - launchpadTokenBalanceBefore;
             require(launchpadTokenAmountToSwap > 0, "No launchpad token to swap");
-            uint256 outputAmount = SwapMod.swap(address(_swapConfig), tradeContract, tradeData, address(launchpadToken), launchpadTokenAmountToSwap, outputToken, expectedOutputAmount);
+            uint256 outputAmount = SwapMod.swap(SwapMod.RouteParams({
+                swapConfig: address(_swapConfig),
+                swapTarget: swapParams.swapTarget,
+                swapData: swapParams.swapData,
+                inputToken: address(launchpadToken),
+                inputAmount: launchpadTokenAmountToSwap,
+                outputToken: outputToken,
+                minimumOutputAmount: swapParams.minimumOutputAmount
+            }));
             require(address(vault) != address(0), "Vault not set");
 
             // get treasury fee and lender premium

@@ -24,6 +24,7 @@ import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingF
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 
 contract ClaimingFacetTest is Test, Setup {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
@@ -118,7 +119,9 @@ contract ClaimingFacetTest is Test, Setup {
 
         
         vm.startPrank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(0), new bytes(0), rewardAmount);
+        SwapMod.RouteParams memory noSwap;
+        noSwap.minimumOutputAmount = rewardAmount;
+        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, noSwap);
         vm.stopPrank();
 
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
@@ -139,7 +142,9 @@ contract ClaimingFacetTest is Test, Setup {
 
         
         vm.startPrank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(0), new bytes(0), rewardAmount);
+        SwapMod.RouteParams memory noSwap;
+        noSwap.minimumOutputAmount = rewardAmount;
+        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, noSwap);
         vm.stopPrank();
 
         assertEq(IERC20(claimingToken).balanceOf(_portfolioAccount), rewardAmount);
@@ -209,7 +214,16 @@ contract ClaimingFacetTest is Test, Setup {
 
         // Claim launchpad token with swap
         vm.startPrank(_authorizedCaller);
-        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, address(mockRouter), tradeData, expectedUsdcOutput);
+        SwapMod.RouteParams memory swapParams = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: tradeData,
+            inputToken: address(0),
+            inputAmount: 0,
+            outputToken: address(0),
+            minimumOutputAmount: expectedUsdcOutput
+        });
+        ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, swapParams);
         vm.stopPrank();
 
         // Verify the swap happened - portfolio account should have received USDC

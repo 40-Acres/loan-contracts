@@ -13,6 +13,7 @@ import {DeployRewardsProcessingFacet} from "../../../script/portfolio_account/fa
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
+import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 
 contract RewardsProcessingFacetTest is Test, LocalSetup {
     RewardsProcessingFacet public rewardsProcessingFacet;
@@ -121,16 +122,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount, // asset will be determined from config
-            address(0), // no swap
-            0, // minimum output amount
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify recipient received rewards (accounting for zero balance fee)
         uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
         uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
@@ -170,16 +170,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0, // minimum output amount
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify vault deposit
         uint256 portfolioOwnerVaultSharesAfter = IERC20(vault).balanceOf(_portfolioFactory.ownerOf(_portfolioAccount));
         uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
@@ -190,7 +189,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
 
     function testProcessRewardsWithIncreaseCollateral() public {
         setupRewards();
-        
+
         // Set increase percentage
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](2);
@@ -207,16 +206,19 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
-        
+
         // Fund mock router with locked asset
         deal(lockedAsset, address(mockRouter), 200e18);
-        
+
         uint256 portfolioRewardsBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
-        
-        // Create swap data
-        uint256 amountToSwap = rewardsAmount * 20 / 100; // 20% of rewards
+
+        // Percentages are on post-fees amount
+        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
+        uint256 postFeesAmount = rewardsAmount - feeAmount;
+        uint256 amountToSwap = postFeesAmount * 20 / 100; // 20% of post-fees
         uint256 expectedLockedAssetOut = 200e18; // Expected output from swap
-        
+
         bytes memory swapData = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwap.selector,
             rewardsToken,
@@ -225,45 +227,49 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             expectedLockedAssetOut,
             _portfolioAccount
         );
-        
+
         // Pre-approve for swap
         vm.prank(_portfolioAccount);
         IERC20(rewardsToken).approve(address(mockRouter), amountToSwap);
-        
+
         // Check the voting escrow's locked amount before processing
         IVotingEscrow.LockedBalance memory lockedBefore = IVotingEscrow(_ve).locked(_tokenId);
         uint256 lockedAmountBefore = uint256(uint128(lockedBefore.amount));
         uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
-        
+
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory swapParams;
+        swapParams[0] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: swapData,
+            inputToken: address(0),
+            inputAmount: 0,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(mockRouter),
-            0,
-            swapData,
+            swapParams,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify collateral was increased
-        // Check the voting escrow's locked amount for the token (the locked asset is transferred to voting escrow)
         IVotingEscrow.LockedBalance memory lockedAfter = IVotingEscrow(_ve).locked(_tokenId);
         uint256 lockedAmountAfter = uint256(uint128(lockedAfter.amount));
-        
+
         uint256 portfolioRewardsAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
         uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
-        
-        // Locked amount in voting escrow should have increased by the expected amount (from swap and increaseAmount)
+
         assertGe(lockedAmountAfter, lockedAmountBefore + expectedLockedAssetOut, "Locked asset balance should increase by swap amount");
         console.log("lockedAmountAfter", lockedAmountAfter);
         console.log("lockedAmountBefore", lockedAmountBefore);
         console.log("expectedLockedAssetOut", expectedLockedAssetOut);
         assertTrue(lockedAmountAfter > lockedAmountBefore);
-        // Portfolio should have used rewards for swap (20% swapped, remaining sent to recipient minus zero balance fee)
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
-        uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
+        // Portfolio should have used rewards for swap (20% of postFees swapped, remaining sent to recipient)
         uint256 remainingRewards = rewardsAmount - amountToSwap - feeAmount;
         assertEq(portfolioRewardsAfter, 0, "Portfolio should have processed all rewards");
         assertEq(recipientBalanceAfter, recipientBalanceBefore + remainingRewards, "Recipient should receive remaining rewards minus fee");
@@ -272,7 +278,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
 
     function testProcessRewardsRevertSlippage() public {
         setupRewards();
-        
+
         // Set increase percentage
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](2);
@@ -289,16 +295,17 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
-        
+
         // Fund mock router with locked asset
         deal(lockedAsset, address(mockRouter), 200e18);
-        
-        uint256 portfolioRewardsBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
-        
-        // Create swap data
-        uint256 amountToSwap = rewardsAmount * 20 / 100; // 20% of rewards
+
+        // Percentages are on post-fees amount
+        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
+        uint256 postFeesAmount = rewardsAmount - feeAmount;
+        uint256 amountToSwap = postFeesAmount * 20 / 100; // 20% of post-fees
         uint256 expectedLockedAssetOut = 200e18; // Expected output from swap
-        
+
         bytes memory swapData = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwap.selector,
             rewardsToken,
@@ -307,25 +314,28 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             expectedLockedAssetOut,
             _portfolioAccount
         );
-        
+
         // Pre-approve for swap
         vm.prank(_portfolioAccount);
         IERC20(rewardsToken).approve(address(mockRouter), amountToSwap);
-        
-        // Check the voting escrow's locked amount before processing
-        IVotingEscrow.LockedBalance memory lockedBefore = IVotingEscrow(_ve).locked(_tokenId);
-        uint256 lockedAmountBefore = uint256(uint128(lockedBefore.amount));
-        uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
-        
-        // Process rewards
+
+        // Process rewards with unreachable minimumOutputAmount → should revert
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory swapParams;
+        swapParams[0] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: swapData,
+            inputToken: address(0),
+            inputAmount: 0,
+            outputToken: address(0),
+            minimumOutputAmount: 10000e18
+        });
         vm.expectRevert("Slippage exceeded");
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(mockRouter),
-            10000e18,
-            swapData,
+            swapParams,
             0 // gas reclamation
         );
         vm.stopPrank();
@@ -359,16 +369,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
 
         // Process rewards - should pay down debt
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount, // asset will be determined from loan contract
-            address(0), // no swap
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify debt was decreased
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         uint256 portfolioBalanceAfter = IERC20(loanAsset).balanceOf(_portfolioAccount);
@@ -412,16 +421,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards - should pay down debt and deposit remaining to vault as shares for portfolio owner
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify debt is zero (fully paid)
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debtAfter, 0, "Debt should be fully paid");
@@ -487,10 +495,13 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         // Fund the portfolio account with loan asset for rewards
         deal(loanAsset, _portfolioAccount, rewardsAmount);
 
-        // Create swap data for collateral increase
-        uint256 amountToSwap = rewardsAmount * 15 / 100; // 15% of rewards
+        // Percentages are on post-fees amount (after protocol fee + lender premium)
+        uint256 pFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
+        uint256 lPrem = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
+        uint256 postFeesAmount = rewardsAmount - pFee - lPrem;
+        uint256 amountToSwap = postFeesAmount * 15 / 100; // 15% of post-fees
         uint256 expectedLockedAssetOut = 200e18;
-        
+
         bytes memory swapData = abi.encodeWithSelector(
             MockOdosRouterRL.executeSwap.selector,
             loanAsset,
@@ -499,7 +510,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             expectedLockedAssetOut,
             _portfolioAccount
         );
-        
+
         // Pre-approve for swap
         vm.prank(_portfolioAccount);
         IERC20(loanAsset).approve(address(mockRouter), amountToSwap);
@@ -510,16 +521,24 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory swapParams;
+        swapParams[0] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: swapData,
+            inputToken: address(0),
+            inputAmount: 0,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(mockRouter),
-            0,
-            swapData,
+            swapParams,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify collateral was increased
         IVotingEscrow.LockedBalance memory lockedAfter = IVotingEscrow(_ve).locked(_tokenId);
         uint256 lockedAmountAfter = uint256(uint128(lockedAfter.amount));
@@ -565,16 +584,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards - should partially pay down debt
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify fees were paid
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
         uint256 vaultBalanceAfter = IERC20(loanAsset).balanceOf(vault);
@@ -624,16 +642,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
-        
+
         // Verify all fees are calculated and paid correctly
         uint256 ownerBalanceAfter = IERC20(loanAsset).balanceOf(owner);
         uint256 vaultBalanceAfter = IERC20(loanAsset).balanceOf(vault);
@@ -763,13 +780,12 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Try to call from unauthorized address
         vm.prank(address(0x1234));
+        SwapMod.RouteParams[3] memory noSwap;
         vm.expectRevert();
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
     }
@@ -778,13 +794,12 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         // Don't fund the account
         // Try to process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         vm.expectRevert();
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
@@ -807,12 +822,11 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards should fallback to vault asset if no rewards token set
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
@@ -829,17 +843,16 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         // Process rewards with gas reclamation
         // Use vm.startPrank with both msg.sender and tx.origin set to _authorizedCaller
         // since gas reclamation is transferred to tx.origin
+        SwapMod.RouteParams[3] memory noSwap;
         vm.startPrank(_authorizedCaller, _authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             gasReclamationAmount
         );
         vm.stopPrank();
-        
+
         // Verify gas reclamation was deducted from remaining and transferred
         uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
         uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
@@ -871,17 +884,16 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Process rewards with gas reclamation that exceeds cap
         // Use vm.startPrank with both msg.sender and tx.origin set to _authorizedCaller
+        SwapMod.RouteParams[3] memory noSwap;
         vm.startPrank(_authorizedCaller, _authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             gasReclamationAmount // Will be capped at 5%
         );
         vm.stopPrank();
-        
+
         // Verify gas reclamation was capped at 5%
         uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
         uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
@@ -926,17 +938,16 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         // Process rewards with gas reclamation
         // Use vm.startPrank with both msg.sender and tx.origin set to _authorizedCaller
         // since gas reclamation is transferred to tx.origin
+        SwapMod.RouteParams[3] memory noSwap;
         vm.startPrank(_authorizedCaller, _authorizedCaller);
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             gasReclamationAmount
         );
         vm.stopPrank();
-        
+
         // Verify debt was decreased (accounting for gas reclamation deduction)
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         uint256 portfolioBalanceAfter = IERC20(loanAsset).balanceOf(_portfolioAccount);
@@ -1011,12 +1022,11 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
 
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewards,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();
@@ -1074,12 +1084,11 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
 
         // Process rewards
         vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[3] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewards,
-            address(0),
-            0,
-            new bytes(0),
+            noSwap,
             0 // gas reclamation
         );
         vm.stopPrank();

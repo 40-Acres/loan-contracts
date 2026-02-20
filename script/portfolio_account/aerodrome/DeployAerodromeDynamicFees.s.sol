@@ -10,7 +10,7 @@ import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol"
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {BridgeFacet} from "../../../src/facets/account/bridge/BridgeFacet.sol";
-import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
+
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
@@ -149,12 +149,6 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
         votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
-
-        // Deploy SwapFacet
-        SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig));
-        bytes4[] memory swapSelectors = new bytes4[](1);
-        swapSelectors[0] = SwapFacet.userSwap.selector;
-        _registerFacet(facetRegistry, address(swapFacet), swapSelectors, "SwapFacet");
 
         // Deploy MigrationFacet
         MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
