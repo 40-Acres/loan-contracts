@@ -3,10 +3,9 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
@@ -15,7 +14,7 @@ import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingF
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 
-contract RewardsProcessingFacetTest is Test, Setup {
+contract RewardsProcessingFacetTest is Test, LocalSetup {
     RewardsProcessingFacet public rewardsProcessingFacet;
     MockOdosRouterRL public mockRouter;
     
@@ -79,11 +78,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
 
     function setupRewards() internal {
         // Fund the portfolio account with rewards (USDC)
-        address minter = IUSDC(rewardsToken).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(rewardsToken).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(rewardsToken).mint(_portfolioAccount, rewardsAmount);
+        deal(rewardsToken, _portfolioAccount, rewardsAmount);
     }
 
     // Helper function to add collateral via PortfolioManager multicall
@@ -357,15 +352,11 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund the portfolio account with loan asset (USDC) for rewards
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
-        
+        deal(loanAsset, _portfolioAccount, rewardsAmount);
+
         uint256 portfolioBalanceBefore = IERC20(loanAsset).balanceOf(_portfolioAccount);
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
-        
+
         // Process rewards - should pay down debt
         vm.startPrank(_authorizedCaller);
         rewardsProcessingFacet.processRewards(
@@ -413,12 +404,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund the portfolio account with loan asset for rewards
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
-        
+        deal(loanAsset, _portfolioAccount, rewardsAmount);
+
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
         uint256 portfolioOwnerVaultSharesBefore = IERC20(vault).balanceOf(portfolioOwner);
@@ -498,12 +485,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         deal(lockedAsset, address(mockRouter), 200e18);
         
         // Fund the portfolio account with loan asset for rewards
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
-        
+        deal(loanAsset, _portfolioAccount, rewardsAmount);
+
         // Create swap data for collateral increase
         uint256 amountToSwap = rewardsAmount * 15 / 100; // 15% of rewards
         uint256 expectedLockedAssetOut = 200e18;
@@ -573,12 +556,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund the portfolio account with loan asset for rewards
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
-        
+        deal(loanAsset, _portfolioAccount, rewardsAmount);
+
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
@@ -637,12 +616,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund the portfolio account with loan asset for rewards
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
-        
+        deal(loanAsset, _portfolioAccount, rewardsAmount);
+
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
         uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
@@ -941,12 +916,8 @@ contract RewardsProcessingFacetTest is Test, Setup {
         address loanAsset = ILoan(_loanContract)._asset();
         
         // Fund portfolio with rewards
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewardsAmount);
-        
+        deal(loanAsset, _portfolioAccount, rewardsAmount);
+
         uint256 gasReclamationAmount = 10e6; // 10 USDC
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
         uint256 portfolioBalanceBefore = IERC20(loanAsset).balanceOf(_portfolioAccount);
@@ -1033,11 +1004,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         uint256 lenderPremium = (rewards * lenderPremiumRate) / 10000;
         uint256 zeroBalanceFee = (rewards * zeroBalanceFeeRate) / 10000;
         
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewards);
+        deal(loanAsset, _portfolioAccount, rewards);
 
         address owner = _portfolioAccountConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
@@ -1095,11 +1062,7 @@ contract RewardsProcessingFacetTest is Test, Setup {
         
         // Fund the portfolio account with 500 USDC for rewards (increased to avoid rounding issues)
         uint256 rewards = 500e6;
-        address minter = IUSDC(loanAsset).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(loanAsset).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(loanAsset).mint(_portfolioAccount, rewards);
+        deal(loanAsset, _portfolioAccount, rewards);
 
         address owner = _portfolioAccountConfig.owner();
         address recipientAddress = address(0x1234); // From setUp

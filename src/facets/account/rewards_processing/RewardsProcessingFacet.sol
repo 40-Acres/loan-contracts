@@ -73,13 +73,11 @@ contract RewardsProcessingFacet is AccessControl {
 
         // 1. Fees first — computed on original rewardsAmount
         uint256 remaining = rewardsAmount;
-        {
-            if (CollateralFacet(address(this)).getTotalDebt() > 0) {
-                remaining -= _payProtocolFee(tokenId, rewardsAmount, asset);
-                remaining -= _payLenderPremium(tokenId, rewardsAmount, asset);
-            } else {
-                remaining -= _payZeroBalanceFee(tokenId, rewardsAmount, asset);
-            }
+        if (CollateralFacet(address(this)).getTotalDebt() > 0) {
+            remaining -= _payProtocolFee(tokenId, rewardsAmount, asset);
+            remaining -= _payLenderPremium(tokenId, rewardsAmount, asset);
+        } else {
+            remaining -= _payZeroBalanceFee(tokenId, rewardsAmount, asset);
         }
 
         // 2. Gas reclamation — cap computed on original rewardsAmount
@@ -133,7 +131,7 @@ contract RewardsProcessingFacet is AccessControl {
     function _finalizeRewards(uint256 tokenId, uint256 remaining, address asset) internal {
         // Fees already deducted in _deductFees
         if(CollateralFacet(address(this)).getTotalDebt() == 0) {
-            _processZeroBalanceRewards(tokenId, remaining, remaining, asset, false);
+            _processZeroBalanceRewards(tokenId, remaining, asset);
         } else {
             remaining = _processActiveLoanRewards(tokenId, remaining, asset);
             if(remaining > 0) {
@@ -182,14 +180,7 @@ contract RewardsProcessingFacet is AccessControl {
         return excess;
     }
 
-    function _processZeroBalanceRewards(uint256 tokenId, uint256 rewardsAmount, uint256 remaining, address asset, bool takeFees) internal {
-        // send the zero balance fee to the treasury
-        if(takeFees) {
-            uint256 zeroBalanceFee = _payZeroBalanceFee(tokenId, rewardsAmount, asset);
-            require(remaining >= zeroBalanceFee, "Insufficient balance for zero balance fee");
-            remaining -= zeroBalanceFee;
-        }
-
+    function _processZeroBalanceRewards(uint256 tokenId, uint256 remaining, address asset) internal {
         // Only process if there's remaining amount
         if(remaining == 0) {
             return;

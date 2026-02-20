@@ -17,12 +17,12 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
-contract CollateralFacetTest is Test, Setup {
+contract CollateralFacetTest is Test, LocalSetup {
 
     // Origination fee is 0.8% (80/10000)
     function _withFee(uint256 amount) internal pure returns (uint256) {
@@ -167,10 +167,9 @@ contract CollateralFacetTest is Test, Setup {
     }
 
     function testRemoveCollateralWithMultipleTokens() public {
-        uint256 _tokenId2 = 84298;
-
-        vm.startPrank(IVotingEscrow(_ve).ownerOf(_tokenId2));
-        IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioAccount, _tokenId2);
+        // _tokenId2 and _tokenId2Owner are set up in LocalSetup
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
         vm.stopPrank();
 
         addCollateralViaMulticall(_tokenId);
@@ -325,18 +324,16 @@ contract CollateralFacetTest is Test, Setup {
 
     // Edge case: Adding and removing different collateral in same call when overcollateralized
     function testAddAndRemoveDifferentCollateralWhenOvercollateralized() public {
-        uint256 _tokenId2 = 84298;
-        
-        // Setup: Add two tokens as collateral and borrow
-        vm.startPrank(IVotingEscrow(_ve).ownerOf(_tokenId2));
-        IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioAccount, _tokenId2);
+        // _tokenId2 and _tokenId2Owner are set up in LocalSetup
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
         vm.stopPrank();
 
         addCollateralViaMulticall(_tokenId);
         addCollateralViaMulticall(_tokenId2);
 
         int128 lockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
-        uint256 borrowAmount = .52e6;
+        uint256 borrowAmount = 1e6;
         address loanContract = _portfolioAccountConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000;
@@ -489,11 +486,11 @@ contract CollateralFacetTest is Test, Setup {
     /// @dev The early return in _updateUndercollateralizedDebt (totalDebt <= maxLoanIgnoreSupply → 0)
     ///      ensures undercollateralizedDebt is zeroed regardless of operation order.
     function testRemoveCollateralAndPayOrderIndependent() public {
-        uint256 tokenId2 = 84298;
+        uint256 tokenId2 = _tokenId2;
 
         // Transfer token2 to portfolio account
-        vm.startPrank(IVotingEscrow(_ve).ownerOf(tokenId2));
-        IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(tokenId2), _portfolioAccount, tokenId2);
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, tokenId2);
         vm.stopPrank();
 
         // Add both tokens as collateral

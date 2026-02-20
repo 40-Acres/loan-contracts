@@ -2,22 +2,22 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Loan as LoanV2} from "../../../src/LoanV2.sol";
-import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {Loan as LoanV2} from "../../src/LoanV2.sol";
+import {ILoan} from "../../src/interfaces/ILoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
-import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
-import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
-import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
-import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
-import {Setup} from "../utils/Setup.sol";
-import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
-import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol";
-import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
-import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+import {IVotingEscrow} from "../../src/interfaces/IVotingEscrow.sol";
+import {PortfolioFactory} from "../../src/accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../src/accounts/PortfolioManager.sol";
+import {CollateralFacet} from "../../src/facets/account/collateral/CollateralFacet.sol";
+import {BaseLendingFacet} from "../../src/facets/account/lending/BaseLendingFacet.sol";
+import {PortfolioAccountConfig} from "../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {LoanConfig} from "../../src/facets/account/config/LoanConfig.sol";
+import {Setup} from "../portfolio_account/utils/Setup.sol";
+import {DeployPortfolioAccountConfig} from "../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployFacets} from "../../script/portfolio_account/DeployFacets.s.sol";
+import {FacetRegistry} from "../../src/accounts/FacetRegistry.sol";
+import {VotingConfig} from "../../src/facets/account/config/VotingConfig.sol";
+import {SwapConfig} from "../../src/facets/account/config/SwapConfig.sol";
 
 /**
  * @title MigrationWithUnpaidFeesTest

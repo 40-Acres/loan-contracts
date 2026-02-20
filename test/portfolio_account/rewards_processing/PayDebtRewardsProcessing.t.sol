@@ -3,9 +3,8 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {UserRewardsConfig} from "../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
@@ -33,7 +32,7 @@ import {Vault} from "../../../src/VaultV2.sol";
  * @dev Tests for the PayDebt rewards option in RewardsProcessingFacet
  * Tests the functionality that allows rewards from one portfolio to pay down debt on another portfolio
  */
-contract PayDebtRewardsProcessingTest is Test, Setup {
+contract PayDebtRewardsProcessingTest is Test, LocalSetup {
     RewardsProcessingFacet public rewardsProcessingFacet;
 
     // Second factory setup (complete with its own config, loan, vault)
@@ -48,7 +47,6 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
 
     address public rewardsToken;
     uint256 public rewardsAmount = 1000e6; // 1000 USDC
-    uint256 public _tokenId2 = 67859; // Second veNFT for portfolio 2
 
     function setUp() public override {
         super.setUp();
@@ -122,8 +120,8 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
         _portfolioAccount2 = _portfolioFactory2.createAccount(_user);
 
         // Transfer a veNFT to portfolio 2
-        vm.startPrank(IVotingEscrow(_ve).ownerOf(_tokenId2));
-        IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(_tokenId2), _portfolioAccount2, _tokenId2);
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount2, _tokenId2);
         vm.stopPrank();
     }
 
@@ -269,11 +267,7 @@ contract PayDebtRewardsProcessingTest is Test, Setup {
      * @dev Helper to mint USDC to an address
      */
     function mintUSDC(address to, uint256 amount) internal {
-        address minter = IUSDC(address(_usdc)).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(address(_usdc)).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(address(_usdc)).mint(to, amount);
+        deal(address(_usdc), to, amount);
     }
 
     /**

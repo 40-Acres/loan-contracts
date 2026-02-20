@@ -7,14 +7,14 @@ import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingF
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IPortfolioFactory} from "../../../src/accounts/IPortfolioFactory.sol";
 
-contract LendingFacetTest is Test, Setup {
+contract LendingFacetTest is Test, LocalSetup {
 
     // Origination fee is 0.8% (80/10000)
     function _withFee(uint256 amount) internal pure returns (uint256) {
@@ -325,11 +325,11 @@ contract LendingFacetTest is Test, Setup {
     }
 
     function testDebtTrackedAcrossMultipleTokens() public {
-        uint256 tokenId2 = 84298;
+        uint256 tokenId2 = _tokenId2;
         
         // Transfer second token to portfolio
-        vm.startPrank(IVotingEscrow(_ve).ownerOf(tokenId2));
-        IVotingEscrow(_ve).transferFrom(IVotingEscrow(_ve).ownerOf(tokenId2), _portfolioAccount, tokenId2);
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, tokenId2);
         vm.stopPrank();
         
         // Add both as collateral

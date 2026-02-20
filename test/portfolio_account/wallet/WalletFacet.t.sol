@@ -7,7 +7,7 @@ import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingF
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
@@ -17,7 +17,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-contract WalletFacetTest is Test, Setup {
+contract WalletFacetTest is Test, LocalSetup {
     WalletFacet public walletFacet;
     MockOdosRouterRL public mockRouter;
 

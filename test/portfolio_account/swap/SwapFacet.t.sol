@@ -3,14 +3,13 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {SwapFacet} from "../../../src/facets/account/swap/SwapFacet.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IUSDC} from "../../../src/interfaces/IUSDC.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 
-contract SwapFacetTest is Test, Setup {
+contract SwapFacetTest is Test, LocalSetup {
     SwapFacet public swapFacet;
     MockOdosRouterRL public mockRouter;
     
@@ -34,24 +33,10 @@ contract SwapFacetTest is Test, Setup {
         outputToken = address(_usdc);
         
         // Fund the portfolio account with input tokens (AERO)
-        // Try deal first, if it doesn't work, transfer from a known holder
         deal(inputToken, _portfolioAccount, inputAmount);
-        
-        // Verify balance and transfer from known holder if needed
-        if (IERC20(inputToken).balanceOf(_portfolioAccount) < inputAmount) {
-            // Transfer from a known AERO holder (similar to Aerodrome.t.sol)
-            address aeroHolder = 0x7269de76188E6597444D0859C4e5c336D3c39dDb;
-            vm.prank(aeroHolder);
-            IERC20(inputToken).transfer(_portfolioAccount, inputAmount);
-        }
-        
+
         // Fund the mock router with output tokens (USDC)
-        // For USDC, we need to mint it
-        address minter = IUSDC(outputToken).masterMinter();
-        vm.startPrank(minter);
-        IUSDC(outputToken).configureMinter(address(this), type(uint256).max);
-        vm.stopPrank();
-        IUSDC(outputToken).mint(address(mockRouter), outputAmount * 2); // Mint enough for the swap
+        deal(outputToken, address(mockRouter), outputAmount * 2);
     }
 
     function testSwap() public {

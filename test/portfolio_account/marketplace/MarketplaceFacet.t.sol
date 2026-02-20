@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
@@ -22,7 +22,7 @@ import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 
-contract MarketplaceFacetTest is Test, Setup {
+contract MarketplaceFacetTest is Test, LocalSetup {
     PortfolioMarketplace public portfolioMarketplace;
     PortfolioFactory public _walletFactory;
     FacetRegistry public _walletFacetRegistry;
@@ -654,12 +654,10 @@ contract MarketplaceFacetTest is Test, Setup {
         _loanConfig.setRewardsRate(20000); // 2%
         vm.stopPrank();
 
-        uint256 tokenId2 = 84298;
-        address token2Owner = IVotingEscrow(_ve).ownerOf(tokenId2);
-        vm.startPrank(token2Owner);
-        IVotingEscrow(_ve).transferFrom(token2Owner, _portfolioAccount, tokenId2);
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
         vm.stopPrank();
-        addCollateralViaMulticall(tokenId2);
+        addCollateralViaMulticall(_tokenId2);
 
         (, uint256 maxLoanBothTokens) = CollateralFacet(_portfolioAccount).getMaxLoan();
 
@@ -667,7 +665,7 @@ contract MarketplaceFacetTest is Test, Setup {
         address vault = ILoan(loanContract)._vault();
         deal(address(_usdc), vault, (maxLoanBothTokens * 10000) / 8000);
 
-        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId2);
         uint256 rewardsRate = _loanConfig.getRewardsRate();
         uint256 multiplier = _loanConfig.getMultiplier();
         uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
@@ -772,15 +770,13 @@ contract MarketplaceFacetTest is Test, Setup {
      */
     function testSaleTwoTokensOneRemainingCoversDebt() public {
         // Add second token to portfolio
-        uint256 tokenId2 = 84298;
-        address token2Owner = IVotingEscrow(_ve).ownerOf(tokenId2);
-        vm.startPrank(token2Owner);
-        IVotingEscrow(_ve).transferFrom(token2Owner, _portfolioAccount, tokenId2);
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
         vm.stopPrank();
-        addCollateralViaMulticall(tokenId2);
+        addCollateralViaMulticall(_tokenId2);
 
         // Borrow a moderate amount — should be covered by remaining token after sale
-        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId2);
         uint256 rewardsRate = _loanConfig.getRewardsRate();
         uint256 multiplier = _loanConfig.getMultiplier();
         uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;

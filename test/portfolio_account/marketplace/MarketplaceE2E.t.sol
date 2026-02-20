@@ -172,7 +172,7 @@ contract MarketplaceE2ETest is Test, Setup {
             bytes[] memory data = new bytes[](2);
             data[0] = abi.encodeWithSelector(
                 BaseLendingFacet.borrowTo.selector,
-                buyerWallet,    // send borrowed USDC to wallet portfolio
+                _walletFactory, // factory resolves to buyer's wallet portfolio via portfolioOf()
                 borrowAmount    // borrow enough to cover listing price after fee
             );
             data[1] = abi.encodeWithSelector(
@@ -275,7 +275,7 @@ contract MarketplaceE2ETest is Test, Setup {
             bytes[] memory data = new bytes[](4);
             data[0] = abi.encodeWithSelector(
                 BaseLendingFacet.borrowTo.selector,
-                buyerWallet,
+                _walletFactory,
                 borrowAmount
             );
             data[1] = abi.encodeWithSelector(

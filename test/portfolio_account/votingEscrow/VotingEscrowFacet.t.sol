@@ -5,13 +5,13 @@ import {Test, console} from "forge-std/Test.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 
-contract VotingEscrowFacetTest is Test, Setup {
+contract VotingEscrowFacetTest is Test, LocalSetup {
     
     // Helper function to create lock via PortfolioManager multicall and return the tokenId
     function createLockViaMulticall(uint256 amount) internal returns (uint256 tokenId) {

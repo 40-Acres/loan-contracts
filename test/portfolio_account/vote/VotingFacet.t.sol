@@ -14,10 +14,10 @@ import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol"
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
-import {Setup} from "../utils/Setup.sol";
+import {LocalSetup} from "../utils/LocalSetup.sol";
 import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
 
-contract VotingFacetTest is Test, Setup {
+contract VotingFacetTest is Test, LocalSetup {
     address[] public pools = [address(0x5a7B4970B2610aEe4776A6944d9F2171EE6060B0)];
     uint256[] public weights = [100e18];
     address public launchpadToken = address(0x9126236476eFBA9Ad8aB77855c60eB5BF37586Eb);
