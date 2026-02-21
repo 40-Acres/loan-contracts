@@ -51,10 +51,12 @@ contract ClaimingFacet is AccessControl {
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
         // do not claim launchpad token in this method
         address launchpadToken = UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId);
-        for(uint256 i = 0; i < tokens.length; i++) {
-            for(uint256 j = 0; j < tokens[i].length; j++) {
-                if(tokens[i][j] == launchpadToken) {
-                    revert InvalidClaim(tokens[i][j]);
+        if(launchpadToken != address(0) && UserClaimingConfig.getReceiveLaunchPadTokenForThisEpoch()) {
+            for(uint256 i = 0; i < tokens.length; i++) {
+                for(uint256 j = 0; j < tokens[i].length; j++) {
+                    if(tokens[i][j] == launchpadToken) {
+                        revert InvalidClaim(tokens[i][j]);
+                    }
                 }
             }
         }
@@ -74,6 +76,9 @@ contract ClaimingFacet is AccessControl {
         CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
     }
 
+    /*
+    @dev Claims launchpad token rewards, swaps to vault token if there is an active loan, and pays treasury/lenders.
+     */
     function claimLaunchpadToken(address[] calldata fees, address[][] calldata tokens, uint256 tokenId, SwapMod.RouteParams memory swapParams) virtual external onlyAuthorizedCaller(_portfolioFactory) {
         IERC20 launchpadToken = IERC20(UserClaimingConfig.getLaunchPadTokenForCurrentEpoch(tokenId));
         if(address(launchpadToken) == address(0)) {
@@ -136,5 +141,6 @@ contract ClaimingFacet is AccessControl {
         // send remaining launchpad token to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         launchpadToken.safeTransfer(portfolioOwner, launchpadToken.balanceOf(address(this)));
+        emit RewardsClaimed(tokenId);
     }
 }
