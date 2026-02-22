@@ -96,7 +96,7 @@ contract ClaimingFacet is AccessControl {
             }
         }
 
-        // only claim launchpad token if user wants to receive it directly
+        // keep token on contract if user does not want to receive launchpad token, will go through normal claiming process
         if(!UserClaimingConfig.getReceiveLaunchPadTokenForThisEpoch()) {
             return;
         }
