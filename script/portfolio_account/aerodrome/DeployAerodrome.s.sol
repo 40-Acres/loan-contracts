@@ -159,20 +159,22 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
 
         // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
     }
-    
+
     /**
      * @dev Helper function to register or replace a facet in the FacetRegistry
      * Since we're at script level during broadcast, calls will be from deployer
@@ -270,17 +272,18 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
         // // Deploy RewardsProcessingFacet
         // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsOption.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
+        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Deploy ClaimingFacet

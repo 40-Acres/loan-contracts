@@ -141,6 +141,5 @@ contract ClaimingFacet is AccessControl {
         // send remaining launchpad token to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         launchpadToken.safeTransfer(portfolioOwner, launchpadToken.balanceOf(address(this)));
-        emit RewardsClaimed(tokenId);
     }
 }

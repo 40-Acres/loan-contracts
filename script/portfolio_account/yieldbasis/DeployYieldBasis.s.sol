@@ -129,17 +129,19 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
 
         // Deploy YieldBasisRewardsProcessingFacet
         YieldBasisRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VE_YB, address(veYBAdapter), address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisRewardsProcessingFacet");
     }
 
@@ -279,17 +281,18 @@ contract YieldBasisRootUpgrade is PortfolioAccountConfigDeploy {
         // require(SWAP_CONFIG != address(0), "Set SWAP_CONFIG address");
         // require(VAULT != address(0), "Set VAULT address");
         // YieldBasisRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG, VE_YB, address(veYBAdapter), VAULT);
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](10);
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
         // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisRewardsProcessingFacet");
     }
 

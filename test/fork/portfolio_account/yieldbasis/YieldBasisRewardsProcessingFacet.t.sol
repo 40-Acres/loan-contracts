@@ -224,17 +224,18 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
             address(veYBAdapter),
             address(mockVault)
         );
-        bytes4[] memory rewardsSelectors = new bytes4[](10);
+        bytes4[] memory rewardsSelectors = new bytes4[](11);
         rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        rewardsSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        rewardsSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        rewardsSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        rewardsSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSelectors, "YieldBasisRewardsProcessingFacet");
 
         // Set authorized caller
@@ -274,13 +275,19 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     function _setRewardsOption(UserRewardsConfig.RewardsOption option, uint256 percentage) internal {
         vm.startPrank(user);
 
-        address[] memory factories = new address[](2);
+        address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
-        factories[1] = address(portfolioFactory);
 
-        bytes[] memory calldatas = new bytes[](2);
-        calldatas[0] = abi.encodeWithSelector(RewardsProcessingFacet.setRewardsOption.selector, option);
-        calldatas[1] = abi.encodeWithSelector(RewardsProcessingFacet.setRewardsOptionPercentage.selector, percentage);
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = UserRewardsConfig.DistributionEntry({
+            option: option,
+            percentage: percentage,
+            outputToken: address(0),
+            target: address(0)
+        });
+
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(RewardsProcessingFacet.setZeroBalanceDistribution.selector, entries);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -311,16 +318,15 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         assertEq(rewardsToken, USDC, "Rewards token should be USDC");
     }
 
-    function testSetRewardsOption() public {
+    function testSetZeroBalanceDistribution() public {
         _createLockForUser();
 
         _setRewardsOption(UserRewardsConfig.RewardsOption.IncreaseCollateral, 25);
 
-        UserRewardsConfig.RewardsOption option = RewardsProcessingFacet(portfolioAccount).getRewardsOption();
-        assertEq(uint256(option), uint256(UserRewardsConfig.RewardsOption.IncreaseCollateral), "Rewards option should be IncreaseCollateral");
-
-        uint256 percentage = RewardsProcessingFacet(portfolioAccount).getRewardsOptionPercentage();
-        assertEq(percentage, 25, "Rewards option percentage should be 25");
+        UserRewardsConfig.DistributionEntry[] memory entries = RewardsProcessingFacet(portfolioAccount).getZeroBalanceDistribution();
+        assertEq(entries.length, 1, "Should have 1 distribution entry");
+        assertEq(uint256(entries[0].option), uint256(UserRewardsConfig.RewardsOption.IncreaseCollateral), "Option should be IncreaseCollateral");
+        assertEq(entries[0].percentage, 25, "Percentage should be 25");
     }
 
     function testSetRecipient() public {
@@ -362,7 +368,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards as authorized caller
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
@@ -413,7 +419,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
@@ -462,7 +468,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,
@@ -511,7 +517,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards with gas reclamation
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         uint256 gasReclamation = 2 ether; // 2% of rewards
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
@@ -555,7 +561,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Try to reclaim 10% (should be capped at 5%)
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         uint256 gasReclamation = 10 ether;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
@@ -586,7 +592,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         deal(YB, portfolioAccount, 100 ether);
 
         // Try to process rewards as non-authorized caller
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(user);
         vm.expectRevert();
         RewardsProcessingFacet(portfolioAccount).processRewards(
@@ -597,13 +603,21 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         );
     }
 
-    function testSetRewardsOptionRevertsForNonOwner() public {
+    function testSetDistributionRevertsForNonOwner() public {
         _createLockForUser();
 
-        // Try to set rewards option as non-owner
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = UserRewardsConfig.DistributionEntry({
+            option: UserRewardsConfig.RewardsOption.IncreaseCollateral,
+            percentage: 25,
+            outputToken: address(0),
+            target: address(0)
+        });
+
+        // Try to set distribution as non-owner
         vm.prank(address(0xdead));
         vm.expectRevert();
-        RewardsProcessingFacet(portfolioAccount).setRewardsOption(UserRewardsConfig.RewardsOption.IncreaseCollateral);
+        RewardsProcessingFacet(portfolioAccount).setZeroBalanceDistribution(entries);
     }
 
     // ============ Edge Cases ============
@@ -614,7 +628,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Try to process zero rewards
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(authorizedCaller);
         vm.expectRevert();
         RewardsProcessingFacet(portfolioAccount).processRewards(
@@ -632,7 +646,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         // Don't deal any YB to portfolio account
         // Try to process rewards without sufficient balance
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(authorizedCaller);
         vm.expectRevert();
         RewardsProcessingFacet(portfolioAccount).processRewards(
@@ -672,7 +686,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         uint256 tokenId = veYB.tokenOfOwnerByIndex(portfolioAccount, 0);
 
         // Process rewards
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             tokenId,

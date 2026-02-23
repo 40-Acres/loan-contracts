@@ -165,14 +165,18 @@
         
 //         // Deploy RewardsProcessingFacet
 //         RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-//         bytes4[] memory rewardsProcessingSelectors = new bytes4[](7);
+//         bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
 //         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-//         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
-//         rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-//         rewardsProcessingSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-//         rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-//         rewardsProcessingSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-//         rewardsProcessingSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
+//         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+//         rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+//         rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+//         rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+//         rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+//         rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+//         rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+//         rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+//         rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+//         rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
 //         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 //     }
     

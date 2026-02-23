@@ -323,22 +323,19 @@ contract DynamicLocalSetup is Test {
             address(_portfolioFactory), address(_portfolioAccountConfig),
             address(_swapConfig), address(_ve), _vault
         );
-        bytes4[] memory rewardsSel = new bytes4[](15);
+        bytes4[] memory rewardsSel = new bytes4[](12);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsSel[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        rewardsSel[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        rewardsSel[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        rewardsSel[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsSel[5] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsSel[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        rewardsSel[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsSel[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsSel[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsSel[10] = RewardsProcessingFacet.setIncreaseCollateralPercentage.selector;
-        rewardsSel[11] = RewardsProcessingFacet.getIncreaseCollateralPercentage.selector;
-        rewardsSel[12] = RewardsProcessingFacet.setFinalRewardsOption.selector;
-        rewardsSel[13] = RewardsProcessingFacet.getFinalRewardsOption.selector;
-        rewardsSel[14] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsSel[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsSel[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSel[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsSel[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSel[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSel[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsSel[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsSel[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsSel[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsSel[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        rewardsSel[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
         _facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
 
         vm.stopPrank();

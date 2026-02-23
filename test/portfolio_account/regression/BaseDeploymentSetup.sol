@@ -298,17 +298,19 @@ abstract contract BaseDeploymentSetup is Test {
             address(portfolioFactory), address(portfolioAccountConfig),
             address(swapConfig), VOTING_ESCROW, address(vault)
         );
-        bytes4[] memory rewardsSel = new bytes4[](10);
+        bytes4[] memory rewardsSel = new bytes4[](12);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsSel[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        rewardsSel[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        rewardsSel[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        rewardsSel[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsSel[5] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsSel[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        rewardsSel[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsSel[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsSel[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSel[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsSel[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSel[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsSel[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSel[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSel[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsSel[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsSel[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsSel[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsSel[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        rewardsSel[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
     }
 

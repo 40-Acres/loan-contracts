@@ -308,12 +308,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
      */
     function setPayDebtOption(address recipient, uint256 percentage) internal {
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](4);
+        address[] memory portfolioFactories = new address[](3);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
         portfolioFactories[2] = address(_portfolioFactory);
-        portfolioFactories[3] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](4);
+        bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsToken.selector,
             rewardsToken
@@ -322,13 +321,17 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             RewardsProcessingFacet.setRecipient.selector,
             recipient
         );
+
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = UserRewardsConfig.DistributionEntry({
+            option: UserRewardsConfig.RewardsOption.PayDebt,
+            percentage: percentage,
+            outputToken: address(0),
+            target: recipient
+        });
         calldatas[2] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsOption.selector,
-            UserRewardsConfig.RewardsOption.PayDebt
-        );
-        calldatas[3] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
-            percentage
+            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
@@ -380,7 +383,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         vm.expectEmit(false, true, false, false);
         emit RewardsProcessingFacet.DebtPaid(0, _tokenId, 0, _portfolioAccount2, rewardsToken);
 
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
@@ -477,7 +480,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         // Note: We expect ZeroBalanceRewardsProcessed event instead of DebtPaid
         // because the pay() call will fail and the full amount will go to finalizeRewards
 
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
@@ -517,16 +520,15 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
      * @dev Test that PayDebt returns 0 when recipient is not a registered portfolio
      */
     function testPayDebtReturnsZeroWhenRecipientNotRegisteredPortfolio() public {
-        // Setup: Set recipient to a non-portfolio address
+        // Setup: Set recipient to a non-portfolio address as PayDebt target
         address nonPortfolioRecipient = address(0xDEAD);
 
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](4);
+        address[] memory portfolioFactories = new address[](3);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
         portfolioFactories[2] = address(_portfolioFactory);
-        portfolioFactories[3] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](4);
+        bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRewardsToken.selector,
             rewardsToken
@@ -535,13 +537,19 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             RewardsProcessingFacet.setRecipient.selector,
             nonPortfolioRecipient
         );
+
+        // PayDebt with target=address(0) means it falls back to _getRecipient()
+        // which is nonPortfolioRecipient (not a registered portfolio)
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = UserRewardsConfig.DistributionEntry({
+            option: UserRewardsConfig.RewardsOption.PayDebt,
+            percentage: 50,
+            outputToken: address(0),
+            target: address(0)
+        });
         calldatas[2] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsOption.selector,
-            UserRewardsConfig.RewardsOption.PayDebt
-        );
-        calldatas[3] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsOptionPercentage.selector,
-            50
+            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
@@ -562,7 +570,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Execute: Process rewards - should not revert
         vm.startPrank(_authorizedCaller);
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,
@@ -618,7 +626,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Execute: Process rewards
         vm.startPrank(_authorizedCaller);
-        SwapMod.RouteParams[3] memory noSwap;
+        SwapMod.RouteParams[4] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,

@@ -32,22 +32,19 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](15);
-        selectors[0] = RewardsProcessingFacet.setRewardsOption.selector;
-        selectors[1] = RewardsProcessingFacet.processRewards.selector;
-        selectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        selectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        selectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        selectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        selectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        selectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        selectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        selectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        selectors[10] = RewardsProcessingFacet.setIncreaseCollateralPercentage.selector;
-        selectors[11] = RewardsProcessingFacet.getIncreaseCollateralPercentage.selector;
-        selectors[12] = RewardsProcessingFacet.setFinalRewardsOption.selector;
-        selectors[13] = RewardsProcessingFacet.getFinalRewardsOption.selector;
-        selectors[14] = RewardsProcessingFacet.calculateRoutes.selector;
+        bytes4[] memory selectors = new bytes4[](12);
+        selectors[0] = RewardsProcessingFacet.processRewards.selector;
+        selectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        selectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        selectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        selectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        selectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        selectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        selectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        selectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        selectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        selectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        selectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
         return selectors;
     }
 }

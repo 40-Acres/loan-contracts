@@ -119,7 +119,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
     }
 
     function testRewardsProcessingFacetRegistration() public view {
-        _assertFacetRegistered(address(rewardsProcessingFacet), "RewardsProcessingFacet", 10);
+        _assertFacetRegistered(address(rewardsProcessingFacet), "RewardsProcessingFacet", 12);
     }
 
     // ─── Selector → facet routing ────────────────────────────────────
@@ -157,9 +157,9 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testRewardsProcessingSelectorsRouteCorrectly() public view {
         assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.processRewards.selector), address(rewardsProcessingFacet));
-        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setRewardsOption.selector), address(rewardsProcessingFacet));
-        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.getRewardsOption.selector), address(rewardsProcessingFacet));
         assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setRewardsToken.selector), address(rewardsProcessingFacet));
+        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setZeroBalanceDistribution.selector), address(rewardsProcessingFacet));
+        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setActiveBalanceDistribution.selector), address(rewardsProcessingFacet));
     }
 
     // ─── Registry version ────────────────────────────────────────────

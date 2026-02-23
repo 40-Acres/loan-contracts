@@ -214,17 +214,18 @@ contract YieldBasisDynamicFeesE2E is Test {
             address(veYBAdapter),
             address(vault)
         );
-        bytes4[] memory rewardsSelectors = new bytes4[](10);
+        bytes4[] memory rewardsSelectors = new bytes4[](11);
         rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsSelectors[1] = RewardsProcessingFacet.setRewardsOption.selector;
-        rewardsSelectors[2] = RewardsProcessingFacet.getRewardsOption.selector;
-        rewardsSelectors[3] = RewardsProcessingFacet.getRewardsOptionPercentage.selector;
-        rewardsSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsSelectors[5] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsSelectors[6] = RewardsProcessingFacet.setRewardsOptionPercentage.selector;
-        rewardsSelectors[7] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsSelectors[8] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsSelectors[9] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSelectors, "YieldBasisRewardsProcessingFacet");
 
         // Set authorized caller for rewards processing

@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
-import { LoanUtils } from "../../../LoanUtils.sol";
-import {ILoan} from "../../../interfaces/ILoan.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
-import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 
 /**
  * @title UserRewardsConfig
@@ -20,90 +15,119 @@ library UserRewardsConfig {
         PayDebt
     }
 
+    struct DistributionEntry {
+        RewardsOption option;
+        uint256 percentage;    // % of post-fees amount (0-100)
+        address outputToken;   // For PayToRecipient: desired token (address(0) = rewardsToken)
+        address target;        // PayToRecipient: recipient. PayDebt: portfolio. InvestToVault: vault. (address(0) = defaults)
+    }
+
     struct UserRewardsConfigData {
         address rewardsToken;
         address recipient;
-        RewardsOption rewardsOption;
-        uint256 rewardsOptionPercentage;
         address vaultForInvesting;
-        uint256 increaseCollateralPercentage;
-        RewardsOption finalRewardsOption;
+        // Zero balance distribution
+        DistributionEntry[4] zeroBalanceDistribution;
+        uint8 zeroBalanceDistributionCount;    // 0-4 active entries
+        // Active balance distribution (single entry)
+        DistributionEntry activeBalanceDistribution;
+        bool hasActiveBalanceDistribution;
     }
 
-    function _getUserRewardsConfigData() internal pure returns (UserRewardsConfigData storage collateralManagerData) {
+    function _getUserRewardsConfigData() internal pure returns (UserRewardsConfigData storage data) {
         bytes32 position = keccak256("storage.UserRewardsConfig");
         assembly {
-            collateralManagerData.slot := position
+            data.slot := position
         }
     }
 
-    function setRewardsOption(RewardsOption rewardsOption) external {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.rewardsOption = rewardsOption;
-    }
-
-    function setRewardsOptionPercentage(uint256 rewardsOptionPercentage) external {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.rewardsOptionPercentage = rewardsOptionPercentage;
-    }
-
-    function getRewardsOption() external view returns (RewardsOption) {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.rewardsOption;
-    }
-
-    function getRewardsOptionPercentage() external view returns (uint256) {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.rewardsOptionPercentage;
-    }
-
     function setRewardsToken(address rewardsToken) external {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.rewardsToken = rewardsToken;
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        data.rewardsToken = rewardsToken;
     }
 
     function getRewardsToken() external view returns (address) {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.rewardsToken;
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.rewardsToken;
     }
 
     function setRecipient(address recipient) external {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.recipient = recipient;
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        data.recipient = recipient;
     }
 
     function getRecipient() external view returns (address) {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.recipient;
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.recipient;
     }
 
     function setVaultForInvesting(address vault) external {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        collateralManagerData.vaultForInvesting = vault;
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        data.vaultForInvesting = vault;
     }
 
     function getVaultForInvesting() external view returns (address) {
-        UserRewardsConfigData storage collateralManagerData = _getUserRewardsConfigData();
-        return collateralManagerData.vaultForInvesting;
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.vaultForInvesting;
     }
 
-    function setIncreaseCollateralPercentage(uint256 percentage) external {
+    function setZeroBalanceDistribution(DistributionEntry[] calldata entries) external {
         UserRewardsConfigData storage data = _getUserRewardsConfigData();
-        data.increaseCollateralPercentage = percentage;
+        require(entries.length <= 4, "Max 4 distribution entries");
+        // Clear old entries before setting new ones
+        for (uint8 i = 0; i < data.zeroBalanceDistributionCount; i++) {
+            delete data.zeroBalanceDistribution[i];
+        }
+        uint256 totalPercentage;
+        for (uint256 i = 0; i < entries.length; i++) {
+            require(entries[i].percentage >= 20, "Entry percentage must be >= 20");
+            totalPercentage += entries[i].percentage;
+            data.zeroBalanceDistribution[i] = entries[i];
+        }
+        require(totalPercentage <= 100, "Total percentage exceeds 100%");
+        data.zeroBalanceDistributionCount = uint8(entries.length);
     }
 
-    function getIncreaseCollateralPercentage() external view returns (uint256) {
+    function getZeroBalanceDistributionEntry(uint8 index) external view returns (DistributionEntry memory) {
         UserRewardsConfigData storage data = _getUserRewardsConfigData();
-        return data.increaseCollateralPercentage;
+        require(index < data.zeroBalanceDistributionCount, "Index out of bounds");
+        return data.zeroBalanceDistribution[index];
     }
 
-    function setFinalRewardsOption(RewardsOption rewardsOption) external {
+    function getZeroBalanceDistributionCount() external view returns (uint8) {
         UserRewardsConfigData storage data = _getUserRewardsConfigData();
-        data.finalRewardsOption = rewardsOption;
+        return data.zeroBalanceDistributionCount;
     }
 
-    function getFinalRewardsOption() external view returns (RewardsOption) {
+    function clearZeroBalanceDistribution() external {
         UserRewardsConfigData storage data = _getUserRewardsConfigData();
-        return data.finalRewardsOption;
+        for (uint8 i = 0; i < data.zeroBalanceDistributionCount; i++) {
+            delete data.zeroBalanceDistribution[i];
+        }
+        data.zeroBalanceDistributionCount = 0;
+    }
+
+    function setActiveBalanceDistribution(DistributionEntry calldata entry) external {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        require(entry.percentage > 0, "Entry percentage must be > 0");
+        require(entry.percentage <= 25, "Percentage exceeds 25%");
+        data.activeBalanceDistribution = entry;
+        data.hasActiveBalanceDistribution = true;
+    }
+
+    function getActiveBalanceDistribution() external view returns (DistributionEntry memory) {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.activeBalanceDistribution;
+    }
+
+    function hasActiveBalanceDistribution() external view returns (bool) {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        return data.hasActiveBalanceDistribution;
+    }
+
+    function clearActiveBalanceDistribution() external {
+        UserRewardsConfigData storage data = _getUserRewardsConfigData();
+        delete data.activeBalanceDistribution;
+        data.hasActiveBalanceDistribution = false;
     }
 }
