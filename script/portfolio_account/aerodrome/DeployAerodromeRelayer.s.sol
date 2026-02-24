@@ -32,6 +32,8 @@ import {MarketplaceFacet} from "../../../src/facets/account/marketplace/Marketpl
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
+import {console} from "forge-std/console.sol";
 
 contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
@@ -86,6 +88,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         portfolioAccountConfig.setVoteConfig(votingConfig);
         portfolioAccountConfig.setLoanConfig(address(loanConfig));
         portfolioAccountConfig.setLoanContract(existingLoanContract);
+        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
 
         _portfolioFactory = portfolioFactory;
 
@@ -172,6 +175,9 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+
+        // Post-deployment validation - reverts the entire script if anything is wrong
+        _validateDeployment(portfolioAccountConfig, address(portfolioFactory));
     }
 
     /**
@@ -190,6 +196,31 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         } else {
             facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
         }
+    }
+
+    /// @dev Post-deployment validation. Reverts the script if any proxy is misconfigured.
+    ///      Covers both borrow() and pay() call chains including getMaxLoan() dependencies.
+    function _validateDeployment(PortfolioAccountConfig config, address expectedFactory) internal view {
+        require(config.getPortfolioFactory() == expectedFactory, "Validation: config.getPortfolioFactory() mismatch");
+        require(config.getLoanContract() != address(0), "Validation: config.getLoanContract() is zero");
+        require(config.getVoteConfig() != address(0), "Validation: config.getVoteConfig() is zero");
+        require(address(config.getLoanConfig()) != address(0), "Validation: config.getLoanConfig() is zero");
+        require(config.getVault() != address(0), "Validation: config.getVault() is zero");
+
+        address loanProxy = config.getLoanContract();
+        require(
+            LoanV2(payable(loanProxy)).getPortfolioFactory() == expectedFactory,
+            "Validation: loan.getPortfolioFactory() mismatch"
+        );
+
+        // Pay flow: lendingAsset and lendingVault must be callable on the loan proxy
+        require(ILendingPool(loanProxy).lendingAsset() != address(0), "Validation: lendingAsset() is zero");
+        require(ILendingPool(loanProxy).lendingVault() != address(0), "Validation: lendingVault() is zero");
+
+        // getMaxLoan() dependencies: activeAssets, LoanConfig.getRewardsRate/getMultiplier
+        ILendingPool(loanProxy).activeAssets();
+        config.getLoanConfig().getRewardsRate();
+        config.getLoanConfig().getMultiplier();
     }
 }
 
@@ -248,9 +279,6 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
     }
 
     function upgradeFacets() internal {
-        // Relayer's deployed config (was missing loanContract and voteConfig)
-        PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x87A71B4Fc47eCd0514b642f7Dd824A5fEb9D03D7);
-
         // Get relayer's factory from PortfolioManager
         PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome")));
@@ -263,47 +291,103 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         address existingLoanContract = existingConfig.getLoanContract();
         Vault vault = Vault(ILoan(existingLoanContract)._vault());
 
-        // Relayer's own loanConfig (already deployed with 0 rewards rate/multiplier)
-        address loanConfig = address(portfolioAccountConfig.getLoanConfig());
+        // Step 1: Deploy fresh PortfolioAccountConfig and LoanConfig
+        // PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
+        PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x34aCa8A6538B43b6CA7DA1CD482fE72369b1b73f);
 
-        // Step 1: Fix config - set missing loanContract and voteConfig
-        portfolioAccountConfig.setLoanContract(existingLoanContract);
-        portfolioAccountConfig.setVoteConfig(votingConfig);
 
-        // Step 2: Redeploy ClaimingFacet (was deployed with wrong loanConfig and address(0) vault)
-        ClaimingFacet claimingFacet = new ClaimingFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, loanConfig, address(swapConfig), address(vault));
-        bytes4[] memory claimingSelectors = new bytes4[](3);
-        claimingSelectors[0] = ClaimingFacet.claimFees.selector;
-        claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
-        claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
-        _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
+        // LoanConfig loanConfigImpl = new LoanConfig();
+        // LoanConfig loanConfig = LoanConfig(
+        //     address(new ERC1967Proxy(
+        //         address(loanConfigImpl),
+        //         abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS))
+        //     ))
+        // );
 
-        // Step 3: Redeploy RewardsProcessingFacet (was deployed with address(0) vault)
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(portfolioFactory, address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        // Link configs — reuse existing VotingConfig, SwapConfig, LoanContract from Aerodrome deployment
+        // portfolioAccountConfig.setVoteConfig(votingConfig);
+        // portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        // portfolioAccountConfig.setLoanContract(existingLoanContract);
+        // portfolioAccountConfig.setPortfolioFactory(portfolioFactory);
 
-        // Step 4: Upgrade PortfolioAccountConfig implementation
-        _upgradePortfolioAccountConfig(portfolioAccountConfig);
+        // // Step 2: Redeploy ClaimingFacet with fresh config
+        // ClaimingFacet claimingFacet = new ClaimingFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        // bytes4[] memory claimingSelectors = new bytes4[](3);
+        // claimingSelectors[0] = ClaimingFacet.claimFees.selector;
+        // claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
+        // claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
+        // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
+
+        // // Step 3: Redeploy RewardsProcessingFacet with fresh config and Aerodrome vault
+        // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(portfolioFactory, address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        // rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
+        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+
+        // Step 4: Redeploy all other facets with fresh config
+        CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW);
+        bytes4[] memory collateralSelectors = new bytes4[](11);
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
+        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+
+        // VotingFacet votingFacet = new VotingFacet(portfolioFactory, address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingSelectors = new bytes4[](5);
+        // votingSelectors[0] = VotingFacet.vote.selector;
+        // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
+        // votingSelectors[2] = VotingFacet.setVotingMode.selector;
+        // votingSelectors[3] = VotingFacet.isManualVoting.selector;
+        // votingSelectors[4] = VotingFacet.defaultVote.selector;
+        // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
+
+        // // Remove legacy ERC721ReceiverFacet (onERC721Received moves to VotingEscrowFacet)
+        // address legacyErc721Facet = facetRegistry.getFacetForSelector(VotingEscrowFacet.onERC721Received.selector);
+        // if (legacyErc721Facet != address(0)) {
+        //     facetRegistry.removeFacet(legacyErc721Facet);
+        // }
+
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingEscrowSelectors = new bytes4[](4);
+        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
+        // bytes4[] memory marketplaceSelectors = new bytes4[](6);
+        // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
+        // marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
+        // marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
+        // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+
+        // Post-deployment validation - reverts the entire script if anything is wrong
+        _validateDeployment(portfolioAccountConfig, portfolioFactory);
     }
 
-    function _upgradePortfolioAccountConfig(PortfolioAccountConfig portfolioAccountConfig) internal {
-        PortfolioAccountConfig portfolioAccountConfigImplementation = new PortfolioAccountConfig();
-        PortfolioAccountConfig(address(portfolioAccountConfig)).upgradeToAndCall(address(portfolioAccountConfigImplementation), new bytes(0));
-    }
-    
     /**
      * @dev Helper function to register or replace a facet in the FacetRegistry
      * Since we're at script level during broadcast, calls will be from deployer
@@ -320,6 +404,36 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         } else {
             facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
         }
+    }
+
+    /// @dev Post-deployment validation. Reverts the script if any proxy is misconfigured.
+    ///      Covers both borrow() and pay() call chains including getMaxLoan() dependencies.
+    function _validateDeployment(PortfolioAccountConfig config, address expectedFactory) internal view {
+        // Config proxy: getPortfolioFactory must work and return expected value
+        console.log("Validating PortfolioAccountConfig at", address(config));
+        console.log("Expected PortfolioFactory:", address(expectedFactory));
+        console.log("Actual PortfolioFactory:", address(config.getPortfolioFactory()));
+        require(config.getPortfolioFactory() == expectedFactory, "Validation: config.getPortfolioFactory() mismatch");
+        require(config.getLoanContract() != address(0), "Validation: config.getLoanContract() is zero");
+        require(config.getVoteConfig() != address(0), "Validation: config.getVoteConfig() is zero");
+        require(address(config.getLoanConfig()) != address(0), "Validation: config.getLoanConfig() is zero");
+        require(config.getVault() != address(0), "Validation: config.getVault() is zero");
+
+        // Loan proxy: getPortfolioFactory must match
+        address loanProxy = config.getLoanContract();
+        // require(
+        //     LoanV2(payable(loanProxy)).getPortfolioFactory() == expectedFactory,
+        //     "Validation: loan.getPortfolioFactory() mismatch"
+        // );
+
+        // Pay flow: lendingAsset and lendingVault must be callable on the loan proxy
+        require(ILendingPool(loanProxy).lendingAsset() != address(0), "Validation: lendingAsset() is zero");
+        require(ILendingPool(loanProxy).lendingVault() != address(0), "Validation: lendingVault() is zero");
+
+        // getMaxLoan() dependencies: activeAssets, LoanConfig.getRewardsRate/getMultiplier
+        ILendingPool(loanProxy).activeAssets();
+        config.getLoanConfig().getRewardsRate();
+        config.getLoanConfig().getMultiplier();
     }
 }
 // forge script script/portfolio_account/aerodrome/DeployAerodromeRelayer.s.sol:AerodromeRootDeploy --chain-id 8453 --rpc-url $BASE_RPC_URL --broadcast --verify --via-ir

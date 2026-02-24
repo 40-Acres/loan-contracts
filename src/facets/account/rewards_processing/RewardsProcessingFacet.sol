@@ -304,17 +304,15 @@ contract RewardsProcessingFacet is AccessControl {
         return asset == vaultAsset ? amountToDeposit : optionAmount;
     }
 
-    function _payDebtToTarget(uint256 tokenId, uint256 amountToPay, address asset, address targetPortfolio) internal returns (uint256 amountPaid) {
-        address target = targetPortfolio != address(0) ? targetPortfolio : _getRecipient();
-
-        IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
-        if (!portfolioManager.isPortfolioRegistered(target)) {
+    function _payDebtToTarget(uint256 tokenId, uint256 amountToPay, address asset, address portfolioFactory) internal returns (uint256 amountPaid) {
+        if (portfolioFactory == address(0)) {
             return 0;
         }
-        address targetFactory = portfolioManager.getFactoryForPortfolio(target);
-        address targetOwner = PortfolioFactory(targetFactory).ownerOf(target);
+
         address thisOwner = _portfolioFactory.ownerOf(address(this));
-        if (targetOwner != thisOwner) {
+        address target = PortfolioFactory(portfolioFactory).portfolioOf(thisOwner);
+
+        if (target == address(0)) {
             return 0;
         }
 
@@ -348,10 +346,9 @@ contract RewardsProcessingFacet is AccessControl {
         address thisOwner = _portfolioFactory.ownerOf(address(this));
         for (uint256 i = 0; i < entries.length; i++) {
             if (entries[i].option == UserRewardsConfig.RewardsOption.PayDebt && entries[i].target != address(0)) {
-                require(portfolioManager.isPortfolioRegistered(entries[i].target), "PayDebt target must be registered portfolio");
-                address targetFactory = portfolioManager.getFactoryForPortfolio(entries[i].target);
-                address targetOwner = PortfolioFactory(targetFactory).ownerOf(entries[i].target);
-                require(targetOwner == thisOwner, "PayDebt target must be owned by same user");
+                require(portfolioManager.isRegisteredFactory(entries[i].target), "PayDebt target must be registered factory");
+                address targetPortfolio = PortfolioFactory(entries[i].target).portfolioOf(thisOwner);
+                require(targetPortfolio != address(0), "PayDebt target factory must have portfolio for owner");
             }
         }
         UserRewardsConfig.setZeroBalanceDistribution(entries);
@@ -373,10 +370,9 @@ contract RewardsProcessingFacet is AccessControl {
         if (entry.option == UserRewardsConfig.RewardsOption.PayDebt && entry.target != address(0)) {
             IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
             address thisOwner = _portfolioFactory.ownerOf(address(this));
-            require(portfolioManager.isPortfolioRegistered(entry.target), "PayDebt target must be registered portfolio");
-            address targetFactory = portfolioManager.getFactoryForPortfolio(entry.target);
-            address targetOwner = PortfolioFactory(targetFactory).ownerOf(entry.target);
-            require(targetOwner == thisOwner, "PayDebt target must be owned by same user");
+            require(portfolioManager.isRegisteredFactory(entry.target), "PayDebt target must be registered factory");
+            address targetPortfolio = PortfolioFactory(entry.target).portfolioOf(thisOwner);
+            require(targetPortfolio != address(0), "PayDebt target factory must have portfolio for owner");
         }
         UserRewardsConfig.setActiveBalanceDistribution(entry);
         emit ActiveBalanceDistributionSet(1, _portfolioFactory.ownerOf(address(this)));

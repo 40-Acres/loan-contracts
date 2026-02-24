@@ -56,7 +56,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
         require(tokenOwner == portfolioOwner || tokenOwner == address(this), NotOwnerOfToken());
         if(tokenOwner == portfolioOwner) {
             // if we have to transfer, transfer from portfolio owner to this portfolio account
-            IVotingEscrow(address(_votingEscrow)).transferFrom(portfolioOwner, address(this), tokenId);
+            IVotingEscrow(address(_votingEscrow)).safeTransferFrom(portfolioOwner, address(this), tokenId);
         }
         // add the collateral to the collateral manager
         _addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
@@ -80,7 +80,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
-        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), portfolioOwner, tokenId);
+        IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), portfolioOwner, tokenId);
     }
 
     function removeCollateralTo(uint256 tokenId, address targetPortfolioFactory) public onlyPortfolioManagerMulticall(_portfolioFactory) {
@@ -103,7 +103,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
         }
 
         _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
-        IVotingEscrow(address(_votingEscrow)).transferFrom(address(this), toPortfolio, tokenId);
+        IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), toPortfolio, tokenId);
     }
 
     function getMaxLoan() public view returns (uint256, uint256) {

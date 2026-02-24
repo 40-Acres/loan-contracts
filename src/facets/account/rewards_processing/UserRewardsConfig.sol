@@ -19,7 +19,7 @@ library UserRewardsConfig {
         RewardsOption option;
         uint256 percentage;    // % of post-fees amount (0-100)
         address outputToken;   // For PayToRecipient: desired token (address(0) = rewardsToken)
-        address target;        // PayToRecipient: recipient. PayDebt: portfolio. InvestToVault: vault. (address(0) = defaults)
+        address target;        // PayToRecipient: recipient. PayDebt: portfolioFactory. InvestToVault: vault. (address(0) = defaults)
     }
 
     struct UserRewardsConfigData {

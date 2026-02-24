@@ -305,8 +305,10 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
     /**
      * @dev Helper to configure PayDebt option on portfolio 1
+     * @param targetFactory The factory address whose portfolio (owned by same user) will receive debt payment
+     * @param percentage Percentage of rewards to pay debt
      */
-    function setPayDebtOption(address recipient, uint256 percentage) internal {
+    function setPayDebtOption(address targetFactory, uint256 percentage) internal {
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](3);
         portfolioFactories[0] = address(_portfolioFactory);
@@ -319,7 +321,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         );
         calldatas[1] = abi.encodeWithSelector(
             RewardsProcessingFacet.setRecipient.selector,
-            recipient
+            PortfolioFactory(targetFactory).portfolioOf(_user)
         );
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
@@ -327,7 +329,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             option: UserRewardsConfig.RewardsOption.PayDebt,
             percentage: percentage,
             outputToken: address(0),
-            target: recipient
+            target: targetFactory
         });
         calldatas[2] = abi.encodeWithSelector(
             RewardsProcessingFacet.setZeroBalanceDistribution.selector,
@@ -356,9 +358,9 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         uint256 debtBefore = CollateralFacet(_portfolioAccount2).getTotalDebt();
         assertGt(debtBefore, 0, "Portfolio 2 should have debt");
 
-        // Setup: Configure PayDebt option on portfolio 1
+        // Setup: Configure PayDebt option on portfolio 1 (target is factory 2)
         uint256 payDebtPercentage = 100; // 100% of rewards to pay debt
-        setPayDebtOption(_portfolioAccount2, payDebtPercentage);
+        setPayDebtOption(address(_portfolioFactory2), payDebtPercentage);
 
         // Setup: Fund portfolio 1 with rewards
         setupRewardsOnPortfolio1(rewardsAmount);
@@ -456,9 +458,9 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             "Portfolio 2 should be registered"
         );
 
-        // Setup: Configure PayDebt option on portfolio 1 (source) with 50% to pay debt
+        // Setup: Configure PayDebt option on portfolio 1 (source) with 50% to pay debt (target is factory 2)
         uint256 payDebtPercentage = 50;
-        setPayDebtOption(_portfolioAccount2, payDebtPercentage);
+        setPayDebtOption(address(_portfolioFactory2), payDebtPercentage);
 
         // Setup: Fund portfolio 1 with rewards
         setupRewardsOnPortfolio1(rewardsAmount);
@@ -517,10 +519,10 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
     }
 
     /**
-     * @dev Test that PayDebt returns 0 when recipient is not a registered portfolio
+     * @dev Test that PayDebt returns 0 when target factory is address(0)
      */
-    function testPayDebtReturnsZeroWhenRecipientNotRegisteredPortfolio() public {
-        // Setup: Set recipient to a non-portfolio address as PayDebt target
+    function testPayDebtReturnsZeroWhenTargetFactoryIsZero() public {
+        // Setup: Set recipient to a non-portfolio address
         address nonPortfolioRecipient = address(0xDEAD);
 
         vm.startPrank(_user);
@@ -538,8 +540,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             nonPortfolioRecipient
         );
 
-        // PayDebt with target=address(0) means it falls back to _getRecipient()
-        // which is nonPortfolioRecipient (not a registered portfolio)
+        // PayDebt with target=address(0) means no factory → _payDebtToTarget returns 0
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
             option: UserRewardsConfig.RewardsOption.PayDebt,
@@ -609,8 +610,8 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         assertGt(debtBefore, 0, "Portfolio 2 should have debt");
         assertLt(debtBefore, rewardsAmount, "Debt should be less than rewards for this test");
 
-        // Setup: Configure PayDebt option on portfolio 1
-        setPayDebtOption(_portfolioAccount2, 100);
+        // Setup: Configure PayDebt option on portfolio 1 (target is factory 2)
+        setPayDebtOption(address(_portfolioFactory2), 100);
 
         // Setup: Fund portfolio 1 with rewards
         setupRewardsOnPortfolio1(rewardsAmount);

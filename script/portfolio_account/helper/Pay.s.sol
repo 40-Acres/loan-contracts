@@ -55,6 +55,14 @@ contract Pay is Script {
         uint256 currentDebt = CollateralFacet(portfolioAddress).getTotalDebt();
         console.log("Current debt:", currentDebt);
 
+        uint256 balance = IERC20(USDC).balanceOf(owner);
+        if(amount > balance) {
+            amount = balance; // Pay as much as possible
+        }
+        if(amount == 0) {
+            console.log("No USDC balance to pay");
+            return;
+        }
         // Approve portfolio to spend USDC from owner
         IERC20(USDC).approve(portfolioAddress, amount);
 

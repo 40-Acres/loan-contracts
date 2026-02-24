@@ -52,8 +52,9 @@ contract AddCollateral is Script {
             portfolioAddress = factory.createAccount(owner);
         }
 
-        // approve portfolio address to transfer the token
-        IVotingEscrow(0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4).approve(portfolioAddress, tokenId);
+        // Get VE address from the registered collateral facet (works for any FACTORY_SALT)
+        address ve = BaseCollateralFacet(facet).getCollateralToken();
+        // IVotingEscrow(ve).approve(portfolioAddress, tokenId);
 
         // Use factory address for multicall
         address[] memory factories = new address[](1);
