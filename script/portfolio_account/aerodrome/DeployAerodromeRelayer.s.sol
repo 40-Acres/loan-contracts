@@ -271,6 +271,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO
     address public constant VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5; // Aerodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // Aerodrome RewardsDistributor
+    address public constant MARKETPLACE = 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8;
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -294,6 +295,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // Step 1: Deploy fresh PortfolioAccountConfig and LoanConfig
         // PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
         PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x34aCa8A6538B43b6CA7DA1CD482fE72369b1b73f);
+        PortfolioMarketplace portfolioMarketplace = PortfolioMarketplace(MARKETPLACE);
 
 
         // LoanConfig loanConfigImpl = new LoanConfig();
@@ -336,20 +338,20 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Step 4: Redeploy all other facets with fresh config
-        CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](11);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW);
+        // bytes4[] memory collateralSelectors = new bytes4[](11);
+        // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        // collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        // collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        // collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        // collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        // collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        // collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        // collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        // collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
+        // collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
+        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // VotingFacet votingFacet = new VotingFacet(portfolioFactory, address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
         // bytes4[] memory votingSelectors = new bytes4[](5);
@@ -374,15 +376,15 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
-        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
-        // bytes4[] memory marketplaceSelectors = new bytes4[](6);
-        // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
-        // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
-        // marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
-        // marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
-        // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
-        // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
-        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
+        bytes4[] memory marketplaceSelectors = new bytes4[](6);
+        marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
         _validateDeployment(portfolioAccountConfig, portfolioFactory);

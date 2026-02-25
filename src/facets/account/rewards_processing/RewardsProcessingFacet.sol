@@ -309,8 +309,8 @@ contract RewardsProcessingFacet is AccessControl {
             return 0;
         }
 
-        address thisOwner = _portfolioFactory.ownerOf(address(this));
-        address target = PortfolioFactory(portfolioFactory).portfolioOf(thisOwner);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        address target = PortfolioFactory(portfolioFactory).portfolioOf(owner);
 
         if (target == address(0)) {
             return 0;

@@ -244,7 +244,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
     address public constant VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5; // Aerodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // Aerodrome RewardsDistributor
     bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
-    address public constant MARKETPLACE = 0x3938F063e3c8699EeB7D847915dF093Ea304a0F1; // placeholder, marketplace will
+    address public constant MARKETPLACE = 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8;
     
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
@@ -257,7 +257,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
     }
 
     function upgradeFacets() internal {
-        // PortfolioManager portfolioManager = PortfeolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+        PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
         
         
         PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8);
@@ -273,6 +273,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         Vault vault = Vault(ILoan(portfolioAccountConfig.getLoanContract())._vault());
 
 
+        // portfolioManager.setAuthorizedCaller(0x250600a035d14e0b079d9efa625393e7Bfe83265, true);
         // // Deploy RewardsProcessingFacet
         // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
         // bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
@@ -343,20 +344,20 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](11);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // bytes4[] memory collateralSelectors = new bytes4[](11);
+        // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        // collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        // collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
+        // collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
+        // collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
+        // collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
+        // collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        // collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        // collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
+        // collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
+        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
 
         // // // Upgrade Loan Contract
@@ -366,7 +367,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _upgradePortfolioAccountConfig(portfolioAccountConfig);
 
         // Post-upgrade validation - reverts the entire script if anything is wrong
-        _validateDeployment(portfolioAccountConfig, address(_portfolioFactory));
+        // _validateDeployment(portfolioAccountConfig, address(_portfolioFactory));
     }
 
 
