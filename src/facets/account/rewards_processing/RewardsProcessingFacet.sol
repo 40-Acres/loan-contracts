@@ -439,7 +439,7 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _payZeroBalanceFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
-        IERC20(asset).safeTransfer(_portfolioAccountConfig.getLoanContract(), zeroBalanceFee);
+        IERC20(asset).safeTransfer(_portfolioAccountConfig.owner(), zeroBalanceFee);
         emit ZeroBalanceFeePaid(_currentEpochStart(), tokenId, zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return zeroBalanceFee;
     }

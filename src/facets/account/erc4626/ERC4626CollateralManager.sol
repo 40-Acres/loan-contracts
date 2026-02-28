@@ -203,19 +203,22 @@ library ERC4626CollateralManager {
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
 
-        if (data.overSuppliedVaultDebt > 0) {
-            data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > balancePayment ? balancePayment : data.overSuppliedVaultDebt;
-        }
-
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
         uint256 feesToPay = data.unpaidFees > balancePayment ? balancePayment : data.unpaidFees;
 
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
-        lendingPool.payFromPortfolio(balancePayment, feesToPay);
+        uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, feesToPay);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
 
-        data.debt -= (balancePayment - feesToPay);
-        data.unpaidFees -= feesToPay;
+        uint256 principalRepaid = actualPaid > feesToPay ? actualPaid - feesToPay : 0;
+        uint256 actualFeesPaid = actualPaid - principalRepaid;
+        data.debt -= principalRepaid;
+        data.unpaidFees -= actualFeesPaid;
+        excess = amount - actualPaid;
+
+        if (data.overSuppliedVaultDebt > 0) {
+            data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > principalRepaid ? principalRepaid : data.overSuppliedVaultDebt;
+        }
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
         _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
@@ -343,42 +346,24 @@ library ERC4626CollateralManager {
     }
 
     /**
-     * @dev Transfer debt away without payment
-     */
-    function transferDebtAway(address portfolioAccountConfig, address vault, uint256 amount, uint256 unpaidFees) external {
-        ERC4626CollateralData storage data = _getStorage();
-
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
-        uint256 debtToTransfer = amount > data.debt ? data.debt : amount;
-
-        if (debtToTransfer == 0) {
-            return;
-        }
-
-        uint256 feesToTransfer = unpaidFees > data.unpaidFees
-            ? data.unpaidFees
-            : unpaidFees;
-        data.unpaidFees -= feesToTransfer;
-
-        data.debt -= debtToTransfer;
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
-        _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
-    }
-
-    /**
      * @dev Remove shares for yield claiming without affecting depositedAssetValue
      * Used by ERC4626ClaimingFacet when harvesting yield
      * @param vault The ERC4626 vault address
      * @param shares The shares to remove (representing yield)
      */
-    function removeSharesForYield(address vault, uint256 shares) external {
+    function removeSharesForYield(address portfolioAccountConfig, address vault, uint256 shares) external {
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient shares");
+
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
 
         uint256 remainingShares = data.shares - shares;
         uint256 remainingValue = IERC4626(vault).convertToAssets(remainingShares);
         require(remainingValue >= data.depositedAssetValue, "Would remove principal");
 
         data.shares = remainingShares;
+
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 }

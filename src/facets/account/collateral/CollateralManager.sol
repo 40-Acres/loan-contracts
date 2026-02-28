@@ -70,6 +70,10 @@ library CollateralManager {
     function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         if(collateralManagerData.lockedCollaterals[tokenId] != 0) return;
+        // Enforce permanent lock on migrated tokens (same as addLockedCollateral)
+        if(!IVotingEscrow(address(ve)).locked(tokenId).isPermanent) {
+            IVotingEscrow(address(ve)).lockPermanent(tokenId);
+        }
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
     }
 
@@ -397,32 +401,4 @@ library CollateralManager {
         collateralManagerData.unpaidFees += unpaidFees;
     }
 
-    /**
-     * @dev Transfer debt away from this portfolio account without payment
-     * @param amount The amount of debt to transfer away
-     * @param unpaidFees The unpaid fees to transfer away
-     * @notice This is used when transferring debt to another portfolio account (e.g., in marketplace sales)
-     */
-    function transferDebtAway(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
-        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        // Cap the amount to actual total debt
-        uint256 debtToTransfer = amount > collateralManagerData.debt ? collateralManagerData.debt : amount;
-
-        if (debtToTransfer == 0) {
-            return;
-        }
-
-        // Decrease unpaid fees (cap to actual unpaid fees)
-        uint256 feesToTransfer = unpaidFees > collateralManagerData.unpaidFees
-            ? collateralManagerData.unpaidFees
-            : unpaidFees;
-        collateralManagerData.unpaidFees -= feesToTransfer;
-
-        // Decrease debt
-        collateralManagerData.debt -= debtToTransfer;
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
-    }
 }

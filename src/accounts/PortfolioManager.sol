@@ -374,7 +374,11 @@ contract PortfolioManager is Ownable {
      * @return True if caller is owner of portfolio
      */
     function isPortfolioOwner(address portfolio) external view returns (bool) {
-        return PortfolioFactory(portfolioToFactory[portfolio]).ownerOf(portfolio) == msg.sender;
+        address factory = portfolioToFactory[portfolio];
+        if (factory == address(0)) {
+            return false;
+        }
+        return PortfolioFactory(factory).ownerOf(portfolio) == msg.sender;
     }
 
     function isAuthorizedCaller(address caller) external view returns (bool) {

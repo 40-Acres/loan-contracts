@@ -49,5 +49,6 @@ contract VexyFacet is AccessControl {
         _vexy.buyListing(listingId);
         // clear remaining approval
         currencyToken.approve(address(_vexy), 0);
+        require(_votingEscrow.ownerOf(nftId) == address(this), "veNFT not received");
     }
 }

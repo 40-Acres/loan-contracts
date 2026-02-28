@@ -23,4 +23,20 @@ contract MarketplaceFacet is BaseMarketplaceFacet {
     function _getRequiredPaymentForCollateralRemoval(address config, uint256 tokenId) internal view override returns (uint256) {
         return CollateralManager.getRequiredPaymentForCollateralRemoval(config, tokenId);
     }
+
+    function _enforceCollateralRequirements() internal view override returns (bool) {
+        return CollateralManager.enforceCollateralRequirements();
+    }
+
+    function _getTotalDebt() internal view override returns (uint256) {
+        return CollateralManager.getTotalDebt();
+    }
+
+    function _getLockedCollateral(uint256 tokenId) internal view override returns (uint256) {
+        return CollateralManager.getLockedCollateral(tokenId);
+    }
+
+    function _getOriginTimestamp(uint256 tokenId) internal view override returns (uint256) {
+        return CollateralManager.getOriginTimestamp(tokenId);
+    }
 }

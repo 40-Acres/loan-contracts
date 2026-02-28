@@ -63,11 +63,7 @@ library PortfolioLoanLib {
         address vault,
         address contractOwner
     ) external returns (uint256 capitalReduction) {
-        require(factory != address(0));
-
         address portfolioOwner = IPortfolioFactory(factory).ownerOf(msg.sender);
-        require(portfolioOwner != address(0));
-
         uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
 
         // Handle unpaid fees first - transfer to protocol owner
@@ -101,11 +97,7 @@ library PortfolioLoanLib {
         address vault,
         address contractOwner
     ) external returns (uint256 originationFee) {
-        require(factory != address(0));
-
         address portfolioOwner = IPortfolioFactory(factory).ownerOf(msg.sender);
-        require(portfolioOwner != address(0));
-
         originationFee = (amount * 80) / 10000; // 0.8%
 
         uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);

@@ -149,13 +149,14 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
-        bytes4[] memory marketplaceSelectors = new bytes4[](6);
+        bytes4[] memory marketplaceSelectors = new bytes4[](7);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
         marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy RewardsProcessingFacet
@@ -439,13 +440,14 @@ contract UpgradeMarketplaceFacet is Script {
         // Remove and re-register with all 10 selectors
         facetRegistry.removeFacet(existingFacet);
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         selectors[1] = BaseMarketplaceFacet.makeListing.selector;
         selectors[2] = BaseMarketplaceFacet.cancelListing.selector;
         selectors[3] = BaseMarketplaceFacet.marketplace.selector;
         selectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         selectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        selectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
 
         facetRegistry.registerFacet(existingFacet, selectors, "MarketplaceFacet");
 

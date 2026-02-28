@@ -4,8 +4,6 @@ pragma solidity ^0.8.28;
 import {AccessControl} from "../utils/AccessControl.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {UserMarketplaceModule} from "./UserMarketplaceModule.sol";
-import {BaseCollateralFacet} from "../collateral/BaseCollateralFacet.sol";
-import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
@@ -48,6 +46,10 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     function _removeLockedCollateral(uint256 tokenId, address config) internal virtual;
     function _decreaseTotalDebt(address config, uint256 amount) internal virtual returns (uint256 excess);
     function _getRequiredPaymentForCollateralRemoval(address config, uint256 tokenId) internal view virtual returns (uint256);
+    function _enforceCollateralRequirements() internal view virtual returns (bool);
+    function _getTotalDebt() internal view virtual returns (uint256);
+    function _getLockedCollateral(uint256 tokenId) internal view virtual returns (uint256);
+    function _getOriginTimestamp(uint256 tokenId) internal view virtual returns (uint256);
 
     // ──────────────────────────────────────────────
     // Public view functions
@@ -73,6 +75,8 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     /**
      * @notice Create a listing: stores local SaleAuthorization + creates centralized listing
      */
+    uint256 public constant MIN_LISTING_PRICE = 10000;
+
     function makeListing(
         uint256 tokenId,
         uint256 price,
@@ -80,9 +84,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         uint256 expiresAt,
         address allowedBuyer
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        BaseCollateralFacet collateralFacet = BaseCollateralFacet(address(this));
-        require(collateralFacet.getLockedCollateral(tokenId) > 0, "Token not locked");
-        require(collateralFacet.getOriginTimestamp(tokenId) > 0, "Token not originated");
+        require(price >= MIN_LISTING_PRICE, "Price below minimum");
+        require(_getLockedCollateral(tokenId) > 0, "Token not locked");
+        require(_getOriginTimestamp(tokenId) > 0, "Token not originated");
 
         // Ensure no existing sale authorization
         require(!UserMarketplaceModule.hasSaleAuthorization(tokenId), "Listing already exists");
@@ -103,6 +107,21 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         PortfolioMarketplace.Listing memory listing = PortfolioMarketplace(_marketplace).getListing(tokenId);
         if (listing.owner == address(this)) {
             PortfolioMarketplace(_marketplace).cancelListing(tokenId);
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // Expired Listing Cleanup (called by PortfolioMarketplace)
+    // ──────────────────────────────────────────────
+
+    /**
+     * @notice Called by PortfolioMarketplace when an expired listing is cleaned,
+     *         so the local SaleAuthorization is removed in sync.
+     */
+    function clearExpiredSaleAuthorization(uint256 tokenId) external {
+        require(msg.sender == _marketplace, "Not marketplace");
+        if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
+            UserMarketplaceModule.removeSaleAuthorization(tokenId);
         }
     }
 
@@ -138,7 +157,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         uint256 debtPaid = 0;
 
         // Pay only enough debt to stay in good standing after NFT removal
-        uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
+        uint256 totalDebt = _getTotalDebt();
         if (totalDebt > 0) {
             uint256 requiredPayment = _getRequiredPaymentForCollateralRemoval(configAddress, tokenId);
             if (requiredPayment > 0) {
@@ -155,7 +174,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         _votingEscrow.transferFrom(address(this), buyerPortfolio, tokenId);
 
         // Enforce collateral requirements on seller after collateral removal
-        ICollateralFacet(address(this)).enforceCollateralRequirements();
+        _enforceCollateralRequirements();
 
         // Send remaining USDC to portfolio owner
         uint256 remaining = paymentAmount - debtPaid;

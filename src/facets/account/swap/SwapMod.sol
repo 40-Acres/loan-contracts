@@ -25,6 +25,7 @@ library SwapMod {
     }
 
     function swap(RouteParams memory swapData) public returns (uint256 amount) {
+        require(swapData.inputToken != swapData.outputToken, "Same token swap not allowed");
         uint256 balanceBefore = IERC20(swapData.outputToken).balanceOf(address(this));
         if(!SwapConfig(swapData.swapConfig).isApprovedSwapTarget(swapData.swapTarget)) {
             revert NotApprovedSwapTarget(swapData.swapTarget);

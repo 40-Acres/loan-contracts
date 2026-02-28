@@ -39,7 +39,7 @@ Full-featured deployment for veAERO/veVELO collateral with marketplace, voting, 
 | **VotingFacet** | vote, voteForLaunchpadToken, setVotingMode, isManualVoting, defaultVote |
 | **VotingEscrowFacet** | increaseLock, createLock, merge |
 | **MigrationFacet** | migrate |
-| **MarketplaceFacet** | processPayment, finalizePurchase, buyMarketplaceListing, getListing, transferDebtToBuyer, makeListing, cancelListing |
+| **MarketplaceFacet** | processPayment, finalizePurchase, buyMarketplaceListing, getListing, makeListing, cancelListing |
 | **RewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
 | **VexyFacet** | buyVexyListing |
 | **OpenXFacet** | buyOpenXListing |

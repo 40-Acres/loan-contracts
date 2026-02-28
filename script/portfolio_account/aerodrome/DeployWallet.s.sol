@@ -61,13 +61,14 @@ contract WalletDeploy is PortfolioAccountConfigDeploy {
 
         // Deploy MarketplaceFacet (seller-side: makeListing, cancelListing, receiveSaleProceeds)
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, MARKETPLACE);
-        bytes4[] memory marketplaceSelectors = new bytes4[](6);
+        bytes4[] memory marketplaceSelectors = new bytes4[](7);
         marketplaceSelectors[0] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.cancelListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy FortyAcresMarketplaceFacet (buyer-side: buy from other 40 Acres portfolios)

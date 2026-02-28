@@ -121,7 +121,9 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     ) external {
         require(portfolioManager.isPortfolioRegistered(msg.sender), InvalidPortfolio());
         require(allowedPaymentTokens[paymentToken], "Payment token not allowed");
-
+        require(expiresAt == 0 || expiresAt > block.timestamp, "Invalid expiration");
+        require(votingEscrow.ownerOf(tokenId) == msg.sender, "Not token owner");
+        
         Listing storage existing = listings[tokenId];
         if (existing.owner != address(0)) {
             // Allow overwriting only if expired; active listings must be canceled first
@@ -163,9 +165,13 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < tokenIds.length; i++) {
             Listing storage listing = listings[tokenIds[i]];
             if (listing.expiresAt > 0 && listing.expiresAt <= block.timestamp) {
-                emit ListingCanceled(listing.owner, tokenIds[i]);
+                address owner = listing.owner;
+                emit ListingCanceled(owner, tokenIds[i]);
                 delete listings[tokenIds[i]];
                 _listingIds.remove(tokenIds[i]);
+                // Clear the portfolio's local SaleAuthorization to prevent stale data
+                // from blocking collateral removal
+                IMarketplaceFacet(owner).clearExpiredSaleAuthorization(tokenIds[i]);
             }
         }
     }
@@ -252,9 +258,19 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
     // Listing Enumeration
     // ──────────────────────────────────────────────
 
-    /// @notice Get all listing tokenIds (includes expired listings)
-    function getListingIds() external view returns (uint256[] memory) {
-        return _listingIds.values();
+    /// @notice Get all listing tokenIds (includes expired listings), paginated
+    function getListingIds(uint256 offset, uint256 limit) external view returns (uint256[] memory) {
+        uint256 total = _listingIds.length();
+        if (offset >= total) {
+            return new uint256[](0);
+        }
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256[] memory result = new uint256[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            result[i - offset] = _listingIds.at(i);
+        }
+        return result;
     }
 
     /// @notice Get the number of listings (includes expired listings)
@@ -262,12 +278,17 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         return _listingIds.length();
     }
 
-    /// @notice Get only non-expired listing tokenIds
-    function getActiveListingIds() external view returns (uint256[] memory) {
+    /// @notice Get only non-expired listing tokenIds, paginated
+    function getActiveListingIds(uint256 offset, uint256 limit) external view returns (uint256[] memory) {
         uint256 total = _listingIds.length();
-        uint256[] memory temp = new uint256[](total);
+        if (offset >= total) {
+            return new uint256[](0);
+        }
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256[] memory temp = new uint256[](end - offset);
         uint256 count;
-        for (uint256 i = 0; i < total; i++) {
+        for (uint256 i = offset; i < end; i++) {
             uint256 tokenId = _listingIds.at(i);
             Listing storage listing = listings[tokenId];
             if (listing.expiresAt == 0 || listing.expiresAt > block.timestamp) {

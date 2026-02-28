@@ -45,5 +45,6 @@ contract OpenXFacet is AccessControl {
         _openx.buyNFT(listingId);
         // clear remaining approval
         currencyToken.approve(address(_openx), 0);
+        require(_votingEscrow.ownerOf(nftId) == address(this), "veNFT not received");
     }
 }

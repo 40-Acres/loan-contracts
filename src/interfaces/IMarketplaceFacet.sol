@@ -35,6 +35,13 @@ interface IMarketplaceFacet {
     ) external;
 
     /**
+     * @notice Called by PortfolioMarketplace to clear a stale SaleAuthorization
+     *         after the centralized listing has been removed (e.g. expired).
+     * @param tokenId The token whose local authorization should be cleared
+     */
+    function clearExpiredSaleAuthorization(uint256 tokenId) external;
+
+    /**
      * @notice Get the marketplace address
      */
     function marketplace() external view returns (address);

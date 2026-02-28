@@ -78,7 +78,7 @@ contract ERC4626ClaimingFacetTest is Test {
 
         // Deploy and register ERC4626ClaimingFacet
         DeployERC4626ClaimingFacet deployer = new DeployERC4626ClaimingFacet();
-        _erc4626ClaimingFacet = deployer.deploy(address(_portfolioFactory), address(_mockVault));
+        _erc4626ClaimingFacet = deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_mockVault));
 
         // Set config
         _loanConfig.setRewardsRate(10000);

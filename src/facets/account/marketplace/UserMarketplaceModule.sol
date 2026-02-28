@@ -28,7 +28,6 @@ library UserMarketplaceModule
     }
 
     function createSaleAuthorization(uint256 tokenId, uint256 price, address paymentToken) external {
-        require(price > 0, "Price must be > 0");
         UserMarketplaceModuleData storage data = _getUserMarketplaceModuleData();
         data.saleAuthorizations[tokenId] = SaleAuthorization(price, paymentToken);
     }

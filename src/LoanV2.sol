@@ -21,7 +21,9 @@ import {IRouter} from "./interfaces/IRouter.sol";
 import { ISwapper } from "./interfaces/ISwapper.sol";
 import { LoanUtils } from "./LoanUtils.sol";
 import { PortfolioLoanLib } from "./PortfolioLoanLib.sol";
+import { IPortfolioFactory } from "./accounts/IPortfolioFactory.sol";
 
+/// @dev ReentrancyGuard is unused but must be kept to avoid storage conflicts
 contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUpgradeable, RateStorage, LoanStorage {
     // initial contract parameters are listed here
     // parameters introduced after initial deployment are in NamedStorage contracts
@@ -1293,13 +1295,17 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
     }
 
     function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external returns (uint256 actualPaid) {
-        uint256 capitalReduction = PortfolioLoanLib.payFromPortfolio(totalPayment, feesToPay, getPortfolioFactory(), _asset, _vault, owner());
+        address factory = getPortfolioFactory();
+        require(IPortfolioFactory(factory).ownerOf(msg.sender) != address(0), "Caller not in factory");
+        uint256 capitalReduction = PortfolioLoanLib.payFromPortfolio(totalPayment, feesToPay, factory, _asset, _vault, owner());
         _outstandingCapital -= capitalReduction;
         actualPaid = totalPayment;
     }
 
     function borrowFromPortfolio(uint256 amount) external returns (uint256 originationFee) {
-        originationFee = PortfolioLoanLib.borrowFromPortfolio(amount, getPortfolioFactory(), _asset, _vault, owner());
+        address factory = getPortfolioFactory();
+        require(IPortfolioFactory(factory).ownerOf(msg.sender) != address(0), "Caller not in factory");
+        originationFee = PortfolioLoanLib.borrowFromPortfolio(amount, factory, _asset, _vault, owner());
         _outstandingCapital += amount;
     }
 }

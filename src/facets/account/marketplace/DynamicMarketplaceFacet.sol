@@ -23,4 +23,20 @@ contract DynamicMarketplaceFacet is BaseMarketplaceFacet {
     function _getRequiredPaymentForCollateralRemoval(address config, uint256 tokenId) internal view override returns (uint256) {
         return DynamicCollateralManager.getRequiredPaymentForCollateralRemoval(config, tokenId);
     }
+
+    function _enforceCollateralRequirements() internal view override returns (bool) {
+        return DynamicCollateralManager.enforceCollateralRequirements();
+    }
+
+    function _getTotalDebt() internal view override returns (uint256) {
+        return DynamicCollateralManager.getTotalDebt(address(_portfolioAccountConfig));
+    }
+
+    function _getLockedCollateral(uint256 tokenId) internal view override returns (uint256) {
+        return DynamicCollateralManager.getLockedCollateral(tokenId);
+    }
+
+    function _getOriginTimestamp(uint256 tokenId) internal view override returns (uint256) {
+        return DynamicCollateralManager.getOriginTimestamp(tokenId);
+    }
 }

@@ -17,6 +17,8 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract WalletFacetTest is Test, LocalSetup {
     WalletFacet public walletFacet;
@@ -69,6 +71,12 @@ contract WalletFacetTest is Test, LocalSetup {
         selectors[3] = WalletFacet.swap.selector;
         selectors[4] = WalletFacet.enforceCollateralRequirements.selector;
         _walletFacetRegistry.registerFacet(address(newWalletFacet), selectors, "WalletFacet");
+
+        // Register ERC721ReceiverFacet so wallet can receive veNFTs via safeTransferFrom
+        ERC721ReceiverFacet erc721Receiver = new ERC721ReceiverFacet();
+        bytes4[] memory receiverSelectors = new bytes4[](1);
+        receiverSelectors[0] = IERC721Receiver.onERC721Received.selector;
+        _walletFacetRegistry.registerFacet(address(erc721Receiver), receiverSelectors, "ERC721ReceiverFacet");
 
         vm.stopPrank();
 

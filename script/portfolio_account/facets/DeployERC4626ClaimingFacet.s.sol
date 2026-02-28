@@ -12,19 +12,20 @@ contract DeployERC4626ClaimingFacet is AccountFacetsDeploy {
 
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
+        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VAULT = vm.envAddress("VAULT");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        ERC4626ClaimingFacet facet = new ERC4626ClaimingFacet(PORTFOLIO_FACTORY, VAULT);
+        ERC4626ClaimingFacet facet = new ERC4626ClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VAULT);
 
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "ERC4626ClaimingFacet", false);
 
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address vault) external returns (ERC4626ClaimingFacet) {
-        ERC4626ClaimingFacet facet = new ERC4626ClaimingFacet(portfolioFactory, vault);
+    function deploy(address portfolioFactory, address portfolioAccountConfig, address vault) external returns (ERC4626ClaimingFacet) {
+        ERC4626ClaimingFacet facet = new ERC4626ClaimingFacet(portfolioFactory, portfolioAccountConfig, vault);
         bytes4[] memory selectors = getSelectorsForFacet();
         registerFacet(portfolioFactory, address(facet), selectors, "ERC4626ClaimingFacet", true);
         return facet;

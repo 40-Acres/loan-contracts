@@ -284,13 +284,14 @@ abstract contract BaseDeploymentSetup is Test {
             address(portfolioFactory), address(portfolioAccountConfig),
             VOTING_ESCROW, address(portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSel = new bytes4[](6);
+        bytes4[] memory marketplaceSel = new bytes4[](7);
         marketplaceSel[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSel[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSel[2] = BaseMarketplaceFacet.cancelListing.selector;
         marketplaceSel[3] = BaseMarketplaceFacet.marketplace.selector;
         marketplaceSel[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSel[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        marketplaceSel[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSel, "MarketplaceFacet");
 
         // ── 8. RewardsProcessingFacet (10 selectors) ──

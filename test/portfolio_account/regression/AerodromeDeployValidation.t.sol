@@ -115,7 +115,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
     }
 
     function testMarketplaceFacetRegistration() public view {
-        _assertFacetRegistered(address(marketplaceFacet), "MarketplaceFacet", 6);
+        _assertFacetRegistered(address(marketplaceFacet), "MarketplaceFacet", 7);
     }
 
     function testRewardsProcessingFacetRegistration() public view {
@@ -153,6 +153,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
         assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.marketplace.selector), address(marketplaceFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.getSaleAuthorization.selector), address(marketplaceFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.hasSaleAuthorization.selector), address(marketplaceFacet));
+        assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector), address(marketplaceFacet));
     }
 
     function testRewardsProcessingSelectorsRouteCorrectly() public view {

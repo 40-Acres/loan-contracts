@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
+import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 
 /**
  * @title ERC4626ClaimingFacet
@@ -26,15 +27,18 @@ contract ERC4626ClaimingFacet is AccessControl {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
+    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IERC4626 public immutable _vault;
 
     // Events
     event VaultYieldClaimed(address indexed vault, uint256 yieldAssets, uint256 sharesRedeemed, address asset, address indexed owner);
 
-    constructor(address portfolioFactory, address vault) {
+    constructor(address portfolioFactory, address portfolioAccountConfig, address vault) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
+        require(portfolioAccountConfig != address(0), "Invalid portfolio account config");
         require(vault != address(0), "Invalid vault");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
+        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _vault = IERC4626(vault);
     }
 
@@ -68,7 +72,7 @@ contract ERC4626ClaimingFacet is AccessControl {
 
         // Update collateral tracking - remove redeemed shares
         // Note: This reduces shares but keeps depositedAssets the same (we're only removing yield)
-        ERC4626CollateralManager.removeSharesForYield(vault, sharesToRedeem);
+        ERC4626CollateralManager.removeSharesForYield(address(_portfolioAccountConfig), vault, sharesToRedeem);
 
         emit VaultYieldClaimed(vault, assetsReceived, sharesToRedeem, vaultAsset, _portfolioFactory.ownerOf(address(this)));
 
