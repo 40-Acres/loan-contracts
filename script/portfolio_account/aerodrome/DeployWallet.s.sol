@@ -138,21 +138,21 @@ contract WalletUpgrade is Script {
         // _registerFacet(facetRegistry, address(walletFacet), walletSelectors, "WalletFacet");
 
         // Deploy MarketplaceFacet (seller-side)
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, MARKETPLACE);
-        bytes4[] memory marketplaceSelectors = new bytes4[](6);
-        marketplaceSelectors[0] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[1] = BaseMarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[2] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
-        marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
-        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, MARKETPLACE);
+        // bytes4[] memory marketplaceSelectors = new bytes4[](6);
+        // marketplaceSelectors[0] = BaseMarketplaceFacet.makeListing.selector;
+        // marketplaceSelectors[1] = BaseMarketplaceFacet.cancelListing.selector;
+        // marketplaceSelectors[2] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        // marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
+        // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy FortyAcresMarketplaceFacet (buyer-side)
-        // FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, MARKETPLACE);
-        // bytes4[] memory fortyAcresSelectors = new bytes4[](1);
-        // fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
-        // _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
+        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, MARKETPLACE);
+        bytes4[] memory fortyAcresSelectors = new bytes4[](1);
+        fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
+        _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
 
         // Deploy OpenXFacet
         // OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
