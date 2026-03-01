@@ -67,37 +67,6 @@ contract PortfolioManager is Ownable {
     }
 
     /**
-     * @dev Modifier to enforce collateral requirements after operations
-     * Tracks debt and maxLoanIgnoreSupply before operations and ensures either:
-     * 1. Debt is within valid range (debt <= maxLoanIgnoreSupply), OR
-     * 2. Overcollateralization didn't increase (allows operations that improve or don't worsen the position)
-     * 
-     * This prevents users from being locked out when overcollateralized due to rewards rate decreases.
-     * Allows operations such as:
-     * - Paying back debt (debt decreases, overcollateralization decreases)
-     * - Adding collateral (maxLoanIgnoreSupply increases, overcollateralization decreases)
-     * - Operations that don't affect balance (voting, claiming rewards, etc.)
-     * 
-     * Prevents operations that worsen the position:
-     * - Removing collateral (maxLoanIgnoreSupply decreases, overcollateralization increases)
-     * - Borrowing more (debt increases, overcollateralization increases)
-     * - Paying debt but removing more collateral (net overcollateralization increases)
-     * 
-     * @param portfolios Array of portfolio addresses to check
-     */
-    modifier enforceCollateral(address[] calldata portfolios) {
-        _;
-        
-        // Enforce collateral after operations
-        for (uint256 i = 0; i < portfolios.length; i++) {
-            // enforce collateral requirements should revert if false, but revert here to be safe
-            if(!ICollateralFacet(address(portfolios[i])).enforceCollateralRequirements()) {
-                revert InsufficientCollateral();
-            }
-        }
-    }
-
-    /**
      * @dev Deploy a new PortfolioFactory and automatically register it
      * Automatically deploys a FacetRegistry for the factory
      * Only the router owner can deploy factories

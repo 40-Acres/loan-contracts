@@ -20,4 +20,8 @@ contract LendingFacet is BaseLendingFacet {
     function _decreaseTotalDebt(address config, uint256 amount) internal override returns (uint256 excess) {
         return CollateralManager.decreaseTotalDebt(config, amount);
     }
+
+    function _enforceCollateralRequirements() internal override view {
+        CollateralManager.enforceCollateralRequirements();
+    }
 }

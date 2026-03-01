@@ -27,18 +27,25 @@ contract MigrationFacet {
         _ve = IVotingEscrow(ve);
     }
 
-    function migrate(uint256 tokenId, uint256 unpaidFees) external onlyLoanContract(msg.sender) {
+    function migrate(uint256 tokenId, uint256 unpaidFees) external onlyLoanContract() {
         IVotingEscrow(address(_ve)).transferFrom(msg.sender, address(this), tokenId);
-        CollateralManager.migrateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_ve));
+        _migrateLockedCollateral(tokenId);
 
         (uint256 balance, address borrower) = ILoan(_portfolioAccountConfig.getLoanContract()).getLoanDetails(tokenId);
         require(borrower == _portfolioFactory.ownerOf(address(this)));
 
+        _migrateDebt(balance, unpaidFees);
+    }
 
+    function _migrateLockedCollateral(uint256 tokenId) internal virtual {
+        CollateralManager.migrateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_ve));
+    }
+
+    function _migrateDebt(uint256 balance, uint256 unpaidFees) internal virtual {
         CollateralManager.migrateDebt(address(_portfolioAccountConfig), balance, unpaidFees);
     }
 
-    modifier onlyLoanContract(address loanContract) {
+    modifier onlyLoanContract() {
         require(msg.sender == _portfolioAccountConfig.getLoanContract());
         _;
     }

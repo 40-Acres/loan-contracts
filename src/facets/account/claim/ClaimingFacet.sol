@@ -73,7 +73,15 @@ contract ClaimingFacet is AccessControl {
             } catch {
             }
         }
+        _updateLockedCollateral(tokenId);
+    }
+
+    function _updateLockedCollateral(uint256 tokenId) internal virtual {
         CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+    }
+
+    function _getTotalDebt() internal virtual view returns (uint256) {
+        return CollateralManager.getTotalDebt();
     }
 
     /*
@@ -101,7 +109,7 @@ contract ClaimingFacet is AccessControl {
             return;
         }
 
-        uint256 totalDebt = CollateralManager.getTotalDebt();
+        uint256 totalDebt = _getTotalDebt();
         // if account has a balance, swap and pay lenders/treasury
         if(totalDebt > 0) {
             require(swapParams.swapTarget != address(0));

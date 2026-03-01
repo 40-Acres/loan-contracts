@@ -172,7 +172,7 @@ library ERC4626CollateralManager {
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
 
-        if (amount > maxLoan) {
+        if (data.debt + amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
         }
 
@@ -332,17 +332,6 @@ library ERC4626CollateralManager {
         // NOT affect transaction outcomes — the early return above already zeroes
         // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
         // pass/fail is always correct. The stale value only affects the revert message amount.
-    }
-
-    /**
-     * @dev Add debt without borrowing (for migrations)
-     */
-    function addDebt(address portfolioAccountConfig, address vault, uint256 amount, uint256 unpaidFees) external {
-        ERC4626CollateralData storage data = _getStorage();
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
-        require(amount <= maxLoanIgnoreSupply, "Amount exceeds max loan");
-        data.debt += amount;
-        data.unpaidFees += unpaidFees;
     }
 
     /**

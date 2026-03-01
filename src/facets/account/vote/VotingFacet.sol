@@ -64,7 +64,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
         }
         address owner = _portfolioFactory.ownerOf(address(this));
         _voter.vote(tokenId, pools, weights);
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        _addLockedCollateral(tokenId);
         UserVotingConfig.setVotingMode(tokenId, true);
         emit Voted(tokenId, pools, weights, owner);
     }
@@ -108,8 +108,16 @@ contract VotingFacet is IVotingFacet, AccessControl {
         }
         address owner = _portfolioFactory.ownerOf(address(this));
         _voter.vote(tokenId, pools, weights);
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        _addLockedCollateral(tokenId);
         emit Voted(tokenId, pools, weights, owner);
+    }
+
+    function _addLockedCollateral(uint256 tokenId) internal virtual {
+        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+    }
+
+    function _getOriginTimestamp(uint256 tokenId) internal virtual view returns (uint256) {
+        return CollateralManager.getOriginTimestamp(tokenId);
     }
 
     function isManualVoting(uint256 tokenId) external view returns (bool) {
@@ -142,7 +150,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
     function isElligibleForManualVoting(uint256 tokenId) public view returns (bool) {
         uint256 lastVoted = IVoter(address(_voter)).lastVoted(tokenId);
         // if token has not voted within the contract, they are not eligible for manual voting
-        if(lastVoted < CollateralManager.getOriginTimestamp(tokenId) || CollateralManager.getOriginTimestamp(tokenId) == 0) {
+        if(lastVoted < _getOriginTimestamp(tokenId) || _getOriginTimestamp(tokenId) == 0) {
             return false;
         }
 

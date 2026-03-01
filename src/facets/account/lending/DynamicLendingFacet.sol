@@ -19,4 +19,8 @@ contract DynamicLendingFacet is BaseLendingFacet {
     function _decreaseTotalDebt(address config, uint256 amount) internal override returns (uint256 excess) {
         return DynamicCollateralManager.decreaseTotalDebt(config, amount);
     }
+
+    function _enforceCollateralRequirements() internal override view {
+        DynamicCollateralManager.enforceCollateralRequirements();
+    }
 }

@@ -382,23 +382,4 @@ library CollateralManager {
         return debtReductionNeeded + data.unpaidFees;
     }
 
-    /**
-     * @dev Add debt
-     * @param amount The amount of debt to add
-     * @param unpaidFees The unpaid fees to add
-     * @notice This is used when adding debt from marketplace purchases or other sources
-     */
-    function addDebt(address portfolioAccountConfig, uint256 amount, uint256 unpaidFees) external {
-        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        (,uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-
-        uint256 projectedTotalDebt = collateralManagerData.debt + amount;
-        if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
-        }
-
-        collateralManagerData.debt += amount;
-        collateralManagerData.unpaidFees += unpaidFees;
-    }
-
 }

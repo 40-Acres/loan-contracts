@@ -532,6 +532,11 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
 
     // ============ Collateral Enforcement After Sale Tests ============
 
+    /**
+     * @notice Seller has 1 token with debt, tries to list below debt amount.
+     *         makeListing validates that net proceeds (after protocol fee) cover
+     *         the required debt payment, so the listing itself reverts.
+     */
     function testRevertSaleOneTokenPriceBelowDebt() public {
         uint256 borrowAmount = 500e6;
         borrowViaMulticall(borrowAmount);
@@ -542,14 +547,63 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
         // List at a price where net proceeds (after 1% fee) are less than debt
         uint256 lowPrice = totalDebt / 2;
 
-        makeListingViaMulticall(_tokenId, lowPrice, address(_usdc), 0, address(0));
+        // Listing should revert — price too low to cover debt after fees
+        vm.startPrank(_user);
+        address[] memory factories = new address[](1);
+        factories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseMarketplaceFacet.makeListing.selector,
+            _tokenId,
+            lowPrice,
+            address(_usdc),
+            0,
+            address(0)
+        );
+        vm.expectRevert("Price too low to cover debt after fees");
+        _portfolioManager.multicall(calldatas, factories);
+        vm.stopPrank();
 
+        // Verify no listing was created
+        assertFalse(IMarketplaceFacet(_portfolioAccount).hasSaleAuthorization(_tokenId), "No sale authorization should exist");
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioAccount, "NFT should remain with seller");
+    }
+
+    /**
+     * @notice Seller lists at a valid price, then borrows more.
+     *         When buyer purchases, receiveSaleProceeds enforces collateral requirements
+     *         and the sale reverts because the listing price no longer covers the increased debt.
+     */
+    function testRevertPurchaseAfterBorrowingMoreDebt() public {
+        // Borrow a small amount first
+        uint256 initialBorrow = 100e6;
+        borrowViaMulticall(initialBorrow);
+
+        uint256 debtAfterFirstBorrow = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(debtAfterFirstBorrow, 0, "Should have debt");
+
+        // List at a price that covers the current debt (with room for fees)
+        uint256 listingPrice = (debtAfterFirstBorrow * 10100) / 9900;
+        makeListingViaMulticall(_tokenId, listingPrice, address(_usdc), 0, address(0));
+
+        // Now borrow more — debt increases beyond what listing price can cover
+        (uint256 maxLoanAvailable, ) = DynamicCollateralFacet(_portfolioAccount).getMaxLoan();
+        if (maxLoanAvailable > 0) {
+            borrowViaMulticall(maxLoanAvailable);
+        }
+
+        uint256 totalDebtNow = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 feeBps = portfolioMarketplace.protocolFee();
+        uint256 netPayment = listingPrice - (listingPrice * feeBps) / 10000;
+        assertGt(totalDebtNow, netPayment, "Debt should exceed net listing proceeds");
+
+        // Fund buyer's wallet
         address buyerWallet = _walletFactory.portfolioOf(buyer);
-        deal(address(_usdc), buyerWallet, lowPrice);
+        deal(address(_usdc), buyerWallet, listingPrice);
 
         uint256 nonce = portfolioMarketplace.getListing(_tokenId).nonce;
 
-        // Purchase should revert — seller would have 0 collateral but remaining debt
+        // Purchase should revert — net proceeds no longer cover debt for single-NFT removal
         vm.startPrank(buyer);
         address[] memory pf = new address[](1);
         pf[0] = address(_walletFactory);

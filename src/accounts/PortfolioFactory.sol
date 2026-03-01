@@ -11,7 +11,7 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
  */
 contract PortfolioFactory {
     FacetRegistry public immutable facetRegistry;
-    PortfolioManager public portfolioManager;
+    PortfolioManager public immutable portfolioManager;
 
     using EnumerableSet for EnumerableSet.AddressSet;
 

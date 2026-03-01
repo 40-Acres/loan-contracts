@@ -91,6 +91,14 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Ensure no existing sale authorization
         require(!UserMarketplaceModule.hasSaleAuthorization(tokenId), "Listing already exists");
 
+        // Validate that net payment (after protocol fee) covers required debt payment
+        uint256 requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioAccountConfig), tokenId);
+        if (requiredPayment > 0) {
+            uint256 feeBps = PortfolioMarketplace(_marketplace).protocolFee();
+            uint256 netPayment = price - (price * feeBps) / 10000;
+            require(netPayment >= requiredPayment, "Price too low to cover debt after fees");
+        }
+
         // Store local sale authorization
         UserMarketplaceModule.createSaleAuthorization(tokenId, price, paymentToken);
 

@@ -51,6 +51,8 @@ contract RewardsProcessingFacet is AccessControl {
     event ZeroBalanceDistributionSet(uint256 entryCount, address indexed owner);
     event ActiveBalanceDistributionSet(uint256 entryCount, address indexed owner);
     event ActiveBalanceDistributionCleared(address indexed owner);
+    event VaultForInvestingSet(address vault, address indexed owner);
+    event ZeroBalanceDistributionCleared(address indexed owner);
     event ActiveBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
 
     constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
@@ -301,7 +303,7 @@ contract RewardsProcessingFacet is AccessControl {
         IERC20(vaultAsset).approve(address(vault), 0);
 
         emit InvestedToVault(_currentEpochStart(), tokenId, amountToDeposit, asset, recipient);
-        return asset == vaultAsset ? amountToDeposit : optionAmount;
+        return optionAmount;
     }
 
     function _payDebtToTarget(uint256 tokenId, uint256 amountToPay, address asset, address portfolioFactory) internal returns (uint256 amountPaid) {
@@ -309,12 +311,17 @@ contract RewardsProcessingFacet is AccessControl {
             return 0;
         }
 
+        IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
+        require(portfolioManager.isRegisteredFactory(portfolioFactory), "PayDebt target must be registered factory");
+
         address owner = _portfolioFactory.ownerOf(address(this));
         address target = PortfolioFactory(portfolioFactory).portfolioOf(owner);
 
         if (target == address(0)) {
             return 0;
         }
+
+        require(portfolioManager.isPortfolioRegistered(target), "PayDebt target must be registered portfolio");
 
         IERC20(asset).approve(target, amountToPay);
         try ILendingFacet(target).pay(amountToPay) returns (uint256 excess) {
@@ -337,6 +344,15 @@ contract RewardsProcessingFacet is AccessControl {
         UserRewardsConfig.setRecipient(recipient);
         address owner = _portfolioFactory.ownerOf(address(this));
         emit RecipientSet(recipient, owner);
+    }
+
+    function setVaultForInvesting(address vault) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserRewardsConfig.setVaultForInvesting(vault);
+        emit VaultForInvestingSet(vault, _portfolioFactory.ownerOf(address(this)));
+    }
+
+    function getVaultForInvesting() external view returns (address) {
+        return UserRewardsConfig.getVaultForInvesting();
     }
 
     function setZeroBalanceDistribution(
@@ -362,6 +378,11 @@ contract RewardsProcessingFacet is AccessControl {
             entries[i] = UserRewardsConfig.getZeroBalanceDistributionEntry(i);
         }
         return entries;
+    }
+
+    function clearZeroBalanceDistribution() external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserRewardsConfig.clearZeroBalanceDistribution();
+        emit ZeroBalanceDistributionCleared(_portfolioFactory.ownerOf(address(this)));
     }
 
     function setActiveBalanceDistribution(

@@ -58,6 +58,7 @@ abstract contract BaseLendingFacet is AccessControl {
 
     function _increaseTotalDebt(address config, uint256 amount) internal virtual returns (uint256 amountAfterFees, uint256 originationFee);
     function _decreaseTotalDebt(address config, uint256 amount) internal virtual returns (uint256 excess);
+    function _enforceCollateralRequirements() internal virtual view;
 
     // ──────────────────────────────────────────────
     // Public functions
@@ -126,6 +127,7 @@ abstract contract BaseLendingFacet is AccessControl {
         // send to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+        _enforceCollateralRequirements();
         emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
 

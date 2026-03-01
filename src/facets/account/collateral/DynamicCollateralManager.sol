@@ -73,11 +73,17 @@ library DynamicCollateralManager {
     function migrateLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         if(collateralManagerData.lockedCollaterals[tokenId] != 0) return;
+        
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+
         // Enforce permanent lock on migrated tokens (same as addLockedCollateral)
         if(!IVotingEscrow(address(ve)).locked(tokenId).isPermanent) {
             IVotingEscrow(address(ve)).lockPermanent(tokenId);
         }
         _addLockedCollateral(portfolioAccountConfig, tokenId, ve);
+
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+        _updateUndercollateralizedDebt(portfolioAccountConfig, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 
     function _addLockedCollateral(address portfolioAccountConfig, uint256 tokenId, address ve) internal {
@@ -165,22 +171,22 @@ library DynamicCollateralManager {
         if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
 
-        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        // if the amount is greater than the max loan (vault supply constraints), add to bad debt
-        if (amount > maxLoan) {
-            collateralManagerData.overSuppliedVaultDebt += amount - maxLoan;
-        }
-
-        // Read current vault debt to compute projected total
-        uint256 currentVaultDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
-        uint256 projectedTotalDebt = currentVaultDebt + amount;
-        if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
-        }
-
-        // Borrow from vault — vault tracks the debt internally
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
+
+        uint256 actualTotalDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+
+        // Update enforcement flags based on actual post-borrow state
+        if (actualTotalDebt > maxLoanIgnoreSupply) {
+            uint256 excess = actualTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.overSuppliedVaultDebt = excess;
+            collateralManagerData.undercollateralizedDebt = excess;
+        } else {
+            collateralManagerData.overSuppliedVaultDebt = 0;
+            collateralManagerData.undercollateralizedDebt = 0;
+        }
+
         return (loanAmount, originationFee);
     }
 
@@ -190,26 +196,29 @@ library DynamicCollateralManager {
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
         address lendingAsset = lendingPool.lendingAsset();
 
-        // Read current vault debt to ensure we don't overpay
-        uint256 totalDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
-        uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
-        excess = amount - balancePayment;
-
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-
-        if (balancePayment > 0) {
-            IERC20(lendingAsset).approve(address(lendingPool), balancePayment);
-            uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
+        // Pay vault first — vault settles vested rewards then applies payment.
+        if (amount > 0) {
+            IERC20(lendingAsset).approve(address(lendingPool), amount);
+            uint256 actualPaid = lendingPool.payFromPortfolio(amount, 0);
             IERC20(lendingAsset).approve(address(lendingPool), 0);
             excess = amount - actualPaid;
-
-            if(collateralManagerData.overSuppliedVaultDebt > 0) {
-                collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > actualPaid ? actualPaid : collateralManagerData.overSuppliedVaultDebt;
-            }
+        } else {
+            excess = 0;
         }
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-        _updateUndercollateralizedDebt(portfolioAccountConfig, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+        // Read actual post-payment, post-settlement debt for accurate enforcement
+        uint256 actualTotalDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
+
+        // Update enforcement flags based on actual post-payment state
+        if (actualTotalDebt > maxLoanIgnoreSupply) {
+            uint256 debtExcess = actualTotalDebt - maxLoanIgnoreSupply;
+            collateralManagerData.overSuppliedVaultDebt = debtExcess;
+            collateralManagerData.undercollateralizedDebt = debtExcess;
+        } else {
+            collateralManagerData.overSuppliedVaultDebt = 0;
+            collateralManagerData.undercollateralizedDebt = 0;
+        }
 
         return excess;
     }
