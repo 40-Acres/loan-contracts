@@ -146,7 +146,7 @@ library CollateralManager {
 
     function getTotalDebt() public view returns (uint256) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        return collateralManagerData.debt;
+        return collateralManagerData.debt + collateralManagerData.unpaidFees;
     }
 
     function getUnpaidFees() public view returns (uint256) {
@@ -187,27 +187,29 @@ library CollateralManager {
     function decreaseTotalDebt(address portfolioAccountConfig, uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
 
-        // get the total debt to ensure we don't overpay
+        // Cap payment at total debt to avoid overpaying
         uint256 totalDebt = collateralManagerData.debt + collateralManagerData.unpaidFees;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
-        excess = amount - balancePayment;
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);
-
-        if(collateralManagerData.overSuppliedVaultDebt > 0) {
-            collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > balancePayment ? balancePayment : collateralManagerData.overSuppliedVaultDebt;
-        }
 
         // for accounts migrated over, unpaid fees must be sent to protocol owner first as a balance payment
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
         uint256 feesToPay = collateralManagerData.unpaidFees > balancePayment ? balancePayment : collateralManagerData.unpaidFees;
 
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
-        lendingPool.payFromPortfolio(balancePayment, feesToPay);
+        uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, feesToPay);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
-        
-        collateralManagerData.debt -= (balancePayment - feesToPay);
-        collateralManagerData.unpaidFees -= feesToPay;
+
+        uint256 actualFeePaid = actualPaid >= feesToPay ? feesToPay : actualPaid;
+        uint256 actualPrincipalPaid = actualPaid - actualFeePaid;
+        collateralManagerData.debt -= actualPrincipalPaid;
+        collateralManagerData.unpaidFees -= actualFeePaid;
+        excess = amount - actualPaid;
+
+        if(collateralManagerData.overSuppliedVaultDebt > 0) {
+            collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > actualPrincipalPaid ? actualPrincipalPaid : collateralManagerData.overSuppliedVaultDebt;
+        }
 
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig);

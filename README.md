@@ -121,17 +121,127 @@ Storage uses ERC‑7201 layouts in `src/libraries/storage/MarketStorage.sol`.
 
 ## Testing
 
-### Test Files
-- [Loan.t.sol](test/Loan.t.sol) - Loan contract tests
-- [Vault.t.sol](test/Vault.t.sol) - Vault contract tests
-- [Swapper.t.sol](test/Swapper.t.sol) - Swapper contract tests
-- [PharaohLoan.t.sol](test/PharaohLoan.t.sol) - Pharaoh loan implementation tests
-- [test/market/](test/market/) - Market contract tests
+The test suite is split into **local tests** (no network access required) and **fork tests** (require RPC endpoints to fork live chains).
 
-### Testing Commands
-- Run all tests: `forge test`
-- Run specific test: `forge test -m testFunctionName`
-- Coverage: `forge coverage`
+### Test Directory Structure
+
+```
+test/
+├── portfolio_account/     # Local tests (no fork required)
+│   ├── collateral/        # CollateralFacet, ERC4626CollateralFacet
+│   ├── lending/           # LendingFacet, DynamicLendingFacet
+│   ├── marketplace/       # MarketplaceFacet, DynamicMarketplaceFacet
+│   ├── vault/             # DynamicFeesVault
+│   ├── vote/              # VotingFacet
+│   ├── votingEscrow/      # VotingEscrowFacet
+│   ├── wallet/            # WalletFacet
+│   ├── rewards_processing/# RewardsProcessingFacet
+│   ├── erc4626/           # ERC4626 claiming
+│   ├── regression/        # Regression tests
+│   └── utils/             # Shared test setups (DynamicLocalSetup, etc.)
+├── accounts/              # PortfolioManager, PortfolioFactory local tests
+├── integration/           # Local integration tests
+├── Vault.t.sol            # Vault local tests
+├── EntryPoint.t.sol       # EntryPoint tests
+├── mocks/                 # Mock contracts for local testing
+├── utils/                 # Shared test utilities
+└── fork/                  # Fork tests (require RPC endpoints)
+    ├── Loan.t.sol         # Loan fork tests (Base)
+    ├── VeloLoan.t.sol     # Velodrome loan tests (Optimism)
+    ├── Blackhole.t.sol    # Blackhole tests (Avalanche)
+    ├── XPharaoh.t.sol     # Pharaoh tests (Avalanche)
+    ├── Swapper.t.sol      # Swapper tests (Base)
+    ├── LoanUpgrade.t.sol  # Upgrade tests (Base)
+    ├── accounts/           # PortfolioManager fork tests (Base, Optimism)
+    ├── integration/        # Integration fork tests (Base, Optimism, Ink)
+    └── portfolio_account/  # Portfolio account fork tests
+        ├── e2e/            # End-to-end (Base, Ethereum)
+        ├── live/           # Live deployment validation (Base)
+        ├── marketplace/    # Marketplace fork tests (Base)
+        ├── regression/     # Regression fork tests (Base)
+        ├── bridge/         # Bridge tests (Ink)
+        ├── vote/           # Superchain voting (Optimism)
+        └── yieldbasis/     # YieldBasis tests (Ethereum)
+```
+
+### Running Local Tests (No RPC Required)
+
+```bash
+# Run all local tests (default profile excludes test/fork/**)
+forge test
+
+# Run a specific test by name
+forge test --match-test testFunctionName
+
+# Run tests in a specific file
+forge test --match-path test/portfolio_account/collateral/CollateralFacet.t.sol
+
+# Run tests in a directory
+forge test --match-path "test/portfolio_account/marketplace/*"
+
+# Verbose output (show logs, traces on failure)
+forge test -vv        # Logs
+forge test -vvv       # Traces on failure
+forge test -vvvv      # All traces
+```
+
+### Running Fork Tests (Requires RPC Endpoints)
+
+Fork tests run against live chain state and require RPC endpoints set as environment variables.
+
+**Required environment variables:**
+
+| Variable | Chain | Used By |
+|----------|-------|---------|
+| `BASE_RPC_URL` | Base | Most fork tests (Loan, Swapper, Portfolio, Marketplace, E2E, Live, Regression) |
+| `OP_RPC_URL` | Optimism | VeloLoan, PortfolioManager, Superchain voting, integration |
+| `AVAX_RPC_URL` | Avalanche | Blackhole, XPharaoh |
+| `ETH_RPC_URL` | Ethereum | YieldBasis (voting, rewards processing), YieldBasis E2E |
+| `INK_RPC_URL` | Ink | BridgeFacet, Superchain integration |
+
+```bash
+# Set RPC endpoints (use your own Alchemy/Infura/etc. URLs)
+export BASE_RPC_URL="https://base-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export OP_RPC_URL="https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export AVAX_RPC_URL="https://avax-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export ETH_RPC_URL="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export INK_RPC_URL="https://ink-mainnet.g.alchemy.com/v2/YOUR_KEY"
+
+# Run ALL fork tests
+FOUNDRY_PROFILE=fork forge test
+
+# Run specific fork test files
+FOUNDRY_PROFILE=fork forge test --match-path test/fork/Loan.t.sol
+
+# Run fork tests for a specific directory
+FOUNDRY_PROFILE=fork forge test --match-path "test/fork/portfolio_account/e2e/*"
+
+# Run a single fork test by name
+FOUNDRY_PROFILE=fork forge test --match-test testSpecificFunction
+```
+
+### Running All Tests (Local + Fork)
+
+```bash
+# Ensure all RPC env vars are set, then:
+forge test && FOUNDRY_PROFILE=fork forge test
+```
+
+### Coverage
+
+```bash
+forge coverage
+```
+
+### Foundry Profiles
+
+| Profile | Description |
+|---------|-------------|
+| `default` | Local tests only. Excludes `test/fork/**`. |
+| `fork` | Fork tests only. Matches `test/fork/**`. Requires RPC env vars. |
+| `ci` | CI profile with 256 fuzz runs. |
+
+> **Note:** Never use `forge build --force` or `forge clean && forge build`. The via-ir pipeline is slow — rely on incremental builds.
 
 ## Deployment
 

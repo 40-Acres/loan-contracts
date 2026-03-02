@@ -152,6 +152,59 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return _getStorage().debtBalance[borrower];
     }
 
+    /**
+     * @notice Returns the effective debt balance after accounting for vested-but-unsettled
+     *         borrower rewards. Simulates _processGlobalVesting + per-user settlement in a
+     *         view context so callers (e.g. isListingPurchasable) see accurate debt without
+     *         requiring a state-changing settlement first.
+     * @param borrower The address to query
+     * @return The effective debt balance (stored debt minus pending borrower reward)
+     */
+    function getEffectiveDebtBalance(address borrower) public view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 storedDebt = $.debtBalance[borrower];
+        if (storedDebt == 0) return 0;
+
+        uint256 userRate = $.userRewardRate[borrower];
+        if (userRate == 0) return storedDebt;
+
+        // Simulate _processGlobalVesting to get effective borrowerCreditPerRate
+        uint256 effectiveBorrowerCreditPerRate = $.borrowerCreditPerRate;
+        uint256 effectiveGlobalBorrowerPending = $.globalBorrowerPending;
+
+        uint256 currentRate = $.activeEpochRate;
+        if (currentRate > 0) {
+            uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
+            if (currentTime > $.globalLastUpdateTime) {
+                uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
+                if (globalVested > $.totalUnsettledRewards) {
+                    globalVested = $.totalUnsettledRewards;
+                }
+                uint256 ratio = getCurrentVaultRatioBps();
+                uint256 lenderPremium = (globalVested * ratio) / 10000;
+                uint256 borrowerCredit = globalVested - lenderPremium;
+                if (borrowerCredit > 0) {
+                    effectiveBorrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
+                }
+                effectiveGlobalBorrowerPending += borrowerCredit;
+            }
+        }
+
+        // Simulate per-user settlement
+        uint256 accumulatorDelta = effectiveBorrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[borrower];
+        uint256 borrowerReward = (userRate * accumulatorDelta) / 1e18;
+
+        // Cap at effective global borrower pending (mirrors _settleRewards cap)
+        if (borrowerReward > effectiveGlobalBorrowerPending) {
+            borrowerReward = effectiveGlobalBorrowerPending;
+        }
+
+        if (borrowerReward >= storedDebt) {
+            return 0;
+        }
+        return storedDebt - borrowerReward;
+    }
+
     function paused() public view returns (bool) {
         return _getStorage().paused;
     }

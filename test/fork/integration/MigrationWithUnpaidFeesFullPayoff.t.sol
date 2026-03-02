@@ -160,7 +160,7 @@ contract MigrationWithUnpaidFeesTest is Test {
         console.log("Portfolio Debt:", portfolioDebt);
         console.log("Portfolio Unpaid Fees:", portfolioUnpaidFees);
         
-        assertEq(portfolioDebt, initialBalance, "Portfolio debt should match initial loan balance");
+        assertEq(portfolioDebt - portfolioUnpaidFees, initialBalance, "Portfolio debt should match initial loan balance");
         assertEq(portfolioUnpaidFees, initialUnpaidFees, "Portfolio unpaid fees should match initial unpaid fees");
         
         // Now pay down the loan - unpaid fees should go to protocol owner first

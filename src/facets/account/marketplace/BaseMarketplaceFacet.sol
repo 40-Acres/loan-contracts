@@ -51,6 +51,14 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     function _getLockedCollateral(uint256 tokenId) internal view virtual returns (uint256);
     function _getOriginTimestamp(uint256 tokenId) internal view virtual returns (uint256);
 
+    /**
+     * @dev Hook to sync debt state before reading it.
+     *      DynamicMarketplaceFacet overrides this to call settleRewards() on the
+     *      DynamicFeesVault so that vested borrower rewards are applied to debt
+     *      before requiredPayment is computed.
+     */
+    function _syncDebtState() internal virtual {}
+
     // ──────────────────────────────────────────────
     // Public view functions
     // ──────────────────────────────────────────────
@@ -198,6 +206,10 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         uint256 debtPaid = 0;
 
+        // Settle any vested rewards before reading debt so requiredPayment
+        // reflects the true post-settlement balance, not stale-high pre-settlement debt.
+        _syncDebtState();
+
         // Pay only enough debt to stay in good standing after NFT removal
         uint256 totalDebt = _getTotalDebt();
         if (totalDebt > 0) {
@@ -212,12 +224,13 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Remove collateral from this portfolio
         _removeLockedCollateral(tokenId, configAddress);
 
-        // Transfer NFT to buyer portfolio
-        _votingEscrow.transferFrom(address(this), buyerPortfolio, tokenId);
 
         // Enforce collateral requirements on seller after collateral removal
         _enforceCollateralRequirements();
 
+        // Transfer NFT to buyer portfolio
+        _votingEscrow.safeTransferFrom(address(this), buyerPortfolio, tokenId);
+        
         // Send remaining USDC to portfolio owner
         uint256 remaining = paymentAmount - debtPaid;
         if (remaining > 0) {

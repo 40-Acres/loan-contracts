@@ -161,7 +161,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         console.log("Portfolio Debt:", portfolioDebt);
         console.log("Portfolio Unpaid Fees:", portfolioUnpaidFees);
         
-        assertEq(portfolioDebt, initialBalance, "Portfolio debt should match initial loan balance");
+        assertEq(portfolioDebt - portfolioUnpaidFees, initialBalance, "Portfolio debt should match initial loan balance");
         assertEq(portfolioUnpaidFees, initialUnpaidFees, "Portfolio unpaid fees should match initial unpaid fees");
         
         address portfolioOwner = PortfolioFactory(portfolioFactory).ownerOf(portfolioAccount);
@@ -218,10 +218,10 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         uint256 unpaidFeesAfterFirst = CollateralFacet(portfolioAccount).getUnpaidFees();
         assertEq(unpaidFeesAfterFirst, initialUnpaidFees - firstPaymentAmount, "Unpaid fees should be reduced by first payment");
         
-        // Verify debt was reduced: debt is only reduced by (balancePayment - feesToPay)
-        // Since firstPaymentAmount all goes to fees, debt reduction = (firstPaymentAmount - firstPaymentAmount) = 0
+        // Verify principal debt unchanged: all payment went to fees, not principal
+        // getTotalDebt() returns debt + unpaidFees, so subtract remaining fees to check principal
         uint256 debtAfterFirst = CollateralFacet(portfolioAccount).getTotalDebt();
-        assertEq(debtAfterFirst, initialBalance, "Debt should not be reduced since all payment went to fees");
+        assertEq(debtAfterFirst - unpaidFeesAfterFirst, initialBalance, "Principal debt should not be reduced since all payment went to fees");
         
         // ========== SECOND PAYMENT: Remaining fees + a few cents ==========
         // This payment should cover remaining fees (to owner) and a small amount to vault

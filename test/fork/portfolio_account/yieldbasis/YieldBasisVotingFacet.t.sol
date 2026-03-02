@@ -62,6 +62,10 @@ contract MockLendingPool is ILendingPool {
     function getDebtBalance(address) external pure returns (uint256) {
         return 0;
     }
+
+    function getEffectiveDebtBalance(address) external pure returns (uint256) {
+        return 0;
+    }
 }
 
 /**

@@ -10,6 +10,10 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
+interface IERC4626DebtBalanceReader {
+    function getDebtBalance(address borrower) external view returns (uint256);
+}
+
 /**
  * @title ERC4626CollateralManager
  * @dev Library for managing ERC4626 vault shares as collateral
@@ -32,7 +36,6 @@ library ERC4626CollateralManager {
         uint256 depositedAssetValue; // Asset value at time of deposit (for tracking)
         // Debt tracking
         uint256 debt;
-        uint256 unpaidFees;
         uint256 overSuppliedVaultDebt;
         uint256 undercollateralizedDebt;
     }
@@ -147,11 +150,10 @@ library ERC4626CollateralManager {
     }
 
     /**
-     * @dev Get unpaid fees
+     * @dev Get unpaid fees (always 0 for ERC4626 collateral — no migrated-fee concept)
      */
-    function getUnpaidFees() public view returns (uint256) {
-        ERC4626CollateralData storage data = _getStorage();
-        return data.unpaidFees;
+    function getUnpaidFees() public pure returns (uint256) {
+        return 0;
     }
 
     /**
@@ -199,29 +201,33 @@ library ERC4626CollateralManager {
 
         uint256 totalDebt = data.debt;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
-        excess = amount - balancePayment;
-
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
 
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
-        uint256 feesToPay = data.unpaidFees > balancePayment ? balancePayment : data.unpaidFees;
 
+        // Pay vault first — vault may settle vested rewards before applying payment,
+        // implicitly reducing debt beyond what actualPaid reports.
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
-        uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, feesToPay);
+        uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
 
-        uint256 principalRepaid = actualPaid > feesToPay ? actualPaid - feesToPay : 0;
-        uint256 actualFeesPaid = actualPaid - principalRepaid;
-        data.debt -= principalRepaid;
-        data.unpaidFees -= actualFeesPaid;
         excess = amount - actualPaid;
 
-        if (data.overSuppliedVaultDebt > 0) {
-            data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > principalRepaid ? principalRepaid : data.overSuppliedVaultDebt;
-        }
+        // Sync local debt with vault's actual debt balance.
+        // _settleRewards() fires inside payFromPortfolio and reduces the vault-side
+        // debtBalance by vested borrower rewards. The actualPaid return only reflects
+        // the explicit payment, not this implicit settlement.
+        data.debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
-        _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+        // Recalculate enforcement flags from actual debt state
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        if (data.debt > maxLoanIgnoreSupply) {
+            uint256 debtExcess = data.debt - maxLoanIgnoreSupply;
+            data.overSuppliedVaultDebt = debtExcess;
+            data.undercollateralizedDebt = debtExcess;
+        } else {
+            data.overSuppliedVaultDebt = 0;
+            data.undercollateralizedDebt = 0;
+        }
 
         return excess;
     }

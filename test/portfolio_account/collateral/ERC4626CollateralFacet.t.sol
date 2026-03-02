@@ -18,11 +18,8 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
 import {MockERC20} from "../../mocks/MockERC20.sol";
-import {Loan as LoanV2} from "../../../src/LoanV2.sol";
-import {Loan} from "../../../src/Loan.sol";
-import {Vault} from "../../../src/VaultV2.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ILoan} from "../../../src/interfaces/ILoan.sol";
 
 contract ERC4626CollateralFacetTest is Test {
     ERC4626CollateralFacet public _erc4626CollateralFacet;
@@ -106,30 +103,32 @@ contract ERC4626CollateralFacetTest is Test {
         // Mint underlying assets to user for testing
         _underlyingAsset.mint(_user, INITIAL_DEPOSIT * 10);
 
-        // Fund lending vault with USDC for borrowing
-        _underlyingAsset.mint(_lendingVault, 10000e6);
+        // Fund lending vault with USDC for borrowing (must deposit, not mint directly)
+        _underlyingAsset.mint(address(this), 10000e6);
+        _underlyingAsset.approve(_lendingVault, 10000e6);
+        DynamicFeesVault(payable(_lendingVault)).deposit(10000e6, address(this));
     }
 
     function _setupLendingInfrastructure() internal {
-        // Deploy Loan contract
-        Loan loanImplementation = new Loan();
-        ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
-        _loanContract = address(loanProxy);
+        // Deploy DynamicFeesVault (implements ILendingPool + getDebtBalance)
+        DynamicFeesVault vaultImpl = new DynamicFeesVault();
+        bytes memory initData = abi.encodeWithSelector(
+            DynamicFeesVault.initialize.selector,
+            address(_underlyingAsset),
+            "ERC4626 Lending Vault",
+            "lVAULT",
+            address(_portfolioFactory)
+        );
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
+        DynamicFeesVault dynamicVault = DynamicFeesVault(address(vaultProxy));
 
-        // Deploy Vault
-        Vault vaultImplementation = new Vault();
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
-        Vault vault = Vault(address(vaultProxy));
-        _lendingVault = address(vault);
+        // DynamicFeesVault is both the loan contract and the lending vault
+        _loanContract = address(dynamicVault);
+        _lendingVault = address(dynamicVault);
 
-        // Initialize vault and loan
-        vault.initialize(address(_underlyingAsset), _loanContract, "Lending Vault", "lVAULT");
-        Loan(_loanContract).initialize(address(vault), address(_underlyingAsset));
-
-        // Upgrade to LoanV2
-        LoanV2 loanV2Impl = new LoanV2();
-        LoanV2(_loanContract).upgradeToAndCall(address(loanV2Impl), new bytes(0));
-        LoanV2(_loanContract).setPortfolioFactory(address(_portfolioFactory));
+        // Transfer ownership to deployer
+        dynamicVault.transferOwnership(_owner);
+        dynamicVault.acceptOwnership();
     }
 
     // ============ Helper Functions ============

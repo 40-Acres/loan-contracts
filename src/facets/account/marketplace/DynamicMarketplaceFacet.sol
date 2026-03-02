@@ -3,6 +3,11 @@ pragma solidity ^0.8.28;
 
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {BaseMarketplaceFacet} from "./BaseMarketplaceFacet.sol";
+import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+
+interface IDynamicFeesVaultSettlement {
+    function settleRewards(address user) external;
+}
 
 /**
  * @title DynamicMarketplaceFacet
@@ -11,6 +16,11 @@ import {BaseMarketplaceFacet} from "./BaseMarketplaceFacet.sol";
 contract DynamicMarketplaceFacet is BaseMarketplaceFacet {
     constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace)
         BaseMarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, marketplace) {}
+
+    function _syncDebtState() internal override {
+        address lendingPool = PortfolioAccountConfig(_portfolioAccountConfig).getLoanContract();
+        IDynamicFeesVaultSettlement(lendingPool).settleRewards(address(this));
+    }
 
     function _removeLockedCollateral(uint256 tokenId, address config) internal override {
         DynamicCollateralManager.removeLockedCollateral(tokenId, config);

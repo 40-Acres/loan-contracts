@@ -17,6 +17,7 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
 
 /**
  * @title DynamicMarketplaceFacetTest
@@ -669,5 +670,70 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
         uint256 debtAfter = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
         (, uint256 maxLoanAfter) = DynamicCollateralFacet(_portfolioAccount).getMaxLoan();
         assertLe(debtAfter, maxLoanAfter, "Remaining debt should be within collateral limits");
+    }
+
+    // ============ isListingPurchasable Staleness Tests (DFA-M-004) ============
+
+    /**
+     * @notice Verifies that isListingPurchasable reflects vested-but-unsettled
+     *         borrower rewards that reduce effective debt, rather than stale stored debt.
+     *
+     *         Scenario: Seller borrows, rewards are deposited via repayWithRewards,
+     *         time passes (rewards vest linearly), and isListingPurchasable should show
+     *         the reduced effective debt — not the stale pre-settlement value.
+     */
+    function testIsListingPurchasableReflectsVestedRewards() public {
+        // 1. Borrow against collateral
+        uint256 borrowAmount = 500e6;
+        borrowViaMulticall(borrowAmount);
+
+        uint256 storedDebt = _dynamicVault.getDebtBalance(_portfolioAccount);
+        assertEq(storedDebt, borrowAmount, "Stored debt should match borrow amount");
+
+        // 2. Deposit rewards via repayWithRewards (starts linear vesting)
+        uint256 rewardAmount = 200e6;
+        deal(address(_usdc), _portfolioAccount, rewardAmount);
+        vm.prank(_portfolioAccount);
+        IERC20(_usdc).approve(_vault, rewardAmount);
+        vm.prank(_portfolioAccount);
+        _dynamicVault.repayWithRewards(rewardAmount);
+
+        // Stored debt unchanged (rewards haven't vested yet at this instant)
+        uint256 storedDebtAfterReward = _dynamicVault.getDebtBalance(_portfolioAccount);
+        assertEq(storedDebtAfterReward, borrowAmount, "Stored debt unchanged immediately after reward deposit");
+
+        // 3. Create listing at a price that covers original debt
+        uint256 listingPrice = (borrowAmount * 10200) / 10000; // 2% above debt
+        makeListingViaMulticall(_tokenId, listingPrice, address(_usdc), 0, address(0));
+
+        // 4. Warp forward to vest ~50% of rewards (half the remaining epoch duration)
+        // ProtocolTimeLibrary: epochNext = timestamp - (timestamp % WEEK) + WEEK
+        uint256 WEEK = 7 days;
+        uint256 epochEnd = block.timestamp - (block.timestamp % WEEK) + WEEK;
+        uint256 halfEpoch = (epochEnd - block.timestamp) / 2;
+        vm.warp(block.timestamp + halfEpoch);
+
+        // 5. Stored debt is still the same (no settlement has happened)
+        uint256 staleDebt = _dynamicVault.getDebtBalance(_portfolioAccount);
+        assertEq(staleDebt, borrowAmount, "Stored debt is stale - no settlement triggered");
+
+        // 6. But getEffectiveDebtBalance should reflect vested rewards
+        uint256 effectiveDebt = _dynamicVault.getEffectiveDebtBalance(_portfolioAccount);
+        assertLt(effectiveDebt, storedDebt, "Effective debt should be less than stored debt after rewards vest");
+
+        // 7. isListingPurchasable should use the effective (lower) debt
+        (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        // The required payment is based on effective debt, which is lower
+        // than what stale debt would suggest
+        uint256 feeBps = portfolioMarketplace.protocolFee();
+        uint256 expectedNetPayment = listingPrice - (listingPrice * feeBps) / 10000;
+        assertEq(netPayment, expectedNetPayment, "Net payment should match listing price minus fee");
+
+        // requiredPayment should be based on effective debt (not stale stored debt)
+        // Since effective debt < stored debt, required payment should be lower
+        assertLt(requiredPayment, borrowAmount, "Required payment should reflect vested rewards reducing debt");
+        assertTrue(purchasable, "Listing should be purchasable with effective debt accounting");
     }
 }

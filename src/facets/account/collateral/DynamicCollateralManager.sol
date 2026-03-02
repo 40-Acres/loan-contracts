@@ -15,6 +15,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface IDynamicFeesVault {
     function getDebtBalance(address borrower) external view returns (uint256);
+    function getEffectiveDebtBalance(address borrower) external view returns (uint256);
 }
 
 /**
@@ -156,7 +157,7 @@ library DynamicCollateralManager {
 
     function getTotalDebt(address portfolioAccountConfig) public view returns (uint256) {
         ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
-        return IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
+        return IDynamicFeesVault(address(lendingPool)).getEffectiveDebtBalance(address(this));
     }
 
     function getUnpaidFees() public pure returns (uint256) {
