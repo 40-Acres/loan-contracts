@@ -12,16 +12,18 @@ import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {BridgeFacet} from "../../../src/facets/account/bridge/BridgeFacet.sol";
 
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
-import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {DynamicLendingFacet} from "../../../src/facets/account/lending/DynamicLendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
-import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
+import {DynamicVotingEscrowFacet} from "../../../src/facets/account/votingEscrow/DynamicVotingEscrowFacet.sol";
 import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFacet.sol";
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
+import {DynamicRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/DynamicRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {DynamicMarketplaceFacet} from "../../../src/facets/account/marketplace/DynamicMarketplaceFacet.sol";
 import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationFacet.sol";
@@ -106,8 +108,8 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
         _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
-        // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
+        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -120,16 +122,17 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
-        // Deploy LendingFacet
-        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
-        bytes4[] memory lendingSelectors = new bytes4[](4);
+        // Deploy DynamicLendingFacet (uses DynamicCollateralManager for debt tracking)
+        DynamicLendingFacet lendingFacet = new DynamicLendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        bytes4[] memory lendingSelectors = new bytes4[](5);
         lendingSelectors[0] = BaseLendingFacet.borrow.selector;
         lendingSelectors[1] = BaseLendingFacet.pay.selector;
         lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
         lendingSelectors[3] = BaseLendingFacet.topUp.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
+        lendingSelectors[4] = BaseLendingFacet.borrowTo.selector;
+        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "DynamicLendingFacet");
 
         // Deploy VotingFacet
         VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), VOTING_ESCROW, VOTER);
@@ -141,14 +144,14 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         votingSelectors[4] = VotingFacet.defaultVote.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
-        // Deploy VotingEscrowFacet
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        // Deploy DynamicVotingEscrowFacet (uses DynamicCollateralManager for collateral updates)
+        DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
         bytes4[] memory votingEscrowSelectors = new bytes4[](4);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        votingEscrowSelectors[0] = DynamicVotingEscrowFacet.increaseLock.selector;
+        votingEscrowSelectors[1] = DynamicVotingEscrowFacet.createLock.selector;
+        votingEscrowSelectors[2] = DynamicVotingEscrowFacet.merge.selector;
+        votingEscrowSelectors[3] = DynamicVotingEscrowFacet.onERC721Received.selector;
+        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "DynamicVotingEscrowFacet");
 
         // Deploy MigrationFacet
         MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
@@ -170,8 +173,8 @@ contract AerodromeDynamicFeesRootDeploy is Script {
 
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -179,10 +182,11 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
-        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
+        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "DynamicMarketplaceFacet");
 
-        // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(_vault));
+        // Deploy DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt)
+        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(_vault));
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -196,7 +200,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "DynamicRewardsProcessingFacet");
     }
 
     /**
@@ -278,8 +282,8 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
         // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
-        // // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
+        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -292,7 +296,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // // Deploy LendingFacet
         // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
@@ -364,8 +368,8 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
         // _registerFacet(facetRegistry, address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
-        // // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        // Deploy DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt)
+        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -379,7 +383,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "DynamicRewardsProcessingFacet");
 
         upgradeVault();
     }

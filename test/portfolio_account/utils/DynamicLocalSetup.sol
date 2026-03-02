@@ -28,6 +28,7 @@ import {DynamicMarketplaceFacet} from "../../../src/facets/account/marketplace/D
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {DynamicRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/DynamicRewardsProcessingFacet.sol";
 
 
 // DynamicFeesVault (real vault, not mock)
@@ -309,7 +310,7 @@ contract DynamicLocalSetup is Test {
             address(_portfolioFactory), address(_portfolioAccountConfig),
             address(_ve), address(_portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSel = new bytes4[](7);
+        bytes4[] memory marketplaceSel = new bytes4[](8);
         marketplaceSel[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSel[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSel[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -317,10 +318,11 @@ contract DynamicLocalSetup is Test {
         marketplaceSel[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSel[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSel[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSel[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         _facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSel, "DynamicMarketplaceFacet");
 
-        // ── 8. RewardsProcessingFacet (10 selectors) ──
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(
+        // ── 8. DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt) ──
+        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(
             address(_portfolioFactory), address(_portfolioAccountConfig),
             address(_swapConfig), address(_ve), _vault
         );
@@ -337,7 +339,7 @@ contract DynamicLocalSetup is Test {
         rewardsSel[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
         rewardsSel[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         rewardsSel[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
-        _facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
+        _facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "DynamicRewardsProcessingFacet");
 
         vm.stopPrank();
     }

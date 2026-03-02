@@ -68,6 +68,40 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         return UserMarketplaceModule.hasSaleAuthorization(tokenId);
     }
 
+    /**
+     * @notice Check if a listing is currently purchasable given the seller's debt state.
+     *         Seller debt may increase after listing creation, making the net sale proceeds
+     *         insufficient to cover the required debt payment for collateral removal.
+     * @param tokenId The token ID of the listing
+     * @return purchasable True if the listing can be purchased without reverting
+     * @return requiredPayment The debt payment needed to safely remove the collateral
+     * @return netPayment The net payment seller receives (listing price minus protocol fee)
+     */
+    function isListingPurchasable(uint256 tokenId) external view returns (bool purchasable, uint256 requiredPayment, uint256 netPayment) {
+        // Check local sale authorization exists
+        if (!UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
+            return (false, 0, 0);
+        }
+
+        // Check centralized listing exists and is not expired
+        PortfolioMarketplace.Listing memory listing = PortfolioMarketplace(_marketplace).getListing(tokenId);
+        if (listing.owner != address(this)) {
+            return (false, 0, 0);
+        }
+        if (listing.expiresAt > 0 && listing.expiresAt <= block.timestamp) {
+            return (false, 0, 0);
+        }
+
+        // Calculate net payment after protocol fee
+        uint256 feeBps = PortfolioMarketplace(_marketplace).protocolFeeBps();
+        netPayment = listing.price - (listing.price * feeBps) / 10000;
+
+        // Get current required payment (reflects current debt state, not listing-time state)
+        requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioAccountConfig), tokenId);
+
+        purchasable = netPayment >= requiredPayment;
+    }
+
     // ──────────────────────────────────────────────
     // Listing Management (via PortfolioManager multicall)
     // ──────────────────────────────────────────────

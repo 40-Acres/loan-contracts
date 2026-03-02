@@ -303,7 +303,7 @@ contract LocalSetup is Test {
             address(_portfolioFactory), address(_portfolioAccountConfig),
             address(_ve), address(_portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSel = new bytes4[](7);
+        bytes4[] memory marketplaceSel = new bytes4[](8);
         marketplaceSel[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSel[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSel[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -311,6 +311,7 @@ contract LocalSetup is Test {
         marketplaceSel[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSel[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSel[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSel[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         _facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSel, "MarketplaceFacet");
 
         // ── 8. RewardsProcessingFacet (10 selectors) ──

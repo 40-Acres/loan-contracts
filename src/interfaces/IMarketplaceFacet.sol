@@ -45,4 +45,15 @@ interface IMarketplaceFacet {
      * @notice Get the marketplace address
      */
     function marketplace() external view returns (address);
+
+    /**
+     * @notice Check if a listing is currently purchasable given the seller's debt state.
+     *         Returns false if the seller's debt has increased since listing creation
+     *         such that the net sale proceeds can no longer cover the required debt payment.
+     * @param tokenId The token ID of the listing
+     * @return purchasable True if the listing can be purchased without reverting
+     * @return requiredPayment The current debt payment required to remove the collateral
+     * @return netPayment The net payment the seller would receive (price minus protocol fee)
+     */
+    function isListingPurchasable(uint256 tokenId) external view returns (bool purchasable, uint256 requiredPayment, uint256 netPayment);
 }
