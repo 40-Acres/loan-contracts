@@ -276,20 +276,20 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
         // portfolioManager.setAuthorizedCaller(0x250600a035d14e0b079d9efa625393e7Bfe83265, true);
         // // Deploy RewardsProcessingFacet
-        // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
+        rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Deploy ClaimingFacet
         // ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));

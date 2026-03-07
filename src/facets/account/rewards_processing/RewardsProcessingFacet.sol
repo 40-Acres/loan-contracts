@@ -54,6 +54,7 @@ contract RewardsProcessingFacet is AccessControl {
     event VaultForInvestingSet(address vault, address indexed owner);
     event ZeroBalanceDistributionCleared(address indexed owner);
     event ActiveBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
+    event SwapFailed(uint256 epoch, uint256 indexed tokenId, uint256 inputAmount, address inputToken, address outputToken, address indexed owner);
 
     constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
         require(portfolioFactory != address(0));
@@ -483,6 +484,7 @@ contract RewardsProcessingFacet is AccessControl {
             })) returns (uint256 swappedAmount) {
                 amount += swappedAmount;
             } catch {
+                emit SwapFailed(_currentEpochStart(), 0, params[i].inputAmount, params[i].inputToken, rewardsToken, _portfolioFactory.ownerOf(address(this)));
                 continue;
             }
         }

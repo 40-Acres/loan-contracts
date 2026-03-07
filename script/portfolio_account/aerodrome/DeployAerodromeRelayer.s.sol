@@ -322,21 +322,21 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
         // // Step 3: Redeploy RewardsProcessingFacet with fresh config and Aerodrome vault
-        // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(portfolioFactory, address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        // rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
-        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(portfolioFactory, address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
+        rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
+        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
+        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Step 4: Redeploy all other facets with fresh config
         // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW);
@@ -377,16 +377,16 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
-        marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
-        marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
-        marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
-        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
+        // bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
+        // marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
+        // marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
+        // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        // marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
         _validateDeployment(portfolioAccountConfig, portfolioFactory);
