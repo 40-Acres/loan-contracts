@@ -5,10 +5,10 @@ import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
 import {IYieldBasisVotingEscrow} from "../interfaces/IYieldBasisVotingEscrow.sol";
 
 /**
- * @title YieldBasisVotingEscrowAdapter
+ * @title veYieldBasisAdapter
  * @dev Adapts YieldBasis's address-based veYB to match Aerodrome's tokenId-based IVotingEscrow interface.
  */
-contract YieldBasisVotingEscrowAdapter {
+contract veYieldBasisAdapter {
     IYieldBasisVotingEscrow public immutable veYB;
 
     uint256 public constant MAX_LOCK_TIME = 4 * 365 days;
@@ -44,13 +44,13 @@ contract YieldBasisVotingEscrowAdapter {
     /**
      * @notice No-op - infinite lock must be enabled by the portfolio account directly
      * @dev The adapter cannot call infinite_lock_toggle() because it would affect
-     *      the adapter's address, not the portfolio's. YieldBasisFacet handles this
+     *      the adapter's address, not the portfolio's. veYieldBasisFacet handles this
      *      by calling veYB.infinite_lock_toggle() directly when creating/depositing locks.
      * @param tokenId The veYB token ID (unused)
      */
     function lockPermanent(uint256 tokenId) external {
         // No-op: infinite_lock_toggle() must be called by the portfolio account directly
-        // YieldBasisFacet.createLock() and depositLock() handle enabling infinite lock
+        // veYieldBasisFacet.createLock() and depositLock() handle enabling infinite lock
     }
 
     /**

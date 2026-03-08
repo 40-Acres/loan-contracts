@@ -59,8 +59,6 @@ library ERC4626CollateralManager {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
         ERC4626CollateralData storage data = _getStorage();
-        require(IERC20(vault).balanceOf(address(this)) >= data.shares + shares, "Insufficient shares in wallet");
-
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
 
         // Calculate asset value of shares

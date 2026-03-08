@@ -6,12 +6,12 @@ import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 
 /**
- * @title YieldBasisBtcClaimingFacet
+ * @title YieldBasisLpClaimingFacet
  * @dev Claims YB token rewards from a YieldBasis gauge.
  * Rewards are left on the portfolio account contract for further processing
  * (e.g. by RewardsProcessingFacet).
  */
-contract YieldBasisBtcClaimingFacet is AccessControl {
+contract YieldBasisLpClaimingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     IYieldBasisGauge public immutable _gauge;
 

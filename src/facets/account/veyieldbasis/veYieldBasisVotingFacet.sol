@@ -9,7 +9,7 @@ import {IYieldBasisFeeDistributor} from "../../../interfaces/IYieldBasisFeeDistr
 import {AccessControl} from "../utils/AccessControl.sol";
 
 /**
- * @title YieldBasisVotingFacet
+ * @title veYieldBasisVotingFacet
  * @dev Facet for voting on YieldBasis gauge weights (Ethereum)
  *
  * veYB holders vote to direct YB emissions to liquidity gauges.
@@ -23,7 +23,7 @@ import {AccessControl} from "../utils/AccessControl.sol";
  * - veYB: 0x8235c179E9e84688FBd8B12295EfC26834dAC211
  * - GaugeController: 0x1Be14811A3a06F6aF4fA64310a636e1Df04c1c21
  */
-contract YieldBasisVotingFacet is AccessControl {
+contract veYieldBasisVotingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IYieldBasisVotingEscrow public immutable _veYB;

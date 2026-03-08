@@ -8,22 +8,22 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
-import {YieldBasisVotingEscrowAdapter} from "../../../adapters/YieldBasisVotingEscrowAdapter.sol";
+import {veYieldBasisAdapter} from "../../../adapters/veYieldBasisAdapter.sol";
 import {YieldBasisFaucet} from "../../../faucets/YieldBasisFaucet.sol";
 
 /**
- * @title YieldBasisFacet
+ * @title veYieldBasisFacet
  * @dev Facet for managing veYB lock positions on YieldBasis (Ethereum)
  *
  *
- * Uses YieldBasisVotingEscrowAdapter to make veYB compatible with DynamicCollateralManager
+ * Uses veYieldBasisAdapter to make veYB compatible with DynamicCollateralManager
  * which expects Aerodrome's tokenId-based IVotingEscrow interface.
  *
  * Contract Addresses (Ethereum Mainnet):
  * - YB Token: 0x01791F726B4103694969820be083196cC7c045fF
  * - veYB: 0x8235c179E9e84688FBd8B12295EfC26834dAC211
  */
-contract YieldBasisFacet is AccessControl {
+contract veYieldBasisFacet is AccessControl {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
@@ -31,7 +31,7 @@ contract YieldBasisFacet is AccessControl {
     IYieldBasisVotingEscrow public immutable _veYB;
     IERC20 public immutable _yb;
     /// @notice Adapter that makes veYB compatible with CollateralManager's IVotingEscrow interface
-    YieldBasisVotingEscrowAdapter public immutable _veYBAdapter;
+    veYieldBasisAdapter public immutable _veYBAdapter;
     /// @notice Faucet that provides YB tokens for bootstrapping locks
     YieldBasisFaucet public immutable _faucet;
 
@@ -61,7 +61,7 @@ contract YieldBasisFacet is AccessControl {
         _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _veYB = IYieldBasisVotingEscrow(veYB);
         _yb = IERC20(yb);
-        _veYBAdapter = YieldBasisVotingEscrowAdapter(veYBAdapter);
+        _veYBAdapter = veYieldBasisAdapter(veYBAdapter);
         _faucet = YieldBasisFaucet(faucet);
     }
 
