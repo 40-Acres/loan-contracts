@@ -143,4 +143,5 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
     function getCollateralShares() external view returns (uint256) {
         return ERC4626CollateralManager.getCollateralShares();
     }
+
 }
