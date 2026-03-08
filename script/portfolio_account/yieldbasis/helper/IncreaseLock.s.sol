@@ -5,8 +5,8 @@ import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
-import {YieldBasisFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
-import {YieldBasisVotingFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisVotingFacet.sol";
+import {veYieldBasisFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisFacet.sol";
+import {veYieldBasisVotingFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisVotingFacet.sol";
 import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {stdJson} from "forge-std/StdJson.sol";
@@ -54,9 +54,9 @@ contract IncreaseLock is Script {
         // Get YieldBasis factory
         PortfolioFactory factory = PortfolioHelperUtils.getYieldBasisFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = YieldBasisFacet.increaseLock.selector;
+        bytes4 selector = veYieldBasisFacet.increaseLock.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
-        require(facet != address(0), "YieldBasisFacet.increaseLock not registered in FacetRegistry. Please deploy facets first.");
+        require(facet != address(0), "veYieldBasisFacet.increaseLock not registered in FacetRegistry. Please deploy facets first.");
 
         // Get portfolio address from factory
         address portfolioAddress = factory.portfolioOf(owner);

@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
-import {YieldBasisVotingFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisVotingFacet.sol";
+import {veYieldBasisVotingFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisVotingFacet.sol";
 import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVotingEscrow.sol";
 import {IYieldBasisGaugeController} from "../../../../src/interfaces/IYieldBasisGaugeController.sol";
 import {stdJson} from "forge-std/StdJson.sol";
@@ -60,9 +60,9 @@ contract VoteOnGauges is Script {
         // Get YieldBasis factory
         PortfolioFactory factory = PortfolioHelperUtils.getYieldBasisFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = YieldBasisVotingFacet.vote.selector;
+        bytes4 selector = veYieldBasisVotingFacet.vote.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
-        require(facet != address(0), "YieldBasisVotingFacet.vote not registered in FacetRegistry. Please deploy facets first.");
+        require(facet != address(0), "veYieldBasisVotingFacet.vote not registered in FacetRegistry. Please deploy facets first.");
 
         // Get portfolio address from factory
         address portfolioAddress = factory.portfolioOf(owner);

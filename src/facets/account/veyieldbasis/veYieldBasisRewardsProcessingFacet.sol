@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFacet.sol";
 import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscrow.sol";
-import {YieldBasisVotingEscrowAdapter} from "../../../adapters/YieldBasisVotingEscrowAdapter.sol";
+import {veYieldBasisAdapter} from "../../../adapters/veYieldBasisAdapter.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -17,11 +17,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
  * This facet overrides _increaseCollateral to call veYB.increase_amount()
  * directly instead of using the tokenId-based increaseAmount().
  */
-contract YieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
+contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
     using SafeERC20 for IERC20;
 
     IYieldBasisVotingEscrow public immutable _veYB;
-    YieldBasisVotingEscrowAdapter public immutable _veYBAdapter;
+    veYieldBasisAdapter public immutable _veYBAdapter;
 
     constructor(
         address portfolioFactory,
@@ -40,7 +40,7 @@ contract YieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         require(veYB != address(0), "Invalid veYB");
         require(veYBAdapter != address(0), "Invalid veYB adapter");
         _veYB = IYieldBasisVotingEscrow(veYB);
-        _veYBAdapter = YieldBasisVotingEscrowAdapter(veYBAdapter);
+        _veYBAdapter = veYieldBasisAdapter(veYBAdapter);
     }
 
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override {

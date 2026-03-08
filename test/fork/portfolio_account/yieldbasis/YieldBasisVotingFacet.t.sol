@@ -2,8 +2,8 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {YieldBasisFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
-import {YieldBasisVotingFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisVotingFacet.sol";
+import {veYieldBasisFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisFacet.sol";
+import {veYieldBasisVotingFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisVotingFacet.sol";
 import {DynamicCollateralFacet} from "../../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {ERC721ReceiverFacet} from "../../../../src/facets/ERC721ReceiverFacet.sol";
@@ -19,7 +19,7 @@ import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVot
 import {IYieldBasisGaugeController} from "../../../../src/interfaces/IYieldBasisGaugeController.sol";
 import {IYieldBasisFeeDistributor} from "../../../../src/interfaces/IYieldBasisFeeDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {YieldBasisVotingEscrowAdapter} from "../../../../src/adapters/YieldBasisVotingEscrowAdapter.sol";
+import {veYieldBasisAdapter} from "../../../../src/adapters/veYieldBasisAdapter.sol";
 import {YieldBasisFaucet} from "../../../../src/faucets/YieldBasisFaucet.sol";
 import {ILendingPool} from "../../../../src/interfaces/ILendingPool.sol";
 
@@ -110,8 +110,8 @@ contract YieldBasisVotingFacetTest is Test {
     address public portfolioAccount;
 
     // Facets
-    YieldBasisFacet public yieldBasisFacet;
-    YieldBasisVotingFacet public yieldBasisVotingFacet;
+    veYieldBasisFacet public yieldBasisFacet;
+    veYieldBasisVotingFacet public yieldBasisVotingFacet;
     DynamicCollateralFacet public collateralFacet;
 
     // YieldBasis contracts
@@ -175,7 +175,7 @@ contract YieldBasisVotingFacetTest is Test {
         facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter (adapts veYB to CollateralManager's IVotingEscrow interface)
-        YieldBasisVotingEscrowAdapter veYBAdapter = new YieldBasisVotingEscrowAdapter(VE_YB);
+        veYieldBasisAdapter veYBAdapter = new veYieldBasisAdapter(VE_YB);
 
         // Deploy YieldBasis Faucet (dispenses YB for bootstrapping locks)
         // Rate limit: 100 dispenses per hour
@@ -189,8 +189,8 @@ contract YieldBasisVotingFacetTest is Test {
         // Fund the faucet
         deal(YB, address(faucet), 1000 ether);
 
-        // Deploy YieldBasisFacet
-        yieldBasisFacet = new YieldBasisFacet(
+        // Deploy veYieldBasisFacet
+        yieldBasisFacet = new veYieldBasisFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB,
@@ -199,13 +199,13 @@ contract YieldBasisVotingFacetTest is Test {
             address(faucet)
         );
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
+        yieldBasisSelectors[0] = veYieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = veYieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = veYieldBasisFacet.depositLock.selector;
+        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "veYieldBasisFacet");
 
-        // Deploy YieldBasisVotingFacet
-        yieldBasisVotingFacet = new YieldBasisVotingFacet(
+        // Deploy veYieldBasisVotingFacet
+        yieldBasisVotingFacet = new veYieldBasisVotingFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB,
@@ -213,9 +213,9 @@ contract YieldBasisVotingFacetTest is Test {
             FEE_DISTRIBUTOR
         );
         bytes4[] memory votingSelectors = new bytes4[](2);
-        votingSelectors[0] = YieldBasisVotingFacet.vote.selector;
-        votingSelectors[1] = YieldBasisVotingFacet.defaultVote.selector;
-        facetRegistry.registerFacet(address(yieldBasisVotingFacet), votingSelectors, "YieldBasisVotingFacet");
+        votingSelectors[0] = veYieldBasisVotingFacet.vote.selector;
+        votingSelectors[1] = veYieldBasisVotingFacet.defaultVote.selector;
+        facetRegistry.registerFacet(address(yieldBasisVotingFacet), votingSelectors, "veYieldBasisVotingFacet");
 
         // Deploy ERC721ReceiverFacet (needed for veYB NFT transfers)
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
@@ -251,7 +251,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -276,7 +276,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -305,7 +305,7 @@ contract YieldBasisVotingFacetTest is Test {
         uint256[] memory weights = new uint256[](1);
         weights[0] = 10000; // 100% of voting power
 
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, gauges, weights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, gauges, weights);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -326,7 +326,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -351,7 +351,7 @@ contract YieldBasisVotingFacetTest is Test {
         weights[0] = 5000; // 50%
         weights[1] = 5000; // 50%
 
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, activeGauges, weights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, activeGauges, weights);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -381,7 +381,7 @@ contract YieldBasisVotingFacetTest is Test {
         }
         require(found >= 2, "Need at least 2 additional active gauges for this test");
 
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, activeGauges, weights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, activeGauges, weights);
 
 
         // skip 11 days
@@ -407,14 +407,14 @@ contract YieldBasisVotingFacetTest is Test {
         allWeights[2] = 5000;
         allWeights[3] = 5000;
 
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, allGauges, allWeights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, allGauges, allWeights);
         portfolioManager.multicall(calldatas, factories);
 
 
         // skip 11 days
         vm.warp(block.timestamp + 22 days);
         vm.roll(block.number + 2);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, allGauges, allWeights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, allGauges, allWeights);
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
         
@@ -430,7 +430,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -455,7 +455,7 @@ contract YieldBasisVotingFacetTest is Test {
         weights[0] = 5000; // 50%
         weights[1] = 5000; // 50%
 
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, activeGauges, weights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, activeGauges, weights);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -498,7 +498,7 @@ contract YieldBasisVotingFacetTest is Test {
         // The gauge controller prevents allocating more than 100% total voting power
         vm.prank(authorizedCaller);
         vm.expectRevert();
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(activeGauges, weights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(activeGauges, weights);
 
         // vote with all 4 gauges but set first two to 0% and last two to 100%
         address[] memory allGauges = new address[](4);
@@ -515,7 +515,7 @@ contract YieldBasisVotingFacetTest is Test {
 
         // This should work because we're setting the old gauges to 0% and new ones to 50% each
         vm.prank(authorizedCaller);
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
 
         // Verify voting power is correctly allocated
         voteUserPower = gaugeController.vote_user_power(portfolioAccount);
@@ -524,21 +524,21 @@ contract YieldBasisVotingFacetTest is Test {
         // Try to vote again immediately - should revert because cooldown not met (need 15 days)
         vm.prank(authorizedCaller);
         vm.expectRevert();
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
 
         // skip 14 days (cooldown should not be met - less than 15 days)
         vm.warp(block.timestamp + 12 days);
         vm.roll(block.number + 1);
         vm.expectRevert();
         vm.prank(authorizedCaller);
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
 
 
         // skip 15 days (cooldown should be met - exactly 15 days)
         vm.warp(block.timestamp + 15 days);
         vm.roll(block.number + 1);
         vm.prank(authorizedCaller);
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(allGauges, allWeights);
 
         // Verify voting power is still correctly allocated
         voteUserPower = gaugeController.vote_user_power(portfolioAccount);
@@ -558,7 +558,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -571,7 +571,7 @@ contract YieldBasisVotingFacetTest is Test {
         weights[0] = 10000;
 
         vm.expectRevert();
-        YieldBasisVotingFacet(portfolioAccount).vote(gauges, weights);
+        veYieldBasisVotingFacet(portfolioAccount).vote(gauges, weights);
 
         vm.stopPrank();
     }
@@ -586,7 +586,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
@@ -601,7 +601,7 @@ contract YieldBasisVotingFacetTest is Test {
 
         vm.prank(user); // user is not an authorized caller
         vm.expectRevert();
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(gauges, weights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(gauges, weights);
     }
 
     function testDefaultVoteAsAuthorizedCaller() public {
@@ -614,7 +614,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
@@ -638,7 +638,7 @@ contract YieldBasisVotingFacetTest is Test {
         weights[0] = 10000;
 
         vm.prank(authorizedCaller);
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(gauges, weights);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(gauges, weights);
 
         // Verify vote was recorded
         uint256 voteUserPower = gaugeController.vote_user_power(portfolioAccount);
@@ -663,7 +663,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisVotingFacet.vote.selector, gauges, weights);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisVotingFacet.vote.selector, gauges, weights);
 
         // Should revert because no voting power
         vm.expectRevert();
@@ -682,7 +682,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
@@ -696,8 +696,8 @@ contract YieldBasisVotingFacetTest is Test {
         weights[0] = 5000; // Only 50% - should revert
 
         vm.prank(authorizedCaller);
-        vm.expectRevert(YieldBasisVotingFacet.InvalidWeight.selector);
-        YieldBasisVotingFacet(portfolioAccount).defaultVote(gauges, weights);
+        vm.expectRevert(veYieldBasisVotingFacet.InvalidWeight.selector);
+        veYieldBasisVotingFacet(portfolioAccount).defaultVote(gauges, weights);
     }
 
     function testIncreaseLock() public {
@@ -710,12 +710,12 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
         // Increase lock
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.increaseLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.increaseLock.selector, LOCK_AMOUNT);
         portfolioManager.multicall(calldatas, factories);
 
         vm.stopPrank();
@@ -738,7 +738,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
@@ -772,7 +772,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.depositLock.selector, userTokenId);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.depositLock.selector, userTokenId);
 
         // Should succeed - faucet bootstraps a lock, then user's lock is deposited and merged
         portfolioManager.multicall(calldatas, factories);
@@ -795,7 +795,7 @@ contract YieldBasisVotingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 
@@ -819,7 +819,7 @@ contract YieldBasisVotingFacetTest is Test {
         require(success, "setApprovalForAll failed");
 
         // Now deposit the lock into portfolio account that HAS an existing lock
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.depositLock.selector, userTokenId);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.depositLock.selector, userTokenId);
         portfolioManager.multicall(calldatas, factories);
 
         vm.stopPrank();

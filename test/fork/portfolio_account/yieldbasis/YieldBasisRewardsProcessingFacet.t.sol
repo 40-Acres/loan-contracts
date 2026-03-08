@@ -2,8 +2,8 @@
 pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {YieldBasisFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
-import {YieldBasisRewardsProcessingFacet} from "../../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
+import {veYieldBasisFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisFacet.sol";
+import {veYieldBasisRewardsProcessingFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {UserRewardsConfig} from "../../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
 import {DynamicCollateralFacet} from "../../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
@@ -20,7 +20,7 @@ import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account
 import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {YieldBasisVotingEscrowAdapter} from "../../../../src/adapters/YieldBasisVotingEscrowAdapter.sol";
+import {veYieldBasisAdapter} from "../../../../src/adapters/veYieldBasisAdapter.sol";
 import {YieldBasisFaucet} from "../../../../src/faucets/YieldBasisFaucet.sol";
 import {ILendingPool} from "../../../../src/interfaces/ILendingPool.sol";
 import {SwapMod} from "../../../../src/facets/account/swap/SwapMod.sol";
@@ -118,8 +118,8 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     address public portfolioAccount;
 
     // Facets
-    YieldBasisFacet public yieldBasisFacet;
-    YieldBasisRewardsProcessingFacet public rewardsProcessingFacet;
+    veYieldBasisFacet public yieldBasisFacet;
+    veYieldBasisRewardsProcessingFacet public rewardsProcessingFacet;
     DynamicCollateralFacet public collateralFacet;
 
     // YieldBasis contracts
@@ -131,7 +131,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     MockVault public mockVault;
 
     // Adapter and faucet
-    YieldBasisVotingEscrowAdapter public veYBAdapter;
+    veYieldBasisAdapter public veYBAdapter;
     YieldBasisFaucet public faucet;
 
     // Lock amount for tests
@@ -186,7 +186,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter
-        veYBAdapter = new YieldBasisVotingEscrowAdapter(VE_YB);
+        veYBAdapter = new veYieldBasisAdapter(VE_YB);
 
         // Deploy YieldBasis Faucet (rate limit: 100 dispenses per hour)
         faucet = new YieldBasisFaucet(
@@ -198,8 +198,8 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         );
         deal(YB, address(faucet), 1000 ether);
 
-        // Deploy YieldBasisFacet
-        yieldBasisFacet = new YieldBasisFacet(
+        // Deploy veYieldBasisFacet
+        yieldBasisFacet = new veYieldBasisFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             VE_YB,
@@ -208,10 +208,10 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
             address(faucet)
         );
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
+        yieldBasisSelectors[0] = veYieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = veYieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = veYieldBasisFacet.depositLock.selector;
+        facetRegistry.registerFacet(address(yieldBasisFacet), yieldBasisSelectors, "veYieldBasisFacet");
 
         // Deploy ERC721ReceiverFacet
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
@@ -219,8 +219,8 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
         facetRegistry.registerFacet(address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
-        // Deploy YieldBasisRewardsProcessingFacet
-        rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(
+        // Deploy veYieldBasisRewardsProcessingFacet
+        rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(
             address(portfolioFactory),
             address(portfolioAccountConfig),
             address(swapConfig),
@@ -240,7 +240,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         rewardsSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
         rewardsSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
         rewardsSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSelectors, "YieldBasisRewardsProcessingFacet");
+        facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSelectors, "veYieldBasisRewardsProcessingFacet");
 
         // Set authorized caller
         portfolioManager.setAuthorizedCaller(authorizedCaller, true);
@@ -269,7 +269,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         factories[0] = address(portfolioFactory);
 
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisFacet.createLock.selector, LOCK_AMOUNT);
+        calldatas[0] = abi.encodeWithSelector(veYieldBasisFacet.createLock.selector, LOCK_AMOUNT);
 
         portfolioManager.multicall(calldatas, factories);
 

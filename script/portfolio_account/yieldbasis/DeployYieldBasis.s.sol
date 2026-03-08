@@ -10,18 +10,18 @@ import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol"
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {PortfolioAccountConfigDeploy} from "../DeployPortfolioAccountConfig.s.sol";
-import {YieldBasisFacet} from "../../../src/facets/account/yieldbasis/YieldBasisFacet.sol";
-import {YieldBasisVotingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisVotingFacet.sol";
+import {veYieldBasisFacet} from "../../../src/facets/account/veyieldbasis/veYieldBasisFacet.sol";
+import {veYieldBasisVotingFacet} from "../../../src/facets/account/veyieldbasis/veYieldBasisVotingFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
-import {YieldBasisRewardsProcessingFacet} from "../../../src/facets/account/yieldbasis/YieldBasisRewardsProcessingFacet.sol";
+import {veYieldBasisRewardsProcessingFacet} from "../../../src/facets/account/veyieldbasis/veYieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {Vault} from "../../../src/VaultV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {YieldBasisVotingEscrowAdapter} from "../../../src/adapters/YieldBasisVotingEscrowAdapter.sol";
+import {veYieldBasisAdapter} from "../../../src/adapters/veYieldBasisAdapter.sol";
 import {YieldBasisFaucet} from "../../../src/faucets/YieldBasisFaucet.sol";
 
 /**
@@ -93,7 +93,7 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter (adapts veYB to CollateralManager's IVotingEscrow interface)
-        YieldBasisVotingEscrowAdapter veYBAdapter = new YieldBasisVotingEscrowAdapter(VE_YB);
+        veYieldBasisAdapter veYBAdapter = new veYieldBasisAdapter(VE_YB);
 
         // Deploy YieldBasis Faucet (dispenses YB for bootstrapping locks)
         // Note: Faucet needs to be funded with YB tokens after deployment
@@ -106,20 +106,20 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
             1 hours     // windowDuration
         );
 
-        // Deploy YieldBasisFacet
-        YieldBasisFacet yieldBasisFacet = new YieldBasisFacet(address(portfolioFactory), address(portfolioAccountConfig), VE_YB, YB, address(veYBAdapter), address(faucet));
+        // Deploy veYieldBasisFacet
+        veYieldBasisFacet yieldBasisFacet = new veYieldBasisFacet(address(portfolioFactory), address(portfolioAccountConfig), VE_YB, YB, address(veYBAdapter), address(faucet));
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
+        yieldBasisSelectors[0] = veYieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = veYieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = veYieldBasisFacet.depositLock.selector;
+        _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "veYieldBasisFacet");
 
-        // Deploy YieldBasisVotingFacet
-        YieldBasisVotingFacet yieldBasisVotingFacet = new YieldBasisVotingFacet(address(portfolioFactory), address(portfolioAccountConfig), VE_YB, GAUGE_CONTROLLER, FEE_DISTRIBUTOR);
+        // Deploy veYieldBasisVotingFacet
+        veYieldBasisVotingFacet yieldBasisVotingFacet = new veYieldBasisVotingFacet(address(portfolioFactory), address(portfolioAccountConfig), VE_YB, GAUGE_CONTROLLER, FEE_DISTRIBUTOR);
         bytes4[] memory yieldBasisVotingSelectors = new bytes4[](2);
-        yieldBasisVotingSelectors[0] = YieldBasisVotingFacet.vote.selector;
-        yieldBasisVotingSelectors[1] = YieldBasisVotingFacet.defaultVote.selector;
-        _registerFacet(facetRegistry, address(yieldBasisVotingFacet), yieldBasisVotingSelectors, "YieldBasisVotingFacet");
+        yieldBasisVotingSelectors[0] = veYieldBasisVotingFacet.vote.selector;
+        yieldBasisVotingSelectors[1] = veYieldBasisVotingFacet.defaultVote.selector;
+        _registerFacet(facetRegistry, address(yieldBasisVotingFacet), yieldBasisVotingSelectors, "veYieldBasisVotingFacet");
 
         // Deploy ERC721ReceiverFacet (needed for veYB NFT transfers)
         ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
@@ -127,8 +127,8 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
         erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
         _registerFacet(facetRegistry, address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
-        // Deploy YieldBasisRewardsProcessingFacet
-        YieldBasisRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VE_YB, address(veYBAdapter), address(vault));
+        // Deploy veYieldBasisRewardsProcessingFacet
+        veYieldBasisRewardsProcessingFacet rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VE_YB, address(veYBAdapter), address(vault));
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -142,7 +142,7 @@ contract YieldBasisRootDeploy is PortfolioAccountConfigDeploy {
         rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
         rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisRewardsProcessingFacet");
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "veYieldBasisRewardsProcessingFacet");
     }
 
     /**
@@ -246,7 +246,7 @@ contract YieldBasisRootUpgrade is PortfolioAccountConfigDeploy {
         PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(PORTFOLIO_ACCOUNT_CONFIG);
         FacetRegistry facetRegistry = PortfolioFactory(PORTFOLIO_FACTORY).facetRegistry();
         YieldBasisFaucet faucet = YieldBasisFaucet(FAUCET);
-        YieldBasisVotingEscrowAdapter veYBAdapter = YieldBasisVotingEscrowAdapter(VE_YB_ADAPTER);
+        veYieldBasisAdapter veYBAdapter = veYieldBasisAdapter(VE_YB_ADAPTER);
 
         // Deploy CollateralFacet (required for enforceCollateralRequirements)
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
@@ -262,25 +262,25 @@ contract YieldBasisRootUpgrade is PortfolioAccountConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
-        // Deploy YieldBasisFacet
-        YieldBasisFacet yieldBasisFacet = new YieldBasisFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB, YB, address(veYBAdapter), address(faucet));
+        // Deploy veYieldBasisFacet
+        veYieldBasisFacet yieldBasisFacet = new veYieldBasisFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB, YB, address(veYBAdapter), address(faucet));
         bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = YieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = YieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = YieldBasisFacet.depositLock.selector;
-        _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "YieldBasisFacet");
+        yieldBasisSelectors[0] = veYieldBasisFacet.createLock.selector;
+        yieldBasisSelectors[1] = veYieldBasisFacet.increaseLock.selector;
+        yieldBasisSelectors[2] = veYieldBasisFacet.depositLock.selector;
+        _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "veYieldBasisFacet");
 
-        // Deploy YieldBasisVotingFacet
-        YieldBasisVotingFacet yieldBasisVotingFacet = new YieldBasisVotingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB, GAUGE_CONTROLLER, FEE_DISTRIBUTOR);
+        // Deploy veYieldBasisVotingFacet
+        veYieldBasisVotingFacet yieldBasisVotingFacet = new veYieldBasisVotingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VE_YB, GAUGE_CONTROLLER, FEE_DISTRIBUTOR);
         bytes4[] memory yieldBasisVotingSelectors = new bytes4[](2);
-        yieldBasisVotingSelectors[0] = YieldBasisVotingFacet.vote.selector;
-        yieldBasisVotingSelectors[1] = YieldBasisVotingFacet.defaultVote.selector;
-        _registerFacet(facetRegistry, address(yieldBasisVotingFacet), yieldBasisVotingSelectors, "YieldBasisVotingFacet");
+        yieldBasisVotingSelectors[0] = veYieldBasisVotingFacet.vote.selector;
+        yieldBasisVotingSelectors[1] = veYieldBasisVotingFacet.defaultVote.selector;
+        _registerFacet(facetRegistry, address(yieldBasisVotingFacet), yieldBasisVotingSelectors, "veYieldBasisVotingFacet");
 
-        // // Deploy YieldBasisRewardsProcessingFacet
+        // // Deploy veYieldBasisRewardsProcessingFacet
         // require(SWAP_CONFIG != address(0), "Set SWAP_CONFIG address");
         // require(VAULT != address(0), "Set VAULT address");
-        // YieldBasisRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisRewardsProcessingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG, VE_YB, address(veYBAdapter), VAULT);
+        // veYieldBasisRewardsProcessingFacet rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG, VE_YB, address(veYBAdapter), VAULT);
         // bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
         // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         // rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -293,7 +293,7 @@ contract YieldBasisRootUpgrade is PortfolioAccountConfigDeploy {
         // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
         // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
         // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisRewardsProcessingFacet");
+        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "veYieldBasisRewardsProcessingFacet");
     }
 
     /**
