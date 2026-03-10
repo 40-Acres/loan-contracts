@@ -68,7 +68,6 @@ contract MarketplaceE2ETest is Test, Setup {
         // Register WalletFacet on wallet factory
         WalletFacet walletFacet = new WalletFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_swapConfig)
         );
         bytes4[] memory walletSelectors = new bytes4[](6);
@@ -83,7 +82,6 @@ contract MarketplaceE2ETest is Test, Setup {
         // Register FortyAcresMarketplaceFacet on wallet factory
         FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_ve),
             address(portfolioMarketplace)
         );
@@ -314,7 +312,6 @@ contract MarketplaceE2ETest is Test, Setup {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         OpenXFacet openXFacet = new OpenXFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_ve)
         );
         bytes4[] memory openXSelectors = new bytes4[](1);

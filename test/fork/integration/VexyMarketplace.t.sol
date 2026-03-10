@@ -40,7 +40,6 @@ contract VexyMarketplaceTest is Test, Setup {
         // Register WalletFacet on wallet factory
         WalletFacet walletFacet = new WalletFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_swapConfig)
         );
         bytes4[] memory walletSelectors = new bytes4[](6);
@@ -55,7 +54,6 @@ contract VexyMarketplaceTest is Test, Setup {
         // Register VexyFacet on wallet factory
         VexyFacet vexyFacet = new VexyFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_ve)
         );
         bytes4[] memory vexySelectors = new bytes4[](1);

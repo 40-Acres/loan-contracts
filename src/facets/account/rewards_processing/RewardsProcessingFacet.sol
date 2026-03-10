@@ -2,9 +2,9 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
-import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
+import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -12,7 +12,6 @@ import {UserRewardsConfig} from "./UserRewardsConfig.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
-import {CollateralFacet} from "../collateral/CollateralFacet.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {IPortfolioManager} from "../../../accounts/IPortfolioManager.sol";
 
@@ -27,9 +26,8 @@ interface ILendingFacet {
 contract RewardsProcessingFacet is AccessControl {
     using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     SwapConfig public immutable _swapConfig;
-    IVotingEscrow public immutable _votingEscrow;
+    address public immutable _collateralToken;
     IERC4626 public immutable _vault;
 
 
@@ -56,16 +54,14 @@ contract RewardsProcessingFacet is AccessControl {
     event ActiveBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event SwapFailed(uint256 epoch, uint256 indexed tokenId, uint256 inputAmount, address inputToken, address outputToken, address indexed owner);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) {
+    constructor(address portfolioFactory, address swapConfig, address collateralToken, address vault) {
         require(portfolioFactory != address(0));
-        require(portfolioAccountConfig != address(0));
         require(swapConfig != address(0));
-        require(votingEscrow != address(0));
+        require(collateralToken != address(0));
         // vault can be zero address if there is no vault (no lending)
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _swapConfig = SwapConfig(swapConfig);
-        _votingEscrow = IVotingEscrow(votingEscrow);
+        _collateralToken = collateralToken;
         _vault = IERC4626(vault);
     }
 
@@ -84,7 +80,7 @@ contract RewardsProcessingFacet is AccessControl {
 
         // 1. Fees first — computed on original rewardsAmount
         uint256 remaining = rewardsAmount;
-        bool hasDebt = CollateralFacet(address(this)).getTotalDebt() > 0;
+        bool hasDebt = ICollateralFacet(address(this)).getTotalDebt() > 0;
         if (hasDebt) {
             remaining -= _payProtocolFee(tokenId, rewardsAmount, asset);
             remaining -= _payLenderPremium(tokenId, rewardsAmount, asset);
@@ -139,8 +135,8 @@ contract RewardsProcessingFacet is AccessControl {
         * If there is no debt, the rewards token is used if set, otherwise the vault asset is used.
      */
     function getRewardsToken() public view returns (address) {
-        uint256 totalDebt = CollateralFacet(address(this)).getTotalDebt();
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
+        address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
         require(loanContract != address(0));
         address vaultAsset = _vault.asset();
 
@@ -153,13 +149,17 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _processActiveLoanRewards(uint256 tokenId, uint256 availableAmount, address asset) internal virtual returns (uint256 remaining) {
         require(IERC20(asset).balanceOf(address(this)) >= availableAmount);
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
         require(loanContract != address(0));
 
-        uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioAccountConfig), availableAmount);
+        uint256 excess = _decreaseTotalDebt(availableAmount);
         emit LoanPaid(_currentEpochStart(), tokenId, availableAmount, _portfolioFactory.ownerOf(address(this)), address(asset));
 
         return excess;
+    }
+
+    function _decreaseTotalDebt(uint256 amount) internal virtual returns (uint256 excess) {
+        return CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
     }
 
     function _processZeroBalanceDistribution(
@@ -409,8 +409,8 @@ contract RewardsProcessingFacet is AccessControl {
         emit ActiveBalanceDistributionCleared(_portfolioFactory.ownerOf(address(this)));
     }
 
-    function _increaseCollateral(uint256 tokenId, address rewardsToken, uint256 optionAmount, SwapMod.RouteParams memory swapParams) internal returns (uint256 amountUsed) {
-        address lockedAsset = _votingEscrow.token();
+    function _increaseCollateral(uint256 tokenId, address rewardsToken, uint256 optionAmount, SwapMod.RouteParams memory swapParams) internal virtual returns (uint256 amountUsed) {
+        address lockedAsset = _collateralToken;
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         if(rewardsToken == lockedAsset) {
             _increaseLock(tokenId, optionAmount, lockedAsset);
@@ -434,16 +434,12 @@ contract RewardsProcessingFacet is AccessControl {
         return optionAmount;
     }
 
-    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) virtual internal {
-        IERC20(lockedAsset).approve(address(_votingEscrow), increaseAmount);
-        IVotingEscrow(address(_votingEscrow)).increaseAmount(tokenId, increaseAmount);
-        IERC20(lockedAsset).approve(address(_votingEscrow), 0);
-        CollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
-        emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal virtual {
+        revert("_increaseLock not implemented");
     }
 
     function swapToRewardsToken(SwapMod.RouteParams memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
-        if(params.inputToken == CollateralFacet(address(this)).getCollateralToken()) {
+        if(params.inputToken == _collateralToken) {
             revert("Input token cannot be collateral token");
         }
         address rewardsToken = getRewardsToken();
@@ -460,8 +456,9 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _payZeroBalanceFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
-        uint256 zeroBalanceFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
-        IERC20(asset).safeTransfer(_portfolioAccountConfig.owner(), zeroBalanceFee);
+        PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
+        uint256 zeroBalanceFee = (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
+        IERC20(asset).safeTransfer(config.owner(), zeroBalanceFee);
         emit ZeroBalanceFeePaid(_currentEpochStart(), tokenId, zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return zeroBalanceFee;
     }
@@ -469,7 +466,7 @@ contract RewardsProcessingFacet is AccessControl {
     function swapToRewardsTokenMultiple(SwapMod.RouteParams[] memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
         address rewardsToken = getRewardsToken();
         for(uint256 i = 0; i < params.length; i++) {
-            if(params[i].inputToken == CollateralFacet(address(this)).getCollateralToken()) {
+            if(params[i].inputToken == _collateralToken) {
                 revert("Input token cannot be collateral token");
             }
             require(params[i].inputToken != rewardsToken, "Input token cannot be rewards token");
@@ -492,17 +489,19 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _payLenderPremium(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
-        uint256 lenderPremium = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
+        PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
+        uint256 lenderPremium = (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;
 
-        IERC20(asset).safeTransfer(_portfolioAccountConfig.getVault(), lenderPremium);
+        IERC20(asset).safeTransfer(config.getVault(), lenderPremium);
         emit LenderPremiumPaid(_currentEpochStart(), tokenId, lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
     }
 
     function _payProtocolFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
-        uint256 protocolFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
+        PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
+        uint256 protocolFee = (rewardsAmount * config.getLoanConfig().getTreasuryFee()) / 10000;
 
-        IERC20(asset).safeTransfer(_portfolioAccountConfig.owner(), protocolFee);
+        IERC20(asset).safeTransfer(config.owner(), protocolFee);
         emit ProtocolFeePaid(_currentEpochStart(), tokenId, protocolFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return protocolFee;
     }
@@ -527,16 +526,17 @@ contract RewardsProcessingFacet is AccessControl {
      */
     function calculateRoutes(uint256 rewardsAmount, uint256 gasReclamation) external view returns (SwapRoute[4] memory routes) {
         address asset = getRewardsToken();
-        address lockedAsset = _votingEscrow.token();
-        bool hasDebt = CollateralFacet(address(this)).getTotalDebt() > 0;
+        address lockedAsset = _collateralToken;
+        bool hasDebt = ICollateralFacet(address(this)).getTotalDebt() > 0;
 
         // 1. Compute fees
+        PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
         uint256 remaining = rewardsAmount;
         if(hasDebt) {
-            remaining -= (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
-            remaining -= (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
+            remaining -= (rewardsAmount * config.getLoanConfig().getTreasuryFee()) / 10000;
+            remaining -= (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;
         } else {
-            remaining -= (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee()) / 10000;
+            remaining -= (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
         }
         uint256 postFeesAmount = remaining;
 

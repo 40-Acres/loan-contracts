@@ -6,7 +6,7 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {ILoanConfig} from "../../../src/facets/account/config/ILoanConfig.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -47,7 +47,7 @@ contract Health is Script {
         console.log("============================================");
 
         // Get config
-        PortfolioAccountConfig config = PortfolioHelperUtils.getConfigFromFactory(factory);
+        PortfolioFactoryConfig config = PortfolioHelperUtils.getConfigFromFactory(factory);
         ILoanConfig loanConfig = config.getLoanConfig();
 
         // Loan Config Parameters

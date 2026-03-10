@@ -12,20 +12,19 @@ contract DeployERC4626CollateralFacet is AccountFacetsDeploy {
 
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VAULT = vm.envAddress("VAULT");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        ERC4626CollateralFacet facet = new ERC4626CollateralFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VAULT);
+        ERC4626CollateralFacet facet = new ERC4626CollateralFacet(PORTFOLIO_FACTORY, VAULT);
 
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "ERC4626CollateralFacet", false);
 
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address vault) external returns (ERC4626CollateralFacet) {
-        ERC4626CollateralFacet facet = new ERC4626CollateralFacet(portfolioFactory, portfolioAccountConfig, vault);
+    function deploy(address portfolioFactory, address vault) external returns (ERC4626CollateralFacet) {
+        ERC4626CollateralFacet facet = new ERC4626CollateralFacet(portfolioFactory, vault);
         bytes4[] memory selectors = getSelectorsForFacet();
         registerFacet(portfolioFactory, address(facet), selectors, "ERC4626CollateralFacet", true);
         return facet;

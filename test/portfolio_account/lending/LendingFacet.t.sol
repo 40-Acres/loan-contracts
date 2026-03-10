@@ -71,7 +71,7 @@ contract LendingFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 1e6; // 1 USDC
         
         // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_asset), vault, vaultBalance);
@@ -94,7 +94,7 @@ contract LendingFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 1e6; // 1 USDC
         
         // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_asset), vault, vaultBalance);
@@ -110,7 +110,7 @@ contract LendingFacetTest is Test, LocalSetup {
     }
 
     function testBorrowMaxLoanTwice() public {
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         address underlyingAsset = IERC4626(vault).asset();
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
@@ -157,7 +157,7 @@ contract LendingFacetTest is Test, LocalSetup {
         addCollateralViaMulticall(_tokenId);
 
         // Fund vault so borrow can succeed once minimum collateral is met
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 1000000e6);
 
@@ -169,7 +169,7 @@ contract LendingFacetTest is Test, LocalSetup {
 
         // Set minimum collateral above current locked amount and expect revert
         vm.startPrank(_owner);
-        _portfolioAccountConfig.setMinimumCollateral(totalLockedCollateral + 1);
+        _portfolioFactoryConfig.setMinimumCollateral(totalLockedCollateral + 1);
         vm.stopPrank();
 
         vm.expectRevert("Minimum collateral not met");
@@ -177,7 +177,7 @@ contract LendingFacetTest is Test, LocalSetup {
 
         // Set minimum collateral to current locked amount and allow borrow
         vm.startPrank(_owner);
-        _portfolioAccountConfig.setMinimumCollateral(totalLockedCollateral);
+        _portfolioFactoryConfig.setMinimumCollateral(totalLockedCollateral);
         vm.stopPrank();
 
         borrowViaMulticall(maxLoan);
@@ -190,7 +190,7 @@ contract LendingFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 1e6;
         
         // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_asset), vault, vaultBalance);
@@ -223,7 +223,7 @@ contract LendingFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 2e6; // 2 USDC
         
         // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_asset), vault, vaultBalance);
@@ -258,7 +258,7 @@ contract LendingFacetTest is Test, LocalSetup {
         uint256 additionalBorrow = 1e6;
         
         // Fund vault so borrow can succeed (need enough for 80% cap: total borrow / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 totalBorrow = initialBorrow + additionalBorrow;
         uint256 vaultBalance = (totalBorrow * 10000) / 8000; // Enough for 80% cap
@@ -283,7 +283,7 @@ contract LendingFacetTest is Test, LocalSetup {
         addCollateralViaMulticall(_tokenId);
         
         // Fund vault (though borrow should fail before using it)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 1000000e6);
         
@@ -307,7 +307,7 @@ contract LendingFacetTest is Test, LocalSetup {
         uint256 maxLoanIgnoreSupply = (((totalLockedCollateral * rewardsRate) / 1000000) * multiplier) / 1e12;
         
         // Get vault and fund it with enough balance for our test
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = maxLoanIgnoreSupply + 10e6; // Enough to exceed maxLoanIgnoreSupply
         deal(address(_asset), vault, vaultBalance);
@@ -337,7 +337,7 @@ contract LendingFacetTest is Test, LocalSetup {
         addCollateralViaMulticall(tokenId2);
         
         // Fund vault so borrows can succeed
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 5e6); // Enough for both borrows
         
@@ -362,7 +362,7 @@ contract LendingFacetTest is Test, LocalSetup {
         addCollateralViaMulticall(_tokenId);
         
         // Get loan contract and vault
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         
         // Set vault balance to 10 USD
@@ -517,7 +517,7 @@ contract LendingFacetTest is Test, LocalSetup {
         enableTopUp();
         
         // Fund vault with enough balance
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 10e6); // 10 USDC
         
@@ -544,7 +544,7 @@ contract LendingFacetTest is Test, LocalSetup {
         disableTopUp();
         
         // Fund vault
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 10e6);
         
@@ -566,7 +566,7 @@ contract LendingFacetTest is Test, LocalSetup {
         enableTopUp();
         
         // Borrow max loan first to make maxLoan = 0
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 10e6);
         
@@ -594,7 +594,7 @@ contract LendingFacetTest is Test, LocalSetup {
         // Setup: add collateral and borrow some amount
         addCollateralViaMulticall(_tokenId);
         
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 10e6);
         
@@ -629,7 +629,7 @@ contract LendingFacetTest is Test, LocalSetup {
         enableTopUp();
         
         // Fund vault with more than collateral allows
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 1000000e6); // Very large amount
         
@@ -653,7 +653,7 @@ contract LendingFacetTest is Test, LocalSetup {
         enableTopUp();
         
         // Fund vault with limited balance (less than collateral allows)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = 5e6; // 5 USDC
         deal(address(_asset), vault, vaultBalance);
@@ -680,7 +680,7 @@ contract LendingFacetTest is Test, LocalSetup {
         enableTopUp();
         
         // Fund vault
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 10e6);
         
@@ -711,7 +711,6 @@ contract LendingFacetTest is Test, LocalSetup {
         // Deploy a fresh LendingFacet to test logic directly
         LendingFacet facet = new LendingFacet(
             address(_portfolioFactory),
-            address(_portfolioAccountConfig),
             address(_asset)
         );
 
@@ -745,7 +744,6 @@ contract LendingFacetTest is Test, LocalSetup {
         // Deploy a fresh LendingFacet to test logic directly
         LendingFacet facet = new LendingFacet(
             address(_portfolioFactory),
-            address(_portfolioAccountConfig),
             address(_asset)
         );
 

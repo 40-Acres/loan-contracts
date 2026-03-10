@@ -13,18 +13,17 @@ contract DeployWalletFacet is AccountFacetsDeploy {
 
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        WalletFacet newFacet = new WalletFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG);
+        WalletFacet newFacet = new WalletFacet(PORTFOLIO_FACTORY, SWAP_CONFIG);
 
         registerFacet(PORTFOLIO_FACTORY, address(newFacet), getSelectorsForFacet(), "WalletFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address swapConfig) external {
-        WalletFacet newFacet = new WalletFacet(portfolioFactory, portfolioAccountConfig, swapConfig);
+    function deploy(address portfolioFactory, address swapConfig) external {
+        WalletFacet newFacet = new WalletFacet(portfolioFactory, swapConfig);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "WalletFacet", true);
     }
 

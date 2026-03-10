@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import { LoanUtils } from "../../../LoanUtils.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 /**
  * @title UserClaimingConfig

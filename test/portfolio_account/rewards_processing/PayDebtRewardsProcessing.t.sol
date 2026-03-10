@@ -18,7 +18,7 @@ import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCo
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -39,7 +39,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
     // Second factory setup (complete with its own config, loan, vault)
     PortfolioFactory public _portfolioFactory2;
     FacetRegistry public _facetRegistry2;
-    PortfolioAccountConfig public _portfolioAccountConfig2;
+    PortfolioFactoryConfig public _portfolioFactoryConfig2;
     LoanConfig public _loanConfig2;
     SwapConfig public _swapConfig2;
     address public _portfolioAccount2;
@@ -55,7 +55,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         // Deploy RewardsProcessingFacet for factory 1
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         DeployRewardsProcessingFacet deployer = new DeployRewardsProcessingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig), address(_ve), _vault);
+        deployer.deploy(address(_portfolioFactory), address(_swapConfig), address(_ve), _vault);
         vm.stopPrank();
 
         // Initialize facet reference
@@ -65,7 +65,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
     /**
      * @dev Deploy a second portfolio factory with its own complete configuration
-     * including its own PortfolioAccountConfig, LoanConfig, loan contract, and vault
+     * including its own PortfolioFactoryConfig, LoanConfig, loan contract, and vault
      */
     function deploySecondFactory() internal {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
@@ -104,10 +104,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         _loanConfig2.setTreasuryFee(500);
         _loanConfig2.setZeroBalanceFee(100);
 
-        // Set loan contract and loan config in PortfolioAccountConfig2
-        _portfolioAccountConfig2.setLoanContract(_loanContract2);
-        _portfolioAccountConfig2.setLoanConfig(address(_loanConfig2));
-        _portfolioAccountConfig2.setPortfolioFactory(address(_portfolioFactory2));
+        // Set loan contract and loan config in PortfolioFactoryConfig2
+        _portfolioFactoryConfig2.setLoanContract(_loanContract2);
+        _portfolioFactoryConfig2.setLoanConfig(address(_loanConfig2));
+        _portfolioFactoryConfig2.setPortfolioFactory(address(_portfolioFactory2));
+        _portfolioFactory2.setPortfolioFactoryConfig(address(_portfolioFactoryConfig2));
 
         // Set portfolio factory on loan contract 2
         LoanV2(_loanContract2).setPortfolioFactory(address(_portfolioFactory2));
@@ -130,12 +131,12 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
      * @dev Deploy config contracts for factory 2 directly
      */
     function deployConfigsForFactory2() internal {
-        // Deploy PortfolioAccountConfig
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        _portfolioAccountConfig2 = PortfolioAccountConfig(
+        // Deploy PortfolioFactoryConfig
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        _portfolioFactoryConfig2 = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioAccountConfig.initialize, (FORTY_ACRES_DEPLOYER))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (FORTY_ACRES_DEPLOYER, address(_portfolioFactory2)))
             ))
         );
 
@@ -167,8 +168,8 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         );
 
         // Link configs together
-        _portfolioAccountConfig2.setVoteConfig(address(votingConfig2));
-        _portfolioAccountConfig2.setLoanConfig(address(_loanConfig2));
+        _portfolioFactoryConfig2.setVoteConfig(address(votingConfig2));
+        _portfolioFactoryConfig2.setLoanConfig(address(_loanConfig2));
     }
 
     /**
@@ -177,11 +178,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
     function deployFacetsForFactory2() internal {
         // Deploy CollateralFacet for factory 2
         DeployCollateralFacet deployCollateral = new DeployCollateralFacet();
-        deployCollateral.deploy(address(_portfolioFactory2), address(_portfolioAccountConfig2), address(_ve));
+        deployCollateral.deploy(address(_portfolioFactory2), address(_ve));
 
         // Deploy LendingFacet for factory 2
         DeployLendingFacet deployLending = new DeployLendingFacet();
-        deployLending.deploy(address(_portfolioFactory2), address(_portfolioAccountConfig2), address(_usdc));
+        deployLending.deploy(address(_portfolioFactory2), address(_usdc));
 
         // Deploy ERC721ReceiverFacet for factory 2
         DeployERC721ReceiverFacet deployReceiver = new DeployERC721ReceiverFacet();
@@ -189,7 +190,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Deploy RewardsProcessingFacet for factory 2
         DeployRewardsProcessingFacet deployRewards = new DeployRewardsProcessingFacet();
-        deployRewards.deploy(address(_portfolioFactory2), address(_portfolioAccountConfig2), address(_swapConfig2), address(_ve), _vault2);
+        deployRewards.deploy(address(_portfolioFactory2), address(_swapConfig2), address(_ve), _vault2);
     }
 
     /**
@@ -232,9 +233,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         _loanConfig2.setTreasuryFee(500);
         _loanConfig2.setZeroBalanceFee(100);
 
-        // Set loan contract and loan config in PortfolioAccountConfig2
-        _portfolioAccountConfig2.setLoanContract(_loanContract2);
-        _portfolioAccountConfig2.setLoanConfig(address(_loanConfig2));
+        // Set loan contract and loan config in PortfolioFactoryConfig2
+        _portfolioFactoryConfig2.setLoanContract(_loanContract2);
+        _portfolioFactoryConfig2.setLoanConfig(address(_loanConfig2));
+        _portfolioFactoryConfig2.setPortfolioFactory(address(_portfolioFactory2));
+        _portfolioFactory2.setPortfolioFactoryConfig(address(_portfolioFactoryConfig2));
 
         // Deploy facets WITHOUT LendingFacet
         deployFacetsForFactory2WithoutLending();
@@ -251,7 +254,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
     function deployFacetsForFactory2WithoutLending() internal {
         // Deploy CollateralFacet for factory 2
         DeployCollateralFacet deployCollateral = new DeployCollateralFacet();
-        deployCollateral.deploy(address(_portfolioFactory2), address(_portfolioAccountConfig2), address(_ve));
+        deployCollateral.deploy(address(_portfolioFactory2), address(_ve));
 
         // Deploy ERC721ReceiverFacet for factory 2
         DeployERC721ReceiverFacet deployReceiver = new DeployERC721ReceiverFacet();
@@ -261,7 +264,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Deploy RewardsProcessingFacet for factory 2
         DeployRewardsProcessingFacet deployRewards = new DeployRewardsProcessingFacet();
-        deployRewards.deploy(address(_portfolioFactory2), address(_portfolioAccountConfig2), address(_swapConfig2), address(_ve), _vault2);
+        deployRewards.deploy(address(_portfolioFactory2), address(_swapConfig2), address(_ve), _vault2);
     }
 
     /**
@@ -435,7 +438,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
 
         // Portfolio 2 receives 490e6 from _processZeroBalanceRewards (remaining after ZBF)
         uint256 portfolio2BalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount2);
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 expectedZBF = (rewardsAmount * zeroBalanceFee) / 10000; // 10e6
         uint256 expectedRecipientAmount = (rewardsAmount - debtBefore) - expectedZBF; // 500e6 - 10e6 = 490e6
         assertEq(portfolio2BalanceAfter, expectedRecipientAmount, "Portfolio 2 should receive remaining after ZBF");
@@ -505,7 +508,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         uint256 portfolio2BalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount2);
 
         // Calculate expected amount after zero balance fee (1% = 100 basis points)
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedRecipientAmount = rewardsAmount - feeAmount;
 
@@ -584,7 +587,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         // Since PayDebt returns 0 (recipient not registered), full rewards go to recipient via _processZeroBalanceRewards
         uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(nonPortfolioRecipient);
 
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedAmount = rewardsAmount - feeAmount;
 

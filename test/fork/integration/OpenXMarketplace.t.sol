@@ -40,7 +40,6 @@ contract OpenXMarketplaceTest is Test, Setup {
         // Register WalletFacet on wallet factory
         WalletFacet walletFacet = new WalletFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_swapConfig)
         );
         bytes4[] memory walletSelectors = new bytes4[](6);
@@ -55,7 +54,6 @@ contract OpenXMarketplaceTest is Test, Setup {
         // Register OpenXFacet on wallet factory
         OpenXFacet openXFacet = new OpenXFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_ve)
         );
         bytes4[] memory openXSelectors = new bytes4[](1);

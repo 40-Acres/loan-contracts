@@ -7,19 +7,16 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { AccessControl } from "../utils/AccessControl.sol";
 import { IVotingEscrow } from "../../../interfaces/IVotingEscrow.sol";
-import { PortfolioAccountConfig } from "../config/PortfolioAccountConfig.sol";
 
 contract OpenXFacet is AccessControl {
     using SafeERC20 for IERC20;
     IOpenXSwap public immutable _openx = IOpenXSwap(0xbDdCf6AB290E7Ad076CA103183730d1Bf0661112);
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     PortfolioFactory public immutable _portfolioFactory;
     IVotingEscrow public immutable _votingEscrow;
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) {
+    constructor(address portfolioFactory, address votingEscrow) {
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _votingEscrow = IVotingEscrow(votingEscrow);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
     }
 
     function buyOpenXListing(uint256 listingId) public onlyPortfolioManagerMulticall(_portfolioFactory) {

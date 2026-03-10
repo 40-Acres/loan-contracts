@@ -3,13 +3,13 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol";
-import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {PortfolioFactoryDeploy} from "../../../script/portfolio_account/PortfolioFactoryDeploy.s.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IVoter} from "../../../src/interfaces/IVoter.sol";
 import {IRewardsDistributor} from "../../../src/interfaces/IRewardsDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
@@ -136,7 +136,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 1e6;
         
         // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_asset), vault, vaultBalance);
@@ -177,7 +177,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 1e6;
         
         // Fund vault so borrow can succeed (need enough for 80% cap: borrowAmount / 0.8)
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000; // Enough for 80% cap
         deal(address(_asset), vault, vaultBalance);
@@ -201,7 +201,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 1e6;
         
         // Fund vault so borrow can succeed
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000;
         deal(address(_asset), vault, vaultBalance);
@@ -334,7 +334,7 @@ contract CollateralFacetTest is Test, LocalSetup {
 
         int128 lockedAmount = IVotingEscrow(_ve).locked(_tokenId).amount;
         uint256 borrowAmount = 1e6;
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000;
         deal(address(_asset), vault, vaultBalance);
@@ -387,7 +387,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         addCollateralViaMulticall(_tokenId);
         uint256 borrowAmount = 1e6;
         
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         uint256 vaultBalance = (borrowAmount * 10000) / 8000;
         deal(address(_asset), vault, vaultBalance);
@@ -432,7 +432,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 100e6; // 100 USDC
 
         // Fund vault so borrow can succeed
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 200e6);
 
@@ -487,7 +487,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         uint256 borrowAmount = 100e6; // 100 USDC
 
         // Fund vault so borrow can succeed
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, 200e6);
 
@@ -556,7 +556,7 @@ contract CollateralFacetTest is Test, LocalSetup {
         uint256 D = M1 + (M2 / 2);
 
         // Fund vault with enough liquidity
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_asset), vault, D * 10);
 

@@ -59,7 +59,6 @@ contract WalletFacetTest is Test, LocalSetup {
         // Deploy WalletFacet to wallet factory
         WalletFacet newWalletFacet = new WalletFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig), // Use main portfolio config for now
             address(_walletSwapConfig)
         );
 

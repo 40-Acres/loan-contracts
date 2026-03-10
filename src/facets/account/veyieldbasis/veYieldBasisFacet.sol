@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -27,7 +26,6 @@ contract veYieldBasisFacet is AccessControl {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IYieldBasisVotingEscrow public immutable _veYB;
     IERC20 public immutable _yb;
     /// @notice Adapter that makes veYB compatible with CollateralManager's IVotingEscrow interface
@@ -45,20 +43,17 @@ contract veYieldBasisFacet is AccessControl {
 
     constructor(
         address portfolioFactory,
-        address portfolioAccountConfig,
         address veYB,
         address yb,
         address veYBAdapter,
         address faucet
     ) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
-        require(portfolioAccountConfig != address(0), "Invalid config");
         require(veYB != address(0), "Invalid veYB");
         require(yb != address(0), "Invalid yb");
         require(veYBAdapter != address(0), "Invalid veYB adapter");
         require(faucet != address(0), "Invalid faucet");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _veYB = IYieldBasisVotingEscrow(veYB);
         _yb = IERC20(yb);
         _veYBAdapter = veYieldBasisAdapter(veYBAdapter);
@@ -96,7 +91,7 @@ contract veYieldBasisFacet is AccessControl {
         // Get the token ID that was created
         uint256 tokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
         // Use adapter address so CollateralManager can call locked(tokenId) correctly
-        DynamicCollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        DynamicCollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
     }
 
     /**
@@ -124,7 +119,7 @@ contract veYieldBasisFacet is AccessControl {
 
         uint256 tokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
         // Use adapter address so CollateralManager can call locked(tokenId) correctly
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
     }
 
     /**
@@ -158,7 +153,7 @@ contract veYieldBasisFacet is AccessControl {
         _veYB.safeTransferFrom(from, address(this), tokenId);
 
         // Update collateral using the existing tokenId (incoming was burned)
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), existingTokenId, address(_veYBAdapter));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), existingTokenId, address(_veYBAdapter));
     }
 
     /**
@@ -182,6 +177,6 @@ contract veYieldBasisFacet is AccessControl {
 
         // Register the collateral
         uint256 newTokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
-        DynamicCollateralManager.addLockedCollateral(address(_portfolioAccountConfig), newTokenId, address(_veYBAdapter));
+        DynamicCollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), newTokenId, address(_veYBAdapter));
     }
 }

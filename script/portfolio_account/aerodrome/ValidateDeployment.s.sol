@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Script, console} from "forge-std/Script.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
@@ -49,12 +49,12 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
         console.log("=== Aerodrome Deployment Validation ===");
 
         _validateConfig(
-            PortfolioAccountConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
+            PortfolioFactoryConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
             LIVE_PORTFOLIO_FACTORY
         );
 
         _validateLoan(
-            PortfolioAccountConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
+            PortfolioFactoryConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
             LIVE_PORTFOLIO_FACTORY
         );
 
@@ -64,27 +64,27 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
         );
 
         _validatePayFlow(
-            PortfolioAccountConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
+            PortfolioFactoryConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
             LIVE_PORTFOLIO_FACTORY
         );
 
         _validateImplementationCodehash(LIVE_PORTFOLIO_ACCOUNT_CONFIG);
 
         _validateDryRun(
-            PortfolioAccountConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
+            PortfolioFactoryConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG),
             LIVE_PORTFOLIO_FACTORY
         );
 
         console.log("=== All validations passed ===");
     }
 
-    /// @dev Validates PortfolioAccountConfig proxy supports all required selectors
+    /// @dev Validates PortfolioFactoryConfig proxy supports all required selectors
     ///      and returns expected values. Reverts on failure.
     function _validateConfig(
-        PortfolioAccountConfig config,
+        PortfolioFactoryConfig config,
         address expectedFactory
     ) internal view {
-        console.log("Validating PortfolioAccountConfig...");
+        console.log("Validating PortfolioFactoryConfig...");
 
         // Implementation exists
         address impl = _getImplementation(address(config));
@@ -130,12 +130,12 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
         require(owner != address(0), "Config: owner is zero");
         console.log("  Owner:", owner);
 
-        console.log("  [OK] PortfolioAccountConfig");
+        console.log("  [OK] PortfolioFactoryConfig");
     }
 
     /// @dev Validates the Loan UUPS proxy is upgraded and consistent with config
     function _validateLoan(
-        PortfolioAccountConfig config,
+        PortfolioFactoryConfig config,
         address expectedFactory
     ) internal view {
         console.log("Validating Loan proxy...");
@@ -199,7 +199,7 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
     ///               ├─ LoanV2.getPortfolioFactory()
     ///               └─ IPortfolioFactory(factory).ownerOf(msg.sender)
     function _validatePayFlow(
-        PortfolioAccountConfig config,
+        PortfolioFactoryConfig config,
         address expectedFactory
     ) internal view {
         console.log("Validating pay() call chain...");
@@ -252,7 +252,7 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
     ///      Uses vm.prank/deal cheatcodes against a forked chain to simulate
     ///      the entire user flow. Reverts if any step fails.
     function _validateDryRun(
-        PortfolioAccountConfig config,
+        PortfolioFactoryConfig config,
         address factoryAddr
     ) internal {
         console.log("Validating dry-run: create veNFT + borrow + repay...");
@@ -346,7 +346,7 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
         require(liveImpl != address(0), "Config: no implementation set");
         require(liveImpl.code.length > 0, "Config: implementation has no code");
 
-        PortfolioAccountConfig freshImpl = new PortfolioAccountConfig();
+        PortfolioFactoryConfig freshImpl = new PortfolioFactoryConfig();
 
         console.log("  Live impl:", liveImpl);
         console.log("  Live code length:", liveImpl.code.length);

@@ -6,9 +6,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IVoteModule} from "../../../interfaces/IVoteModule.sol";
-import {AccountConfigStorage} from "../../../storage/AccountConfigStorage.sol";
-import {CollateralManager} from "../collateral/CollateralManager.sol";  
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {CollateralManager} from "../collateral/CollateralManager.sol";
+import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 
 
 /**
@@ -17,13 +16,11 @@ import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 contract MigrationFacet {
     PortfolioFactory public immutable _portfolioFactory;
     IVotingEscrow public immutable _ve;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
 
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address ve) {
+    constructor(address portfolioFactory, address ve) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _ve = IVotingEscrow(ve);
     }
 
@@ -31,22 +28,22 @@ contract MigrationFacet {
         IVotingEscrow(address(_ve)).transferFrom(msg.sender, address(this), tokenId);
         _migrateLockedCollateral(tokenId);
 
-        (uint256 balance, address borrower) = ILoan(_portfolioAccountConfig.getLoanContract()).getLoanDetails(tokenId);
+        (uint256 balance, address borrower) = ILoan(_portfolioFactory.portfolioFactoryConfig().getLoanContract()).getLoanDetails(tokenId);
         require(borrower == _portfolioFactory.ownerOf(address(this)));
 
         _migrateDebt(balance, unpaidFees);
     }
 
     function _migrateLockedCollateral(uint256 tokenId) internal virtual {
-        CollateralManager.migrateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_ve));
+        CollateralManager.migrateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_ve));
     }
 
     function _migrateDebt(uint256 balance, uint256 unpaidFees) internal virtual {
-        CollateralManager.migrateDebt(address(_portfolioAccountConfig), balance, unpaidFees);
+        CollateralManager.migrateDebt(address(_portfolioFactory.portfolioFactoryConfig()), balance, unpaidFees);
     }
 
     modifier onlyLoanContract() {
-        require(msg.sender == _portfolioAccountConfig.getLoanContract());
+        require(msg.sender == _portfolioFactory.portfolioFactoryConfig().getLoanContract());
         _;
     }
 }

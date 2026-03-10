@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {YieldBasisLpFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
 import {YieldBasisLpClaimingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpClaimingFacet.sol";
@@ -13,7 +13,7 @@ import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626Le
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {LendingVault} from "../../../src/facets/account/vault/LendingVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {PortfolioAccountConfigDeploy} from "../DeployPortfolioAccountConfig.s.sol";
+import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 
 /**
  * @title YieldBasisLpDeploy
@@ -28,7 +28,7 @@ import {PortfolioAccountConfigDeploy} from "../DeployPortfolioAccountConfig.s.so
  * The gauge address must be provided — this is the ERC4626-compatible YieldBasis gauge
  * that the LP tokens are staked into.
  */
-contract YieldBasisLpDeploy is PortfolioAccountConfigDeploy {
+contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
     // Ethereum Mainnet USDC
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
@@ -56,8 +56,8 @@ contract YieldBasisLpDeploy is PortfolioAccountConfigDeploy {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-lp-v1"))));
 
         // Deploy configs
-        (PortfolioAccountConfig portfolioAccountConfig,, LoanConfig loanConfig,) = PortfolioAccountConfigDeploy._deploy(false);
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        (PortfolioFactoryConfig portfolioFactoryConfig,, LoanConfig loanConfig,) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
         _portfolioFactory = portfolioFactory;
 
@@ -72,10 +72,11 @@ contract YieldBasisLpDeploy is PortfolioAccountConfigDeploy {
         _vault = vaultProxy;
 
         // Point config to vault (vault IS the lending pool)
-        portfolioAccountConfig.setLoanContract(vaultProxy);
+        portfolioFactoryConfig.setLoanContract(vaultProxy);
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         // ============ Deploy YieldBasisLpFacet ============
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(address(portfolioFactory), address(portfolioAccountConfig), GAUGE);
+        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(address(portfolioFactory), GAUGE);
         bytes4[] memory lpSelectors = new bytes4[](10);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -98,7 +99,7 @@ contract YieldBasisLpDeploy is PortfolioAccountConfigDeploy {
 
         // ============ Deploy ERC4626LendingFacet ============
         // vault param = GAUGE (collateral vault for maxLoan calc), lendingToken = USDC
-        ERC4626LendingFacet lendingFacet = new ERC4626LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, GAUGE);
+        ERC4626LendingFacet lendingFacet = new ERC4626LendingFacet(address(portfolioFactory), USDC, GAUGE);
         bytes4[] memory lendingSelectors = new bytes4[](2);
         lendingSelectors[0] = ERC4626LendingFacet.borrow.selector;
         lendingSelectors[1] = ERC4626LendingFacet.pay.selector;
@@ -141,7 +142,7 @@ contract YieldBasisLpUpgrade is Script {
         FacetRegistry facetRegistry = PortfolioFactory(PORTFOLIO_FACTORY).facetRegistry();
 
         // Upgrade YieldBasisLpFacet
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, GAUGE);
+        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(PORTFOLIO_FACTORY, GAUGE);
         bytes4[] memory lpSelectors = new bytes4[](10);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -163,7 +164,7 @@ contract YieldBasisLpUpgrade is Script {
         _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "YieldBasisLpClaimingFacet");
 
         // Upgrade ERC4626LendingFacet
-        ERC4626LendingFacet lendingFacet = new ERC4626LendingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, USDC, GAUGE);
+        ERC4626LendingFacet lendingFacet = new ERC4626LendingFacet(PORTFOLIO_FACTORY, USDC, GAUGE);
         bytes4[] memory lendingSelectors = new bytes4[](2);
         lendingSelectors[0] = ERC4626LendingFacet.borrow.selector;
         lendingSelectors[1] = ERC4626LendingFacet.pay.selector;

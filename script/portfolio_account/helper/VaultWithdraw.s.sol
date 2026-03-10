@@ -12,7 +12,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
  * @title VaultWithdraw
  * @dev Helper script to withdraw assets (USDC) from the vault by redeeming shares
  *
- * The vault address is automatically determined from the factory's PortfolioAccountConfig.
+ * The vault address is automatically determined from the factory's PortfolioFactoryConfig.
  * Uses FACTORY_SALT env var to select the factory (defaults to "aerodrome-usdc").
  *
  * Two modes of operation:

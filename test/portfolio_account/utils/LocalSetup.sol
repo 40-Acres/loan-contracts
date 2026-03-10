@@ -9,7 +9,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 
 // Config
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -28,6 +28,7 @@ import {MarketplaceFacet} from "../../../src/facets/account/marketplace/Marketpl
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 
 
 // Loan / Vault
@@ -62,7 +63,7 @@ contract LocalSetup is Test {
     // config addresses
     LoanConfig public _loanConfig;
     VotingConfig public _votingConfig;
-    PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioFactoryConfig public _portfolioFactoryConfig;
     PortfolioManager public _portfolioManager;
     SwapConfig public _swapConfig;
     FacetRegistry public _facetRegistry;
@@ -151,11 +152,11 @@ contract LocalSetup is Test {
     function _deployConfigs() internal {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
 
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        _portfolioAccountConfig = PortfolioAccountConfig(
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        _portfolioFactoryConfig = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioAccountConfig.initialize, (FORTY_ACRES_DEPLOYER))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (FORTY_ACRES_DEPLOYER, address(_portfolioFactory)))
             ))
         );
 
@@ -183,8 +184,8 @@ contract LocalSetup is Test {
             ))
         );
 
-        _portfolioAccountConfig.setVoteConfig(address(_votingConfig));
-        _portfolioAccountConfig.setLoanConfig(address(_loanConfig));
+        _portfolioFactoryConfig.setVoteConfig(address(_votingConfig));
+        _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
 
         vm.stopPrank();
     }
@@ -210,8 +211,9 @@ contract LocalSetup is Test {
 
         _vault = address(vault);
 
-        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
-        _portfolioAccountConfig.setLoanContract(_loanContract);
+        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
+        _portfolioFactoryConfig.setLoanContract(_loanContract);
+        _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         vm.stopPrank();
     }
@@ -222,7 +224,7 @@ contract LocalSetup is Test {
 
         // ── 1. ClaimingFacet (3 selectors) ──
         _claimingFacet = new ClaimingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_ve), address(_voter), address(_rewardsDistributor),
             address(_loanConfig), address(_swapConfig), _vault
         );
@@ -234,7 +236,7 @@ contract LocalSetup is Test {
 
         // ── 2. CollateralFacet (11 selectors) ──
         CollateralFacet collateralFacet = new CollateralFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), address(_ve)
+            address(_portfolioFactory), address(_ve)
         );
         bytes4[] memory collateralSel = new bytes4[](11);
         collateralSel[0] = BaseCollateralFacet.addCollateral.selector;
@@ -252,7 +254,7 @@ contract LocalSetup is Test {
 
         // ── 3. LendingFacet (5 selectors) ──
         LendingFacet lendingFacet = new LendingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), _usdc
+            address(_portfolioFactory), _usdc
         );
         bytes4[] memory lendingSel = new bytes4[](5);
         lendingSel[0] = BaseLendingFacet.borrow.selector;
@@ -264,7 +266,7 @@ contract LocalSetup is Test {
 
         // ── 4. VotingFacet (5 selectors) ──
         VotingFacet votingFacet = new VotingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_votingConfig), address(_ve), address(_voter)
         );
         bytes4[] memory votingSel = new bytes4[](5);
@@ -277,7 +279,7 @@ contract LocalSetup is Test {
 
         // ── 5. VotingEscrowFacet (4 selectors) ──
         VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_ve), address(_voter)
         );
         bytes4[] memory votingEscrowSel = new bytes4[](4);
@@ -289,7 +291,7 @@ contract LocalSetup is Test {
 
         // ── 6. MigrationFacet (1 selector) ──
         MigrationFacet migrationFacet = new MigrationFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), address(_ve)
+            address(_portfolioFactory), address(_ve)
         );
         bytes4[] memory migrationSel = new bytes4[](1);
         migrationSel[0] = IMigrationFacet.migrate.selector;
@@ -300,7 +302,7 @@ contract LocalSetup is Test {
             address(_portfolioManager), address(_ve), 100, FORTY_ACRES_DEPLOYER
         );
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_ve), address(_portfolioMarketplace)
         );
         bytes4[] memory marketplaceSel = new bytes4[](8);
@@ -315,9 +317,9 @@ contract LocalSetup is Test {
         _facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSel, "MarketplaceFacet");
 
         // ── 8. RewardsProcessingFacet (10 selectors) ──
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
-            address(_swapConfig), address(_ve), _vault
+        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(
+            address(_portfolioFactory),
+            address(_swapConfig), address(_ve), _vault, address(_mockAero)
         );
         bytes4[] memory rewardsSel = new bytes4[](12);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;

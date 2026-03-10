@@ -14,11 +14,11 @@ import {ERC721ReceiverFacet} from "../../../../src/facets/ERC721ReceiverFacet.so
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {veYieldBasisAdapter} from "../../../../src/adapters/veYieldBasisAdapter.sol";
@@ -48,7 +48,7 @@ contract YieldBasisDynamicFeesE2E is Test {
     PortfolioManager public portfolioManager;
     PortfolioFactory public portfolioFactory;
     FacetRegistry public facetRegistry;
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     LoanConfig public loanConfig;
     VotingConfig public votingConfig;
     SwapConfig public swapConfig;
@@ -97,8 +97,8 @@ contract YieldBasisDynamicFeesE2E is Test {
         );
 
         // Deploy configs
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (portfolioAccountConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
 
         // Deploy DynamicFeesVault
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
@@ -115,16 +115,16 @@ contract YieldBasisDynamicFeesE2E is Test {
         // Transfer vault ownership
         vault.transferOwnership(DEPLOYER);
 
-        // Configure the PortfolioAccountConfig with the DynamicFeesVault as loan contract
-        portfolioAccountConfig.setLoanContract(address(vault));
+        // Configure the PortfolioFactoryConfig with the DynamicFeesVault as loan contract
+        portfolioFactoryConfig.setLoanContract(address(vault));
 
         // Set up loan config for YieldBasis
         // Using a reasonable rewards rate for YB (adjusted for USDC 6 decimals)
         loanConfig.setRewardsRate(50000); // 5% rewards rate
         loanConfig.setMultiplier(1e12); // 1x multiplier
 
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the vault with USDC from depositor
         deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);
@@ -154,7 +154,6 @@ contract YieldBasisDynamicFeesE2E is Test {
         // Deploy DynamicCollateralFacet
         collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VE_YB
         );
         bytes4[] memory collateralSelectors = new bytes4[](9);
@@ -173,7 +172,6 @@ contract YieldBasisDynamicFeesE2E is Test {
         // Deploy veYieldBasisFacet
         yieldBasisFacet = new veYieldBasisFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VE_YB,
             YB,
             address(veYBAdapter),
@@ -194,7 +192,6 @@ contract YieldBasisDynamicFeesE2E is Test {
         // Deploy DynamicLendingFacet
         lendingFacet = new DynamicLendingFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             USDC
         );
         bytes4[] memory lendingSelectors = new bytes4[](5);
@@ -208,7 +205,6 @@ contract YieldBasisDynamicFeesE2E is Test {
         // Deploy veYieldBasisRewardsProcessingFacet
         rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             address(swapConfig),
             VE_YB,
             address(veYBAdapter),

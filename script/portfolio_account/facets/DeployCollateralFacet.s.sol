@@ -8,17 +8,16 @@ import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCo
 contract DeployCollateralFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        CollateralFacet facet = new CollateralFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW);
+        CollateralFacet facet = new CollateralFacet(PORTFOLIO_FACTORY, VOTING_ESCROW);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "CollateralFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
-        CollateralFacet newFacet = new CollateralFacet(portfolioFactory, portfolioAccountConfig, votingEscrow);
+    function deploy(address portfolioFactory, address votingEscrow) external {
+        CollateralFacet newFacet = new CollateralFacet(portfolioFactory, votingEscrow);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "CollateralFacet", true);
     }
 

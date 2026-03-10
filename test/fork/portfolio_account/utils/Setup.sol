@@ -3,13 +3,13 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {ClaimingFacet} from "../../../../src/facets/account/claim/ClaimingFacet.sol";
 import {DeployFacets} from "../../../../script/portfolio_account/DeployFacets.s.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {PortfolioFactoryDeploy} from "../../../../script/portfolio_account/PortfolioFactoryDeploy.s.sol";
 import {IVotingEscrow} from "../../../../src/interfaces/IVotingEscrow.sol";
 import {IVoter} from "../../../../src/interfaces/IVoter.sol";
 import {IRewardsDistributor} from "../../../../src/interfaces/IRewardsDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
@@ -29,7 +29,7 @@ contract Setup is Test {
     // config addresses
     LoanConfig public _loanConfig;
     VotingConfig public _votingConfig;
-    PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioFactoryConfig public _portfolioFactoryConfig;
     PortfolioManager public _portfolioManager;
     SwapConfig public _swapConfig;
     FacetRegistry public _facetRegistry;
@@ -60,8 +60,8 @@ contract Setup is Test {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         _portfolioManager = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy(address(portfolioFactory));
         _portfolioFactory = portfolioFactory;
         DeployFacets deployer = new DeployFacets();
 
@@ -85,12 +85,13 @@ contract Setup is Test {
         LoanV2(address(_loanContract)).upgradeToAndCall(address(loanV2), new bytes(0));
         
         _vault = address(vault);
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), _tokenMessenger, address(swapConfig), address(_loanContract), address(_usdc), _vault);
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
+        deployer.deploy(address(portfolioFactory), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), _tokenMessenger, address(swapConfig), address(_loanContract), address(_usdc), _vault);
         vm.stopPrank();
 
         // create a portfolio account
         _portfolioAccount = portfolioFactory.createAccount(_user);
-        _portfolioAccountConfig = portfolioAccountConfig;
+        _portfolioFactoryConfig = portfolioFactoryConfig;
         _loanConfig = loanConfig;
         _votingConfig = votingConfig;
         _facetRegistry = facetRegistry;
@@ -124,10 +125,10 @@ contract Setup is Test {
         // Set portfolio factory on loan contract
         loanV2.setPortfolioFactory(address(_portfolioFactory));
         
-        // Set loan contract, loan config, and portfolio factory in PortfolioAccountConfig
-        _portfolioAccountConfig.setLoanContract(_loanContract);
-        _portfolioAccountConfig.setLoanConfig(address(_loanConfig));
-        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
+        // Set loan contract, loan config, and portfolio factory in PortfolioFactoryConfig
+        _portfolioFactoryConfig.setLoanContract(_loanContract);
+        _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
+        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
     }
 
 }

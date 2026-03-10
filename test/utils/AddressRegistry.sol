@@ -145,7 +145,7 @@ contract AddressRegistry is Test {
      * @param platform The platform name
      * @return facetRegistry The FacetRegistry address
      * @return portfolioFactory The PortfolioFactory address
-     * @return portfolioAccountConfig The PortfolioAccountConfig address
+     * @return portfolioFactoryConfig The PortfolioFactoryConfig address
      * @return accountConfigStorage The AccountConfigStorage address
      */
     function getCoreAddresses(string memory network, string memory platform)
@@ -154,13 +154,13 @@ contract AddressRegistry is Test {
         returns (
             address facetRegistry,
             address portfolioFactory,
-            address portfolioAccountConfig,
+            address portfolioFactoryConfig,
             address accountConfigStorage
         )
     {
         facetRegistry = getAddress(network, platform, "FacetRegistry");
         portfolioFactory = getAddress(network, platform, "PortfolioFactory");
-        portfolioAccountConfig = getAddress(network, platform, "PortfolioAccountConfig");
+        portfolioFactoryConfig = getAddress(network, platform, "PortfolioFactoryConfig");
         accountConfigStorage = getAddress(network, platform, "AccountConfigStorage");
     }
 
@@ -169,7 +169,7 @@ contract AddressRegistry is Test {
      * @param platform The platform name
      * @return facetRegistry The FacetRegistry address
      * @return portfolioFactory The PortfolioFactory address
-     * @return portfolioAccountConfig The PortfolioAccountConfig address
+     * @return portfolioFactoryConfig The PortfolioFactoryConfig address
      * @return accountConfigStorage The AccountConfigStorage address
      */
     function getCoreAddresses(string memory platform)
@@ -178,7 +178,7 @@ contract AddressRegistry is Test {
         returns (
             address facetRegistry,
             address portfolioFactory,
-            address portfolioAccountConfig,
+            address portfolioFactoryConfig,
             address accountConfigStorage
         )
     {

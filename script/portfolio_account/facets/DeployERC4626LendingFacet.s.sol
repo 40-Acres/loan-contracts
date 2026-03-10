@@ -12,21 +12,20 @@ contract DeployERC4626LendingFacet is AccountFacetsDeploy {
 
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address LENDING_TOKEN = vm.envAddress("LENDING_TOKEN");
         address VAULT = vm.envAddress("VAULT");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        ERC4626LendingFacet facet = new ERC4626LendingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, LENDING_TOKEN, VAULT);
+        ERC4626LendingFacet facet = new ERC4626LendingFacet(PORTFOLIO_FACTORY, LENDING_TOKEN, VAULT);
 
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "ERC4626LendingFacet", false);
 
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address lendingToken, address vault) external returns (ERC4626LendingFacet) {
-        ERC4626LendingFacet facet = new ERC4626LendingFacet(portfolioFactory, portfolioAccountConfig, lendingToken, vault);
+    function deploy(address portfolioFactory, address lendingToken, address vault) external returns (ERC4626LendingFacet) {
+        ERC4626LendingFacet facet = new ERC4626LendingFacet(portfolioFactory, lendingToken, vault);
         bytes4[] memory selectors = getSelectorsForFacet();
         registerFacet(portfolioFactory, address(facet), selectors, "ERC4626LendingFacet", true);
         return facet;

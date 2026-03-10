@@ -8,7 +8,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FortyAcresPortfolioAccount} from "../../../src/accounts/FortyAcresPortfolioAccount.sol";
 import {SuperchainVotingFacet} from "../../../src/facets/account/vote/SuperchainVoting.sol";
 import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {IWETH} from "../../../src/interfaces/IWETH.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -16,7 +16,7 @@ contract VoteVelodrome is Script {
     // Velodrome Optimism addresses
     PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
     address public constant PORTFOLIO_FACTORY = 0x2B2Ad15724924A52cc7C4Db47d54Ab4754ccACA8;
-    PortfolioAccountConfig public constant PORTFOLIO_ACCOUNT_CONFIG = PortfolioAccountConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
+    PortfolioFactoryConfig public constant PORTFOLIO_ACCOUNT_CONFIG = PortfolioFactoryConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
 
     IWETH public constant WETH = IWETH(0x4200000000000000000000000000000000000006);
 

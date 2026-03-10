@@ -11,14 +11,13 @@ import {VotingFacet} from "./VotingFacet.sol";
 contract DynamicVotingFacet is VotingFacet {
     constructor(
         address portfolioFactory,
-        address portfolioAccountConfig,
         address votingConfigStorage,
         address votingEscrow,
         address voter
-    ) VotingFacet(portfolioFactory, portfolioAccountConfig, votingConfigStorage, votingEscrow, voter) {}
+    ) VotingFacet(portfolioFactory, votingConfigStorage, votingEscrow, voter) {}
 
     function _addLockedCollateral(uint256 tokenId) internal override {
-        DynamicCollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        DynamicCollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
     }
 
     function _getOriginTimestamp(uint256 tokenId) internal override view returns (uint256) {

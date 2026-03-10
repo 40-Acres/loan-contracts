@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {IVotingFacet} from "./interfaces/IVotingFacet.sol";
@@ -19,7 +18,6 @@ import {CollateralManager} from "../collateral/CollateralManager.sol";
 
 contract VotingFacet is IVotingFacet, AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
     IVoter public immutable _voter;
     VotingConfig public immutable _votingConfig;
@@ -32,12 +30,10 @@ contract VotingFacet is IVotingFacet, AccessControl {
     event Voted(uint256 indexed tokenId, address[] pools, uint256[] weights, address indexed owner);
     event VotingModeSet(uint256 indexed tokenId, bool setToManualVoting, address indexed owner);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingConfigStorage, address votingEscrow, address voter) {
+    constructor(address portfolioFactory, address votingConfigStorage, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
-        require(portfolioAccountConfig != address(0));
         require(votingEscrow != address(0), "Voting escrow address cannot be zero");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _votingEscrow = IVotingEscrow(votingEscrow);
         _votingConfig = VotingConfig(votingConfigStorage);
         _voter = IVoter(voter);
@@ -113,7 +109,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
     }
 
     function _addLockedCollateral(uint256 tokenId) internal virtual {
-        CollateralManager.addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        CollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
     }
 
     function _getOriginTimestamp(uint256 tokenId) internal virtual view returns (uint256) {

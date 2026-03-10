@@ -6,12 +6,12 @@ import {SuperchainVotingFacet} from "../../../src/facets/account/vote/Superchain
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 import {DeploySuperchainVotingFacet} from "../../../script/portfolio_account/facets/DeploySuperchainVoting.s.sol";
 import {DeploySuperchainClaiming} from "../../../script/portfolio_account/facets/DeploySuperchainClaiming.s.sol";
-import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IVoter} from "../../../src/interfaces/IVoter.sol";
 import {IRewardsDistributor} from "../../../src/interfaces/IRewardsDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
@@ -69,8 +69,8 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy(address(portfolioFactory));
 
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
@@ -83,14 +83,14 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         SuperchainVotingConfig superchainVotingConfig = SuperchainVotingConfig(address(superchainVotingConfigProxy));
         votingConfig = VotingConfig(address(superchainVotingConfigProxy));
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter), address(weth));
+        deployer.deploy(address(portfolioFactory), address(superchainVotingConfig), address(ve), address(voter), address(weth));
 
         DeploySuperchainClaiming claimingDeployer = new DeploySuperchainClaiming();
-        claimingDeployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig), address(0), address(weth)); // vault - will be set later
+        claimingDeployer.deploy(address(portfolioFactory), address(ve), address(voter), address(rewardsDistributor), address(loanConfig), address(swapConfig), address(0), address(weth)); // vault - will be set later
         
 
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
-        deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
+        deployCollateralFacet.deploy(address(portfolioFactory), address(ve));
         
         // Deploy fresh Loan contract and Vault
         // USDC is already marked as persistent above
@@ -115,8 +115,8 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         loanV2.setPortfolioFactory(address(portfolioFactory));
         
         address loanContract = address(loanProxy);
-        portfolioAccountConfig.setLoanContract(loanContract);
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanContract(loanContract);
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         // Note: We don't make loan/vault persistent here because they reference USDC
         // and we'll switch to INK fork where USDC doesn't exist
         
@@ -223,14 +223,14 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         PortfolioManager ink_pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory ink_portfolioFactory, FacetRegistry ink_facetRegistry) = ink_pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
-        DeployPortfolioAccountConfig ink_configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig ink_portfolioAccountConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig, SwapConfig ink_swapConfig) = ink_configDeployer.deploy();
+        DeployPortfolioFactoryConfig ink_configDeployer = new DeployPortfolioFactoryConfig();
+        (PortfolioFactoryConfig ink_portfolioFactoryConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig, SwapConfig ink_swapConfig) = ink_configDeployer.deploy(address(ink_portfolioFactory));
 
         // deploy the bridge facet
         // Use WETH address for INK fork (the bridge facet just stores the address, doesn't interact with it in constructor)
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();
         // Note: Using WETH address here since USDC doesn't exist on INK fork, but BridgeFacet constructor only stores the address
-        ink_deployer.deploy(address(ink_portfolioFactory), address(ink_portfolioAccountConfig), address(0x4200000000000000000000000000000000000006), tokenMessenger);
+        ink_deployer.deploy(address(ink_portfolioFactory), address(0x4200000000000000000000000000000000000006), tokenMessenger);
         
 
         // user should have a balance on 0x4200000000000000000000000000000000000006 and 0x7f9AdFbd38b669F03d1d11000Bc76b9AaEA28A81 (XVELO)

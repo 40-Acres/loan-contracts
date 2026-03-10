@@ -62,7 +62,6 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         // Register WalletFacet on wallet factory
         WalletFacet walletFacet = new WalletFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_swapConfig)
         );
         bytes4[] memory walletSelectors = new bytes4[](6);
@@ -77,7 +76,6 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         // Register FortyAcresMarketplaceFacet on wallet factory
         FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_ve),
             address(portfolioMarketplace)
         );
@@ -661,7 +659,7 @@ contract MarketplaceFacetTest is Test, LocalSetup {
 
         (, uint256 maxLoanBothTokens) = CollateralFacet(_portfolioAccount).getMaxLoan();
 
-        address loanContract = _portfolioAccountConfig.getLoanContract();
+        address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
         deal(address(_usdc), vault, (maxLoanBothTokens * 10000) / 8000);
 
@@ -884,7 +882,7 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         // Register minimum required facets on factory2 using the SAME marketplace
         // 1. CollateralFacet
         CollateralFacet collateralFacet2 = new CollateralFacet(
-            address(factory2), address(_portfolioAccountConfig), address(_ve)
+            address(factory2), address(_ve)
         );
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
@@ -902,7 +900,7 @@ contract MarketplaceFacetTest is Test, LocalSetup {
 
         // 2. MarketplaceFacet
         MarketplaceFacet marketplaceFacet2 = new MarketplaceFacet(
-            address(factory2), address(_portfolioAccountConfig), address(_ve), address(portfolioMarketplace)
+            address(factory2), address(_ve), address(portfolioMarketplace)
         );
         bytes4[] memory marketplaceSelectors = new bytes4[](7);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;

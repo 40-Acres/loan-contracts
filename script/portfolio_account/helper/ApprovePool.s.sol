@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
@@ -55,17 +55,17 @@ contract ApprovePool is Script {
     }
 
     /**
-     * @dev Load PortfolioAccountConfig address from addresses.json or environment variable
+     * @dev Load PortfolioFactoryConfig address from addresses.json or environment variable
      */
-    function loadPortfolioAccountConfig() internal view returns (PortfolioAccountConfig) {
+    function loadPortfolioFactoryConfig() internal view returns (PortfolioFactoryConfig) {
         address configAddr;
         
         // Try to read from addresses.json
         try vm.readFile(string.concat(vm.projectRoot(), "/addresses/addresses.json")) returns (string memory addressesJson) {
             if (addressesJson.keyExists(".portfolioaccountconfig")) {
                 configAddr = addressesJson.readAddress(".portfolioaccountconfig");
-            } else if (addressesJson.keyExists(".portfolioAccountConfig")) {
-                configAddr = addressesJson.readAddress(".portfolioAccountConfig");
+            } else if (addressesJson.keyExists(".portfolioFactoryConfig")) {
+                configAddr = addressesJson.readAddress(".portfolioFactoryConfig");
             }
         } catch {
             // File read failed, will fall back to env vars
@@ -81,8 +81,8 @@ contract ApprovePool is Script {
             }
         }
         
-        require(configAddr != address(0), "PortfolioAccountConfig address not found. Set PORTFOLIO_ACCOUNT_CONFIG env var or allow file access with --fs addresses");
-        return PortfolioAccountConfig(configAddr);
+        require(configAddr != address(0), "PortfolioFactoryConfig address not found. Set PORTFOLIO_ACCOUNT_CONFIG env var or allow file access with --fs addresses");
+        return PortfolioFactoryConfig(configAddr);
     }
 
     /**

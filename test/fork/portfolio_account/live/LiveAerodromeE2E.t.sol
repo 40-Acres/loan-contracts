@@ -81,7 +81,7 @@ contract LiveAerodromeE2E is LiveDeploymentSetup {
     function testLive_E2E_ConfigDiscovery() public view {
         // All discovered addresses should be non-zero
         assertTrue(address(portfolioManager) != address(0), "portfolioManager non-zero");
-        assertTrue(address(portfolioAccountConfig) != address(0), "portfolioAccountConfig non-zero");
+        assertTrue(address(portfolioFactoryConfig) != address(0), "portfolioFactoryConfig non-zero");
         assertTrue(address(portfolioFactory) != address(0), "portfolioFactory non-zero");
         assertTrue(address(facetRegistry) != address(0), "facetRegistry non-zero");
         assertTrue(loanContract != address(0), "loanContract non-zero");
@@ -91,17 +91,17 @@ contract LiveAerodromeE2E is LiveDeploymentSetup {
         assertTrue(liveOwner != address(0), "liveOwner non-zero");
 
         // Cross-reference: config and loan agree on factory
-        address configFactory = portfolioAccountConfig.getPortfolioFactory();
+        address configFactory = portfolioFactoryConfig.getPortfolioFactory();
         address loanFactory = LoanV2(payable(loanContract)).getPortfolioFactory();
         assertEq(configFactory, loanFactory, "Config and Loan should agree on portfolio factory");
         assertEq(configFactory, address(portfolioFactory), "Config factory should match discovered factory");
 
         // Config getVault reads through loan — should match direct vault discovery
-        address configVault = portfolioAccountConfig.getVault();
+        address configVault = portfolioFactoryConfig.getVault();
         assertEq(configVault, vault, "Config getVault should match discovered vault");
 
         // Config getDebtToken should be non-zero
-        address debtToken = portfolioAccountConfig.getDebtToken();
+        address debtToken = portfolioFactoryConfig.getDebtToken();
         assertTrue(debtToken != address(0), "debtToken non-zero");
     }
 
@@ -112,7 +112,7 @@ contract LiveAerodromeE2E is LiveDeploymentSetup {
         // Mirrors ValidateDeployment._validatePayFlow
 
         // 1. config.getLoanContract()
-        address loanProxy = portfolioAccountConfig.getLoanContract();
+        address loanProxy = portfolioFactoryConfig.getLoanContract();
         assertTrue(loanProxy != address(0), "getLoanContract non-zero");
 
         // 2. lendingPool.lendingAsset()
@@ -131,7 +131,7 @@ contract LiveAerodromeE2E is LiveDeploymentSetup {
         assertTrue(underlyingAsset != address(0), "vault underlying asset non-zero");
 
         // 6. config.getLoanConfig() → getRewardsRate() / getMultiplier()
-        ILoanConfig loanConfig = portfolioAccountConfig.getLoanConfig();
+        ILoanConfig loanConfig = portfolioFactoryConfig.getLoanConfig();
         assertTrue(address(loanConfig) != address(0), "getLoanConfig non-zero");
         loanConfig.getRewardsRate();
         loanConfig.getMultiplier();

@@ -12,11 +12,11 @@ import {ERC721ReceiverFacet} from "../../../../src/facets/ERC721ReceiverFacet.so
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IYieldBasisVotingEscrow} from "../../../../src/interfaces/IYieldBasisVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -109,7 +109,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     PortfolioManager public portfolioManager;
     PortfolioFactory public portfolioFactory;
     FacetRegistry public facetRegistry;
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     LoanConfig public loanConfig;
     VotingConfig public votingConfig;
     SwapConfig public swapConfig;
@@ -153,16 +153,16 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         );
 
         // Deploy configs
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (portfolioAccountConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
 
         // Deploy mock vault and lending pool
         mockVault = new MockVault(USDC);
         mockLendingPool = new MockLendingPool(USDC, address(mockVault));
 
-        // Configure the PortfolioAccountConfig with the mock lending pool
-        portfolioAccountConfig.setLoanContract(address(mockLendingPool));
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        // Configure the PortfolioFactoryConfig with the mock lending pool
+        portfolioFactoryConfig.setLoanContract(address(mockLendingPool));
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the mock vault with USDC
         deal(USDC, address(mockVault), 1_000_000 * 1e6);
@@ -170,7 +170,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Deploy DynamicCollateralFacet
         collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VE_YB
         );
         bytes4[] memory collateralSelectors = new bytes4[](9);
@@ -201,7 +200,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Deploy veYieldBasisFacet
         yieldBasisFacet = new veYieldBasisFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VE_YB,
             YB,
             address(veYBAdapter),
@@ -222,7 +220,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Deploy veYieldBasisRewardsProcessingFacet
         rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             address(swapConfig),
             VE_YB,
             address(veYBAdapter),

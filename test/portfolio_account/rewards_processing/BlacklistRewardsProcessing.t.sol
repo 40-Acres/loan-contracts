@@ -40,7 +40,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         // Deploy RewardsProcessingFacet
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         DeployRewardsProcessingFacet deployer = new DeployRewardsProcessingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig), address(_ve), _vault);
+        deployer.deploy(address(_portfolioFactory), address(_swapConfig), address(_ve), _vault);
         vm.stopPrank();
 
         rewardsProcessingFacet = RewardsProcessingFacet(_portfolioAccount);
@@ -131,7 +131,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         vm.stopPrank();
 
         // Calculate expected: rewardsAmount - zeroBalanceFee
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedToWallet = rewardsAmount - feeAmount;
 
@@ -171,7 +171,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         vm.stopPrank();
 
         // Calculate expected: rewardsAmount - zeroBalanceFee
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedToWallet = rewardsAmount - feeAmount;
 
@@ -212,7 +212,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         _setZeroBalanceDistribution(entries);
 
         // Calculate expected swap amounts
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 amountToSwap = rewardsAmount - feeAmount;
         uint256 swapOutputAmount = amountToSwap; // 1:1 for simplicity
@@ -286,7 +286,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         rewardsProcessingFacet.processRewards(_tokenId, rewardsAmount, noSwap, 0);
         vm.stopPrank();
 
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedToRecipient = rewardsAmount - feeAmount;
 
@@ -317,7 +317,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         rewardsProcessingFacet.processRewards(_tokenId, rewardsAmount, noSwap, 0);
         vm.stopPrank();
 
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedToRecipient = rewardsAmount - feeAmount;
 

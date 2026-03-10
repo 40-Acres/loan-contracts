@@ -41,8 +41,8 @@ contract AerodromeClaimingRegression is BaseForkSetup {
         assertEq(address(claimingFacet._portfolioFactory()), address(portfolioFactory));
     }
 
-    function testClaimingFacetPortfolioAccountConfig() public view {
-        assertEq(address(claimingFacet._portfolioAccountConfig()), address(portfolioAccountConfig));
+    function testClaimingFacetPortfolioFactoryConfig() public view {
+        assertEq(address(claimingFacet._portfolioFactory().portfolioFactoryConfig()), address(portfolioFactoryConfig));
     }
 
     function testClaimingFacetVotingEscrow() public view {

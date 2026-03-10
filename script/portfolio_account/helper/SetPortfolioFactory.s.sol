@@ -33,7 +33,7 @@ contract SetPortfolioFactory is Script {
 
         // Get the loan contract from config
         address loanContract = PortfolioHelperUtils.getConfigFromFactory(factory).getLoanContract();
-        require(loanContract != address(0), "LoanContract not set in PortfolioAccountConfig");
+        require(loanContract != address(0), "LoanContract not set in PortfolioFactoryConfig");
 
         // Get current portfolio factory setting
         address currentFactory = ILoanWithPortfolioFactory(loanContract).getPortfolioFactory();

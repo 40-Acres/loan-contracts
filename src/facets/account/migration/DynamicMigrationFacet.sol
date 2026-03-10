@@ -11,15 +11,14 @@ import {MigrationFacet} from "./MigrationFacet.sol";
 contract DynamicMigrationFacet is MigrationFacet {
     constructor(
         address portfolioFactory,
-        address portfolioAccountConfig,
         address ve
-    ) MigrationFacet(portfolioFactory, portfolioAccountConfig, ve) {}
+    ) MigrationFacet(portfolioFactory, ve) {}
 
     function _migrateLockedCollateral(uint256 tokenId) internal override {
-        DynamicCollateralManager.migrateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_ve));
+        DynamicCollateralManager.migrateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_ve));
     }
 
     function _migrateDebt(uint256 balance, uint256 unpaidFees) internal override {
-        DynamicCollateralManager.migrateDebt(address(_portfolioAccountConfig), balance, unpaidFees);
+        DynamicCollateralManager.migrateDebt(address(_portfolioFactory.portfolioFactoryConfig()), balance, unpaidFees);
     }
 }

@@ -9,8 +9,8 @@ import {BaseLendingFacet} from "./BaseLendingFacet.sol";
  * @dev LendingFacet variant for DynamicFeesVault — delegates to DynamicCollateralManager.
  */
 contract DynamicLendingFacet is BaseLendingFacet {
-    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken)
-        BaseLendingFacet(portfolioFactory, portfolioAccountConfig, lendingToken) {}
+    constructor(address portfolioFactory, address lendingToken)
+        BaseLendingFacet(portfolioFactory, lendingToken) {}
 
     function _increaseTotalDebt(address config, uint256 amount) internal override returns (uint256 amountAfterFees, uint256 originationFee) {
         return DynamicCollateralManager.increaseTotalDebt(config, amount);

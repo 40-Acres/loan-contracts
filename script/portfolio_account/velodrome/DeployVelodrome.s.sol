@@ -5,11 +5,11 @@ import {Script} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
-import {PortfolioAccountConfigDeploy} from "../DeployPortfolioAccountConfig.s.sol";
+import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 import {BridgeFacet} from "../../../src/facets/account/bridge/BridgeFacet.sol";
 
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
@@ -23,6 +23,7 @@ import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFac
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {Vault} from "../../../src/VaultV2.sol";
@@ -32,11 +33,12 @@ import {MarketplaceFacet} from "../../../src/facets/account/marketplace/Marketpl
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {SuperchainVotingFacet} from "../../../src/facets/account/vote/SuperchainVoting.sol";
 import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
 import {console} from "forge-std/console.sol";
 
-contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
+contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85; // OP USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veAERO
@@ -59,13 +61,13 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         
-        // Use inherited _deploy() function from PortfolioAccountConfigDeploy
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioAccountConfigDeploy._deploy(false);
-        
+        // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+
         // Set configs at script level - these calls will be broadcast from deployer
-        portfolioAccountConfig.setVoteConfig(address(votingConfig));
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
-        
+        portfolioFactoryConfig.setVoteConfig(address(votingConfig));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+
         _portfolioFactory = portfolioFactory;
 
         // Deploy fresh Loan contract
@@ -89,18 +91,19 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         LoanV2(address(_loanContract)).setRewardsRate(400);
         LoanV2(address(_loanContract)).setPortfolioFactory(address(portfolioFactory));
         
-        portfolioAccountConfig.setLoanContract(address(_loanContract));
+        portfolioFactoryConfig.setLoanContract(address(_loanContract));
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
         // Deploy all facets directly (no contract instances)
         // This allows calls to be broadcast from deployer account
         
         // // Deploy BridgeFacet
-        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER, 2);
+        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), USDC, TOKEN_MESSENGER, 2);
         // bytes4[] memory bridgeSelectors = new bytes4[](1);
         // bridgeSelectors[0] = BridgeFacet.bridge.selector;
         // _registerFacet(facetRegistry, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
         
         // Deploy ClaimingFacet
-        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
         bytes4[] memory claimingSelectors = new bytes4[](3);
         claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -108,7 +111,7 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
         
         // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](9);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -122,7 +125,7 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy LendingFacet
-        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
         bytes4[] memory lendingSelectors = new bytes4[](4);
         lendingSelectors[0] = BaseLendingFacet.borrow.selector;
         lendingSelectors[1] = BaseLendingFacet.pay.selector;
@@ -131,7 +134,7 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
         // Deploy VotingFacet
-        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), VOTING_ESCROW, VOTER, WETH);
+        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER, WETH);
         bytes4[] memory votingSelectors = new bytes4[](7);
         votingSelectors[0] = SuperchainVotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -145,7 +148,7 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         // Deploy VotingEscrowFacet
         // Get PortfolioFactory from PortfolioManager
         
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         bytes4[] memory votingEscrowSelectors = new bytes4[](4);
         votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
@@ -154,26 +157,26 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy MigrationFacet
-        MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory migrationSelectors = new bytes4[](1);
         migrationSelectors[0] = IMigrationFacet.migrate.selector;
         _registerFacet(facetRegistry, address(migrationFacet), migrationSelectors, "MigrationFacet");
 
         // Deploy VexyFacet
-        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory vexySelectors = new bytes4[](1);
         vexySelectors[0] = VexyFacet.buyVexyListing.selector;
         _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
 
         // Deploy OpenXFacet
-        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory openXSelectors = new bytes4[](1);
         openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](7);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
@@ -185,7 +188,7 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[3] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[4] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -221,7 +224,7 @@ contract VelodromeRootDeploy is PortfolioAccountConfigDeploy {
     }
 }
 
-contract VelodromeLeafDeploy is PortfolioAccountConfigDeploy {
+contract VelodromeLeafDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     bytes32 public constant SALT = keccak256(abi.encodePacked("velodrome-usdc"));
@@ -240,15 +243,15 @@ contract VelodromeLeafDeploy is PortfolioAccountConfigDeploy {
         _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         
-        // Use inherited _deploy() function from PortfolioAccountConfigDeploy
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioAccountConfigDeploy._deploy(false);
+        // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
         _portfolioFactory = portfolioFactory;
         
         // Deploy only swap and bridge facets directly (no contract instances)
         // This allows calls to be broadcast from deployer account
         
         // Deploy BridgeFacet
-        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER, 2);
+        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), USDC, TOKEN_MESSENGER, 2);
         bytes4[] memory bridgeSelectors = new bytes4[](1);
         bridgeSelectors[0] = BridgeFacet.bridge.selector;
         // Check if facet already exists
@@ -264,7 +267,7 @@ contract VelodromeLeafDeploy is PortfolioAccountConfigDeploy {
 
 
 
-contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
+contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85; // OP USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veAERO
@@ -291,24 +294,24 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         SuperchainVotingConfig votingConfig = SuperchainVotingConfig(0x20F0C0c7a861ADA21FD465563Afb7529dfB41Bc7);
         console.log("Superchain VotingConfig deployed at:", address(votingConfig));
 
-        PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
-        // portfolioAccountConfig.setVoteConfig(address(votingConfig));
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
+        // portfolioFactoryConfig.setVoteConfig(address(votingConfig));
         address portfolioFactory = address(0x2B2Ad15724924A52cc7C4Db47d54Ab4754ccACA8);
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         // votingConfig.setSuperchainPool(0x9f99185d476aA3632dFdB69faE43007E92B7ef7d, true, 57073);
         VotingConfig _votingConfig = VotingConfig(votingConfig);
-        address loanConfig = address(portfolioAccountConfig.getLoanConfig());
+        address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
         SwapConfig swapConfig = SwapConfig(0xBFEB3404337798E7151202e2221a731C54721c55);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // votingConfig.setMinimumWethBalance(1);  // Set minimum WETH balance to 0.1 WETH
 
         // swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
-        Vault vault = Vault(ILoan(portfolioAccountConfig.getLoanContract())._vault());
+        Vault vault = Vault(ILoan(portfolioFactoryConfig.getLoanContract())._vault());
 
 
         // // // Deploy RewardsProcessingFacet
-        // RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        // RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
         // bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         // rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -325,7 +328,7 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // // // Deploy LendingFacet
-        // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
         // bytes4[] memory lendingSelectors = new bytes4[](4);
         // lendingSelectors[0] = BaseLendingFacet.borrow.selector;
         // lendingSelectors[1] = BaseLendingFacet.pay.selector;
@@ -335,7 +338,7 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
         // // // Deploy MarketplaceFacet
         // PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
         // console.log("PortfolioMarketplace deployed at:", address(portfolioMarketplace));
         // bytes4[] memory marketplaceSelectors = new bytes4[](7);
         // marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
@@ -348,7 +351,7 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
-        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), VOTING_ESCROW, VOTER, WETH);
+        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER, WETH);
         bytes4[] memory votingSelectors = new bytes4[](7);
         votingSelectors[0] = SuperchainVotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -360,7 +363,7 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // // // Deploy VotingEscrowFacet
-        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig),  VOTING_ESCROW, VOTER);
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         // bytes4[] memory votingEscrowSelectors = new bytes4[](3);
         // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
@@ -368,7 +371,7 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // // Deploy CollateralFacet
-        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioFactoryConfig), VOTING_ESCROW);
         // bytes4[] memory collateralSelectors = new bytes4[](9);
         // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -384,7 +387,7 @@ contract VelodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
         // // Upgrade Loan Contract
         // Loan loanImplementation = new Loan();
-        // Loan(address(portfolioAccountConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
+        // Loan(address(portfolioFactoryConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
     }
     
     /**

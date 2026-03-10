@@ -21,7 +21,7 @@ contract AerodromeUpgradeValidation is BaseForkSetup {
 
         // Deploy a new CollateralFacet with same constructor args
         CollateralFacet newCollateralFacet = new CollateralFacet(
-            address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(portfolioFactory), VOTING_ESCROW
         );
 
         // Build the same 11 selectors
@@ -68,7 +68,7 @@ contract AerodromeUpgradeValidation is BaseForkSetup {
 
         // Replace CollateralFacet
         CollateralFacet newCollateralFacet = new CollateralFacet(
-            address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(portfolioFactory), VOTING_ESCROW
         );
 
         bytes4[] memory selectors = new bytes4[](11);
@@ -117,7 +117,7 @@ contract AerodromeUpgradeValidation is BaseForkSetup {
     function testUnauthorizedReplaceFacetReverts() public {
         address nonOwner = address(0xdead);
         CollateralFacet newFacet = new CollateralFacet(
-            address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(portfolioFactory), VOTING_ESCROW
         );
 
         bytes4[] memory selectors = new bytes4[](1);

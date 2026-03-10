@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -27,7 +26,6 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IYieldBasisGauge public immutable _gauge;
     IERC20 public immutable _lpToken;
 
@@ -36,12 +34,10 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     event Unstaked(uint256 assets, uint256 sharesBurned);
     event Restaked(uint256 assets, uint256 sharesMinted);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address gauge) {
+    constructor(address portfolioFactory, address gauge) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
-        require(portfolioAccountConfig != address(0), "Invalid portfolio account config");
         require(gauge != address(0), "Invalid gauge");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _gauge = IYieldBasisGauge(gauge);
         _lpToken = IERC20(IYieldBasisGauge(gauge).asset());
     }
@@ -60,7 +56,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         _lpToken.approve(address(_gauge), 0);
 
         // Track gauge shares as collateral
-        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), address(_gauge), sharesMinted);
+        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesMinted);
 
         emit Deposited(msg.sender, amount, sharesMinted);
     }
@@ -73,7 +69,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         require(amount > 0, "Zero amount");
 
         // Remove collateral tracking first (will revert if undercollateralized via enforceCollateralRequirements)
-        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), address(_gauge), amount);
+        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), amount);
 
         // Unstake from gauge if needed
         uint256 unstaked = _lpToken.balanceOf(address(this));
@@ -140,7 +136,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     }
 
     function getMaxLoan() external view override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(address(_portfolioAccountConfig), address(_gauge));
+        return ERC4626CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge));
     }
 
     function enforceCollateralRequirements() external view override returns (bool success) {

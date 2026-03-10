@@ -34,8 +34,8 @@ contract AerodromeConfigRegression is BaseDeploymentSetup {
 
     // ─── Config ownership ────────────────────────────────────────────
 
-    function testPortfolioAccountConfigOwnership() public view {
-        assertEq(portfolioAccountConfig.owner(), DEPLOYER, "PortfolioAccountConfig owner should be DEPLOYER");
+    function testPortfolioFactoryConfigOwnership() public view {
+        assertEq(portfolioFactoryConfig.owner(), DEPLOYER, "PortfolioFactoryConfig owner should be DEPLOYER");
     }
 
     function testVotingConfigOwnership() public view {
@@ -54,39 +54,39 @@ contract AerodromeConfigRegression is BaseDeploymentSetup {
 
     function testConfigPointsToLoanConfig() public view {
         assertEq(
-            address(portfolioAccountConfig.getLoanConfig()),
+            address(portfolioFactoryConfig.getLoanConfig()),
             address(loanConfig),
-            "PortfolioAccountConfig -> LoanConfig"
+            "PortfolioFactoryConfig -> LoanConfig"
         );
     }
 
     function testConfigPointsToVotingConfig() public view {
         assertEq(
-            portfolioAccountConfig.getVoteConfig(),
+            portfolioFactoryConfig.getVoteConfig(),
             address(votingConfig),
-            "PortfolioAccountConfig -> VotingConfig"
+            "PortfolioFactoryConfig -> VotingConfig"
         );
     }
 
     function testConfigPointsToLoanContract() public view {
         assertEq(
-            portfolioAccountConfig.getLoanContract(),
+            portfolioFactoryConfig.getLoanContract(),
             loanContract,
-            "PortfolioAccountConfig -> LoanContract"
+            "PortfolioFactoryConfig -> LoanContract"
         );
     }
 
     function testConfigPointsToPortfolioFactory() public view {
         assertEq(
-            portfolioAccountConfig.getPortfolioFactory(),
+            portfolioFactoryConfig.getPortfolioFactory(),
             address(portfolioFactory),
-            "PortfolioAccountConfig -> PortfolioFactory"
+            "PortfolioFactoryConfig -> PortfolioFactory"
         );
     }
 
     function testConfigVaultViaLoan() public view {
         assertEq(
-            portfolioAccountConfig.getVault(),
+            portfolioFactoryConfig.getVault(),
             address(vault),
             "Config.getVault() should return vault via loan"
         );

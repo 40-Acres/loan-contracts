@@ -9,7 +9,7 @@ import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 
 // Config
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 
 // Facets
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
@@ -45,7 +45,7 @@ abstract contract LiveDeploymentSetup is Test {
 
     // ─── Auto-discovered contracts ───────────────────────────────────
     PortfolioManager public portfolioManager;
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     PortfolioFactory public portfolioFactory;
     FacetRegistry public facetRegistry;
 
@@ -68,21 +68,21 @@ abstract contract LiveDeploymentSetup is Test {
 
         // 2. Bind root contracts
         portfolioManager = PortfolioManager(LIVE_PORTFOLIO_MANAGER);
-        portfolioAccountConfig = PortfolioAccountConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG);
+        portfolioFactoryConfig = PortfolioFactoryConfig(LIVE_PORTFOLIO_ACCOUNT_CONFIG);
 
-        // 3. Auto-discover from PortfolioAccountConfig
-        loanContract = portfolioAccountConfig.getLoanContract();
-        loanConfigAddr = address(portfolioAccountConfig.getLoanConfig());
-        votingConfigAddr = portfolioAccountConfig.getVoteConfig();
-        vault = portfolioAccountConfig.getVault();
-        address discoveredFactory = portfolioAccountConfig.getPortfolioFactory();
+        // 3. Auto-discover from PortfolioFactoryConfig
+        loanContract = portfolioFactoryConfig.getLoanContract();
+        loanConfigAddr = address(portfolioFactoryConfig.getLoanConfig());
+        votingConfigAddr = portfolioFactoryConfig.getVoteConfig();
+        vault = portfolioFactoryConfig.getVault();
+        address discoveredFactory = portfolioFactoryConfig.getPortfolioFactory();
         portfolioFactory = PortfolioFactory(discoveredFactory);
 
         // 4. Discover FacetRegistry from factory
         facetRegistry = portfolioFactory.facetRegistry();
 
         // 5. Discover live owner for pranking owner-only operations
-        liveOwner = portfolioAccountConfig.owner();
+        liveOwner = portfolioFactoryConfig.owner();
 
         // 6. Validate the discovered graph
         _validateDiscoveredGraph();
@@ -96,7 +96,7 @@ abstract contract LiveDeploymentSetup is Test {
 
     function _validateDiscoveredGraph() internal view {
         require(address(portfolioManager) != address(0), "LiveSetup: manager is zero");
-        require(address(portfolioAccountConfig) != address(0), "LiveSetup: config is zero");
+        require(address(portfolioFactoryConfig) != address(0), "LiveSetup: config is zero");
         require(address(portfolioFactory) != address(0), "LiveSetup: factory is zero");
         require(address(facetRegistry) != address(0), "LiveSetup: registry is zero");
         require(loanContract != address(0), "LiveSetup: loan is zero");

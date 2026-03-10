@@ -67,7 +67,6 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
         // Register WalletFacet on wallet factory
         WalletFacet walletFacet = new WalletFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_swapConfig)
         );
         bytes4[] memory walletSelectors = new bytes4[](6);
@@ -82,7 +81,6 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
         // Register FortyAcresMarketplaceFacet on wallet factory
         FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(
             address(_walletFactory),
-            address(_portfolioAccountConfig),
             address(_ve),
             address(portfolioMarketplace)
         );

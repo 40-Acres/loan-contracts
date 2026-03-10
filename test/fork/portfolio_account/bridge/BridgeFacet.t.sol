@@ -4,9 +4,9 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {BridgeFacet} from "../../../../src/facets/account/bridge/BridgeFacet.sol";
 import {DeployBridgeFacet} from "../../../../script/portfolio_account/facets/DeployBridgeFacet.s.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
@@ -17,7 +17,7 @@ contract BridgeFacetTest is Test {
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
     FacetRegistry public _facetRegistry;
-    PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioFactoryConfig public _portfolioFactoryConfig;
     VotingConfig public _votingConfig;
     LoanConfig public _loanConfig;
     BridgeFacet public _bridgeFacet;
@@ -50,14 +50,13 @@ contract BridgeFacetTest is Test {
         );
         
         // Deploy config contracts
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (_portfolioAccountConfig, _votingConfig, _loanConfig, ) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (_portfolioFactoryConfig, _votingConfig, _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory));
         
         // Deploy BridgeFacet
         DeployBridgeFacet bridgeDeployer = new DeployBridgeFacet();
         bridgeDeployer.deploy(
             address(_portfolioFactory),
-            address(_portfolioAccountConfig),
             INK_USDC,
             TOKEN_MESSENGER
         );
@@ -85,7 +84,6 @@ contract BridgeFacetTest is Test {
 
     function testBridgeFacetDeployment() public {
         assertEq(address(_bridgeFacet._portfolioFactory()), address(_portfolioFactory));
-        assertEq(address(_bridgeFacet._portfolioAccountConfig()), address(_portfolioAccountConfig));
         assertEq(address(_bridgeFacet._token()), INK_USDC);
         assertEq(address(_bridgeFacet._tokenMessenger()), TOKEN_MESSENGER);
         assertEq(_bridgeFacet._destinationDomain(), 2); // Optimism Mainnet

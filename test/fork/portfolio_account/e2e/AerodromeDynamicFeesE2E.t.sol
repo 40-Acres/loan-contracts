@@ -10,11 +10,11 @@ import {DynamicVotingEscrowFacet} from "../../../../src/facets/account/votingEsc
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IVotingEscrow} from "../../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DynamicFeesVault} from "../../../../src/facets/account/vault/DynamicFeesVault.sol";
@@ -42,7 +42,7 @@ contract AerodromeDynamicFeesE2E is Test {
     PortfolioManager public portfolioManager;
     PortfolioFactory public portfolioFactory;
     FacetRegistry public facetRegistry;
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     LoanConfig public loanConfig;
     VotingConfig public votingConfig;
     SwapConfig public swapConfig;
@@ -83,8 +83,8 @@ contract AerodromeDynamicFeesE2E is Test {
         );
 
         // Deploy configs
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (portfolioAccountConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
 
         // Deploy DynamicFeesVault
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
@@ -101,15 +101,15 @@ contract AerodromeDynamicFeesE2E is Test {
         // Transfer vault ownership
         vault.transferOwnership(DEPLOYER);
 
-        // Configure the PortfolioAccountConfig with the DynamicFeesVault as loan contract
-        portfolioAccountConfig.setLoanContract(address(vault));
+        // Configure the PortfolioFactoryConfig with the DynamicFeesVault as loan contract
+        portfolioFactoryConfig.setLoanContract(address(vault));
 
         // Set up loan config for Aerodrome
         loanConfig.setRewardsRate(2850); // Aerodrome rewards rate
         loanConfig.setMultiplier(52); // 52x multiplier
 
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the vault with USDC from depositor
         deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);
@@ -126,7 +126,6 @@ contract AerodromeDynamicFeesE2E is Test {
         // Deploy DynamicCollateralFacet
         DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VOTING_ESCROW
         );
         bytes4[] memory collateralSelectors = new bytes4[](9);
@@ -145,7 +144,6 @@ contract AerodromeDynamicFeesE2E is Test {
         // Deploy DynamicVotingEscrowFacet (for creating locks)
         DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VOTING_ESCROW,
             VOTER
         );
@@ -159,7 +157,6 @@ contract AerodromeDynamicFeesE2E is Test {
         // Deploy DynamicLendingFacet
         DynamicLendingFacet lendingFacet = new DynamicLendingFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             USDC
         );
         bytes4[] memory lendingSelectors = new bytes4[](5);

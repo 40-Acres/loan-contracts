@@ -10,8 +10,8 @@ import {BaseLendingFacet} from "./BaseLendingFacet.sol";
  *      Global debt tracked via CollateralManager
  */
 contract LendingFacet is BaseLendingFacet {
-    constructor(address portfolioFactory, address portfolioAccountConfig, address lendingToken)
-        BaseLendingFacet(portfolioFactory, portfolioAccountConfig, lendingToken) {}
+    constructor(address portfolioFactory, address lendingToken)
+        BaseLendingFacet(portfolioFactory, lendingToken) {}
 
     function _increaseTotalDebt(address config, uint256 amount) internal override returns (uint256 amountAfterFees, uint256 originationFee) {
         return CollateralManager.increaseTotalDebt(config, amount);

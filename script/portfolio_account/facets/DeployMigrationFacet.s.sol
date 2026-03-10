@@ -8,17 +8,16 @@ import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationF
 contract DeployMigrationFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        MigrationFacet facet = new MigrationFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW);
+        MigrationFacet facet = new MigrationFacet(PORTFOLIO_FACTORY, VOTING_ESCROW);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "MigrationFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
-        MigrationFacet newFacet = new MigrationFacet(portfolioFactory, portfolioAccountConfig, votingEscrow);
+    function deploy(address portfolioFactory, address votingEscrow) external {
+        MigrationFacet newFacet = new MigrationFacet(portfolioFactory, votingEscrow);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "MigrationFacet", true);
     }
 

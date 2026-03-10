@@ -8,17 +8,16 @@ import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingF
 contract DeployLendingFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address LENDING_TOKEN = vm.envAddress("LENDING_TOKEN");
-        
+
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        LendingFacet facet = new LendingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, LENDING_TOKEN);
+        LendingFacet facet = new LendingFacet(PORTFOLIO_FACTORY, LENDING_TOKEN);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "LendingFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address lendingToken) external {
-        LendingFacet newFacet = new LendingFacet(portfolioFactory, portfolioAccountConfig, lendingToken);
+    function deploy(address portfolioFactory, address lendingToken) external {
+        LendingFacet newFacet = new LendingFacet(portfolioFactory, lendingToken);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "LendingFacet", true);
     }
 

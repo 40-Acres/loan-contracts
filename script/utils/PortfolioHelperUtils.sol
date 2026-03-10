@@ -6,12 +6,12 @@ import {Vm} from "forge-std/Vm.sol";
 import {PortfolioManager} from "../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 
-/// @dev Interface for facets that expose _portfolioAccountConfig
-interface IFacetWithConfig {
-    function _portfolioAccountConfig() external view returns (PortfolioAccountConfig);
+/// @dev Interface for reading portfolioFactoryConfig from PortfolioFactory
+interface IFactoryWithConfig {
+    function portfolioFactoryConfig() external view returns (PortfolioFactoryConfig);
 }
 
 /**
@@ -129,18 +129,15 @@ library PortfolioHelperUtils {
     }
 
     /**
-     * @dev Get PortfolioAccountConfig from a factory by reading it from a registered facet
+     * @dev Get PortfolioFactoryConfig from a factory by reading it directly from the factory
      * @param factory The PortfolioFactory instance
-     * @return PortfolioAccountConfig instance
-     * @notice Reads _portfolioAccountConfig from the LendingFacet (borrow selector)
+     * @return PortfolioFactoryConfig instance
+     * @notice Reads portfolioFactoryConfig from the PortfolioFactory
      */
-    function getConfigFromFactory(PortfolioFactory factory) internal view returns (PortfolioAccountConfig) {
-        FacetRegistry facetRegistry = factory.facetRegistry();
-        // Use borrow selector (LendingFacet) to get a facet that has _portfolioAccountConfig
-        bytes4 borrowSelector = bytes4(keccak256("borrow(uint256)"));
-        address facetAddress = facetRegistry.getFacetForSelector(borrowSelector);
-        require(facetAddress != address(0), "LendingFacet not registered. Deploy facets first.");
-        return IFacetWithConfig(facetAddress)._portfolioAccountConfig();
+    function getConfigFromFactory(PortfolioFactory factory) internal view returns (PortfolioFactoryConfig) {
+        PortfolioFactoryConfig config = IFactoryWithConfig(address(factory)).portfolioFactoryConfig();
+        require(address(config) != address(0), "PortfolioFactoryConfig not set on factory. Call factory.setPortfolioFactoryConfig() first.");
+        return config;
     }
 
     /**
@@ -158,7 +155,7 @@ library PortfolioHelperUtils {
             return vaultOverride;
         }
 
-        PortfolioAccountConfig config = getConfigFromFactory(factory);
+        PortfolioFactoryConfig config = getConfigFromFactory(factory);
         string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
 
         // For dynamic fees deployments, the loan contract IS the vault
@@ -168,7 +165,7 @@ library PortfolioHelperUtils {
 
         // For legacy deployments, get vault from loan contract
         address loanContract = config.getLoanContract();
-        require(loanContract != address(0), "LoanContract not set. Set VAULT_ADDRESS env var or configure loanContract in PortfolioAccountConfig.");
+        require(loanContract != address(0), "LoanContract not set. Set VAULT_ADDRESS env var or configure loanContract in PortfolioFactoryConfig.");
         return ILoanWithVault(loanContract)._vault();
     }
 
@@ -223,7 +220,7 @@ library PortfolioHelperUtils {
             return debtTokenOverride;
         }
 
-        PortfolioAccountConfig config = getConfigFromFactory(factory);
+        PortfolioFactoryConfig config = getConfigFromFactory(factory);
         string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
 
         // For dynamic fees deployments, call lendingAsset() on the vault

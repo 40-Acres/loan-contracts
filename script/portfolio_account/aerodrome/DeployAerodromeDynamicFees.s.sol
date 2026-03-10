@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -30,6 +30,7 @@ import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationF
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
+import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 
 contract AerodromeDynamicFeesRootDeploy is Script {
     // Existing deployed addresses
@@ -66,11 +67,11 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         );
         _portfolioFactory = portfolioFactory;
 
-        // Deploy new PortfolioAccountConfig for this factory
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
+        // Deploy new PortfolioFactoryConfig for this factory
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
         ERC1967Proxy configProxy = new ERC1967Proxy(address(configImpl), "");
-        PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(address(configProxy));
-        portfolioAccountConfig.initialize(DEPLOYER_ADDRESS);
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(address(configProxy));
+        portfolioFactoryConfig.initialize(DEPLOYER_ADDRESS, address(portfolioFactory));
 
         // Deploy new VotingConfig
         VotingConfig votingConfigImpl = new VotingConfig();
@@ -89,8 +90,8 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         loanConfig.setMultiplier(52);
 
         // Set configs
-        portfolioAccountConfig.setVoteConfig(address(votingConfig));
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        portfolioFactoryConfig.setVoteConfig(address(votingConfig));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
         // Deploy DynamicFeesVault with proxyd
 
@@ -98,10 +99,11 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _vault.initialize(USDC, "40base-USDC-DYNAMIC-VAULT", "40base-USDC-DV", address(portfolioFactory));
 
         // Set the vault as the loan contract in config (DynamicFeesVault implements ILendingPool)
-        portfolioAccountConfig.setLoanContract(address(_vault));
+        portfolioFactoryConfig.setLoanContract(address(_vault));
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         // Deploy ClaimingFacet
-        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(_vault));
+        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(_vault));
         bytes4[] memory claimingSelectors = new bytes4[](3);
         claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -109,7 +111,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
         // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
-        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -125,7 +127,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy DynamicLendingFacet (uses DynamicCollateralManager for debt tracking)
-        DynamicLendingFacet lendingFacet = new DynamicLendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        DynamicLendingFacet lendingFacet = new DynamicLendingFacet(address(portfolioFactory), USDC);
         bytes4[] memory lendingSelectors = new bytes4[](5);
         lendingSelectors[0] = BaseLendingFacet.borrow.selector;
         lendingSelectors[1] = BaseLendingFacet.pay.selector;
@@ -135,7 +137,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "DynamicLendingFacet");
 
         // Deploy VotingFacet
-        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(votingConfig), VOTING_ESCROW, VOTER);
+        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
         bytes4[] memory votingSelectors = new bytes4[](5);
         votingSelectors[0] = VotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -145,7 +147,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // Deploy DynamicVotingEscrowFacet (uses DynamicCollateralManager for collateral updates)
-        DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         bytes4[] memory votingEscrowSelectors = new bytes4[](4);
         votingEscrowSelectors[0] = DynamicVotingEscrowFacet.increaseLock.selector;
         votingEscrowSelectors[1] = DynamicVotingEscrowFacet.createLock.selector;
@@ -154,26 +156,26 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "DynamicVotingEscrowFacet");
 
         // Deploy MigrationFacet
-        MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory migrationSelectors = new bytes4[](1);
         migrationSelectors[0] = IMigrationFacet.migrate.selector;
         _registerFacet(facetRegistry, address(migrationFacet), migrationSelectors, "MigrationFacet");
 
         // Deploy VexyFacet
-        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory vexySelectors = new bytes4[](1);
         vexySelectors[0] = VexyFacet.buyVexyListing.selector;
         _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
 
         // Deploy OpenXFacet
-        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory openXSelectors = new bytes4[](1);
         openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
@@ -186,7 +188,7 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "DynamicMarketplaceFacet");
 
         // Deploy DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt)
-        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(_vault));
+        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(_vault), IVotingEscrow(VOTING_ESCROW).token());
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -224,8 +226,8 @@ contract AerodromeDynamicFeesRootDeploy is Script {
 
 // forge script script/portfolio_account/aerodrome/DeployAerodromeDynamicFees.s.sol:AerodromeDynamicFeesRootDeploy --chain-id 8453 --rpc-url $BASE_RPC_URL --broadcast --verify --via-ir
 
-interface IFacetWithConfig {
-    function _portfolioAccountConfig() external view returns (PortfolioAccountConfig);
+interface IFactoryWithConfig {
+    function portfolioFactoryConfig() external view returns (PortfolioFactoryConfig);
 }
 
 contract AerodromeDynamicFeesRootUpgrade is Script {
@@ -251,31 +253,28 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
     function _resolveFromSalt() internal view returns (
         PortfolioFactory portfolioFactory,
         FacetRegistry facetRegistry,
-        PortfolioAccountConfig portfolioAccountConfig
+        PortfolioFactoryConfig portfolioFactoryConfig
     ) {
         PortfolioManager portfolioManager = PortfolioFactory(EXISTING_PORTFOLIO_FACTORY).portfolioManager();
         portfolioFactory = PortfolioFactory(portfolioManager.factoryBySalt(FACTORY_SALT));
         require(address(portfolioFactory) != address(0), "Factory not found for salt");
         facetRegistry = portfolioFactory.facetRegistry();
 
-        
-        bytes4 borrowSelector = bytes4(keccak256("borrow(uint256)"));
-        address facetAddress = facetRegistry.getFacetForSelector(borrowSelector);
-        require(facetAddress != address(0), "LendingFacet not registered");
-        portfolioAccountConfig = IFacetWithConfig(facetAddress)._portfolioAccountConfig();
+        portfolioFactoryConfig = IFactoryWithConfig(address(portfolioFactory)).portfolioFactoryConfig();
+        require(address(portfolioFactoryConfig) != address(0), "PortfolioFactoryConfig not set on factory");
     }
 
     function upgradeFacets() internal {
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry, PortfolioAccountConfig portfolioAccountConfig) = _resolveFromSalt();
-        address votingConfig = address(portfolioAccountConfig.getVoteConfig());
-        address loanConfig = address(portfolioAccountConfig.getLoanConfig());
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry, PortfolioFactoryConfig portfolioFactoryConfig) = _resolveFromSalt();
+        address votingConfig = address(portfolioFactoryConfig.getVoteConfig());
+        address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
         SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
 
         // The vault IS the loan contract for DynamicFees
-        DynamicFeesVault vault = DynamicFeesVault(portfolioAccountConfig.getLoanContract());
+        DynamicFeesVault vault = DynamicFeesVault(portfolioFactoryConfig.getLoanContract());
 
         // // Deploy ClaimingFacet
-        // ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        // ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
         // bytes4[] memory claimingSelectors = new bytes4[](3);
         // claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         // claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -283,7 +282,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
         // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
-        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -299,7 +298,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // // Deploy LendingFacet
-        // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC);
+        // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
         // bytes4[] memory lendingSelectors = new bytes4[](4);
         // lendingSelectors[0] = BaseLendingFacet.borrow.selector;
         // lendingSelectors[1] = BaseLendingFacet.pay.selector;
@@ -308,7 +307,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
         // // Deploy VotingFacet
-        // VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
+        // VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), votingConfig, VOTING_ESCROW, VOTER);
         // bytes4[] memory votingSelectors = new bytes4[](5);
         // votingSelectors[0] = VotingFacet.vote.selector;
         // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -318,7 +317,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // // Deploy VotingEscrowFacet
-        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         // bytes4[] memory votingEscrowSelectors = new bytes4[](3);
         // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
@@ -326,32 +325,32 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // // Deploy SwapFacet
-        // SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig));
+        // SwapFacet swapFacet = new SwapFacet(address(portfolioFactory), address(portfolioFactoryConfig), address(swapConfig));
         // bytes4[] memory swapSelectors = new bytes4[](1);
         // swapSelectors[0] = SwapFacet.userSwap.selector;
         // _registerFacet(facetRegistry, address(swapFacet), swapSelectors, "SwapFacet");
 
         // // Deploy MigrationFacet
-        // MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), VOTING_ESCROW);
         // bytes4[] memory migrationSelectors = new bytes4[](1);
         // migrationSelectors[0] = IMigrationFacet.migrate.selector;
         // _registerFacet(facetRegistry, address(migrationFacet), migrationSelectors, "MigrationFacet");
 
         // // Deploy VexyFacet
-        // VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
         // bytes4[] memory vexySelectors = new bytes4[](1);
         // vexySelectors[0] = VexyFacet.buyVexyListing.selector;
         // _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
 
         // // Deploy OpenXFacet
-        // OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        // OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
         // bytes4[] memory openXSelectors = new bytes4[](1);
         // openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
         // _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // // Deploy MarketplaceFacet
         // PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioFactory), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
         // bytes4[] memory marketplaceSelectors = new bytes4[](7);
         // marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         // marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
@@ -369,7 +368,7 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         // _registerFacet(facetRegistry, address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
         // Deploy DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt)
-        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -389,8 +388,8 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
     }
 
     function upgradeVault() internal {
-        (,, PortfolioAccountConfig portfolioAccountConfig) = _resolveFromSalt();
-        address vaultProxy = portfolioAccountConfig.getLoanContract();
+        (,, PortfolioFactoryConfig portfolioFactoryConfig) = _resolveFromSalt();
+        address vaultProxy = portfolioFactoryConfig.getLoanContract();
 
         // Deploy new DynamicFeesVault implementation and upgrade
         DynamicFeesVault newImplementation = new DynamicFeesVault();

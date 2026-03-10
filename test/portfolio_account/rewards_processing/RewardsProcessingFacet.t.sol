@@ -30,7 +30,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         // Deploy RewardsProcessingFacet
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         DeployRewardsProcessingFacet deployer = new DeployRewardsProcessingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig), address(_ve), _vault);
+        deployer.deploy(address(_portfolioFactory), address(_swapConfig), address(_ve), _vault);
         vm.stopPrank();
         
         // Initialize facet reference
@@ -131,7 +131,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
         
         // Calculate expected amount after zero balance fee (1% = 100 basis points)
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedRecipientAmount = rewardsAmount - feeAmount;
         
@@ -214,7 +214,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 portfolioRewardsBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
 
         // Percentages are on post-fees amount
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 postFeesAmount = rewardsAmount - feeAmount;
         uint256 amountToSwap = postFeesAmount * 25 / 100; // 25% of post-fees
@@ -304,7 +304,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         deal(lockedAsset, address(mockRouter), 200e18);
 
         // Percentages are on post-fees amount
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 postFeesAmount = rewardsAmount - feeAmount;
         uint256 amountToSwap = postFeesAmount * 25 / 100; // 25% of post-fees
@@ -501,8 +501,8 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         deal(loanAsset, _portfolioAccount, rewardsAmount);
 
         // Percentages are on post-fees amount (after protocol fee + lender premium)
-        uint256 pFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
-        uint256 lPrem = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
+        uint256 pFee = (rewardsAmount * _portfolioFactoryConfig.getLoanConfig().getTreasuryFee()) / 10000;
+        uint256 lPrem = (rewardsAmount * _portfolioFactoryConfig.getLoanConfig().getLenderPremium()) / 10000;
         uint256 postFeesAmount = rewardsAmount - pFee - lPrem;
         uint256 amountToSwap = postFeesAmount * 15 / 100; // 15% of post-fees
         uint256 expectedLockedAssetOut = 200e18;
@@ -583,7 +583,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         deal(loanAsset, _portfolioAccount, rewardsAmount);
 
         uint256 debtBefore = CollateralFacet(_portfolioAccount).getTotalDebt();
-        address owner = _portfolioAccountConfig.owner();
+        address owner = _portfolioFactoryConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
         uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
         
@@ -641,7 +641,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         // Fund the portfolio account with loan asset for rewards
         deal(loanAsset, _portfolioAccount, rewardsAmount);
 
-        address owner = _portfolioAccountConfig.owner();
+        address owner = _portfolioFactoryConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
         uint256 vaultBalanceBefore = IERC20(loanAsset).balanceOf(vault);
         
@@ -751,7 +751,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 authorizedCallerBalanceAfter = IERC20(rewardsToken).balanceOf(_authorizedCaller);
         
         // Calculate expected amounts
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedRecipientAmount = rewardsAmount - gasReclamationAmount - feeAmount;
         
@@ -792,7 +792,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 authorizedCallerBalanceAfter = IERC20(rewardsToken).balanceOf(_authorizedCaller);
         
         // Calculate expected amounts with capped gas reclamation
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expectedRecipientAmount = rewardsAmount - expectedCappedAmount - feeAmount;
         
@@ -909,7 +909,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         deal(loanAsset, _portfolioAccount, rewards);
 
-        address owner = _portfolioAccountConfig.owner();
+        address owner = _portfolioFactoryConfig.owner();
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
 
         // Process rewards
@@ -966,7 +966,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 rewards = 500e6;
         deal(loanAsset, _portfolioAccount, rewards);
 
-        address owner = _portfolioAccountConfig.owner();
+        address owner = _portfolioFactoryConfig.owner();
         address recipientAddress = address(0x1234); // From setUp
         address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
         uint256 ownerBalanceBefore = IERC20(loanAsset).balanceOf(owner);
@@ -1187,8 +1187,8 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         deal(loanAsset, _portfolioAccount, rewardsAmount);
 
         // Calculate amounts for swap setup
-        uint256 pFee = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getTreasuryFee()) / 10000;
-        uint256 lPrem = (rewardsAmount * _portfolioAccountConfig.getLoanConfig().getLenderPremium()) / 10000;
+        uint256 pFee = (rewardsAmount * _portfolioFactoryConfig.getLoanConfig().getTreasuryFee()) / 10000;
+        uint256 lPrem = (rewardsAmount * _portfolioFactoryConfig.getLoanConfig().getLenderPremium()) / 10000;
         uint256 postFeesAmount = rewardsAmount - pFee - lPrem;
         uint256 amountToSwap = postFeesAmount * 10 / 100;
         uint256 expectedLockedAssetOut = 200e18;

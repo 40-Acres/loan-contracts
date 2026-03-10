@@ -18,11 +18,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {DynamicFeesVault} from "../../../../src/facets/account/vault/DynamicFeesVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -52,7 +52,7 @@ contract DynamicMarketplaceFacetTest is Test {
     PortfolioManager public portfolioManager;
     PortfolioFactory public portfolioFactory;
     FacetRegistry public facetRegistry;
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     LoanConfig public loanConfig;
 
     // Portfolio accounts
@@ -100,8 +100,8 @@ contract DynamicMarketplaceFacetTest is Test {
         );
 
         // Deploy configs
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (portfolioAccountConfig,, loanConfig,) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (portfolioFactoryConfig,, loanConfig,) = configDeployer.deploy(address(portfolioFactory));
 
         // Deploy DynamicFeesVault
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
@@ -117,11 +117,11 @@ contract DynamicMarketplaceFacetTest is Test {
         vault.transferOwnership(DEPLOYER);
 
         // Configure
-        portfolioAccountConfig.setLoanContract(address(vault));
+        portfolioFactoryConfig.setLoanContract(address(vault));
         loanConfig.setRewardsRate(10000); // 1%
         loanConfig.setMultiplier(100);
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         portfolioManager.setAuthorizedCaller(address(0xaaaaa), true);
 
         // Deploy PortfolioMarketplace
@@ -145,7 +145,6 @@ contract DynamicMarketplaceFacetTest is Test {
 
         WalletFacet walletFacet = new WalletFacet(
             address(walletFactory),
-            address(portfolioAccountConfig),
             address(swapConfig)
         );
         bytes4[] memory walletSelectors = new bytes4[](6);
@@ -159,7 +158,6 @@ contract DynamicMarketplaceFacetTest is Test {
 
         FortyAcresMarketplaceFacet walletFortyAcresFacet = new FortyAcresMarketplaceFacet(
             address(walletFactory),
-            address(portfolioAccountConfig),
             VOTING_ESCROW,
             address(portfolioMarketplace)
         );
@@ -205,7 +203,6 @@ contract DynamicMarketplaceFacetTest is Test {
         // DynamicCollateralFacet
         DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VOTING_ESCROW
         );
         bytes4[] memory collateralSelectors = new bytes4[](11);
@@ -225,7 +222,6 @@ contract DynamicMarketplaceFacetTest is Test {
         // DynamicVotingEscrowFacet
         DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VOTING_ESCROW,
             VOTER
         );
@@ -239,7 +235,6 @@ contract DynamicMarketplaceFacetTest is Test {
         // DynamicLendingFacet
         DynamicLendingFacet lendingFacet = new DynamicLendingFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             USDC
         );
         bytes4[] memory lendingSelectors = new bytes4[](5);
@@ -253,7 +248,6 @@ contract DynamicMarketplaceFacetTest is Test {
         // DynamicMarketplaceFacet
         DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             VOTING_ESCROW,
             address(portfolioMarketplace)
         );

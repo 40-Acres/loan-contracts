@@ -4,14 +4,14 @@ pragma solidity ^0.8.30;
 import {Script} from "forge-std/Script.sol";
 import {PortfolioFactory} from "../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../src/facets/account/config/LoanConfig.sol";
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {SwapConfig} from "../../src/facets/account/config/SwapConfig.sol";
 
-contract PortfolioAccountConfigDeploy is Script {
+contract PortfolioFactoryConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 
     /**
@@ -24,13 +24,14 @@ contract PortfolioAccountConfigDeploy is Script {
      *
      * @param mock If true, uses vm.startPrank for testing; if false, assumes broadcast context
      */
-    function _deploy(bool mock) internal returns (PortfolioAccountConfig, VotingConfig, LoanConfig, SwapConfig) {
-        // Deploy PortfolioAccountConfig atomically (impl + proxy with init in constructor)
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        PortfolioAccountConfig config = PortfolioAccountConfig(
+    function _deploy(bool mock, address factory) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
+        require(factory != address(0), "Factory required");
+        // Deploy PortfolioFactoryConfig atomically (impl + proxy with init in constructor)
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        PortfolioFactoryConfig config = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioAccountConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER_ADDRESS, factory))
             ))
         );
 
@@ -74,19 +75,19 @@ contract PortfolioAccountConfigDeploy is Script {
     }
 }
 
-contract DeployPortfolioAccountConfig is PortfolioAccountConfigDeploy {
-    function run() external {
+contract DeployPortfolioFactoryConfig is PortfolioFactoryConfigDeploy {
+    function run(address factory) external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        
-        _deploy(false);
-        
+
+        _deploy(false, factory);
+
         vm.stopBroadcast();
     }
 
-    function deploy() external returns (PortfolioAccountConfig, VotingConfig, LoanConfig, SwapConfig) {
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = _deploy(true);
-        
-        return (portfolioAccountConfig, votingConfig, loanConfig, swapConfig);
+    function deploy(address factory) external returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = _deploy(true, factory);
+
+        return (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig);
     }
 }
 

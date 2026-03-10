@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {BaseMarketplaceFacet} from "./BaseMarketplaceFacet.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 
 interface IDynamicFeesVaultSettlement {
     function settleRewards(address user) external;
@@ -14,11 +13,11 @@ interface IDynamicFeesVaultSettlement {
  * @dev Marketplace facet for diamonds using DynamicCollateralManager (DynamicFeesVault).
  */
 contract DynamicMarketplaceFacet is BaseMarketplaceFacet {
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace)
-        BaseMarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, marketplace) {}
+    constructor(address portfolioFactory, address votingEscrow, address marketplace)
+        BaseMarketplaceFacet(portfolioFactory, votingEscrow, marketplace) {}
 
     function _syncDebtState() internal override {
-        address lendingPool = PortfolioAccountConfig(_portfolioAccountConfig).getLoanContract();
+        address lendingPool = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
         IDynamicFeesVaultSettlement(lendingPool).settleRewards(address(this));
     }
 
@@ -39,7 +38,7 @@ contract DynamicMarketplaceFacet is BaseMarketplaceFacet {
     }
 
     function _getTotalDebt() internal view override returns (uint256) {
-        return DynamicCollateralManager.getTotalDebt(address(_portfolioAccountConfig));
+        return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _getLockedCollateral(uint256 tokenId) internal view override returns (uint256) {

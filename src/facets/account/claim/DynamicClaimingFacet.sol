@@ -11,20 +11,19 @@ import {ClaimingFacet} from "./ClaimingFacet.sol";
 contract DynamicClaimingFacet is ClaimingFacet {
     constructor(
         address portfolioFactory,
-        address portfolioAccountConfig,
         address votingEscrow,
         address voter,
         address rewardsDistributor,
         address loanConfig,
         address swapConfig,
         address vault
-    ) ClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault) {}
+    ) ClaimingFacet(portfolioFactory, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault) {}
 
     function _updateLockedCollateral(uint256 tokenId) internal override {
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
     }
 
     function _getTotalDebt() internal override view returns (uint256) {
-        return DynamicCollateralManager.getTotalDebt(address(_portfolioAccountConfig));
+        return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 }

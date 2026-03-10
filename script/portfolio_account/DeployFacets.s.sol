@@ -24,15 +24,15 @@ DeployMigrationFacet deployMigrationFacet = new DeployMigrationFacet();
     DeployRewardsProcessingFacet deployRewardsProcessingFacet = new DeployRewardsProcessingFacet();
     DeployMarketplaceFacet deployMarketplaceFacet = new DeployMarketplaceFacet();
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address tokenMessenger, address swapConfig, address loanContract, address lendingToken, address vault) external {
-        deployBridgeFacet.deploy(portfolioFactory, portfolioAccountConfig, usdc, tokenMessenger);
-        deployClaimingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
-        deployCollateralFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
-        deployLendingFacet.deploy(portfolioFactory, portfolioAccountConfig, lendingToken);
-        deployVotingFacet.deploy(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter);
-        deployVotingEscrowFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow, voter);
-deployMigrationFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
-        deployRewardsProcessingFacet.deploy(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
-        deployMarketplaceFacet.deploy(portfolioFactory, portfolioAccountConfig, votingEscrow);
+    function deploy(address portfolioFactory, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address tokenMessenger, address swapConfig, address loanContract, address lendingToken, address vault) external {
+        deployBridgeFacet.deploy(portfolioFactory, usdc, tokenMessenger);
+        deployClaimingFacet.deploy(portfolioFactory, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
+        deployCollateralFacet.deploy(portfolioFactory, votingEscrow);
+        deployLendingFacet.deploy(portfolioFactory, lendingToken);
+        deployVotingFacet.deploy(portfolioFactory, votingConfig, votingEscrow, voter);
+        deployVotingEscrowFacet.deploy(portfolioFactory, votingEscrow, voter);
+        deployMigrationFacet.deploy(portfolioFactory, votingEscrow);
+        deployRewardsProcessingFacet.deploy(portfolioFactory, swapConfig, votingEscrow, vault);
+        deployMarketplaceFacet.deploy(portfolioFactory, votingEscrow);
     }
 }

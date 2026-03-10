@@ -10,7 +10,7 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {FortyAcresPortfolioAccount} from "../../../src/accounts/FortyAcresPortfolioAccount.sol";
 
 // Config
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 
 // Wallet facet
@@ -47,7 +47,7 @@ contract WalletDeployValidation is Test {
     PortfolioFactory public walletFactory;
     FacetRegistry public facetRegistry;
 
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     SwapConfig public swapConfig;
     PortfolioMarketplace public portfolioMarketplace;
 
@@ -73,9 +73,9 @@ contract WalletDeployValidation is Test {
         );
 
         // Deploy configs
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        portfolioAccountConfig = PortfolioAccountConfig(
-            address(new ERC1967Proxy(address(configImpl), abi.encodeCall(PortfolioAccountConfig.initialize, (DEPLOYER))))
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        portfolioFactoryConfig = PortfolioFactoryConfig(
+            address(new ERC1967Proxy(address(configImpl), abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER, address(walletFactory)))))
         );
 
         SwapConfig swapConfigImpl = new SwapConfig();
@@ -99,7 +99,7 @@ contract WalletDeployValidation is Test {
     function _deployAndRegisterFacets() internal {
         // 1. WalletFacet (6 selectors)
         walletFacet = new WalletFacet(
-            address(walletFactory), address(portfolioAccountConfig), address(swapConfig)
+            address(walletFactory), address(swapConfig)
         );
         bytes4[] memory walletSel = new bytes4[](6);
         walletSel[0] = WalletFacet.transferERC20.selector;
@@ -112,7 +112,7 @@ contract WalletDeployValidation is Test {
 
         // 2. MarketplaceFacet (7 selectors)
         marketplaceFacet = new MarketplaceFacet(
-            address(walletFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace)
+            address(walletFactory), VOTING_ESCROW, address(portfolioMarketplace)
         );
         bytes4[] memory marketplaceSel = new bytes4[](7);
         marketplaceSel[0] = BaseMarketplaceFacet.makeListing.selector;
@@ -126,7 +126,7 @@ contract WalletDeployValidation is Test {
 
         // 3. FortyAcresMarketplaceFacet (1 selector)
         fortyAcresFacet = new FortyAcresMarketplaceFacet(
-            address(walletFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace)
+            address(walletFactory), VOTING_ESCROW, address(portfolioMarketplace)
         );
         bytes4[] memory fortyAcresSel = new bytes4[](1);
         fortyAcresSel[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
@@ -134,7 +134,7 @@ contract WalletDeployValidation is Test {
 
         // 4. OpenXFacet (1 selector)
         openXFacet = new OpenXFacet(
-            address(walletFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(walletFactory), VOTING_ESCROW
         );
         bytes4[] memory openXSel = new bytes4[](1);
         openXSel[0] = OpenXFacet.buyOpenXListing.selector;
@@ -142,7 +142,7 @@ contract WalletDeployValidation is Test {
 
         // 5. VexyFacet (1 selector)
         vexyFacet = new VexyFacet(
-            address(walletFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(walletFactory), VOTING_ESCROW
         );
         bytes4[] memory vexySel = new bytes4[](1);
         vexySel[0] = VexyFacet.buyVexyListing.selector;

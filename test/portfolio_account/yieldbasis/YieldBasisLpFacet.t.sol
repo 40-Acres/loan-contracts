@@ -4,9 +4,9 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {YieldBasisLpFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
 import {YieldBasisLpClaimingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpClaimingFacet.sol";
-import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -28,7 +28,7 @@ contract YieldBasisLpFacetTest is Test {
     PortfolioManager public _portfolioManager;
     FacetRegistry public _facetRegistry;
 
-    PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioFactoryConfig public _portfolioFactoryConfig;
     LoanConfig public _loanConfig;
 
     MockERC20 public _ybBtc;
@@ -57,8 +57,8 @@ contract YieldBasisLpFacetTest is Test {
         _facetRegistry = facetRegistry;
 
         // Deploy config contracts
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (_portfolioAccountConfig, , _loanConfig, ) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory));
 
         // Deploy mock tokens
         _ybBtc = new MockERC20("ybBTC", "ybBTC", 18);
@@ -88,11 +88,12 @@ contract YieldBasisLpFacetTest is Test {
 
         // Configure lending infrastructure
         _loanConfig.setMultiplier(7000); // 70% LTV
-        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
-        _portfolioAccountConfig.setLoanContract(address(_lendingVault));
+        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
+        _portfolioFactoryConfig.setLoanContract(address(_lendingVault));
+        _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // Deploy and register YieldBasisLpFacet with ALL selectors including ICollateralFacet
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_portfolioAccountConfig), address(_gauge));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge));
         bytes4[] memory facetSelectors = new bytes4[](10);
         facetSelectors[0] = YieldBasisLpFacet.deposit.selector;
         facetSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -1151,19 +1152,13 @@ contract YieldBasisLpFacetTest is Test {
     /// @notice Constructor should revert with zero address for portfolioFactory
     function testConstructorRevertsZeroFactory() public {
         vm.expectRevert("Invalid portfolio factory");
-        new YieldBasisLpFacet(address(0), address(_portfolioAccountConfig), address(_gauge));
-    }
-
-    /// @notice Constructor should revert with zero address for portfolioAccountConfig
-    function testConstructorRevertsZeroConfig() public {
-        vm.expectRevert("Invalid portfolio account config");
-        new YieldBasisLpFacet(address(_portfolioFactory), address(0), address(_gauge));
+        new YieldBasisLpFacet(address(0), address(_gauge));
     }
 
     /// @notice Constructor should revert with zero address for gauge
     function testConstructorRevertsZeroGauge() public {
         vm.expectRevert("Invalid gauge");
-        new YieldBasisLpFacet(address(_portfolioFactory), address(_portfolioAccountConfig), address(0));
+        new YieldBasisLpFacet(address(_portfolioFactory), address(0));
     }
 
     /// @notice ClaimingFacet constructor should revert with zero address

@@ -8,19 +8,18 @@ import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 contract DeploySuperchainVotingFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_CONFIG = vm.envAddress("VOTING_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address VOTER = vm.envAddress("VOTER");
         address WETH = vm.envAddress("WETH");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        SuperchainVotingFacet facet = new SuperchainVotingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_CONFIG, VOTING_ESCROW, VOTER, WETH);
+        SuperchainVotingFacet facet = new SuperchainVotingFacet(PORTFOLIO_FACTORY, VOTING_CONFIG, VOTING_ESCROW, VOTER, WETH);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainVotingFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address weth) external {
-        SuperchainVotingFacet newFacet = new SuperchainVotingFacet(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter, weth);
+    function deploy(address portfolioFactory, address votingConfig, address votingEscrow, address voter, address weth) external {
+        SuperchainVotingFacet newFacet = new SuperchainVotingFacet(portfolioFactory, votingConfig, votingEscrow, voter, weth);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "SuperchainVotingFacet", true);
     }
 

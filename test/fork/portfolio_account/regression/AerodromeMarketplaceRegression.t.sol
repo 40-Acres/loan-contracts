@@ -52,7 +52,7 @@ contract AerodromeMarketplaceRegression is BaseForkSetup {
 
         // Register WalletFacet on wallet factory
         WalletFacet walletFacet = new WalletFacet(
-            address(walletFactory), address(portfolioAccountConfig), address(swapConfig)
+            address(walletFactory), address(swapConfig)
         );
         bytes4[] memory walletSel = new bytes4[](6);
         walletSel[0] = WalletFacet.transferERC20.selector;
@@ -65,7 +65,7 @@ contract AerodromeMarketplaceRegression is BaseForkSetup {
 
         // Register FortyAcresMarketplaceFacet on wallet factory
         FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(
-            address(walletFactory), address(portfolioAccountConfig),
+            address(walletFactory),
             VOTING_ESCROW, address(portfolioMarketplace)
         );
         bytes4[] memory fortyAcresSel = new bytes4[](1);
@@ -86,8 +86,8 @@ contract AerodromeMarketplaceRegression is BaseForkSetup {
         assertEq(address(marketplaceFacet._portfolioFactory()), address(portfolioFactory));
     }
 
-    function testMarketplaceFacetPortfolioAccountConfig() public view {
-        assertEq(address(marketplaceFacet._portfolioAccountConfig()), address(portfolioAccountConfig));
+    function testMarketplaceFacetPortfolioFactoryConfig() public view {
+        assertEq(address(marketplaceFacet._portfolioFactory().portfolioFactoryConfig()), address(portfolioFactoryConfig));
     }
 
     function testMarketplaceFacetVotingEscrow() public view {

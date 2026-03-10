@@ -4,7 +4,9 @@ pragma solidity ^0.8.30;
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
+import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 
 /**
  * @title DeployRewardsProcessingFacet
@@ -14,20 +16,19 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
 
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address VAULT = vm.envAddress("VAULT");
-        
+
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        RewardsProcessingFacet newFacet = new RewardsProcessingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, SWAP_CONFIG, VOTING_ESCROW, VAULT);
+        RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(PORTFOLIO_FACTORY, SWAP_CONFIG, VOTING_ESCROW, VAULT, IVotingEscrow(VOTING_ESCROW).token());
         
         registerFacet(PORTFOLIO_FACTORY, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address swapConfig, address votingEscrow, address vault) external {
-        RewardsProcessingFacet newFacet = new RewardsProcessingFacet(portfolioFactory, portfolioAccountConfig, swapConfig, votingEscrow, vault);
+    function deploy(address portfolioFactory, address swapConfig, address votingEscrow, address vault) external {
+        RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, IVotingEscrow(votingEscrow).token());
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", true);
     }
 

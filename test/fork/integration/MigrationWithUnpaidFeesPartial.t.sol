@@ -10,10 +10,10 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {Setup} from "../portfolio_account/utils/Setup.sol";
-import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {DeployFacets} from "../../../script/portfolio_account/DeployFacets.s.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -37,7 +37,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
     IVotingEscrow public ve;
     PortfolioFactory public portfolioFactory;
     PortfolioManager public portfolioManager;
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     LoanConfig public loanConfig;
     SwapConfig public swapConfig;
     FacetRegistry public facetRegistry;
@@ -80,14 +80,14 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         (portfolioFactory, facetRegistry) = portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("base-migration-test"))));
         
         // Deploy config contracts
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (portfolioAccountConfig, , loanConfig, swapConfig) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (portfolioFactoryConfig, , loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
         
         // Deploy facets
         DeployFacets deployer = new DeployFacets();
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
         deployer.deploy(
             address(portfolioFactory),
-            address(portfolioAccountConfig),
             address(0), // votingConfig - not needed for this test
             address(ve),
             address(0), // voter - not needed
@@ -102,8 +102,8 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         );
         
         // Set loan contract in config
-        portfolioAccountConfig.setLoanContract(BASE_LOAN_CONTRACT);
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanContract(BASE_LOAN_CONTRACT);
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         vm.stopPrank();
 
         // Set portfolio factory on loan contract (if not already set)

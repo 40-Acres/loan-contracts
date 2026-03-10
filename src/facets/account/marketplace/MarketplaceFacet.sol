@@ -9,8 +9,8 @@ import {BaseMarketplaceFacet} from "./BaseMarketplaceFacet.sol";
  * @dev Marketplace facet for diamonds using CollateralManager (simple vaults).
  */
 contract MarketplaceFacet is BaseMarketplaceFacet {
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace)
-        BaseMarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, marketplace) {}
+    constructor(address portfolioFactory, address votingEscrow, address marketplace)
+        BaseMarketplaceFacet(portfolioFactory, votingEscrow, marketplace) {}
 
     function _removeLockedCollateral(uint256 tokenId, address config) internal override {
         CollateralManager.removeLockedCollateral(tokenId, config);

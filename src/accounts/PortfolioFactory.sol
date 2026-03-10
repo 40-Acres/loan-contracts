@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "./FortyAcresPortfolioAccount.sol";
 import "./FacetRegistry.sol";
 import "./PortfolioManager.sol";
+import {PortfolioFactoryConfig} from "../facets/account/config/PortfolioFactoryConfig.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 /**
  * @title PortfolioFactory
@@ -12,6 +13,7 @@ import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableS
 contract PortfolioFactory {
     FacetRegistry public immutable facetRegistry;
     PortfolioManager public immutable portfolioManager;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
 
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -21,9 +23,11 @@ contract PortfolioFactory {
 
     event AccountCreated(address indexed user, address indexed portfolio);
 
-    
+
     error AccountAlreadyExists(address user);
     error AccountCreationFailed(address user);
+    error ConfigAlreadySet();
+    error ConfigFactoryMismatch();
     
     /**
      * @dev Constructor - uses centralized facet registry
@@ -35,6 +39,18 @@ contract PortfolioFactory {
         require(_facetRegistry != address(0));
         facetRegistry = FacetRegistry(_facetRegistry);
         portfolioManager = PortfolioManager(msg.sender);
+    }
+
+    /**
+     * @dev Set the PortfolioFactoryConfig for this factory. Can only be called once.
+     * @param _config The PortfolioFactoryConfig address
+     */
+    function setPortfolioFactoryConfig(address _config) external {
+        require(msg.sender == address(portfolioManager.owner()), "Not owner");
+        require(address(portfolioFactoryConfig) == address(0), ConfigAlreadySet());
+        require(_config != address(0));
+        require(PortfolioFactoryConfig(_config).getPortfolioFactory() == address(this), ConfigFactoryMismatch());
+        portfolioFactoryConfig = PortfolioFactoryConfig(_config);
     }
 
     /**

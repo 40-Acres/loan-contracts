@@ -5,11 +5,11 @@ import {Script} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
-import {PortfolioAccountConfigDeploy} from "../DeployPortfolioAccountConfig.s.sol";
+import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 import {BridgeFacet} from "../../../src/facets/account/bridge/BridgeFacet.sol";
 
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
@@ -23,6 +23,7 @@ import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFac
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {Vault} from "../../../src/VaultV2.sol";
@@ -33,9 +34,10 @@ import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/Base
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
+import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {console} from "forge-std/console.sol";
 
-contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
+contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO
@@ -60,12 +62,12 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
     function _deploy() internal {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome"))));
 
-        // Deploy fresh PortfolioAccountConfig and LoanConfig (no rewards rate/multiplier)
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(
+        // Deploy fresh PortfolioFactoryConfig and LoanConfig (no rewards rate/multiplier)
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioAccountConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER_ADDRESS, address(portfolioFactory)))
             ))
         );
 
@@ -78,22 +80,23 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         );
 
         // Reuse existing VotingConfig, SwapConfig, and Vault from the Aerodrome deployment
-        PortfolioAccountConfig existingConfig = PortfolioAccountConfig(EXISTING_AERODROME_CONFIG);
+        PortfolioFactoryConfig existingConfig = PortfolioFactoryConfig(EXISTING_AERODROME_CONFIG);
         SwapConfig swapConfig = SwapConfig(EXISTING_SWAP_CONFIG);
         address votingConfig = address(existingConfig.getVoteConfig());
         address existingLoanContract = existingConfig.getLoanContract();
         Vault vault = Vault(ILoan(existingLoanContract)._vault());
 
-        // Link configs on the new PortfolioAccountConfig
-        portfolioAccountConfig.setVoteConfig(votingConfig);
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
-        portfolioAccountConfig.setLoanContract(existingLoanContract);
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        // Link configs on the new PortfolioFactoryConfig
+        portfolioFactoryConfig.setVoteConfig(votingConfig);
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+        portfolioFactoryConfig.setLoanContract(existingLoanContract);
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         _portfolioFactory = portfolioFactory;
 
         // Deploy ClaimingFacet
-        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
         bytes4[] memory claimingSelectors = new bytes4[](3);
         claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -101,7 +104,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
         // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -117,7 +120,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy VotingFacet
-        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
+        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), votingConfig, VOTING_ESCROW, VOTER);
         bytes4[] memory votingSelectors = new bytes4[](5);
         votingSelectors[0] = VotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -127,7 +130,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // Deploy VotingEscrowFacet
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         bytes4[] memory votingEscrowSelectors = new bytes4[](4);
         votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
@@ -136,20 +139,20 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy VexyFacet
-        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory vexySelectors = new bytes4[](1);
         vexySelectors[0] = VexyFacet.buyVexyListing.selector;
         _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
 
         // Deploy OpenXFacet
-        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW);
+        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory openXSelectors = new bytes4[](1);
         openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW, address(portfolioMarketplace));
+        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](7);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
@@ -161,7 +164,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(address(portfolioFactory), address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -178,7 +181,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
-        _validateDeployment(portfolioAccountConfig, address(portfolioFactory));
+        _validateDeployment(portfolioFactoryConfig, address(portfolioFactory));
     }
 
     /**
@@ -201,7 +204,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
 
     /// @dev Post-deployment validation. Reverts the script if any proxy is misconfigured.
     ///      Covers both borrow() and pay() call chains including getMaxLoan() dependencies.
-    function _validateDeployment(PortfolioAccountConfig config, address expectedFactory) internal view {
+    function _validateDeployment(PortfolioFactoryConfig config, address expectedFactory) internal view {
         require(config.getPortfolioFactory() == expectedFactory, "Validation: config.getPortfolioFactory() mismatch");
         require(config.getLoanContract() != address(0), "Validation: config.getLoanContract() is zero");
         require(config.getVoteConfig() != address(0), "Validation: config.getVoteConfig() is zero");
@@ -225,7 +228,7 @@ contract AerodromeRootDeploy is PortfolioAccountConfigDeploy {
     }
 }
 
-contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
+contract AerodromeLeafDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // Base USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
     bytes32 public constant SALT = keccak256(abi.encodePacked("aerodrome-usdc"));
@@ -244,15 +247,15 @@ contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
         _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
         
-        // Use inherited _deploy() function from PortfolioAccountConfigDeploy
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioAccountConfigDeploy._deploy(false);
+        // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
         _portfolioFactory = portfolioFactory;
         
         // Deploy only swap and bridge facets directly (no contract instances)
         // This allows calls to be broadcast from deployer account
         
         // Deploy BridgeFacet
-        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), address(portfolioAccountConfig), USDC, TOKEN_MESSENGER, 2);
+        // BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), USDC, TOKEN_MESSENGER, 2);
         // bytes4[] memory bridgeSelectors = new bytes4[](1);
         // bridgeSelectors[0] = BridgeFacet.bridge.selector;
         // Check if facet already exists
@@ -268,7 +271,7 @@ contract AerodromeLeafDeploy is PortfolioAccountConfigDeploy {
 
 
 
-contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
+contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO
     address public constant VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5; // Aerodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // Aerodrome RewardsDistributor
@@ -287,15 +290,15 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // Read existing Aerodrome deployment configs
-        PortfolioAccountConfig existingConfig = PortfolioAccountConfig(0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8);
+        PortfolioFactoryConfig existingConfig = PortfolioFactoryConfig(0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8);
         SwapConfig swapConfig = SwapConfig(0x3646C436f18f0e2E38E10D1A147f901a96BD4390);
         address votingConfig = address(existingConfig.getVoteConfig());
         address existingLoanContract = existingConfig.getLoanContract();
         Vault vault = Vault(ILoan(existingLoanContract)._vault());
 
-        // Step 1: Deploy fresh PortfolioAccountConfig and LoanConfig
-        // PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        PortfolioAccountConfig portfolioAccountConfig = PortfolioAccountConfig(0x34aCa8A6538B43b6CA7DA1CD482fE72369b1b73f);
+        // Step 1: Deploy fresh PortfolioFactoryConfig and LoanConfig
+        // PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(0x34aCa8A6538B43b6CA7DA1CD482fE72369b1b73f);
         PortfolioMarketplace portfolioMarketplace = PortfolioMarketplace(MARKETPLACE);
 
 
@@ -308,13 +311,13 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // );
 
         // Link configs — reuse existing VotingConfig, SwapConfig, LoanContract from Aerodrome deployment
-        // portfolioAccountConfig.setVoteConfig(votingConfig);
-        // portfolioAccountConfig.setLoanConfig(address(loanConfig));
-        // portfolioAccountConfig.setLoanContract(existingLoanContract);
-        // portfolioAccountConfig.setPortfolioFactory(portfolioFactory);
+        // portfolioFactoryConfig.setVoteConfig(votingConfig);
+        // portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+        // portfolioFactoryConfig.setLoanContract(existingLoanContract);
+        // portfolioFactoryConfig.setPortfolioFactory(portfolioFactory);
 
         // // Step 2: Redeploy ClaimingFacet with fresh config
-        // ClaimingFacet claimingFacet = new ClaimingFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        // ClaimingFacet claimingFacet = new ClaimingFacet(portfolioFactory, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
         // bytes4[] memory claimingSelectors = new bytes4[](3);
         // claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         // claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -322,7 +325,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
         // // Step 3: Redeploy RewardsProcessingFacet with fresh config and Aerodrome vault
-        RewardsProcessingFacet rewardsProcessingFacet = new RewardsProcessingFacet(portfolioFactory, address(portfolioAccountConfig), address(swapConfig), VOTING_ESCROW, address(vault));
+        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
@@ -339,7 +342,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Step 4: Redeploy all other facets with fresh config
-        // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW);
+        // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioFactoryConfig), VOTING_ESCROW);
         // bytes4[] memory collateralSelectors = new bytes4[](11);
         // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -354,7 +357,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
         // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
-        // VotingFacet votingFacet = new VotingFacet(portfolioFactory, address(portfolioAccountConfig), votingConfig, VOTING_ESCROW, VOTER);
+        // VotingFacet votingFacet = new VotingFacet(portfolioFactory, votingConfig, VOTING_ESCROW, VOTER);
         // bytes4[] memory votingSelectors = new bytes4[](5);
         // votingSelectors[0] = VotingFacet.vote.selector;
         // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -369,7 +372,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         //     facetRegistry.removeFacet(legacyErc721Facet);
         // }
 
-        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, VOTER);
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
         // bytes4[] memory votingEscrowSelectors = new bytes4[](4);
         // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
         // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
@@ -377,7 +380,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
-        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, address(portfolioAccountConfig), VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, VOTING_ESCROW, 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8);
         // bytes4[] memory marketplaceSelectors = new bytes4[](7);
         // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
@@ -389,7 +392,7 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
         // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
-        _validateDeployment(portfolioAccountConfig, portfolioFactory);
+        _validateDeployment(portfolioFactoryConfig, portfolioFactory);
     }
 
     /**
@@ -412,9 +415,9 @@ contract AerodromeRootUpgrade is PortfolioAccountConfigDeploy {
 
     /// @dev Post-deployment validation. Reverts the script if any proxy is misconfigured.
     ///      Covers both borrow() and pay() call chains including getMaxLoan() dependencies.
-    function _validateDeployment(PortfolioAccountConfig config, address expectedFactory) internal view {
+    function _validateDeployment(PortfolioFactoryConfig config, address expectedFactory) internal view {
         // Config proxy: getPortfolioFactory must work and return expected value
-        console.log("Validating PortfolioAccountConfig at", address(config));
+        console.log("Validating PortfolioFactoryConfig at", address(config));
         console.log("Expected PortfolioFactory:", address(expectedFactory));
         console.log("Actual PortfolioFactory:", address(config.getPortfolioFactory()));
         require(config.getPortfolioFactory() == expectedFactory, "Validation: config.getPortfolioFactory() mismatch");

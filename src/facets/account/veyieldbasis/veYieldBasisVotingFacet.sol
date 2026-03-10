@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscrow.sol";
 import {IYieldBasisGaugeController} from "../../../interfaces/IYieldBasisGaugeController.sol";
 import {IYieldBasisFeeDistributor} from "../../../interfaces/IYieldBasisFeeDistributor.sol";
@@ -25,7 +24,6 @@ import {AccessControl} from "../utils/AccessControl.sol";
  */
 contract veYieldBasisVotingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IYieldBasisVotingEscrow public immutable _veYB;
     IYieldBasisGaugeController public immutable _gaugeController;
     IYieldBasisFeeDistributor public immutable _feeDistributor;
@@ -38,19 +36,16 @@ contract veYieldBasisVotingFacet is AccessControl {
 
     constructor(
         address portfolioFactory,
-        address portfolioAccountConfig,
         address veYB,
         address gaugeController,
         address feeDistributor
     ) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
-        require(portfolioAccountConfig != address(0), "Invalid config");
         require(veYB != address(0), "Invalid veYB");
         require(gaugeController != address(0), "Invalid gauge controller");
         require(feeDistributor != address(0), "Invalid fee distributor");
 
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _veYB = IYieldBasisVotingEscrow(veYB);
         _gaugeController = IYieldBasisGaugeController(gaugeController);
         _feeDistributor = IYieldBasisFeeDistributor(feeDistributor);

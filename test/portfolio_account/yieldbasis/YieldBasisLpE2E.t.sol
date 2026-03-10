@@ -12,9 +12,9 @@ import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626Le
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
-import {DeployPortfolioAccountConfig} from "../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
@@ -54,7 +54,7 @@ contract YieldBasisBtcE2ETest is Test {
     PortfolioFactory public _portfolioFactory;
     PortfolioManager public _portfolioManager;
     FacetRegistry public _facetRegistry;
-    PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioFactoryConfig public _portfolioFactoryConfig;
     LoanConfig public _loanConfig;
 
     // Mock contracts
@@ -88,8 +88,8 @@ contract YieldBasisBtcE2ETest is Test {
         _facetRegistry = facetRegistry;
 
         // --- Deploy config contracts ---
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (_portfolioAccountConfig, , _loanConfig, ) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory));
 
         // --- Deploy mock tokens ---
         _ybBtc = new MockERC20("ybBTC", "ybBTC", 8);
@@ -119,11 +119,12 @@ contract YieldBasisBtcE2ETest is Test {
 
         // --- Configure ---
         _loanConfig.setMultiplier(7000); // 70% LTV
-        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
-        _portfolioAccountConfig.setLoanContract(address(_lendingVault));
+        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
+        _portfolioFactoryConfig.setLoanContract(address(_lendingVault));
+        _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // --- Deploy and register YieldBasisLpFacet with ALL selectors (including ICollateralFacet) ---
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_portfolioAccountConfig), address(_gauge));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge));
         {
             bytes4[] memory selectors = new bytes4[](10);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
@@ -153,7 +154,6 @@ contract YieldBasisBtcE2ETest is Test {
         DeployERC4626LendingFacet lendingDeployer = new DeployERC4626LendingFacet();
         _erc4626LendingFacet = lendingDeployer.deploy(
             address(_portfolioFactory),
-            address(_portfolioAccountConfig),
             address(_usdc),   // lending token
             address(_gauge)   // vault = gauge
         );

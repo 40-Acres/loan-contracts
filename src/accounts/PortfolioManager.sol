@@ -6,7 +6,7 @@ import "./FacetRegistry.sol";
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ICollateralFacet} from "../facets/account/collateral/ICollateralFacet.sol";
-import {IPortfolioAccountConfig} from "../facets/account/config/IPortfolioAccountConfig.sol";
+import {IPortfolioFactoryConfig} from "../facets/account/config/IPortfolioFactoryConfig.sol";
 /**
  * @title PortfolioManager
  * @dev Central manager for the portfolio system that deploys FacetRegistries and PortfolioFactories,

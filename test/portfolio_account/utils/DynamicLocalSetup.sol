@@ -9,7 +9,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 
 // Config
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -62,7 +62,7 @@ contract DynamicLocalSetup is Test {
     // config addresses
     LoanConfig public _loanConfig;
     VotingConfig public _votingConfig;
-    PortfolioAccountConfig public _portfolioAccountConfig;
+    PortfolioFactoryConfig public _portfolioFactoryConfig;
     PortfolioManager public _portfolioManager;
     SwapConfig public _swapConfig;
     FacetRegistry public _facetRegistry;
@@ -153,11 +153,11 @@ contract DynamicLocalSetup is Test {
     function _deployConfigs() internal {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
 
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        _portfolioAccountConfig = PortfolioAccountConfig(
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        _portfolioFactoryConfig = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioAccountConfig.initialize, (FORTY_ACRES_DEPLOYER))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (FORTY_ACRES_DEPLOYER, address(_portfolioFactory)))
             ))
         );
 
@@ -185,8 +185,8 @@ contract DynamicLocalSetup is Test {
             ))
         );
 
-        _portfolioAccountConfig.setVoteConfig(address(_votingConfig));
-        _portfolioAccountConfig.setLoanConfig(address(_loanConfig));
+        _portfolioFactoryConfig.setVoteConfig(address(_votingConfig));
+        _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
 
         vm.stopPrank();
     }
@@ -212,8 +212,9 @@ contract DynamicLocalSetup is Test {
         _dynamicVault.acceptOwnership();
 
         // Point config at the vault as the loan contract
-        _portfolioAccountConfig.setLoanContract(_vault);
-        _portfolioAccountConfig.setPortfolioFactory(address(_portfolioFactory));
+        _portfolioFactoryConfig.setLoanContract(_vault);
+        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
+        _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         vm.stopPrank();
 
@@ -229,7 +230,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 1. ClaimingFacet (3 selectors) ──
         _claimingFacet = new ClaimingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_ve), address(_voter), address(_rewardsDistributor),
             address(_loanConfig), address(_swapConfig), _vault
         );
@@ -241,7 +242,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 2. DynamicCollateralFacet (11 selectors) ──
         DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), address(_ve)
+            address(_portfolioFactory), address(_ve)
         );
         bytes4[] memory collateralSel = new bytes4[](11);
         collateralSel[0] = BaseCollateralFacet.addCollateral.selector;
@@ -259,7 +260,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 3. DynamicLendingFacet (5 selectors) ──
         DynamicLendingFacet lendingFacet = new DynamicLendingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), _usdc
+            address(_portfolioFactory), _usdc
         );
         bytes4[] memory lendingSel = new bytes4[](5);
         lendingSel[0] = BaseLendingFacet.borrow.selector;
@@ -271,7 +272,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 4. VotingFacet (5 selectors) ──
         VotingFacet votingFacet = new VotingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_votingConfig), address(_ve), address(_voter)
         );
         bytes4[] memory votingSel = new bytes4[](5);
@@ -284,7 +285,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 5. DynamicVotingEscrowFacet (4 selectors) ──
         DynamicVotingEscrowFacet votingEscrowFacet = new DynamicVotingEscrowFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_ve), address(_voter)
         );
         bytes4[] memory votingEscrowSel = new bytes4[](4);
@@ -296,7 +297,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 6. MigrationFacet (1 selector) ──
         MigrationFacet migrationFacet = new MigrationFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig), address(_ve)
+            address(_portfolioFactory), address(_ve)
         );
         bytes4[] memory migrationSel = new bytes4[](1);
         migrationSel[0] = IMigrationFacet.migrate.selector;
@@ -307,7 +308,7 @@ contract DynamicLocalSetup is Test {
             address(_portfolioManager), address(_ve), 100, FORTY_ACRES_DEPLOYER
         );
         DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
+            address(_portfolioFactory),
             address(_ve), address(_portfolioMarketplace)
         );
         bytes4[] memory marketplaceSel = new bytes4[](8);
@@ -323,8 +324,8 @@ contract DynamicLocalSetup is Test {
 
         // ── 8. DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt) ──
         DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(
-            address(_portfolioFactory), address(_portfolioAccountConfig),
-            address(_swapConfig), address(_ve), _vault
+            address(_portfolioFactory),
+            address(_swapConfig), address(_ve), _vault, address(_mockAero)
         );
         bytes4[] memory rewardsSel = new bytes4[](12);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;

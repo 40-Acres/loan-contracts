@@ -5,7 +5,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
@@ -19,18 +18,15 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IERC4626 public immutable _vault;
 
     error InvalidShares();
     error InsufficientShares();
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address vault) {
+    constructor(address portfolioFactory, address vault) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
-        require(portfolioAccountConfig != address(0), "Invalid portfolio account config");
         require(vault != address(0), "Invalid vault");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _vault = IERC4626(vault);
     }
 
@@ -40,7 +36,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @param shares The amount of shares to add as collateral
      */
     function addCollateral(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), address(_vault), shares);
+        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault), shares);
     }
 
     /**
@@ -56,7 +52,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
         IERC20(address(_vault)).safeTransferFrom(owner, address(this), shares);
 
         // Add to collateral tracking
-        ERC4626CollateralManager.addCollateral(address(_portfolioAccountConfig), address(_vault), shares);
+        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault), shares);
     }
 
     /**
@@ -64,7 +60,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @param shares The amount of shares to remove
      */
     function removeCollateral(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), address(_vault), shares);
+        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault), shares);
     }
 
     /**
@@ -73,7 +69,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      */
     function removeCollateralTo(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         // Remove from collateral tracking
-        ERC4626CollateralManager.removeCollateral(address(_portfolioAccountConfig), address(_vault), shares);
+        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault), shares);
 
         // Transfer shares to owner
         address owner = _portfolioFactory.ownerOf(address(this));
@@ -107,7 +103,7 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @dev Get maximum loan amount
      */
     function getMaxLoan() external view override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(address(_portfolioAccountConfig), address(_vault));
+        return ERC4626CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault));
     }
 
     /**

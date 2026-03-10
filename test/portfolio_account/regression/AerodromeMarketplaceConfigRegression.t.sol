@@ -31,8 +31,8 @@ contract AerodromeMarketplaceConfigRegression is BaseDeploymentSetup {
         assertEq(address(marketplaceFacet._portfolioFactory()), address(portfolioFactory));
     }
 
-    function testMarketplaceFacetPortfolioAccountConfig() public view {
-        assertEq(address(marketplaceFacet._portfolioAccountConfig()), address(portfolioAccountConfig));
+    function testMarketplaceFacetPortfolioFactoryConfig() public view {
+        assertEq(address(marketplaceFacet._portfolioFactory().portfolioFactoryConfig()), address(portfolioFactoryConfig));
     }
 
     function testMarketplaceFacetVotingEscrow() public view {

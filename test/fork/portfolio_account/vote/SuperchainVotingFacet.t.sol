@@ -5,12 +5,12 @@ import {Test, console} from "forge-std/Test.sol";
 import {SuperchainVotingFacet} from "../../../../src/facets/account/vote/SuperchainVoting.sol";
 import {VotingFacet} from "../../../../src/facets/account/vote/VotingFacet.sol";
 import {DeploySuperchainVotingFacet} from "../../../../script/portfolio_account/facets/DeploySuperchainVoting.s.sol";
-import {DeployPortfolioAccountConfig} from "../../../../script/portfolio_account/DeployPortfolioAccountConfig.s.sol";
+import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
 import {IVotingEscrow} from "../../../../src/interfaces/IVotingEscrow.sol";
 import {IVoter} from "../../../../src/interfaces/IVoter.sol";
 import {IRewardsDistributor} from "../../../../src/interfaces/IRewardsDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {PortfolioAccountConfig} from "../../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {SuperchainVotingConfig} from "../../../../src/facets/account/config/SuperchainVotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
@@ -65,7 +65,7 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         
         // Deploy and register SuperchainVotingFacet
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_superchainVotingConfig), address(_ve), address(_voter), address(weth));
+        deployer.deploy(address(_portfolioFactory), address(_superchainVotingConfig), address(_ve), address(_voter), address(weth));
         vm.stopPrank();
         
         // Ensure authorized caller is set after deployment (must be done as owner)
@@ -274,8 +274,8 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
-        DeployPortfolioAccountConfig configDeployer = new DeployPortfolioAccountConfig();
-        (PortfolioAccountConfig portfolioAccountConfig, VotingConfig votingConfig, LoanConfig loanConfig, ) = configDeployer.deploy();
+        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, ) = configDeployer.deploy(address(portfolioFactory));
 
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
@@ -287,19 +287,19 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         SuperchainVotingConfig superchainVotingConfig = SuperchainVotingConfig(address(superchainVotingConfigProxy));
         votingConfig = VotingConfig(address(superchainVotingConfigProxy));
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
-        deployer.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(superchainVotingConfig), address(ve), address(voter), address(weth));
+        deployer.deploy(address(portfolioFactory), address(superchainVotingConfig), address(ve), address(voter), address(weth));
 
         // Deploy CollateralFacet which is required for enforceCollateral() call after multicall
         DeployCollateralFacet deployCollateralFacet = new DeployCollateralFacet();
-        deployCollateralFacet.deploy(address(portfolioFactory), address(portfolioAccountConfig), address(ve));
+        deployCollateralFacet.deploy(address(portfolioFactory), address(ve));
         
         // Set loan contract address which is required for enforceCollateral() to call getMaxLoan()
         // Use Optimism loan contract address (not Base)
         address loanContract = address(0xf132bD888897254521D13e2c401e109caABa06A7);
         // Upgrade loan contract to LoanV2
         LoanV2 loanV2 = new LoanV2();
-        portfolioAccountConfig.setLoanContract(loanContract);
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanContract(loanContract);
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         // Mark loan contract as persistent for fork testing
         vm.makePersistent(loanContract);
         

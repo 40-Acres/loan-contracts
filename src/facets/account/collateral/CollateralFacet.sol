@@ -8,8 +8,8 @@ import {BaseCollateralFacet} from "./BaseCollateralFacet.sol";
  * @title CollateralFacet
  */
 contract CollateralFacet is BaseCollateralFacet {
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow)
-        BaseCollateralFacet(portfolioFactory, portfolioAccountConfig, votingEscrow) {}
+    constructor(address portfolioFactory, address votingEscrow)
+        BaseCollateralFacet(portfolioFactory, votingEscrow) {}
 
     function _addLockedCollateral(address config, uint256 tokenId, address ve) internal override {
         CollateralManager.addLockedCollateral(config, tokenId, ve);
@@ -32,7 +32,7 @@ contract CollateralFacet is BaseCollateralFacet {
     }
 
     function _getMaxLoan() internal view override returns (uint256, uint256) {
-        return CollateralManager.getMaxLoan(address(_portfolioAccountConfig));
+        return CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _getOriginTimestamp(uint256 tokenId) internal view override returns (uint256) {

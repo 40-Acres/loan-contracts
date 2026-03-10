@@ -9,8 +9,8 @@ import {BaseCollateralFacet} from "./BaseCollateralFacet.sol";
  * @dev CollateralFacet variant for DynamicFeesVault — reads debt from vault instead of local storage.
  */
 contract DynamicCollateralFacet is BaseCollateralFacet {
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow)
-        BaseCollateralFacet(portfolioFactory, portfolioAccountConfig, votingEscrow) {}
+    constructor(address portfolioFactory, address votingEscrow)
+        BaseCollateralFacet(portfolioFactory, votingEscrow) {}
 
     function _addLockedCollateral(address config, uint256 tokenId, address ve) internal override {
         DynamicCollateralManager.addLockedCollateral(config, tokenId, ve);
@@ -25,7 +25,7 @@ contract DynamicCollateralFacet is BaseCollateralFacet {
     }
 
     function _getTotalDebt() internal view override returns (uint256) {
-        return DynamicCollateralManager.getTotalDebt(address(_portfolioAccountConfig));
+        return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _getUnpaidFees() internal pure override returns (uint256) {
@@ -33,7 +33,7 @@ contract DynamicCollateralFacet is BaseCollateralFacet {
     }
 
     function _getMaxLoan() internal view override returns (uint256, uint256) {
-        return DynamicCollateralManager.getMaxLoan(address(_portfolioAccountConfig));
+        return DynamicCollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _getOriginTimestamp(uint256 tokenId) internal view override returns (uint256) {

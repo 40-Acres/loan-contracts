@@ -9,8 +9,8 @@ contract SuperchainClaimingFacet is ClaimingFacet {
     using SafeERC20 for IERC20;
     address public immutable _weth;
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault, address weth)
-        ClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault)
+    constructor(address portfolioFactory, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault, address weth)
+        ClaimingFacet(portfolioFactory, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault)
     {
         _weth = weth;
     }

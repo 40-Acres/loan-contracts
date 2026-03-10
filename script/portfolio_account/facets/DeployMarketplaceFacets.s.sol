@@ -13,18 +13,17 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 contract DeployVexyFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        VexyFacet facet = new VexyFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW);
+        VexyFacet facet = new VexyFacet(PORTFOLIO_FACTORY, VOTING_ESCROW);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "VexyFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
-        VexyFacet newFacet = new VexyFacet(portfolioFactory, portfolioAccountConfig, votingEscrow);
+    function deploy(address portfolioFactory, address votingEscrow) external {
+        VexyFacet newFacet = new VexyFacet(portfolioFactory, votingEscrow);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "VexyFacet", true);
-        
+
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
@@ -37,16 +36,15 @@ contract DeployVexyFacet is AccountFacetsDeploy {
 contract DeployOpenXFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        OpenXFacet facet = new OpenXFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW);
+        OpenXFacet facet = new OpenXFacet(PORTFOLIO_FACTORY, VOTING_ESCROW);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "OpenXFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
-        OpenXFacet newFacet = new OpenXFacet(portfolioFactory, portfolioAccountConfig, votingEscrow);
+    function deploy(address portfolioFactory, address votingEscrow) external {
+        OpenXFacet newFacet = new OpenXFacet(portfolioFactory, votingEscrow);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "OpenXFacet", true);
     }
 
@@ -62,20 +60,19 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
 
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address portfolioMgr = address(PortfolioFactory(PORTFOLIO_FACTORY).portfolioManager());
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, VOTING_ESCROW, 100, DEPLOYER_ADDRESS);
-        MarketplaceFacet facet = new MarketplaceFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, address(portfolioMarketplace));
+        MarketplaceFacet facet = new MarketplaceFacet(PORTFOLIO_FACTORY, VOTING_ESCROW, address(portfolioMarketplace));
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "MarketplaceFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) external {
+    function deploy(address portfolioFactory, address votingEscrow) external {
         address portfolioMgr = address(PortfolioFactory(portfolioFactory).portfolioManager());
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, votingEscrow, 100, DEPLOYER_ADDRESS);
-        MarketplaceFacet newFacet = new MarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, address(portfolioMarketplace));
+        MarketplaceFacet newFacet = new MarketplaceFacet(portfolioFactory, votingEscrow, address(portfolioMarketplace));
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "MarketplaceFacet", true);
     }
 
@@ -93,8 +90,8 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
 }
 
 contract DeployFortyAcresMarketplaceFacet is AccountFacetsDeploy {
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace) external {
-        FortyAcresMarketplaceFacet newFacet = new FortyAcresMarketplaceFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, marketplace);
+    function deploy(address portfolioFactory, address votingEscrow, address marketplace) external {
+        FortyAcresMarketplaceFacet newFacet = new FortyAcresMarketplaceFacet(portfolioFactory, votingEscrow, marketplace);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "FortyAcresMarketplaceFacet", true);
     }
 

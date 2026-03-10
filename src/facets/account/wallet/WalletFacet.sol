@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -21,7 +20,6 @@ contract WalletFacet is AccessControl, IERC721Receiver {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     SwapConfig public immutable _swapConfig;
 
     event LockCreated(uint256 indexed tokenId, uint256 amount, address indexed owner, address indexed toPortfolio);
@@ -33,12 +31,10 @@ contract WalletFacet is AccessControl, IERC721Receiver {
         return true;
     }
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address swapConfig) {
+    constructor(address portfolioFactory, address swapConfig) {
         require(portfolioFactory != address(0));
-        require(portfolioAccountConfig != address(0));
         require(swapConfig != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _swapConfig = SwapConfig(swapConfig);
     }
 

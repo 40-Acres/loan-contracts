@@ -43,9 +43,9 @@ contract SetLoanConfigDefaults is Script {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
 
-        // Get LoanConfig from PortfolioAccountConfig
+        // Get LoanConfig from PortfolioFactoryConfig
         ILoanConfig loanConfig = PortfolioHelperUtils.getConfigFromFactory(factory).getLoanConfig();
-        require(address(loanConfig) != address(0), "LoanConfig not set in PortfolioAccountConfig");
+        require(address(loanConfig) != address(0), "LoanConfig not set in PortfolioFactoryConfig");
 
         // Set the values
         loanConfig.setRewardsRate(rewardsRate);

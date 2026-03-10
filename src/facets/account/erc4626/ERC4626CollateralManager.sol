@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
@@ -51,15 +51,15 @@ library ERC4626CollateralManager {
 
     /**
      * @dev Add ERC4626 shares as collateral
-     * @param portfolioAccountConfig The portfolio account config address
+     * @param portfolioFactoryConfig The portfolio account config address
      * @param vault The ERC4626 vault address (immutable on facet)
      * @param shares The amount of shares to add as collateral
      */
-    function addCollateral(address portfolioAccountConfig, address vault, uint256 shares) external {
+    function addCollateral(address portfolioFactoryConfig, address vault, uint256 shares) external {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
         ERC4626CollateralData storage data = _getStorage();
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
 
         // Calculate asset value of shares
         uint256 assetValue = IERC4626(vault).convertToAssets(shares);
@@ -67,7 +67,7 @@ library ERC4626CollateralManager {
         data.shares += shares;
         data.depositedAssetValue += assetValue;
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
         emit ERC4626CollateralAdded(vault, shares, assetValue, address(this));
@@ -75,17 +75,17 @@ library ERC4626CollateralManager {
 
     /**
      * @dev Remove ERC4626 shares from collateral
-     * @param portfolioAccountConfig The portfolio account config address
+     * @param portfolioFactoryConfig The portfolio account config address
      * @param vault The ERC4626 vault address (immutable on facet)
      * @param shares The amount of shares to remove from collateral
      */
-    function removeCollateral(address portfolioAccountConfig, address vault, uint256 shares) external {
+    function removeCollateral(address portfolioFactoryConfig, address vault, uint256 shares) external {
         require(shares > 0, "Shares must be > 0");
 
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient collateral shares");
 
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
 
         // Calculate proportional asset value to remove
         uint256 assetValueToRemove = (data.depositedAssetValue * shares) / data.shares;
@@ -93,7 +93,7 @@ library ERC4626CollateralManager {
         data.shares -= shares;
         data.depositedAssetValue -= assetValueToRemove;
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
         emit ERC4626CollateralRemoved(vault, shares, assetValueToRemove, address(this));
@@ -156,21 +156,21 @@ library ERC4626CollateralManager {
 
     /**
      * @dev Increase total debt by borrowing from lending pool
-     * @param portfolioAccountConfig The portfolio account config address
+     * @param portfolioFactoryConfig The portfolio account config address
      * @param vault The ERC4626 collateral vault address
      * @param amount The amount to borrow
      * @return loanAmount The actual loan amount after fees
      * @return originationFee The origination fee
      */
-    function increaseTotalDebt(address portfolioAccountConfig, address vault, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
+    function increaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         ERC4626CollateralData storage data = _getStorage();
         // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
-        address factory = PortfolioAccountConfig(portfolioAccountConfig).getPortfolioFactory();
+        address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
         if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
-        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
-        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
 
         if (data.debt + amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
@@ -189,18 +189,18 @@ library ERC4626CollateralManager {
 
     /**
      * @dev Decrease total debt by paying to lending pool
-     * @param portfolioAccountConfig The portfolio account config address
+     * @param portfolioFactoryConfig The portfolio account config address
      * @param vault The ERC4626 collateral vault address
      * @param amount The amount to pay
      * @return excess Any excess amount after fully paying debt
      */
-    function decreaseTotalDebt(address portfolioAccountConfig, address vault, uint256 amount) external returns (uint256 excess) {
+    function decreaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) external returns (uint256 excess) {
         ERC4626CollateralData storage data = _getStorage();
 
         uint256 totalDebt = data.debt;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
 
-        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
         // Pay vault first — vault may settle vested rewards before applying payment,
         // implicitly reducing debt beyond what actualPaid reports.
@@ -217,7 +217,7 @@ library ERC4626CollateralManager {
         data.debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
 
         // Recalculate enforcement flags from actual debt state
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         if (data.debt > maxLoanIgnoreSupply) {
             uint256 debtExcess = data.debt - maxLoanIgnoreSupply;
             data.overSuppliedVaultDebt = debtExcess;
@@ -232,14 +232,14 @@ library ERC4626CollateralManager {
 
     /**
      * @dev Get the maximum loan amount based on collateral value (with explicit vault)
-     * @param portfolioAccountConfig The portfolio account config address
+     * @param portfolioFactoryConfig The portfolio account config address
      * @param vault The ERC4626 collateral vault address
      * @return maxLoan The maximum loan considering vault supply constraints
      * @return maxLoanIgnoreSupply The maximum loan ignoring vault supply constraints
      */
-    function getMaxLoan(address portfolioAccountConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
+    function getMaxLoan(address portfolioFactoryConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalCollateralValue = getTotalCollateralValue(vault);
-        ILoanConfig loanConfig = PortfolioAccountConfig(portfolioAccountConfig).getLoanConfig();
+        ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
 
         // Get loan-to-value ratio (LTV) from multiplier - e.g., 7000 = 70%
         uint256 ltv = loanConfig.getMultiplier();
@@ -247,7 +247,7 @@ library ERC4626CollateralManager {
         // Calculate max loan based on collateral value and LTV
         maxLoanIgnoreSupply = (totalCollateralValue * ltv) / 10000;
 
-        ILendingPool lendingPool = ILendingPool(PortfolioAccountConfig(portfolioAccountConfig).getLoanContract());
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();
 
         address lendingVault = lendingPool.lendingVault();
@@ -344,11 +344,11 @@ library ERC4626CollateralManager {
      * @param vault The ERC4626 vault address
      * @param shares The shares to remove (representing yield)
      */
-    function removeSharesForYield(address portfolioAccountConfig, address vault, uint256 shares) external {
+    function removeSharesForYield(address portfolioFactoryConfig, address vault, uint256 shares) external {
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient shares");
 
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
 
         uint256 remainingShares = data.shares - shares;
         uint256 remainingValue = IERC4626(vault).convertToAssets(remainingShares);
@@ -356,7 +356,7 @@ library ERC4626CollateralManager {
 
         data.shares = remainingShares;
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioAccountConfig, vault);
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
     }
 }

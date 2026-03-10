@@ -14,7 +14,6 @@ contract DeploySuperchainClaiming is AccountFacetsDeploy {
 
     function run() external {     
         address PORTFOLIO_FACTORY  = vm.envAddress("PORTFOLIO_FACTORY");
-        address PORTFOLIO_ACCOUNT_CONFIG = vm.envAddress("PORTFOLIO_ACCOUNT_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address VOTER = vm.envAddress("VOTER");
         address REWARDS_DISTRIBUTOR = vm.envAddress("REWARDS_DISTRIBUTOR");
@@ -24,16 +23,16 @@ contract DeploySuperchainClaiming is AccountFacetsDeploy {
         address WETH = vm.envAddress("WETH");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(PORTFOLIO_FACTORY, PORTFOLIO_ACCOUNT_CONFIG, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG, VAULT, WETH);
+        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(PORTFOLIO_FACTORY, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, LOAN_CONFIG, SWAP_CONFIG, VAULT, WETH);
         
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainClaimingFacet", false);
         
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault, address weth) external returns (SuperchainClaimingFacet) {
-        
-        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(portfolioFactory, portfolioAccountConfig, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault, weth);
+    function deploy(address portfolioFactory, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address swapConfig, address vault, address weth) external returns (SuperchainClaimingFacet) {
+
+        SuperchainClaimingFacet facet = new SuperchainClaimingFacet(portfolioFactory, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault, weth);
         bytes4[] memory selectors = getSelectorsForFacet();
         registerFacet(portfolioFactory, address(facet), selectors, "SuperchainClaimingFacet", true);
         

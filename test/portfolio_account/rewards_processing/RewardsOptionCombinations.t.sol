@@ -46,7 +46,7 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
 
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         DeployRewardsProcessingFacet deployer = new DeployRewardsProcessingFacet();
-        deployer.deploy(address(_portfolioFactory), address(_portfolioAccountConfig), address(_swapConfig), address(_ve), _vault);
+        deployer.deploy(address(_portfolioFactory), address(_swapConfig), address(_ve), _vault);
         vm.stopPrank();
 
         rewardsProcessingFacet = RewardsProcessingFacet(_portfolioAccount);
@@ -121,7 +121,7 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
         rewardsProcessingFacet.processRewards(_tokenId, rewardsAmount, noSwap, 0);
         vm.stopPrank();
 
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 expected = rewardsAmount - feeAmount;
 
@@ -144,7 +144,7 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
         });
         _setZeroBalanceDistribution(entries);
 
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 postFeesAmount = rewardsAmount - feeAmount;
         uint256 amountToSwap = postFeesAmount * 50 / 100;
@@ -198,7 +198,7 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
 
         RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(rewardsAmount, 0);
 
-        uint256 zeroBalanceFee = _portfolioAccountConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
         uint256 postFeesAmount = rewardsAmount - feeAmount;
         uint256 expectedSwapAmount = postFeesAmount * 50 / 100;

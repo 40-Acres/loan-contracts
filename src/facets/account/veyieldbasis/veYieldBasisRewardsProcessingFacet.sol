@@ -5,16 +5,15 @@ import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFac
 import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscrow.sol";
 import {veYieldBasisAdapter} from "../../../adapters/veYieldBasisAdapter.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
-import {SwapMod} from "../swap/SwapMod.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title YieldBasisRewardsProcessingFacet
+ * @title veYieldBasisRewardsProcessingFacet
  * @dev Rewards processing facet adapted for YieldBasis's veYB.
  *
  * YieldBasis uses address-based locking (not tokenId-based like Aerodrome).
- * This facet overrides _increaseCollateral to call veYB.increase_amount()
+ * This facet overrides _increaseLock to call veYB.increase_amount()
  * directly instead of using the tokenId-based increaseAmount().
  */
 contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
@@ -25,16 +24,14 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
 
     constructor(
         address portfolioFactory,
-        address portfolioAccountConfig,
         address swapConfig,
         address veYB,
         address veYBAdapter,
         address vault
     ) RewardsProcessingFacet(
         portfolioFactory,
-        portfolioAccountConfig,
         swapConfig,
-        veYBAdapter, // Pass adapter as votingEscrow for token() calls
+        veYieldBasisAdapter(veYBAdapter).token(), // Derive collateral token from adapter
         vault
     ) {
         require(veYB != address(0), "Invalid veYB");
@@ -43,11 +40,15 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         _veYBAdapter = veYieldBasisAdapter(veYBAdapter);
     }
 
+    function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
+        return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
+    }
+
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override {
         IERC20(lockedAsset).approve(address(_veYB), increaseAmount);
         _veYB.increase_amount(increaseAmount);
         IERC20(lockedAsset).approve(address(_veYB), 0);
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_veYBAdapter));
+        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
         emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
     }
 }

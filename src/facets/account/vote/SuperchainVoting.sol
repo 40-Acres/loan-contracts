@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IVoter} from "../../../interfaces/IVoter.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {VotingFacet} from "./VotingFacet.sol";
@@ -23,8 +22,8 @@ contract SuperchainVotingFacet is VotingFacet {
 
     error MinimumWethBalanceNotMet();
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingConfig, address votingEscrow, address voter, address weth)
-        VotingFacet(portfolioFactory, portfolioAccountConfig, votingConfig, votingEscrow, voter) 
+    constructor(address portfolioFactory, address votingConfig, address votingEscrow, address voter, address weth)
+        VotingFacet(portfolioFactory, votingConfig, votingEscrow, voter)
     {
         require(weth != address(0));
         _superchainVotingConfig = SuperchainVotingConfig(address(votingConfig));

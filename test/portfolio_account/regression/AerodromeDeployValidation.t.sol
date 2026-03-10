@@ -193,7 +193,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testConfigLoanConfigLinkage() public view {
         assertEq(
-            address(portfolioAccountConfig.getLoanConfig()),
+            address(portfolioFactoryConfig.getLoanConfig()),
             address(loanConfig),
             "Config should reference correct LoanConfig"
         );
@@ -201,7 +201,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testConfigVotingConfigLinkage() public view {
         assertEq(
-            portfolioAccountConfig.getVoteConfig(),
+            portfolioFactoryConfig.getVoteConfig(),
             address(votingConfig),
             "Config should reference correct VotingConfig"
         );
@@ -209,7 +209,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testConfigLoanContractLinkage() public view {
         assertEq(
-            portfolioAccountConfig.getLoanContract(),
+            portfolioFactoryConfig.getLoanContract(),
             loanContract,
             "Config should reference correct Loan contract"
         );
@@ -217,7 +217,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testConfigPortfolioFactoryLinkage() public view {
         assertEq(
-            portfolioAccountConfig.getPortfolioFactory(),
+            portfolioFactoryConfig.getPortfolioFactory(),
             address(portfolioFactory),
             "Config should reference correct PortfolioFactory"
         );

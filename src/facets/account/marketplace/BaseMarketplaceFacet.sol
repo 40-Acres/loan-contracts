@@ -7,7 +7,6 @@ import {UserMarketplaceModule} from "./UserMarketplaceModule.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
 import {IMarketplaceFacet} from "../../../interfaces/IMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../marketplace/PortfolioMarketplace.sol";
 
@@ -22,17 +21,14 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
     address public immutable _marketplace;
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow, address marketplace_) {
+    constructor(address portfolioFactory, address votingEscrow, address marketplace_) {
         require(portfolioFactory != address(0));
-        require(portfolioAccountConfig != address(0));
         require(votingEscrow != address(0));
         require(marketplace_ != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _votingEscrow = IVotingEscrow(votingEscrow);
         _marketplace = marketplace_;
     }
@@ -105,7 +101,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         netPayment = listing.price - (listing.price * feeBps) / 10000;
 
         // Get current required payment (reflects current debt state, not listing-time state)
-        requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioAccountConfig), tokenId);
+        requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioFactory.portfolioFactoryConfig()), tokenId);
 
         purchasable = netPayment >= requiredPayment;
     }
@@ -134,7 +130,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         require(!UserMarketplaceModule.hasSaleAuthorization(tokenId), "Listing already exists");
 
         // Validate that net payment (after protocol fee) covers required debt payment
-        uint256 requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioAccountConfig), tokenId);
+        uint256 requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioFactory.portfolioFactoryConfig()), tokenId);
         if (requiredPayment > 0) {
             uint256 feeBps = PortfolioMarketplace(_marketplace).protocolFee();
             uint256 netPayment = price - (price * feeBps) / 10000;
@@ -202,7 +198,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         // Pull funds from marketplace
         IERC20(auth.paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
 
-        address configAddress = address(_portfolioAccountConfig);
+        address configAddress = address(_portfolioFactory.portfolioFactoryConfig());
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         uint256 debtPaid = 0;
 

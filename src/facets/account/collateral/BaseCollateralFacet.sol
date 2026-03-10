@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-import {PortfolioAccountConfig} from "../config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "./ICollateralFacet.sol";
@@ -17,17 +17,15 @@ import {ICollateralFacet} from "./ICollateralFacet.sol";
  */
 abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     PortfolioFactory public immutable _portfolioFactory;
-    PortfolioAccountConfig public immutable _portfolioAccountConfig;
     IVotingEscrow public immutable _votingEscrow;
 
     error NotOwnerOfToken();
     error NotOwnerOfPortfolioAccount();
     error ListingActive(uint256 tokenId);
 
-    constructor(address portfolioFactory, address portfolioAccountConfig, address votingEscrow) {
+    constructor(address portfolioFactory, address votingEscrow) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _portfolioAccountConfig = PortfolioAccountConfig(portfolioAccountConfig);
         _votingEscrow = IVotingEscrow(votingEscrow);
     }
 
@@ -59,7 +57,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
             IVotingEscrow(address(_votingEscrow)).safeTransferFrom(portfolioOwner, address(this), tokenId);
         }
         // add the collateral to the collateral manager
-        _addLockedCollateral(address(_portfolioAccountConfig), tokenId, address(_votingEscrow));
+        _addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
     }
 
     function getTotalLockedCollateral() public view returns (uint256) {
@@ -79,7 +77,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
             revert ListingActive(tokenId);
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()));
         IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), portfolioOwner, tokenId);
     }
 
@@ -102,7 +100,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
             toPortfolio = targetFactory.createAccount(portfolioOwner);
         }
 
-        _removeLockedCollateral(tokenId, address(_portfolioAccountConfig));
+        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()));
         IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), toPortfolio, tokenId);
     }
 

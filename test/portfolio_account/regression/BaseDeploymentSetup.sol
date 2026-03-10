@@ -10,7 +10,7 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {FortyAcresPortfolioAccount} from "../../../src/accounts/FortyAcresPortfolioAccount.sol";
 
 // Config
-import {PortfolioAccountConfig} from "../../../src/facets/account/config/PortfolioAccountConfig.sol";
+import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
@@ -29,6 +29,7 @@ import {MarketplaceFacet} from "../../../src/facets/account/marketplace/Marketpl
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 
 // Loan / Vault
 import {Loan} from "../../../src/Loan.sol";
@@ -68,7 +69,7 @@ abstract contract BaseDeploymentSetup is Test {
     FacetRegistry public facetRegistry;
 
     // ─── Config contracts ────────────────────────────────────────────
-    PortfolioAccountConfig public portfolioAccountConfig;
+    PortfolioFactoryConfig public portfolioFactoryConfig;
     VotingConfig public votingConfig;
     LoanConfig public loanConfig;
     SwapConfig public swapConfig;
@@ -130,12 +131,12 @@ abstract contract BaseDeploymentSetup is Test {
 
     /// @dev Step 2: Config contracts via ERC1967Proxy with atomic init
     function _deployConfigs() internal {
-        // PortfolioAccountConfig
-        PortfolioAccountConfig configImpl = new PortfolioAccountConfig();
-        portfolioAccountConfig = PortfolioAccountConfig(
+        // PortfolioFactoryConfig
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        portfolioFactoryConfig = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioAccountConfig.initialize, (DEPLOYER))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER, address(portfolioFactory)))
             ))
         );
 
@@ -167,8 +168,8 @@ abstract contract BaseDeploymentSetup is Test {
         );
 
         // Link configs (mirrors deploy script)
-        portfolioAccountConfig.setVoteConfig(address(votingConfig));
-        portfolioAccountConfig.setLoanConfig(address(loanConfig));
+        portfolioFactoryConfig.setVoteConfig(address(votingConfig));
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
     }
 
     /// @dev Step 3: Loan (V1 proxy → initialize → upgrade V2) + Vault
@@ -195,15 +196,16 @@ abstract contract BaseDeploymentSetup is Test {
 
         // Set portfolio factory on loan and config
         LoanV2(loanContract).setPortfolioFactory(address(portfolioFactory));
-        portfolioAccountConfig.setPortfolioFactory(address(portfolioFactory));
-        portfolioAccountConfig.setLoanContract(loanContract);
+        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactoryConfig.setLoanContract(loanContract);
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
     }
 
     /// @dev Step 4: Deploy and register all 8 facets with exact selector arrays from deploy script
     function _deployAndRegisterFacets() internal {
         // ── 1. ClaimingFacet (3 selectors) ──
         claimingFacet = new ClaimingFacet(
-            address(portfolioFactory), address(portfolioAccountConfig),
+            address(portfolioFactory),
             VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR,
             address(loanConfig), address(swapConfig), address(vault)
         );
@@ -215,7 +217,7 @@ abstract contract BaseDeploymentSetup is Test {
 
         // ── 2. CollateralFacet (11 selectors) ──
         collateralFacet = new CollateralFacet(
-            address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(portfolioFactory), VOTING_ESCROW
         );
         bytes4[] memory collateralSel = new bytes4[](11);
         collateralSel[0] = BaseCollateralFacet.addCollateral.selector;
@@ -233,7 +235,7 @@ abstract contract BaseDeploymentSetup is Test {
 
         // ── 3. LendingFacet (5 selectors) ──
         lendingFacet = new LendingFacet(
-            address(portfolioFactory), address(portfolioAccountConfig), USDC
+            address(portfolioFactory), USDC
         );
         bytes4[] memory lendingSel = new bytes4[](5);
         lendingSel[0] = BaseLendingFacet.borrow.selector;
@@ -245,7 +247,7 @@ abstract contract BaseDeploymentSetup is Test {
 
         // ── 4. VotingFacet (5 selectors) ──
         votingFacet = new VotingFacet(
-            address(portfolioFactory), address(portfolioAccountConfig),
+            address(portfolioFactory),
             address(votingConfig), VOTING_ESCROW, VOTER
         );
         bytes4[] memory votingSel = new bytes4[](5);
@@ -258,7 +260,7 @@ abstract contract BaseDeploymentSetup is Test {
 
         // ── 5. VotingEscrowFacet (4 selectors) ──
         votingEscrowFacet = new VotingEscrowFacet(
-            address(portfolioFactory), address(portfolioAccountConfig),
+            address(portfolioFactory),
             VOTING_ESCROW, VOTER
         );
         bytes4[] memory votingEscrowSel = new bytes4[](4);
@@ -270,7 +272,7 @@ abstract contract BaseDeploymentSetup is Test {
 
         // ── 6. MigrationFacet (1 selector) ──
         migrationFacet = new MigrationFacet(
-            address(portfolioFactory), address(portfolioAccountConfig), VOTING_ESCROW
+            address(portfolioFactory), VOTING_ESCROW
         );
         bytes4[] memory migrationSel = new bytes4[](1);
         migrationSel[0] = IMigrationFacet.migrate.selector;
@@ -281,7 +283,7 @@ abstract contract BaseDeploymentSetup is Test {
             address(portfolioManager), VOTING_ESCROW, 100, DEPLOYER
         );
         marketplaceFacet = new MarketplaceFacet(
-            address(portfolioFactory), address(portfolioAccountConfig),
+            address(portfolioFactory),
             VOTING_ESCROW, address(portfolioMarketplace)
         );
         bytes4[] memory marketplaceSel = new bytes4[](7);
@@ -294,10 +296,10 @@ abstract contract BaseDeploymentSetup is Test {
         marketplaceSel[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSel, "MarketplaceFacet");
 
-        // ── 8. RewardsProcessingFacet (10 selectors) ──
-        rewardsProcessingFacet = new RewardsProcessingFacet(
-            address(portfolioFactory), address(portfolioAccountConfig),
-            address(swapConfig), VOTING_ESCROW, address(vault)
+        // ── 8. RewardsProcessingFacet (12 selectors) ──
+        rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(
+            address(portfolioFactory),
+            address(swapConfig), VOTING_ESCROW, address(vault), AERO
         );
         bytes4[] memory rewardsSel = new bytes4[](12);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
