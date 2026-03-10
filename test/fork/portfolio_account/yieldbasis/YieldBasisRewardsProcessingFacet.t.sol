@@ -162,7 +162,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         // Configure the PortfolioFactoryConfig with the mock lending pool
         portfolioFactoryConfig.setLoanContract(address(mockLendingPool));
-        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the mock vault with USDC
         deal(USDC, address(mockVault), 1_000_000 * 1e6);

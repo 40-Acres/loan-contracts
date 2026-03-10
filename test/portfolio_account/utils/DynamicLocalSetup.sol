@@ -213,7 +213,6 @@ contract DynamicLocalSetup is Test {
 
         // Point config at the vault as the loan contract
         _portfolioFactoryConfig.setLoanContract(_vault);
-        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         vm.stopPrank();

@@ -90,7 +90,6 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
         portfolioFactoryConfig.setVoteConfig(votingConfig);
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
         portfolioFactoryConfig.setLoanContract(existingLoanContract);
-        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         _portfolioFactory = portfolioFactory;

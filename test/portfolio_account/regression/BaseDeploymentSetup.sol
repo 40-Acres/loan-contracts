@@ -196,7 +196,6 @@ abstract contract BaseDeploymentSetup is Test {
 
         // Set portfolio factory on loan and config
         LoanV2(loanContract).setPortfolioFactory(address(portfolioFactory));
-        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         portfolioFactoryConfig.setLoanContract(loanContract);
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
     }

@@ -211,7 +211,6 @@ contract LocalSetup is Test {
 
         _vault = address(vault);
 
-        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 

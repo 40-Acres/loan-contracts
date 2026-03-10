@@ -124,7 +124,6 @@ contract YieldBasisDynamicFeesE2E is Test {
         loanConfig.setMultiplier(1e12); // 1x multiplier
 
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
-        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
 
         // Fund the vault with USDC from depositor
         deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);

@@ -88,7 +88,6 @@ contract YieldBasisLpFacetTest is Test {
 
         // Configure lending infrastructure
         _loanConfig.setMultiplier(7000); // 70% LTV
-        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
         _portfolioFactoryConfig.setLoanContract(address(_lendingVault));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 

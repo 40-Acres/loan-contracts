@@ -88,7 +88,6 @@ contract ERC4626ClaimingFacetTest is Test {
         _loanConfig.setZeroBalanceFee(100);
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
-        _portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // Set authorized caller

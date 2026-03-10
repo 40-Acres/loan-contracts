@@ -121,7 +121,6 @@ contract DynamicMarketplaceFacetTest is Test {
         loanConfig.setRewardsRate(10000); // 1%
         loanConfig.setMultiplier(100);
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
-        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         portfolioManager.setAuthorizedCaller(address(0xaaaaa), true);
 
         // Deploy PortfolioMarketplace

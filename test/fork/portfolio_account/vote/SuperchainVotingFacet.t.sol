@@ -299,7 +299,6 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         // Upgrade loan contract to LoanV2
         LoanV2 loanV2 = new LoanV2();
         portfolioFactoryConfig.setLoanContract(loanContract);
-        portfolioFactoryConfig.setPortfolioFactory(address(portfolioFactory));
         // Mark loan contract as persistent for fork testing
         vm.makePersistent(loanContract);
         

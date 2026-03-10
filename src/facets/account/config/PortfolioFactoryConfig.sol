@@ -33,7 +33,6 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
     
     // Token storage data using named storage slot
     struct PortfolioFactoryConfigData {
-        mapping(address => bool) approvedContracts;
         address loanContract;
         address voteConfig;
         ILoanConfig loanConfig;
@@ -52,22 +51,6 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
         assembly {
             collateralStorage.slot := position
         }
-    }
-
-    function setApprovedContract(address addr, bool approved) public onlyOwner {
-        PortfolioFactoryConfigData storage collateralStorage = _getPortfolioFactoryConfig();
-        collateralStorage.approvedContracts[addr] = approved;
-    }
-
-    function isApprovedContract(address addr) public view returns (bool) {
-        PortfolioFactoryConfigData storage collateralStorage = _getPortfolioFactoryConfig();
-        return collateralStorage.approvedContracts[addr];
-    }
-
-    function setPortfolioFactory(address factory) public onlyOwner {
-        require(factory != address(0), "Zero address");
-        PortfolioFactoryConfigData storage s = _getPortfolioFactoryConfig();
-        s.portfolioFactory = factory;
     }
 
     function getPortfolioFactory() public view returns (address) {

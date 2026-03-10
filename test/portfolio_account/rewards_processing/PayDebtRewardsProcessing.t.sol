@@ -104,14 +104,13 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         _loanConfig2.setTreasuryFee(500);
         _loanConfig2.setZeroBalanceFee(100);
 
+        // Set portfolio factory on loan contract 2 (must be before setLoanContract validation)
+        LoanV2(_loanContract2).setPortfolioFactory(address(_portfolioFactory2));
+
         // Set loan contract and loan config in PortfolioFactoryConfig2
         _portfolioFactoryConfig2.setLoanContract(_loanContract2);
         _portfolioFactoryConfig2.setLoanConfig(address(_loanConfig2));
-        _portfolioFactoryConfig2.setPortfolioFactory(address(_portfolioFactory2));
         _portfolioFactory2.setPortfolioFactoryConfig(address(_portfolioFactoryConfig2));
-
-        // Set portfolio factory on loan contract 2
-        LoanV2(_loanContract2).setPortfolioFactory(address(_portfolioFactory2));
 
         // Deploy all facets for factory 2 (including LendingFacet)
         deployFacetsForFactory2();
@@ -233,10 +232,12 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         _loanConfig2.setTreasuryFee(500);
         _loanConfig2.setZeroBalanceFee(100);
 
+        // Set portfolio factory on loan contract (must be before setLoanContract validation)
+        LoanV2(_loanContract2).setPortfolioFactory(address(_portfolioFactory2));
+
         // Set loan contract and loan config in PortfolioFactoryConfig2
         _portfolioFactoryConfig2.setLoanContract(_loanContract2);
         _portfolioFactoryConfig2.setLoanConfig(address(_loanConfig2));
-        _portfolioFactoryConfig2.setPortfolioFactory(address(_portfolioFactory2));
         _portfolioFactory2.setPortfolioFactoryConfig(address(_portfolioFactoryConfig2));
 
         // Deploy facets WITHOUT LendingFacet

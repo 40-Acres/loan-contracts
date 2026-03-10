@@ -378,8 +378,6 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     function _upgradePortfolioFactoryConfig(PortfolioFactoryConfig portfolioFactoryConfig) internal {
         PortfolioFactoryConfig portfolioFactoryConfigImplementation = new PortfolioFactoryConfig();
         PortfolioFactoryConfig(address(portfolioFactoryConfig)).upgradeToAndCall(address(portfolioFactoryConfigImplementation), new bytes(0));
-        // set portfolio factory again after upgrade (just in case)
-        portfolioFactoryConfig.setPortfolioFactory(address(_portfolioFactory));
     }
 
     /// @dev Post-deployment validation. Reverts the script if any proxy is misconfigured.
