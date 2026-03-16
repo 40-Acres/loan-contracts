@@ -62,14 +62,45 @@ contract DynamicVotingEscrowFacet is AccessControl, IERC721Receiver {
     function merge(uint256 fromToken, uint256 toToken) external {
         require(_votingEscrow.ownerOf(toToken) == address(this));
         require(_votingEscrow.ownerOf(fromToken) != address(this));
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
         address owner = _portfolioFactory.ownerOf(address(this));
+
+        // Ensure toToken is tracked as collateral so updateLockedCollateral isn't a no-op
+        DynamicCollateralManager.addLockedCollateral(config, toToken, address(_votingEscrow));
+
         int128 beginningBalance = _votingEscrow.locked(toToken).amount;
         _votingEscrow.merge(fromToken, toToken);
         int128 weightIncrease = _votingEscrow.locked(toToken).amount - beginningBalance;
         require(weightIncrease >= 0, "Negative weight increase");
-        // Remove stale collateral record for fromToken (burned after merge)
-        DynamicCollateralManager.removeLockedCollateral(fromToken, address(_portfolioFactory.portfolioFactoryConfig()));
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), toToken, address(_votingEscrow));
+
+        DynamicCollateralManager.updateLockedCollateral(config, toToken, address(_votingEscrow));
+        emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);
+    }
+
+    function mergeInternal(uint256 fromToken, uint256 toToken) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        require(fromToken != toToken, "SameNFT");
+        require(_votingEscrow.ownerOf(fromToken) == address(this), "from not in account");
+        require(_votingEscrow.ownerOf(toToken) == address(this), "to not in account");
+
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        address owner = _portfolioFactory.ownerOf(address(this));
+
+        // Ensure toToken is tracked as collateral so updateLockedCollateral isn't a no-op
+        DynamicCollateralManager.addLockedCollateral(config, toToken, address(_votingEscrow));
+
+        // Reset votes and unlock permanent on fromToken so VE merge doesn't revert
+        _voter.reset(fromToken);
+        _votingEscrow.unlockPermanent(fromToken);
+
+        int128 beginningBalance = _votingEscrow.locked(toToken).amount;
+        _votingEscrow.merge(fromToken, toToken);
+        int128 weightIncrease = _votingEscrow.locked(toToken).amount - beginningBalance;
+        require(weightIncrease >= 0, "Negative weight increase");
+
+        // Update collateral: remove burned token, refresh survivor
+        DynamicCollateralManager.removeLockedCollateral(fromToken, config);
+        DynamicCollateralManager.updateLockedCollateral(config, toToken, address(_votingEscrow));
+
         emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);
     }
 

@@ -150,6 +150,14 @@ contract MockVotingEscrow {
         _locked[tokenId].end = 0; // permanent locks have no end
     }
 
+    function unlockPermanent(uint256 tokenId) external {
+        require(_owners[tokenId] != address(0), "NonExistentToken");
+        require(_locked[tokenId].isPermanent, "NotPermanentLock");
+        require(!_voted[tokenId], "AlreadyVoted");
+        _locked[tokenId].isPermanent = false;
+        _locked[tokenId].end = block.timestamp + 4 * 365 days;
+    }
+
     function voting(uint256 tokenId) external {
         _voted[tokenId] = true;
     }

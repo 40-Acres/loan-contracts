@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {IVotingEscrow} from "../../src/interfaces/IVotingEscrow.sol";
+
 /**
  * @title MockVoter
  * @dev Minimal Voter mock for local testing.
@@ -17,6 +19,11 @@ contract MockVoter {
     mapping(address => address) public gaugeToFees;
     mapping(address => address) public gaugeToBribe;
     mapping(address => address) public feeDistributors;
+    IVotingEscrow public ve;
+
+    function setVotingEscrow(address _ve) external {
+        ve = IVotingEscrow(_ve);
+    }
 
     function vote(uint256 tokenId, address[] calldata, uint256[] calldata) external {
         lastVoted[tokenId] = block.timestamp;
@@ -24,6 +31,10 @@ contract MockVoter {
 
     function reset(uint256 tokenId) external {
         lastVoted[tokenId] = 0;
+        // Mirror real Voter behavior: clear voted state on the VE
+        if (address(ve) != address(0)) {
+            ve.abstain(tokenId);
+        }
     }
 
     function poke(uint256) external {}

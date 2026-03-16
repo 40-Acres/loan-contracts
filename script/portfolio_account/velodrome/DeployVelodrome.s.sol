@@ -276,7 +276,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
     address public constant WETH = 0x4200000000000000000000000000000000000006;
     
-    PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
+    PortfolioManager public _portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
 
@@ -287,7 +287,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     }
 
     function upgradeFacets() internal {
-        PortfolioManager portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
+        PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
         
 
         // Deploy VotingConfig atomically
@@ -307,7 +307,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // votingConfig.setMinimumWethBalance(1);  // Set minimum WETH balance to 0.1 WETH
 
         // swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
-        Vault vault = Vault(ILoan(portfo8899lioFactoryConfig.getLoanContract())._vault());
+        Vault vault = Vault(ILoan(portfolioFactoryConfig.getLoanContract())._vault());
 
 
         // // // Deploy RewardsProcessingFacet

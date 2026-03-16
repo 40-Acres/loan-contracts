@@ -124,6 +124,7 @@ contract LocalSetup is Test {
         _mockAero = new MockERC20("Aerodrome", "AERO", 18);
         _mockVe = new MockVotingEscrow(address(_mockAero));
         _mockVoter = new MockVoter();
+        _mockVoter.setVotingEscrow(address(_mockVe));
         _mockRewardsDistributor = new MockRewardsDistributor();
 
         // Cast to interface types (matching Setup.sol variable names)

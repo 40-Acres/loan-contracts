@@ -86,6 +86,7 @@ interface IVotingEscrow {
     function locked__end(uint _tokenId) external view returns (uint);
 
     function lockPermanent(uint256 _tokenId) external;
+    function unlockPermanent(uint256 _tokenId) external;
     function locked(uint256 _tokenId) external view returns (LockedBalance memory);
     function reset(uint256 _tokenId) external;
 
