@@ -434,8 +434,8 @@ contract RewardsProcessingFacet is AccessControl {
         return optionAmount;
     }
 
-    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal virtual {
-        revert("_increaseLock not implemented");
+    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal virtual returns (uint256 usedAmount) {
+        return 0;
     }
 
     function swapToRewardsToken(SwapMod.RouteParams memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
@@ -524,7 +524,7 @@ contract RewardsProcessingFacet is AccessControl {
      *
      * Routes with inputAmount == 0 require no swap.
      */
-    function calculateRoutes(uint256 rewardsAmount, uint256 gasReclamation) external view returns (SwapRoute[4] memory routes) {
+    function calculateRoutes(uint256 tokenId, uint256 rewardsAmount, uint256 gasReclamation) external view returns (SwapRoute[4] memory routes) {
         address asset = getRewardsToken();
         address lockedAsset = _collateralToken;
         bool hasDebt = ICollateralFacet(address(this)).getTotalDebt() > 0;
@@ -554,7 +554,7 @@ contract RewardsProcessingFacet is AccessControl {
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
                 uint256 entryAmount = postFeesAmount * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;
-                routes[0] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset);
+                routes[0] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
             }
         } else {
             uint8 count = UserRewardsConfig.getZeroBalanceDistributionCount();
@@ -563,7 +563,7 @@ contract RewardsProcessingFacet is AccessControl {
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getZeroBalanceDistributionEntry(i);
                 uint256 entryAmount = postFeesAmount * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;
-                routes[i] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset);
+                routes[i] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
                 remaining -= entryAmount;
             }
         }
@@ -571,8 +571,8 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _routeForDistributionEntry(
         UserRewardsConfig.DistributionEntry memory entry, uint256 amount,
-        address asset, address lockedAsset
-    ) internal view returns (SwapRoute memory route) {
+        address asset, address lockedAsset, uint256 tokenId
+    ) internal view virtual returns (SwapRoute memory route) {
         if (entry.option == UserRewardsConfig.RewardsOption.IncreaseCollateral) {
             if (asset != lockedAsset) {
                 return SwapRoute(asset, lockedAsset, amount);

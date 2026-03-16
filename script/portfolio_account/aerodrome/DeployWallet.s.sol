@@ -22,7 +22,7 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
     address public constant MARKETPLACE = 0x3938F063e3c8699EeB7D847915dF093Ea304a0F1;
 
-    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -111,7 +111,7 @@ contract WalletUpgrade is Script {
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
     address public constant MARKETPLACE = 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8;
 
-    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     bytes32 public constant WALLET_SALT = bytes32(keccak256(abi.encodePacked("wallet")));
 
     address public constant PORTFOLIO_ACCOUNT_CONFIG = 0xd9b2c0927eaBCa49076D9286D2b83B67fe8c55C7;

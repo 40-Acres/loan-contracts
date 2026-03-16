@@ -46,7 +46,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
 
     bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
 
-    PortfolioManager public _portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+    PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
 
@@ -58,7 +58,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
 
     function _deploy() internal {
         // _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
-        // require(address(_portfolioManager) == address(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5), "PortfolioManager deployment failed");
+        // require(address(_portfolioManager) == address(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9), "PortfolioManager deployment failed");
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-usdc-v2"))));
 
         // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
@@ -226,7 +226,7 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant FEE_DISTRIBUTOR = 0xD11b416573EbC59b6B2387DA0D2c0D1b3b1F7A90;
 
     // TODO: Fill in after initial deployment
-    address public constant PORTFOLIO_MANAGER = address(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+    address public constant PORTFOLIO_MANAGER = address(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     address public constant PORTFOLIO_FACTORY = address(0x6D5B539BFf0c1Dc36A6486CB3C3c5d5Ce740e96a);
     address public constant PORTFOLIO_ACCOUNT_CONFIG = address(0x0e23a4eB753334E747CD164C8DEa620e0306D0EC);
     address public constant SWAP_CONFIG = address(0xA4bB092F2049e8eF7bbF1a3cdD7dAdd27b5b77e4);

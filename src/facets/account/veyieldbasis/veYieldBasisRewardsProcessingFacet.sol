@@ -44,11 +44,12 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
     }
 
-    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override {
+    function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override returns (uint256 usedAmount) {
         IERC20(lockedAsset).approve(address(_veYB), increaseAmount);
         _veYB.increase_amount(increaseAmount);
         IERC20(lockedAsset).approve(address(_veYB), 0);
         DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
         emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+        return increaseAmount;
     }
 }

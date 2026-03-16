@@ -14,7 +14,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract VoteVelodrome is Script {
     // Velodrome Optimism addresses
-    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     address public constant PORTFOLIO_FACTORY = 0x2B2Ad15724924A52cc7C4Db47d54Ab4754ccACA8;
     PortfolioFactoryConfig public constant PORTFOLIO_ACCOUNT_CONFIG = PortfolioFactoryConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
 

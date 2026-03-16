@@ -1330,7 +1330,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         vm.stopPrank();
 
         // Calculate routes
-        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(rewardsAmount, 0);
+        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(_tokenId, rewardsAmount, 0);
 
         // Verify slot[0] has a route for IncreaseCollateral (asset -> lockedAsset)
         address loanAsset = ILoan(_loanContract)._asset();
@@ -1347,6 +1347,118 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         assertEq(routes[1].inputAmount, 0, "Slot 1 should be empty");
         assertEq(routes[2].inputAmount, 0, "Slot 2 should be empty");
         assertEq(routes[3].inputAmount, 0, "Slot 3 should be empty");
+    }
+
+    // ==================== tokenId == 0 Behavior Tests ====================
+
+    /// @notice When tokenId is 0, calculateRoutes should return an empty route
+    /// for IncreaseCollateral entries (inputAmount == 0), preventing unnecessary swaps.
+    function testCalculateRoutesReturnsEmptyForIncreaseCollateralWhenTokenIdZero() public {
+        // Set zero balance distribution with IncreaseCollateral at 100%
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = UserRewardsConfig.DistributionEntry({
+            option: UserRewardsConfig.RewardsOption.IncreaseCollateral,
+            percentage: 100,
+            outputToken: address(0),
+            target: address(0)
+        });
+        calldatas[0] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            entries
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+
+        // Call calculateRoutes with tokenId=0
+        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(0, rewardsAmount, 0);
+
+        // Route[0] should be empty because tokenId == 0 means no collateral to increase
+        assertEq(routes[0].inputAmount, 0, "IncreaseCollateral route should have zero inputAmount when tokenId is 0");
+        assertEq(routes[0].inputToken, address(0), "IncreaseCollateral route should have zero inputToken when tokenId is 0");
+        assertEq(routes[0].outputToken, address(0), "IncreaseCollateral route should have zero outputToken when tokenId is 0");
+
+        // Verify other slots are also empty
+        assertEq(routes[1].inputAmount, 0, "Slot 1 should be empty");
+        assertEq(routes[2].inputAmount, 0, "Slot 2 should be empty");
+        assertEq(routes[3].inputAmount, 0, "Slot 3 should be empty");
+
+        // Contrast: with a valid tokenId, the same config should produce a non-empty route
+        // (since rewardsToken != lockedAsset, a swap is needed)
+        RewardsProcessingFacet.SwapRoute[4] memory routesWithToken = rewardsProcessingFacet.calculateRoutes(_tokenId, rewardsAmount, 0);
+        assertGt(routesWithToken[0].inputAmount, 0, "IncreaseCollateral route should have non-zero inputAmount when tokenId is valid");
+    }
+
+    /// @notice When processRewards is called with tokenId=0 and an IncreaseCollateral
+    /// distribution, _increaseCollateral should return 0 and no collateral increase
+    /// should happen. This prevents token loss from swapping to locked asset with
+    /// nowhere to deposit it.
+    function testIncreaseLockReturnsZeroWhenTokenIdZero() public {
+        setupRewards();
+
+        // Set zero balance distribution with IncreaseCollateral at 25%
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = UserRewardsConfig.DistributionEntry({
+            option: UserRewardsConfig.RewardsOption.IncreaseCollateral,
+            percentage: 25,
+            outputToken: address(0),
+            target: address(0)
+        });
+        calldatas[0] = abi.encodeWithSelector(
+            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            entries
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+
+        uint256 recipientBalanceBefore = IERC20(rewardsToken).balanceOf(recipient);
+        uint256 portfolioBalanceBefore = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+
+        // Calculate expected fee deduction
+        uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
+        uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
+        uint256 postFeesAmount = rewardsAmount - feeAmount;
+
+        // Process rewards with tokenId=0 — IncreaseCollateral should be skipped (returns 0)
+        // No swap params needed since _increaseCollateral returns 0 before any swap
+        vm.startPrank(_authorizedCaller);
+        SwapMod.RouteParams[4] memory noSwap;
+        rewardsProcessingFacet.processRewards(
+            0, // tokenId = 0
+            rewardsAmount,
+            noSwap,
+            0 // gas reclamation
+        );
+        vm.stopPrank();
+
+        uint256 recipientBalanceAfter = IERC20(rewardsToken).balanceOf(recipient);
+        uint256 portfolioBalanceAfter = IERC20(rewardsToken).balanceOf(_portfolioAccount);
+
+        // Since _increaseCollateral returns 0 when tokenId==0, no rewards are consumed
+        // by the IncreaseCollateral entry. The full post-fees amount goes to the recipient.
+        uint256 expectedRecipientAmount = rewardsAmount - feeAmount;
+        assertEq(
+            recipientBalanceAfter - recipientBalanceBefore,
+            expectedRecipientAmount,
+            "Recipient should receive all post-fee rewards when tokenId is 0 (IncreaseCollateral skipped)"
+        );
+        assertEq(portfolioBalanceAfter, 0, "Portfolio should have processed all rewards");
+
+        // Verify no voting escrow state changed (no approve/increaseAmount calls happened)
+        // The locked amount for _tokenId should be unchanged
+        IVotingEscrow.LockedBalance memory locked = IVotingEscrow(_ve).locked(_tokenId);
+        uint256 lockedAmount = uint256(uint128(locked.amount));
+        // _tokenId was minted with 5000e18 in setUp — verify it hasn't changed
+        assertEq(lockedAmount, 5000e18, "Locked collateral should be unchanged when tokenId is 0");
     }
 }
 

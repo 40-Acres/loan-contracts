@@ -44,7 +44,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5; // Aerodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // Aerodrome RewardsDistributor
     bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
-    address public constant PORTFOLIO_MANAGER = 0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5;
+    address public constant PORTFOLIO_MANAGER = 0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9;
 
     // Reuse existing configs and vault from the Aerodrome deployment
     address public constant EXISTING_AERODROME_CONFIG = 0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8;
@@ -284,7 +284,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
     function upgradeFacets() internal {
         // Get relayer's factory from PortfolioManager
-        PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+        PortfolioManager portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome")));
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 

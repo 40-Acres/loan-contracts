@@ -39,7 +39,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
     uint256 public constant MAX_UTILIZATION_BPS = 8000; // 80%
     uint256 public constant ORIGINATION_FEE_BPS = 50;   // 0.5%
 
-    PortfolioManager public _portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+    PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     PortfolioFactory public _portfolioFactory;
     address public _vault;
 

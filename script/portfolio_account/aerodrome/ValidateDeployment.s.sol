@@ -35,7 +35,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
  */
 contract ValidateAerodromeDeployment is Script, StdCheats {
     // ─── Live deployed addresses ──────────────────────────────────────
-    address constant LIVE_PORTFOLIO_MANAGER = 0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5;
+    address constant LIVE_PORTFOLIO_MANAGER = 0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9;
     address constant LIVE_PORTFOLIO_ACCOUNT_CONFIG = 0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8;
     address constant LIVE_PORTFOLIO_FACTORY = 0xfeEB5C58786617230095a008164b096e3205EAF2;
     address constant LIVE_SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;

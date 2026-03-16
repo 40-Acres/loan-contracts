@@ -99,7 +99,7 @@ contract veYieldBasisFacet is AccessControl {
      * @dev Lock is already infinite, so just increase the amount
      * @param amount Additional YB to lock
      */
-    function increaseLock(uint256 amount) external {
+    function increaseLock(uint256 amount) external returns (uint256) {
         if (amount == 0) revert ZeroAmount();
 
         // Verify existing lock
@@ -120,6 +120,7 @@ contract veYieldBasisFacet is AccessControl {
         uint256 tokenId = _veYB.tokenOfOwnerByIndex(address(this), 0);
         // Use adapter address so CollateralManager can call locked(tokenId) correctly
         DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
+        return amount;
     }
 
     /**

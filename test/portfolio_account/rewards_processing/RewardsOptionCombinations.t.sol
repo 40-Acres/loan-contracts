@@ -196,7 +196,7 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
         });
         _setZeroBalanceDistribution(entries);
 
-        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(rewardsAmount, 0);
+        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(_tokenId, rewardsAmount, 0);
 
         uint256 zeroBalanceFee = _portfolioFactoryConfig.getLoanConfig().getZeroBalanceFee();
         uint256 feeAmount = (rewardsAmount * zeroBalanceFee) / 10000;
@@ -211,7 +211,7 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
 
     function testCalculateRoutesDefaultNoSwaps() public view {
         // No distribution set, no debt — all routes should be empty
-        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(rewardsAmount, 0);
+        RewardsProcessingFacet.SwapRoute[4] memory routes = rewardsProcessingFacet.calculateRoutes(_tokenId, rewardsAmount, 0);
         assertEq(routes[0].inputAmount, 0, "No swaps needed");
         assertEq(routes[1].inputAmount, 0, "No swaps needed");
         assertEq(routes[2].inputAmount, 0, "No swaps needed");

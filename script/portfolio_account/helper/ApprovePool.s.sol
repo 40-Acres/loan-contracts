@@ -134,10 +134,8 @@ contract ApprovePool is Script {
      * forge script script/portfolio_account/helper/ApprovePool.s.sol:ApprovePool --sig "batchApprove()" --rpc-url $BASE_RPC_URL --broadcast
      */
     function batchApprove() external {
-        address[] memory pools = new address[](3);
-        pools[0] = 0x1E726F3177a933cc134Fd0ea7C326EAb270E0137;
-        pools[1] = 0x4c76Ef610b9F6FEeB3Ca70951BeF09ED31e7f6d0;
-        pools[2] = 0x34E3334E845d101205394e0Bd8821fDdc7Cd5559;
+        address[] memory pools = new address[](1);
+        pools[0] = 0x8845126640B36df1D24bf3dF9B2903fD4c730FE6;
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         for (uint256 i = 0; i < pools.length; i++) {
