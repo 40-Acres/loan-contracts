@@ -25,7 +25,6 @@ import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVau
  *      Local version (no fork) — uses DynamicLocalSetup with MockVotingEscrow.
  *      Key differences from standard MarketplaceFacet tests:
  *      - Debt is tracked in DynamicFeesVault, not locally
- *      - No unpaid fees (getUnpaidFees() always returns 0)
  *      - Sale proceeds pay debt via receiveSaleProceeds (partial paydown)
  */
 contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {

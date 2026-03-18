@@ -82,15 +82,14 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
         // Deploy CollateralFacet (required for enforceCollateralRequirements)
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VE_YB);
-        bytes4[] memory collateralSelectors = new bytes4[](8);
+        bytes4[] memory collateralSelectors = new bytes4[](7);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter (adapts veYB to CollateralManager's IVotingEscrow interface)
@@ -252,15 +251,14 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         // Deploy CollateralFacet (required for enforceCollateralRequirements)
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
         CollateralFacet collateralFacet = new CollateralFacet(PORTFOLIO_FACTORY, VE_YB);
-        bytes4[] memory collateralSelectors = new bytes4[](8);
+        bytes4[] memory collateralSelectors = new bytes4[](7);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy veYieldBasisFacet

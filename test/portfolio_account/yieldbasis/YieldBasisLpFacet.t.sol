@@ -93,7 +93,7 @@ contract YieldBasisLpFacetTest is Test {
 
         // Deploy and register YieldBasisLpFacet with ALL selectors including ICollateralFacet
         _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge));
-        bytes4[] memory facetSelectors = new bytes4[](10);
+        bytes4[] memory facetSelectors = new bytes4[](9);
         facetSelectors[0] = YieldBasisLpFacet.deposit.selector;
         facetSelectors[1] = YieldBasisLpFacet.withdraw.selector;
         facetSelectors[2] = YieldBasisLpFacet.unstake.selector;
@@ -103,8 +103,7 @@ contract YieldBasisLpFacetTest is Test {
         facetSelectors[5] = ICollateralFacet.enforceCollateralRequirements.selector;
         facetSelectors[6] = ICollateralFacet.getTotalLockedCollateral.selector;
         facetSelectors[7] = ICollateralFacet.getTotalDebt.selector;
-        facetSelectors[8] = ICollateralFacet.getUnpaidFees.selector;
-        facetSelectors[9] = ICollateralFacet.getMaxLoan.selector;
+        facetSelectors[8] = ICollateralFacet.getMaxLoan.selector;
         _facetRegistry.registerFacet(address(_ybBtcFacet), facetSelectors, "YieldBasisLpFacet");
 
         // Deploy and register YieldBasisLpClaimingFacet
@@ -449,11 +448,6 @@ contract YieldBasisLpFacetTest is Test {
     function testGetTotalDebtZero() public view {
         uint256 debt = ICollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debt, 0, "No debt initially");
-    }
-
-    function testGetUnpaidFeesAlwaysZero() public view {
-        uint256 fees = ICollateralFacet(_portfolioAccount).getUnpaidFees();
-        assertEq(fees, 0, "ERC4626 collateral has no unpaid fees concept");
     }
 
     function testGetMaxLoanZeroWithoutCollateral() public view {
@@ -1256,19 +1250,5 @@ contract YieldBasisLpFacetTest is Test {
 
         uint256 debt = ICollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debt, 0, "Debt should be 0 with deposits only");
-    }
-
-    /// @notice getUnpaidFees always returns 0 for ERC4626 collateral
-    function testUnpaidFeesAlwaysZeroAfterOperations() public {
-        _depositViaMulticall(DEPOSIT_AMOUNT);
-        assertEq(ICollateralFacet(_portfolioAccount).getUnpaidFees(), 0);
-
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT / 2);
-        assertEq(ICollateralFacet(_portfolioAccount).getUnpaidFees(), 0);
-
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).restake(DEPOSIT_AMOUNT / 2);
-        assertEq(ICollateralFacet(_portfolioAccount).getUnpaidFees(), 0);
     }
 }

@@ -113,12 +113,10 @@ contract Health is Script {
 
         uint256 totalLockedCollateral = collateralFacet.getTotalLockedCollateral();
         uint256 totalDebt = collateralFacet.getTotalDebt();
-        uint256 unpaidFees = collateralFacet.getUnpaidFees();
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = collateralFacet.getMaxLoan();
 
         console.log("Total Collateral:    ", totalLockedCollateral);
         console.log("Total Debt:          ", totalDebt);
-        console.log("Unpaid Fees:         ", unpaidFees);
         console.log("Max Loan Available:  ", maxLoan);
         console.log("Max Loan (no supply):", maxLoanIgnoreSupply);
 

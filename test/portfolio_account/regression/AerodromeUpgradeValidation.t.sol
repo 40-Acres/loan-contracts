@@ -27,18 +27,17 @@ contract AerodromeUpgradeValidation is BaseDeploymentSetup {
         );
 
         // Build the same 11 selectors
-        bytes4[] memory selectors = new bytes4[](11);
+        bytes4[] memory selectors = new bytes4[](10);
         selectors[0] = BaseCollateralFacet.addCollateral.selector;
         selectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         selectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        selectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        selectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        selectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        selectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        selectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        selectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        selectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        selectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
+        selectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        selectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        selectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        selectors[6] = BaseCollateralFacet.getCollateralToken.selector;
+        selectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        selectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        selectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
 
         vm.prank(DEPLOYER);
         facetRegistry.replaceFacet(oldFacet, address(newCollateralFacet), selectors, "CollateralFacet");

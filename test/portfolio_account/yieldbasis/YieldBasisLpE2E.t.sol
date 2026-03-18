@@ -125,7 +125,7 @@ contract YieldBasisBtcE2ETest is Test {
         // --- Deploy and register YieldBasisLpFacet with ALL selectors (including ICollateralFacet) ---
         _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge));
         {
-            bytes4[] memory selectors = new bytes4[](10);
+            bytes4[] memory selectors = new bytes4[](9);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
             selectors[1] = YieldBasisLpFacet.withdraw.selector;
             selectors[2] = YieldBasisLpFacet.unstake.selector;
@@ -135,8 +135,7 @@ contract YieldBasisBtcE2ETest is Test {
             selectors[5] = ICollateralFacet.enforceCollateralRequirements.selector;
             selectors[6] = ICollateralFacet.getTotalLockedCollateral.selector;
             selectors[7] = ICollateralFacet.getTotalDebt.selector;
-            selectors[8] = ICollateralFacet.getUnpaidFees.selector;
-            selectors[9] = ICollateralFacet.getMaxLoan.selector;
+            selectors[8] = ICollateralFacet.getMaxLoan.selector;
             _facetRegistry.registerFacet(address(_ybBtcFacet), selectors, "YieldBasisLpFacet");
         }
 

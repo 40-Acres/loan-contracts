@@ -95,7 +95,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
     }
 
     function testCollateralFacetRegistration() public view {
-        _assertFacetRegistered(address(collateralFacet), "CollateralFacet", 11);
+        _assertFacetRegistered(address(collateralFacet), "CollateralFacet", 10);
     }
 
     function testLendingFacetRegistration() public view {
@@ -128,7 +128,6 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
         assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.addCollateral.selector), address(collateralFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.getTotalLockedCollateral.selector), address(collateralFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.getTotalDebt.selector), address(collateralFacet));
-        assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.getUnpaidFees.selector), address(collateralFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.getMaxLoan.selector), address(collateralFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.getOriginTimestamp.selector), address(collateralFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseCollateralFacet.removeCollateral.selector), address(collateralFacet));

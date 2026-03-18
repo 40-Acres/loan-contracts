@@ -322,7 +322,7 @@ contract ValidateAerodromeDeployment is Script, StdCheats {
         console.log("  borrow:", borrowAmount, "OK  debt:", debtAfterBorrow);
 
         // ── Step 3: Repay ──────────────────────────────────────────────
-        uint256 totalOwed = debtAfterBorrow + ICollateralFacet(actualPortfolio).getUnpaidFees();
+        uint256 totalOwed = debtAfterBorrow;
         deal(LIVE_USDC, testUser, totalOwed);
         IERC20(LIVE_USDC).approve(actualPortfolio, totalOwed);
         BaseLendingFacet(actualPortfolio).pay(totalOwed);

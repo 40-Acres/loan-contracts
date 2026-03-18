@@ -884,18 +884,17 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         CollateralFacet collateralFacet2 = new CollateralFacet(
             address(factory2), address(_ve)
         );
-        bytes4[] memory collateralSelectors = new bytes4[](11);
+        bytes4[] memory collateralSelectors = new bytes4[](10);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.removeCollateralTo.selector;
-        collateralSelectors[8] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[10] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         facetRegistry2.registerFacet(address(collateralFacet2), collateralSelectors, "CollateralFacet");
 
         // 2. MarketplaceFacet

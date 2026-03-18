@@ -68,7 +68,7 @@ contract LiveAerodromePostDeployment is LiveDeploymentSetup {
         assertEq(ICollateralFacet(portfolioAccount).getTotalDebt(), borrowAmount);
 
         // Fund user with USDC and approve portfolio account
-        uint256 totalOwed = borrowAmount + ICollateralFacet(portfolioAccount).getUnpaidFees();
+        uint256 totalOwed = borrowAmount;
         deal(USDC, user, totalOwed);
         vm.startPrank(user);
         IERC20(USDC).approve(portfolioAccount, totalOwed);

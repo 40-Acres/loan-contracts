@@ -47,7 +47,7 @@ contract LiveAerodromeE2E is LiveDeploymentSetup {
         assertEq(debtAfterBorrow, borrowAmount, "Debt should equal borrow amount");
 
         // Step 3: Repay
-        uint256 totalOwed = debtAfterBorrow + ICollateralFacet(portfolioAccount).getUnpaidFees();
+        uint256 totalOwed = debtAfterBorrow;
         deal(USDC, user, totalOwed);
         vm.startPrank(user);
         IERC20(USDC).approve(portfolioAccount, totalOwed);

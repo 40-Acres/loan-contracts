@@ -31,7 +31,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  * @dev Marketplace tests for diamonds using DynamicFeesVault + DynamicMarketplaceFacet.
  *      Key differences from standard marketplace tests:
  *      - Debt is tracked in DynamicFeesVault, not locally
- *      - No unpaid fees (getUnpaidFees() always returns 0)
  *      - Sale proceeds pay debt via receiveSaleProceeds (partial paydown)
  */
 contract DynamicMarketplaceFacetTest is Test {
@@ -204,18 +203,17 @@ contract DynamicMarketplaceFacetTest is Test {
             address(portfolioFactory),
             VOTING_ESCROW
         );
-        bytes4[] memory collateralSelectors = new bytes4[](11);
+        bytes4[] memory collateralSelectors = new bytes4[](10);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[10] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
         facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // DynamicVotingEscrowFacet
