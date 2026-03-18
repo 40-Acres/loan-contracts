@@ -296,18 +296,31 @@ contract SuperchainVotingFacetTest is Test, Setup, MockERC20Utils {
         // Set loan contract address which is required for enforceCollateral() to call getMaxLoan()
         // Use Optimism loan contract address (not Base)
         address loanContract = address(0xf132bD888897254521D13e2c401e109caABa06A7);
-        // Upgrade loan contract to LoanV2
-        LoanV2 loanV2 = new LoanV2();
-        portfolioFactoryConfig.setLoanContract(loanContract);
         // Mark loan contract as persistent for fork testing
         vm.makePersistent(loanContract);
-        
+
+        vm.stopPrank();
+
+        // Upgrade loan contract to LoanV2 first (needed for getPortfolioFactory)
+        LoanV2 loanV2 = new LoanV2();
+        vm.prank(IOwnable(loanContract).owner());
+        LoanV2(loanContract).upgradeToAndCall(address(loanV2), new bytes(0));
+
+        // Set portfolio factory on loan contract, then link config
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
+        vm.stopPrank();
+
+        vm.prank(IOwnable(loanContract).owner());
+        LoanV2(loanContract).setPortfolioFactory(address(portfolioFactory));
+
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        portfolioFactoryConfig.setLoanContract(loanContract);
+
         superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true, 57073);
         superchainVotingConfig.setMinimumWethBalance(.001e18);
 
         vm.stopPrank();
-        vm.prank(IOwnable(loanContract).owner());
-        LoanV2(loanContract).upgradeToAndCall(address(loanV2), new bytes(0));
         uint256 tokenId = 5005;
         
         address user = IVotingEscrow(ve).ownerOf(tokenId);

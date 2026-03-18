@@ -31,14 +31,23 @@ contract MockLendingPool is ILendingPool {
     address public immutable _lendingAsset;
     address public immutable _lendingVault;
     uint256 public _activeAssets;
+    address public _portfolioFactory;
 
     constructor(address lendingAsset_, address lendingVault_) {
         _lendingAsset = lendingAsset_;
         _lendingVault = lendingVault_;
     }
 
+    function setPortfolioFactory(address factory) external {
+        _portfolioFactory = factory;
+    }
+
+    function getPortfolioFactory() external view returns (address) {
+        return _portfolioFactory;
+    }
+
     function borrowFromPortfolio(uint256) external pure returns (uint256) {
-        return 0; // No origination fee for testing
+        return 0;
     }
 
     function payFromPortfolio(uint256 totalPayment, uint256) external pure returns (uint256) { return totalPayment; }
@@ -150,6 +159,8 @@ contract YieldBasisVotingFacetTest is Test {
         mockLendingPool = new MockLendingPool(USDC, address(mockVault));
 
         // Configure the PortfolioFactoryConfig with the mock lending pool
+        mockLendingPool.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
         portfolioFactoryConfig.setLoanContract(address(mockLendingPool));
 
         // Fund the mock vault with USDC so getMaxLoan calculations work

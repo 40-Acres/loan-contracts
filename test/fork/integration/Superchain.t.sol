@@ -113,7 +113,10 @@ contract SuperchainTest is Test, Setup, MockERC20Utils {
         
         // Set portfolio factory on loan contract
         loanV2.setPortfolioFactory(address(portfolioFactory));
-        
+
+        // Link factory to config (bidirectional)
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
+
         address loanContract = address(loanProxy);
         portfolioFactoryConfig.setLoanContract(loanContract);
         // Note: We don't make loan/vault persistent here because they reference USDC

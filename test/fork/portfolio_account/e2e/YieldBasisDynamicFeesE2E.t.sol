@@ -125,6 +125,9 @@ contract YieldBasisDynamicFeesE2E is Test {
 
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
+        // Link factory to config (bidirectional)
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
+
         // Fund the vault with USDC from depositor
         deal(USDC, vaultDepositor, VAULT_INITIAL_DEPOSIT);
         vm.stopPrank();
