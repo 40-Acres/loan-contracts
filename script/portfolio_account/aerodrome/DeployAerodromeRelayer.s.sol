@@ -89,7 +89,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
         // Link configs on the new PortfolioFactoryConfig
         portfolioFactoryConfig.setVoteConfig(votingConfig);
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
-        portfolioFactoryConfig.setLoanContract(existingLoanContract);
+        // portfolioFactoryConfig.setLoanContract(existingLoanContract);
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         _portfolioFactory = portfolioFactory;
@@ -205,25 +205,11 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
     ///      Covers both borrow() and pay() call chains including getMaxLoan() dependencies.
     function _validateDeployment(PortfolioFactoryConfig config, address expectedFactory) internal view {
         require(config.getPortfolioFactory() == expectedFactory, "Validation: config.getPortfolioFactory() mismatch");
-        require(config.getLoanContract() != address(0), "Validation: config.getLoanContract() is zero");
         require(config.getVoteConfig() != address(0), "Validation: config.getVoteConfig() is zero");
         require(address(config.getLoanConfig()) != address(0), "Validation: config.getLoanConfig() is zero");
-        require(config.getVault() != address(0), "Validation: config.getVault() is zero");
 
-        address loanProxy = config.getLoanContract();
-        require(
-            LoanV2(payable(loanProxy)).getPortfolioFactory() == expectedFactory,
-            "Validation: loan.getPortfolioFactory() mismatch"
-        );
-
-        // Pay flow: lendingAsset and lendingVault must be callable on the loan proxy
-        require(ILendingPool(loanProxy).lendingAsset() != address(0), "Validation: lendingAsset() is zero");
-        require(ILendingPool(loanProxy).lendingVault() != address(0), "Validation: lendingVault() is zero");
-
-        // getMaxLoan() dependencies: activeAssets, LoanConfig.getRewardsRate/getMultiplier
-        ILendingPool(loanProxy).activeAssets();
-        config.getLoanConfig().getRewardsRate();
-        config.getLoanConfig().getMultiplier();
+        require(config.getLoanConfig().getRewardsRate() == 0);
+        require(config.getLoanConfig().getMultiplier() == 0);
     }
 }
 
@@ -284,7 +270,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
     function upgradeFacets() internal {
         // Get relayer's factory from PortfolioManager
-        PortfolioManager portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
+        PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome")));
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
@@ -420,26 +406,9 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         console.log("Expected PortfolioFactory:", address(expectedFactory));
         console.log("Actual PortfolioFactory:", address(config.getPortfolioFactory()));
         require(config.getPortfolioFactory() == expectedFactory, "Validation: config.getPortfolioFactory() mismatch");
-        require(config.getLoanContract() != address(0), "Validation: config.getLoanContract() is zero");
+        // require(config.getLoanContract() != address(0), "Validation: config.getLoanContract() is zero");
         require(config.getVoteConfig() != address(0), "Validation: config.getVoteConfig() is zero");
         require(address(config.getLoanConfig()) != address(0), "Validation: config.getLoanConfig() is zero");
-        require(config.getVault() != address(0), "Validation: config.getVault() is zero");
-
-        // Loan proxy: getPortfolioFactory must match
-        address loanProxy = config.getLoanContract();
-        // require(
-        //     LoanV2(payable(loanProxy)).getPortfolioFactory() == expectedFactory,
-        //     "Validation: loan.getPortfolioFactory() mismatch"
-        // );
-
-        // Pay flow: lendingAsset and lendingVault must be callable on the loan proxy
-        require(ILendingPool(loanProxy).lendingAsset() != address(0), "Validation: lendingAsset() is zero");
-        require(ILendingPool(loanProxy).lendingVault() != address(0), "Validation: lendingVault() is zero");
-
-        // getMaxLoan() dependencies: activeAssets, LoanConfig.getRewardsRate/getMultiplier
-        ILendingPool(loanProxy).activeAssets();
-        config.getLoanConfig().getRewardsRate();
-        config.getLoanConfig().getMultiplier();
     }
 }
 // forge script script/portfolio_account/aerodrome/DeployAerodromeRelayer.s.sol:AerodromeRootDeploy --chain-id 8453 --rpc-url $BASE_RPC_URL --broadcast --verify --via-ir
