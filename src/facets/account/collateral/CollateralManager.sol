@@ -33,7 +33,6 @@ library CollateralManager {
         mapping(uint256 tokenId => uint256 originTimestamp) originTimestamps;
         uint256 totalLockedCollateral;
         uint256 debt;
-        uint256 unpaidFees;
         uint256 overSuppliedVaultDebt;
         uint256 undercollateralizedDebt;
     }
@@ -146,12 +145,7 @@ library CollateralManager {
 
     function getTotalDebt() public view returns (uint256) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        return collateralManagerData.debt + collateralManagerData.unpaidFees;
-    }
-
-    function getUnpaidFees() public view returns (uint256) {
-        CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
-        return collateralManagerData.unpaidFees;
+        return collateralManagerData.debt;
     }
     
     function increaseTotalDebt(address portfolioFactoryConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
@@ -179,36 +173,31 @@ library CollateralManager {
     }
 
     function migrateDebt(address portfolioFactoryConfig, uint256 amount, uint256 unpaidFees) external {
+        require(unpaidFees == 0, "Unpaid fees must be paid in full during migration");
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         collateralManagerData.debt += amount;
-        collateralManagerData.unpaidFees += unpaidFees;
     }
 
     function decreaseTotalDebt(address portfolioFactoryConfig, uint256 amount) external returns (uint256 excess) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
 
         // Cap payment at total debt to avoid overpaying
-        uint256 totalDebt = collateralManagerData.debt + collateralManagerData.unpaidFees;
+        uint256 totalDebt = collateralManagerData.debt;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
 
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
 
-        // for accounts migrated over, unpaid fees must be sent to protocol owner first as a balance payment
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        uint256 feesToPay = collateralManagerData.unpaidFees > balancePayment ? balancePayment : collateralManagerData.unpaidFees;
 
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
-        uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, feesToPay);
+        uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
 
-        uint256 actualFeePaid = actualPaid >= feesToPay ? feesToPay : actualPaid;
-        uint256 actualPrincipalPaid = actualPaid - actualFeePaid;
-        collateralManagerData.debt -= actualPrincipalPaid;
-        collateralManagerData.unpaidFees -= actualFeePaid;
+        collateralManagerData.debt -= actualPaid;
         excess = amount - actualPaid;
 
         if(collateralManagerData.overSuppliedVaultDebt > 0) {
-            collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > actualPrincipalPaid ? actualPrincipalPaid : collateralManagerData.overSuppliedVaultDebt;
+            collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > actualPaid ? actualPaid : collateralManagerData.overSuppliedVaultDebt;
         }
 
 
@@ -377,11 +366,8 @@ library CollateralManager {
 
         if (currentDebt <= newMaxLoanIgnoreSupply) return 0;
 
-        // debtReductionNeeded is how much the debt field must decrease
-        // In decreaseTotalDebt, unpaid fees are paid first from the payment amount,
-        // so we need to add unpaidFees to ensure enough principal gets reduced
         uint256 debtReductionNeeded = currentDebt - newMaxLoanIgnoreSupply;
-        return debtReductionNeeded + data.unpaidFees;
+        return debtReductionNeeded;
     }
 
 }

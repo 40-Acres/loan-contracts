@@ -93,13 +93,6 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
     }
 
     /**
-     * @dev Get unpaid fees
-     */
-    function getUnpaidFees() external view override returns (uint256) {
-        return ERC4626CollateralManager.getUnpaidFees();
-    }
-
-    /**
      * @dev Get maximum loan amount
      */
     function getMaxLoan() external view override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {

@@ -37,7 +37,6 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     function _removeLockedCollateral(uint256 tokenId, address config) internal virtual;
     function _getTotalLockedCollateral() internal view virtual returns (uint256);
     function _getTotalDebt() internal view virtual returns (uint256);
-    function _getUnpaidFees() internal view virtual returns (uint256);
     function _getMaxLoan() internal view virtual returns (uint256, uint256);
     function _getOriginTimestamp(uint256 tokenId) internal view virtual returns (uint256);
     function _getLockedCollateral(uint256 tokenId) internal view virtual returns (uint256);
@@ -66,10 +65,6 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
 
     function getTotalDebt() public view returns (uint256) {
         return _getTotalDebt();
-    }
-
-    function getUnpaidFees() public view returns (uint256) {
-        return _getUnpaidFees();
     }
 
     function removeCollateral(uint256 tokenId) public onlyPortfolioManagerMulticall(_portfolioFactory) {

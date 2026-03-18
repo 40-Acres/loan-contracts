@@ -28,10 +28,6 @@ contract DynamicCollateralFacet is BaseCollateralFacet {
         return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
-    function _getUnpaidFees() internal pure override returns (uint256) {
-        return 0;
-    }
-
     function _getMaxLoan() internal view override returns (uint256, uint256) {
         return DynamicCollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()));
     }
