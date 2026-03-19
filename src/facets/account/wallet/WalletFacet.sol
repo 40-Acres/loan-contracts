@@ -65,6 +65,11 @@ contract WalletFacet is AccessControl, IERC721Receiver {
         IERC20(token).safeTransferFrom(owner, address(this), amount);
     }
 
+    function withdrawERC20(address token, uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address owner = _portfolioFactory.ownerOf(address(this));
+        IERC20(token).safeTransfer(owner, amount);
+    }
+
     function swap(SwapMod.RouteParams memory params) external onlyPortfolioManagerMulticall(_portfolioFactory) returns (uint256 amount) {
         params.swapConfig = address(_swapConfig);
         return SwapMod.swap(params);
