@@ -424,11 +424,6 @@ contract ERC4626CollateralFacetTest is Test {
         assertEq(debt, 0);
     }
 
-    function testGetUnpaidFeesInitiallyZero() public view {
-        uint256 fees = ERC4626CollateralFacet(_portfolioAccount).getUnpaidFees();
-        assertEq(fees, 0);
-    }
-
     // ============ Helper Functions for Lending ============
 
     function borrowViaMulticall(uint256 amount) internal {

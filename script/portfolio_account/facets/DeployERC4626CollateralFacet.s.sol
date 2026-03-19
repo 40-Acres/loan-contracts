@@ -31,7 +31,7 @@ contract DeployERC4626CollateralFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](12);
+        bytes4[] memory selectors = new bytes4[](11);
         // Collateral management
         selectors[0] = ERC4626CollateralFacet.addCollateral.selector;
         selectors[1] = ERC4626CollateralFacet.addCollateralFrom.selector;
@@ -40,13 +40,12 @@ contract DeployERC4626CollateralFacet is AccountFacetsDeploy {
         // ICollateralFacet interface
         selectors[4] = ERC4626CollateralFacet.getTotalLockedCollateral.selector;
         selectors[5] = ERC4626CollateralFacet.getTotalDebt.selector;
-        selectors[6] = ERC4626CollateralFacet.getUnpaidFees.selector;
-        selectors[7] = ERC4626CollateralFacet.getMaxLoan.selector;
-        selectors[8] = ERC4626CollateralFacet.enforceCollateralRequirements.selector;
+        selectors[6] = ERC4626CollateralFacet.getMaxLoan.selector;
+        selectors[7] = ERC4626CollateralFacet.enforceCollateralRequirements.selector;
         // ERC4626 specific views
-        selectors[9] = ERC4626CollateralFacet.getCollateral.selector;
-        selectors[10] = ERC4626CollateralFacet.getCollateralVault.selector;
-        selectors[11] = ERC4626CollateralFacet.getCollateralShares.selector;
+        selectors[8] = ERC4626CollateralFacet.getCollateral.selector;
+        selectors[9] = ERC4626CollateralFacet.getCollateralVault.selector;
+        selectors[10] = ERC4626CollateralFacet.getCollateralShares.selector;
         return selectors;
     }
 }

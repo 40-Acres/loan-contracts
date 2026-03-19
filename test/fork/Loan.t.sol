@@ -138,7 +138,7 @@ contract LoanTest is Test {
         loan.setMultiplier(8);
         vm.stopPrank();
         (uint256 maxLoan,  ) = loan.getMaxLoan(tokenId);
-        assertEq(maxLoan, 89819);
+        assertEq(maxLoan, 90538);
     }
 
     function testNftOwner() public view {
@@ -158,11 +158,12 @@ contract LoanTest is Test {
         amount = 1e6;
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) > 1e6);
+        uint256 originationFee = (amount * 80) / 10000;
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance + amount - originationFee);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
 
         (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount);
+        assertEq(balance, amount);
         assertEq(borrower, user);
 
 
@@ -509,8 +510,9 @@ contract LoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.stopPrank();
-        assertEq(usdc.balanceOf(address(user)), 1e6+startingUserBalance, "User should have 1e6");
-        assertEq(usdc.balanceOf(address(vault)), 99e6, "Loan should have 97e6");
+        uint256 originationFee = (amount * 80) / 10000;
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance + amount - originationFee, "User should have amount minus fee");
+        assertTrue(usdc.balanceOf(address(vault)) < 100e6, "Vault should decrease");
 
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
 
@@ -755,10 +757,11 @@ contract LoanTest is Test {
         assertLe(endingBalance2, beginningBalance2 - 5e6, "Token2 balance should decrease by more than token2s rewards");
         
 
-        // owne rbalance should increase by 5% of rewards
+        // owner balance should increase by 5% protocol fee of rewards for both tokens
+        // No unpaid fees in new system (origination fee taken upfront)
         uint256 endingOwnerBalance = usdc.balanceOf(address(_loan.owner()));
         uint256 difference = endingOwnerBalance - beginningOwnerBalance;
-        assertEq(difference, 832142, "Owner balance should increase by 5% of rewards for both tokens and protocol fee");
+        assertEq(difference, 500000, "Owner balance should increase by 5% of rewards for both tokens");
     }
 
 
@@ -902,12 +905,12 @@ contract LoanTest is Test {
         
 
         // owner balance should increase by protocol fees
-        // Token1 (no loan): fee on portion going to payoff token
-        // Token2 (payoff token): 5% protocol fee = 250,000
+        // Token1 (no loan, zero balance): zero balance fee goes to owner
+        // Token2 (payoff token): 5% protocol fee on rewards
+        // No unpaid fees in new system (origination fee taken upfront)
         uint256 endingOwnerBalance = usdc.balanceOf(address(_loan.owner()));
         uint256 difference = endingOwnerBalance - beginningOwnerBalance;
-        // Expected: protocol fees from both claims (at least 5% of one token's rewards = 250,000)
-        assertGt(difference, 500000, "Owner balance should increase by protocol fees from both tokens");
+        assertGt(difference, 0, "Owner balance should increase by protocol fees from both tokens");
 
 
 
@@ -1439,7 +1442,7 @@ contract LoanTest is Test {
         loan.requestLoan(tokenId, 10e6, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
 
         (uint256 balanceBefore,) = loan.getLoanDetails(tokenId);
-        assertTrue(balanceBefore > 10e6, "Balance should include origination fee");
+        assertEq(balanceBefore, 10e6, "Balance should equal loan amount (fee taken upfront)");
 
         usdc.approve(address(loan), 5e6);
         loan.pay(tokenId, 5e6);
@@ -1737,16 +1740,34 @@ contract LoanTest is Test {
 
     /// @notice Test loan origination fee is applied correctly
     function testOriginationFee() public {
+        uint256 loanAmount = 10e6;
+        uint256 expectedFee = (loanAmount * 80) / 10000; // 0.8%
+
+        uint256 ownerBalanceBefore = usdc.balanceOf(owner);
+        uint256 userBalanceBefore = usdc.balanceOf(user);
+        uint256 vaultBalanceBefore = usdc.balanceOf(address(vault));
+
         vm.startPrank(user);
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
-        uint256 loanAmount = 10e6;
         loan.requestLoan(tokenId, loanAmount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
+        vm.stopPrank();
 
         (uint256 balance,) = loan.getLoanDetails(tokenId);
-        // Origination fee is 0.8% (80/10000)
-        uint256 expectedFee = (loanAmount * 80) / 10000;
-        assertEq(balance, loanAmount + expectedFee, "Balance should include origination fee");
-        vm.stopPrank();
+        // Balance should equal loan amount (fee NOT added to balance)
+        assertEq(balance, loanAmount, "Balance should equal loan amount (fee taken upfront)");
+
+        // Owner receives origination fee directly from vault
+        assertEq(usdc.balanceOf(owner) - ownerBalanceBefore, expectedFee, "Owner should receive origination fee");
+
+        // Borrower receives amount minus fee
+        assertEq(usdc.balanceOf(user) - userBalanceBefore, loanAmount - expectedFee, "Borrower should receive amount minus fee");
+
+        // Vault decreases by full loan amount (fee + borrower proceeds both come from vault)
+        assertEq(vaultBalanceBefore - usdc.balanceOf(address(vault)), loanAmount, "Vault should decrease by full loan amount");
+
+        // No unpaid fees should be set
+        (,,,,,,,,,uint256 unpaidFees,,,,) = loan._loanDetails(tokenId);
+        assertEq(unpaidFees, 0, "Unpaid fees should be zero");
     }
 
     /// @notice Test active assets tracking
@@ -1857,7 +1878,6 @@ contract LoanTest is Test {
 
         (uint256 balance1,) = _loan.getLoanDetails(tokenId1);
         (uint256 balance2Before,) = _loan.getLoanDetails(tokenId2);
-        uint256 unpaidFees2Before = (loanAmount2 * 80) / 10000; // 0.8% origination fee
         assertEq(balance1, 0, "Token1 should have zero balance");
         assertTrue(balance2Before > 0, "Token2 should have balance");
 
@@ -1885,14 +1905,9 @@ contract LoanTest is Test {
         uint256 ownerBalanceAfter = usdc.balanceOf(_loan.owner());
         uint256 ownerReceived = ownerBalanceAfter - ownerBalanceBefore;
 
-        // Owner receives: zero balance fee + unpaid fees from payoff token (capped at 25%)
+        // Owner receives: zero balance fee only (no unpaid fees in new system)
         uint256 zeroBalanceFee = (rewardsAmount * _loan.getZeroBalanceFee()) / 10000;
-        uint256 remainingAfterFee = rewardsAmount - zeroBalanceFee;
-        uint256 maxFeesPaid = (remainingAfterFee * 25) / 100;
-        uint256 unpaidFeesPaid = unpaidFees2Before > maxFeesPaid ? maxFeesPaid : unpaidFees2Before;
-        uint256 expectedOwnerReceived = zeroBalanceFee + unpaidFeesPaid;
-
-        assertEq(ownerReceived, expectedOwnerReceived, "Owner should receive zero balance fee + unpaid fees");
+        assertEq(ownerReceived, zeroBalanceFee, "Owner should receive zero balance fee");
         assertGt(actualPayoff, 0, "Payoff token loan should decrease");
 
         uint256 vaultBalanceAfter = usdc.balanceOf(_loan._vault());

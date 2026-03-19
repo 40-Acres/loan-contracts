@@ -101,16 +101,18 @@ contract MigrationWithUnpaidFeesTest is Test {
             loanContract._vault()
         );
         
-        // Set loan contract in config
-        portfolioFactoryConfig.setLoanContract(BASE_LOAN_CONTRACT);
         vm.stopPrank();
 
-        // Set portfolio factory on loan contract (if not already set)
-        // Use try-catch in case getPortfolioFactory() reverts (e.g., if not implemented on forked contract)
+        // Set portfolio factory on loan contract BEFORE setting loan contract in config
+        // (config validates that loan.getPortfolioFactory() == portfolioFactory)
         if(loanContract.getPortfolioFactory()== address(0)) {
             vm.prank(loanContract.owner());
             loanContract.setPortfolioFactory(address(portfolioFactory));
         }
+
+        // Now set loan contract in config (validation will pass)
+        vm.prank(FORTY_ACRES_DEPLOYER);
+        portfolioFactoryConfig.setLoanContract(BASE_LOAN_CONTRACT);
         
         
         // Create portfolio account for user
@@ -126,100 +128,91 @@ contract MigrationWithUnpaidFeesTest is Test {
         (uint256 initialBalance, address initialBorrower) = loanContract.getLoanDetails(TOKEN_ID);
         require(initialBorrower == user, "User must be the borrower");
         require(initialBalance > 0, "Loan must have a balance");
-        
+
         // Get initial unpaid fees from loan contract storage
-        // _loanDetails is a public mapping, so we can access it
-        // unpaidFees is at index 10 in the LoanInfo struct
         uint256 initialUnpaidFees = _getUnpaidFees(TOKEN_ID);
-        
+
         console.log("Initial Loan Balance:", initialBalance);
         console.log("Initial Unpaid Fees:", initialUnpaidFees);
-        
+
         // Verify unpaid fees are present (should be around 4.82 USDC)
         require(initialUnpaidFees > 0, "Loan must have unpaid fees");
-        console.log("Unpaid Fees (USDC):", initialUnpaidFees / 1e6);
-        
+
         // Get initial protocol owner balance
         uint256 protocolOwnerBalanceBefore = usdc.balanceOf(protocolOwner);
-        console.log("Protocol Owner Balance Before:", protocolOwnerBalanceBefore);
-        
-        // Migrate the loan to portfolio account
+
+        // Step 1: Pay off unpaid fees on LoanV2 (required: loan.unpaidFees must be 0 to migrate)
+        deal(address(usdc), user, initialUnpaidFees);
+        vm.startPrank(user);
+        usdc.approve(address(loanContract), initialUnpaidFees);
+        loanContract.pay(TOKEN_ID, initialUnpaidFees);
+        vm.stopPrank();
+
+        // Verify unpaid fees are cleared
+        uint256 feesAfterPayment = _getUnpaidFees(TOKEN_ID);
+        assertEq(feesAfterPayment, 0, "Unpaid fees should be cleared before migration");
+
+        // Verify protocol owner received the fees
+        uint256 protocolOwnerAfterFees = usdc.balanceOf(protocolOwner);
+        assertEq(protocolOwnerAfterFees - protocolOwnerBalanceBefore, initialUnpaidFees, "Protocol owner should receive unpaid fees");
+
+        // Re-read balance after fee payment (balance decreased by fees paid)
+        (uint256 balanceAfterFeePayment,) = loanContract.getLoanDetails(TOKEN_ID);
+        assertEq(balanceAfterFeePayment, initialBalance - initialUnpaidFees, "Balance should decrease by fees paid");
+
+        // Step 2: Migrate the loan to portfolio account
         vm.startPrank(user);
         loanContract.migrateToPortfolio(TOKEN_ID);
         vm.stopPrank();
-        
+
         // Verify migration
         address tokenOwner = ve.ownerOf(TOKEN_ID);
         assertEq(tokenOwner, portfolioAccount, "Token should be in portfolio account");
-        
-        // Verify debt was migrated
+
+        // Verify debt was migrated (no unpaid fees, just the remaining balance)
         uint256 portfolioDebt = CollateralFacet(portfolioAccount).getTotalDebt();
-        uint256 portfolioUnpaidFees = CollateralFacet(portfolioAccount).getUnpaidFees();
-        
         console.log("Portfolio Debt:", portfolioDebt);
-        console.log("Portfolio Unpaid Fees:", portfolioUnpaidFees);
-        
-        assertEq(portfolioDebt - portfolioUnpaidFees, initialBalance, "Portfolio debt should match initial loan balance");
-        assertEq(portfolioUnpaidFees, initialUnpaidFees, "Portfolio unpaid fees should match initial unpaid fees");
-        
-        // Now pay down the loan - unpaid fees should go to protocol owner first
-        uint256 paymentAmount = initialBalance; // Pay full balance
-        uint256 totalPaymentNeeded = paymentAmount + initialUnpaidFees; // Need to pay balance + fees
-        
-        // Fund portfolio account with USDC for payment (including fees)
-        deal(address(usdc), portfolioAccount, totalPaymentNeeded);
-        
-        // Approval is handled inside decreaseTotalDebt (via delegatecall from portfolio account)
-        // Now execute the payment as the portfolio owner
+        assertEq(portfolioDebt, balanceAfterFeePayment, "Portfolio debt should match remaining loan balance");
+
+        // Step 3: Pay off the remaining debt in portfolio
+        uint256 paymentAmount = balanceAfterFeePayment;
+
         address portfolioOwner = PortfolioFactory(portfolioFactory).ownerOf(portfolioAccount);
         vm.startPrank(portfolioOwner);
-        
+
         deal(address(usdc), portfolioOwner, paymentAmount);
         IERC20(usdc).approve(portfolioAccount, paymentAmount);
-        // Pay via multicall (using LendingFacet)
+
         bytes memory payCalldata = abi.encodeWithSelector(
             BaseLendingFacet.pay.selector,
             paymentAmount
         );
-        
+
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = payCalldata;
-        
+
         PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolioFactories);
         vm.stopPrank();
-        
-        // Verify unpaid fees were paid to protocol owner first
-        uint256 protocolOwnerBalanceAfter = usdc.balanceOf(protocolOwner);
-        uint256 feesPaidToOwner = protocolOwnerBalanceAfter - protocolOwnerBalanceBefore;
-        
-        console.log("Protocol Owner Balance After:", protocolOwnerBalanceAfter);
-        console.log("Fees Paid to Protocol Owner:", feesPaidToOwner);
-        console.log("Fees Paid (USDC):", feesPaidToOwner / 1e6);
-        
-        // Fees should be paid (capped at 25% of payment amount)
-        uint256 maxFees = paymentAmount;
-        uint256 expectedFeesPaid = initialUnpaidFees > maxFees ? maxFees : initialUnpaidFees;
-        
-        assertGe(feesPaidToOwner, expectedFeesPaid);
-        assertLe(feesPaidToOwner, maxFees);
-        
-        // Verify debt was decreased
+
+        // Verify debt is fully cleared
         uint256 portfolioDebtAfter = CollateralFacet(portfolioAccount).getTotalDebt();
-        console.log("Portfolio Debt After Payment:", portfolioDebtAfter);
-        
-        // Calculate expected debt reduction
-        uint256 debtReduction = paymentAmount - expectedFeesPaid;
-        uint256 expectedDebtAfter = initialBalance > debtReduction ? initialBalance - debtReduction : 0;
-        assertEq(portfolioDebtAfter, expectedDebtAfter, "Portfolio debt should be reduced by (paymentAmount - expectedFeesPaid)");
-        
-        // Verify unpaid fees were reduced
-        uint256 portfolioUnpaidFeesAfter = CollateralFacet(portfolioAccount).getUnpaidFees();
-        uint256 expectedUnpaidFeesAfter = initialUnpaidFees > expectedFeesPaid ? initialUnpaidFees - expectedFeesPaid : 0;
-        assertEq(portfolioUnpaidFeesAfter, expectedUnpaidFeesAfter, "Unpaid fees should be reduced by expectedFeesPaid");
+        assertEq(portfolioDebtAfter, 0, "Portfolio debt should be fully paid off");
     }
     
+    /// @notice Migration must revert if unpaid fees are non-zero
+    function testMigrationRevertsWithUnpaidFees() public {
+        uint256 initialUnpaidFees = _getUnpaidFees(TOKEN_ID);
+        require(initialUnpaidFees > 0, "Token must have unpaid fees for this test");
+
+        // Attempt migration without clearing fees — should revert
+        vm.startPrank(user);
+        vm.expectRevert();
+        loanContract.migrateToPortfolio(TOKEN_ID);
+        vm.stopPrank();
+    }
+
     /**
      * @dev Helper function to get unpaid fees from loan contract storage
      */

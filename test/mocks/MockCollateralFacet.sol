@@ -13,10 +13,6 @@ contract MockCollateralFacet is ICollateralFacet {
         return 0;
     }
 
-    function getUnpaidFees() external pure override returns (uint256) {
-        return 0;
-    }
-
     function getMaxLoan() external pure override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         return (type(uint256).max, type(uint256).max);
     }

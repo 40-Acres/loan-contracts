@@ -214,22 +214,21 @@ abstract contract BaseDeploymentSetup is Test {
         claimingSel[2] = ClaimingFacet.claimLaunchpadToken.selector;
         facetRegistry.registerFacet(address(claimingFacet), claimingSel, "ClaimingFacet");
 
-        // ── 2. CollateralFacet (11 selectors) ──
+        // ── 2. CollateralFacet (10 selectors) ──
         collateralFacet = new CollateralFacet(
             address(portfolioFactory), VOTING_ESCROW
         );
-        bytes4[] memory collateralSel = new bytes4[](11);
+        bytes4[] memory collateralSel = new bytes4[](10);
         collateralSel[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSel[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSel[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSel[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSel[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSel[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSel[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSel[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSel[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSel[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSel[10] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSel[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSel[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSel[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSel[6] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSel[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSel[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSel[9] = BaseCollateralFacet.removeCollateralTo.selector;
         facetRegistry.registerFacet(address(collateralFacet), collateralSel, "CollateralFacet");
 
         // ── 3. LendingFacet (5 selectors) ──

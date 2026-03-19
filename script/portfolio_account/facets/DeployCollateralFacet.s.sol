@@ -26,14 +26,13 @@ contract DeployCollateralFacet is AccountFacetsDeploy {
         selectors[0] = BaseCollateralFacet.addCollateral.selector;
         selectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         selectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        selectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        selectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        selectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        selectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        selectors[7] = BaseCollateralFacet.removeCollateralTo.selector;
-        selectors[8] = BaseCollateralFacet.getCollateralToken.selector;
-        selectors[9] = BaseCollateralFacet.getLockedCollateral.selector;
-        selectors[10] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        selectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        selectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        selectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        selectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
+        selectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        selectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        selectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         return selectors;
     }
 }

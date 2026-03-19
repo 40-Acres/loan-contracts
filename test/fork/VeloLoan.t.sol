@@ -122,11 +122,12 @@ contract VeloLoanTest is Test {
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.roll(block.number+1);
         vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) > 1e6);
+        uint256 originationFee = (amount * 80) / 10000;
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance + amount - originationFee);
         assertTrue(usdc.balanceOf(address(vault)) < 100e6);
 
         (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount);
+        assertEq(balance, amount);
         assertEq(borrower, user);
 
 
@@ -146,11 +147,12 @@ contract VeloLoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.stopPrank();
-        assertTrue(usdc.balanceOf(address(user)) > 1e6, "User should have more than loan");
+        uint256 originationFee = (amount * 80) / 10000;
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance + amount - originationFee, "User should have amount minus fee");
 
         assertEq(loan.activeAssets(),1e6, "ff");
         (uint256 balance, address borrower) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount, "Balance should be 1e6");
+        assertEq(balance, amount, "Balance should equal loan amount");
         assertEq(borrower, user);
 
         vm.startPrank(user);
@@ -158,12 +160,13 @@ contract VeloLoanTest is Test {
         vm.stopPrank();
 
         (balance, borrower) = loan.getLoanDetails(tokenId);
-        assertTrue(balance > amount, "Balance should be more than amount");
+        assertEq(balance, 2 * amount, "Balance should be 2x amount");
         assertEq(borrower, user);
         assertEq(loan.activeAssets(),2e6, "ff");
 
-        assertEq(usdc.balanceOf(address(user)), 2e6 + startingUserBalance, "User should have .02e6");
-        assertEq(usdc.balanceOf(address(vault)), 98e6, "Loan should have 1e6");
+        uint256 totalFee = 2 * originationFee;
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance + 2 * amount - totalFee, "User should have 2x amount minus fees");
+        assertTrue(usdc.balanceOf(address(vault)) < 100e6, "Vault should decrease");
         
     }
 
@@ -187,8 +190,9 @@ contract VeloLoanTest is Test {
         IERC721(address(votingEscrow)).approve(address(loan), tokenId);
         loan.requestLoan(tokenId, amount, Loan.ZeroBalanceOption.DoNothing, 0, address(0), false, false);
         vm.stopPrank();
-        assertEq(usdc.balanceOf(address(user)), 1e6+startingUserBalance, "User should have 1e6");
-        assertEq(usdc.balanceOf(address(vault)), 99e6, "Loan should have 97e6");
+        uint256 originationFee = (amount * 80) / 10000;
+        assertEq(usdc.balanceOf(address(user)), startingUserBalance + amount - originationFee, "User should have amount minus fee");
+        assertTrue(usdc.balanceOf(address(vault)) < 100e6, "Vault should decrease");
 
         assertEq(votingEscrow.ownerOf(tokenId), address(loan));
 

@@ -33,7 +33,7 @@ Full-featured deployment for veAERO/veVELO collateral with marketplace, voting, 
 
 | Facet | Functions |
 |-------|-----------|
-| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getUnpaidFees, getMaxLoan, getOriginTimestamp, getCollateralToken, getLockedCollateral, enforceCollateralRequirements |
+| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getMaxLoan, getOriginTimestamp, getCollateralToken, getLockedCollateral, enforceCollateralRequirements |
 | **LendingFacet** | borrow, pay, setTopUp, topUp |
 | **ClaimingFacet** | claimFees, claimRebase, claimLaunchpadToken |
 | **VotingFacet** | vote, voteForLaunchpadToken, setVotingMode, isManualVoting, defaultVote |
@@ -51,7 +51,7 @@ Deployment for YieldBasis protocol integration with veNFT collateral, YB-specifi
 
 | Facet | Functions |
 |-------|-----------|
-| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getUnpaidFees, getMaxLoan, getOriginTimestamp, enforceCollateralRequirements |
+| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getMaxLoan, getOriginTimestamp, enforceCollateralRequirements |
 | **YieldBasisFacet** | createLock, increaseLock, depositLock |
 | **YieldBasisVotingFacet** | vote, defaultVote |
 | **YieldBasisRewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
@@ -71,7 +71,7 @@ Deployment for borrowing against ERC4626 vault share collateral (e.g. LP positio
 
 | Facet | Functions |
 |-------|-----------|
-| **ERC4626CollateralFacet** | addCollateral, addCollateralFrom, removeCollateral, getTotalLockedCollateral, getTotalDebt, getUnpaidFees, getMaxLoan, getOriginTimestamp, getCollateralVault, getLockedCollateral, enforceCollateralRequirements, getCollateralToken |
+| **ERC4626CollateralFacet** | addCollateral, addCollateralFrom, removeCollateral, getTotalLockedCollateral, getTotalDebt, getMaxLoan, getOriginTimestamp, getCollateralVault, getLockedCollateral, enforceCollateralRequirements, getCollateralToken |
 | **ERC4626LendingFacet** | borrow, pay |
 | **ERC4626ClaimingFacet** | claimVaultYield, getAvailableYield, getDepositInfo |
 

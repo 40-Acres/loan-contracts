@@ -31,14 +31,23 @@ contract MockLendingPool is ILendingPool {
     address public immutable _lendingAsset;
     address public immutable _lendingVault;
     uint256 public _activeAssets;
+    address public _portfolioFactory;
 
     constructor(address lendingAsset_, address lendingVault_) {
         _lendingAsset = lendingAsset_;
         _lendingVault = lendingVault_;
     }
 
+    function setPortfolioFactory(address factory) external {
+        _portfolioFactory = factory;
+    }
+
+    function getPortfolioFactory() external view returns (address) {
+        return _portfolioFactory;
+    }
+
     function borrowFromPortfolio(uint256) external pure returns (uint256) {
-        return 0; // No origination fee for testing
+        return 0;
     }
 
     function payFromPortfolio(uint256 totalPayment, uint256) external pure returns (uint256) { return totalPayment; }
@@ -150,6 +159,8 @@ contract YieldBasisVotingFacetTest is Test {
         mockLendingPool = new MockLendingPool(USDC, address(mockVault));
 
         // Configure the PortfolioFactoryConfig with the mock lending pool
+        mockLendingPool.setPortfolioFactory(address(portfolioFactory));
+        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
         portfolioFactoryConfig.setLoanContract(address(mockLendingPool));
 
         // Fund the mock vault with USDC so getMaxLoan calculations work
@@ -160,16 +171,15 @@ contract YieldBasisVotingFacetTest is Test {
             address(portfolioFactory),
             VE_YB
         );
-        bytes4[] memory collateralSelectors = new bytes4[](9);
+        bytes4[] memory collateralSelectors = new bytes4[](8);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getUnpaidFees.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[5] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         facetRegistry.registerFacet(address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter (adapts veYB to CollateralManager's IVotingEscrow interface)

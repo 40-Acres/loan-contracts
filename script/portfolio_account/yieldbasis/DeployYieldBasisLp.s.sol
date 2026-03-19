@@ -77,7 +77,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
 
         // ============ Deploy YieldBasisLpFacet ============
         YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(address(portfolioFactory), GAUGE);
-        bytes4[] memory lpSelectors = new bytes4[](10);
+        bytes4[] memory lpSelectors = new bytes4[](9);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
         lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
@@ -85,9 +85,8 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
         lpSelectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
         lpSelectors[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSelectors[7] = ICollateralFacet.getUnpaidFees.selector;
-        lpSelectors[8] = ICollateralFacet.getMaxLoan.selector;
-        lpSelectors[9] = ICollateralFacet.enforceCollateralRequirements.selector;
+        lpSelectors[7] = ICollateralFacet.getMaxLoan.selector;
+        lpSelectors[8] = ICollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
         // ============ Deploy YieldBasisLpClaimingFacet ============
@@ -151,9 +150,8 @@ contract YieldBasisLpUpgrade is Script {
         lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
         lpSelectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
         lpSelectors[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSelectors[7] = ICollateralFacet.getUnpaidFees.selector;
-        lpSelectors[8] = ICollateralFacet.getMaxLoan.selector;
-        lpSelectors[9] = ICollateralFacet.enforceCollateralRequirements.selector;
+        lpSelectors[7] = ICollateralFacet.getMaxLoan.selector;
+        lpSelectors[8] = ICollateralFacet.enforceCollateralRequirements.selector;
         _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
         // Upgrade YieldBasisLpClaimingFacet

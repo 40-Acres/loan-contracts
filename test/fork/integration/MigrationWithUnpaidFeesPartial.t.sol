@@ -101,16 +101,18 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
             loanContract._vault()
         );
         
-        // Set loan contract in config
-        portfolioFactoryConfig.setLoanContract(BASE_LOAN_CONTRACT);
         vm.stopPrank();
 
-        // Set portfolio factory on loan contract (if not already set)
-        // Use try-catch in case getPortfolioFactory() reverts (e.g., if not implemented on forked contract)
+        // Set portfolio factory on loan contract BEFORE setting loan contract in config
+        // (config validates that loan.getPortfolioFactory() == portfolioFactory)
         if(loanContract.getPortfolioFactory()== address(0)) {
             vm.prank(loanContract.owner());
             loanContract.setPortfolioFactory(address(portfolioFactory));
         }
+
+        // Now set loan contract in config (validation will pass)
+        vm.prank(FORTY_ACRES_DEPLOYER);
+        portfolioFactoryConfig.setLoanContract(BASE_LOAN_CONTRACT);
         
         
         // Create portfolio account for user
@@ -126,164 +128,70 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         (uint256 initialBalance, address initialBorrower) = loanContract.getLoanDetails(TOKEN_ID);
         require(initialBorrower == user, "User must be the borrower");
         require(initialBalance > 0, "Loan must have a balance");
-        
+
         // Get initial unpaid fees from loan contract storage
-        // _loanDetails is a public mapping, so we can access it
-        // unpaidFees is at index 10 in the LoanInfo struct
         uint256 initialUnpaidFees = _getUnpaidFees(TOKEN_ID);
-        
+
         console.log("Initial Loan Balance:", initialBalance);
         console.log("Initial Unpaid Fees:", initialUnpaidFees);
-        
+
         // Verify unpaid fees are present (should be around 4.82 USDC)
         require(initialUnpaidFees > 0, "Loan must have unpaid fees");
-        console.log("Unpaid Fees (USDC):", initialUnpaidFees / 1e6);
-        
+
         // Get initial protocol owner balance
         uint256 protocolOwnerBalanceBefore = usdc.balanceOf(protocolOwner);
-        console.log("Protocol Owner Balance Before:", protocolOwnerBalanceBefore);
-        
-        // Migrate the loan to portfolio account
+
+        // Step 1: Pay off unpaid fees on LoanV2 (required: loan.unpaidFees must be 0 to migrate)
+        deal(address(usdc), user, initialUnpaidFees);
         vm.startPrank(user);
-        console.log("Migrating loan to portfolio account");
+        usdc.approve(address(loanContract), initialUnpaidFees);
+        loanContract.pay(TOKEN_ID, initialUnpaidFees);
+        vm.stopPrank();
+
+        // Verify unpaid fees are cleared and owner received them
+        assertEq(_getUnpaidFees(TOKEN_ID), 0, "Unpaid fees should be cleared before migration");
+        assertEq(usdc.balanceOf(protocolOwner) - protocolOwnerBalanceBefore, initialUnpaidFees, "Owner should receive fees");
+
+        // Re-read balance after fee payment
+        (uint256 balanceAfterFeePayment,) = loanContract.getLoanDetails(TOKEN_ID);
+
+        // Step 2: Migrate
+        vm.startPrank(user);
         loanContract.migrateToPortfolio(TOKEN_ID);
         vm.stopPrank();
-        
+
         // Verify migration
-        address tokenOwner = ve.ownerOf(TOKEN_ID);
-        assertEq(tokenOwner, portfolioAccount, "Token should be in portfolio account");
-        
+        assertEq(ve.ownerOf(TOKEN_ID), portfolioAccount, "Token should be in portfolio account");
+
         // Verify debt was migrated
         uint256 portfolioDebt = CollateralFacet(portfolioAccount).getTotalDebt();
-        uint256 portfolioUnpaidFees = CollateralFacet(portfolioAccount).getUnpaidFees();
-        
-        console.log("Portfolio Debt:", portfolioDebt);
-        console.log("Portfolio Unpaid Fees:", portfolioUnpaidFees);
-        
-        assertEq(portfolioDebt - portfolioUnpaidFees, initialBalance, "Portfolio debt should match initial loan balance");
-        assertEq(portfolioUnpaidFees, initialUnpaidFees, "Portfolio unpaid fees should match initial unpaid fees");
-        
+        assertEq(portfolioDebt, balanceAfterFeePayment, "Portfolio debt should match remaining balance");
+
+        // Step 3: Partial payment in portfolio
         address portfolioOwner = PortfolioFactory(portfolioFactory).ownerOf(portfolioAccount);
         address vault = ILoan(BASE_LOAN_CONTRACT)._vault();
-        
-        // ========== FIRST PAYMENT: Half of unpaid fees ==========
-        // This payment should all go to the protocol owner (fees only, no debt payment)
-        uint256 firstPaymentAmount = initialUnpaidFees / 2;
-        require(firstPaymentAmount > 0, "First payment must be greater than 0");
-        
-        console.log("=== FIRST PAYMENT ===");
-        console.log("First Payment Amount:", firstPaymentAmount);
-        console.log("First Payment (USDC):", firstPaymentAmount / 1e6);
-        
-        // Fund portfolio account for first payment
-        deal(address(usdc), portfolioAccount, firstPaymentAmount);
-        
-        uint256 protocolOwnerBalanceAfterFirst = usdc.balanceOf(protocolOwner);
-        uint256 vaultBalanceAfterFirst = usdc.balanceOf(vault);
-        
-        // Declare variables outside prank blocks so they can be reused
+        uint256 partialPayment = 10000; // 0.01 USDC
+        uint256 vaultBalanceBefore = usdc.balanceOf(vault);
+
+        vm.startPrank(portfolioOwner);
+        deal(address(usdc), portfolioOwner, partialPayment);
+        IERC20(usdc).approve(portfolioAccount, partialPayment);
+
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        
-        // Execute first payment
-        vm.startPrank(portfolioOwner);
-        deal(address(usdc), portfolioOwner, firstPaymentAmount);
-        IERC20(usdc).approve(portfolioAccount, firstPaymentAmount);
-        bytes memory firstPayCalldata = abi.encodeWithSelector(
-            BaseLendingFacet.pay.selector,
-            firstPaymentAmount
-        );
-        
-        calldatas[0] = firstPayCalldata;
-        
-        console.log("Executing first payment");
+        calldatas[0] = abi.encodeWithSelector(BaseLendingFacet.pay.selector, partialPayment);
+
         PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolioFactories);
         vm.stopPrank();
-        
-        // Verify first payment: all should go to owner, nothing to vault
-        uint256 protocolOwnerBalanceAfterFirstPayment = usdc.balanceOf(protocolOwner);
-        uint256 vaultBalanceAfterFirstPayment = usdc.balanceOf(vault);
-        uint256 feesPaidInFirstPayment = protocolOwnerBalanceAfterFirstPayment - protocolOwnerBalanceAfterFirst;
-        uint256 vaultReceivedInFirstPayment = vaultBalanceAfterFirstPayment - vaultBalanceAfterFirst;
-        
-        console.log("Fees Paid to Owner (First Payment):", feesPaidInFirstPayment);
-        console.log("Vault Received (First Payment):", vaultReceivedInFirstPayment);
-        
-        assertEq(feesPaidInFirstPayment, firstPaymentAmount, "First payment should all go to owner");
-        assertEq(vaultReceivedInFirstPayment, 0, "First payment should not go to vault");
-        
-        // Verify unpaid fees were reduced by first payment
-        uint256 unpaidFeesAfterFirst = CollateralFacet(portfolioAccount).getUnpaidFees();
-        assertEq(unpaidFeesAfterFirst, initialUnpaidFees - firstPaymentAmount, "Unpaid fees should be reduced by first payment");
-        
-        // Verify principal debt unchanged: all payment went to fees, not principal
-        // getTotalDebt() returns debt + unpaidFees, so subtract remaining fees to check principal
-        uint256 debtAfterFirst = CollateralFacet(portfolioAccount).getTotalDebt();
-        assertEq(debtAfterFirst - unpaidFeesAfterFirst, initialBalance, "Principal debt should not be reduced since all payment went to fees");
-        
-        // ========== SECOND PAYMENT: Remaining fees + a few cents ==========
-        // This payment should cover remaining fees (to owner) and a small amount to vault
-        uint256 remainingFees = unpaidFeesAfterFirst;
-        uint256 fewCents = 10000; // 0.01 USDC (10,000 = 0.01 * 1e6)
-        uint256 secondPaymentAmount = remainingFees + fewCents;
-        
-        console.log("=== SECOND PAYMENT ===");
-        console.log("Remaining Fees:", remainingFees);
-        console.log("Few Cents:", fewCents);
-        console.log("Second Payment Amount:", secondPaymentAmount);
-        console.log("Second Payment (USDC):", secondPaymentAmount / 1e6);
-        
-        // Fund portfolio account for second payment
-        uint256 currentBalance = usdc.balanceOf(portfolioAccount);
-        deal(address(usdc), portfolioAccount, currentBalance + secondPaymentAmount);
-        
-        uint256 protocolOwnerBalanceAfterSecond = usdc.balanceOf(protocolOwner);
-        uint256 vaultBalanceAfterSecond = usdc.balanceOf(vault);
-        
-        // Execute second payment
-        vm.startPrank(portfolioOwner);
-        deal(address(usdc), portfolioOwner, secondPaymentAmount);
-        IERC20(usdc).approve(portfolioAccount, secondPaymentAmount);
-        bytes memory secondPayCalldata = abi.encodeWithSelector(
-            BaseLendingFacet.pay.selector,
-            secondPaymentAmount
-        );
-        
-        // Reuse variables from first payment
-        portfolioFactories[0] = address(portfolioFactory);
-        calldatas[0] = secondPayCalldata;
-        console.log("Executing second payment");
-        PortfolioManager(address(portfolioManager)).multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-        
-        // Verify second payment: fees to owner, remainder to vault
-        uint256 protocolOwnerBalanceAfterSecondPayment = usdc.balanceOf(protocolOwner);
-        uint256 vaultBalanceAfterSecondPayment = usdc.balanceOf(vault);
-        uint256 feesPaidInSecondPayment = protocolOwnerBalanceAfterSecondPayment - protocolOwnerBalanceAfterSecond;
-        uint256 vaultReceivedInSecondPayment = vaultBalanceAfterSecondPayment - vaultBalanceAfterSecond;
-        
-        console.log("Fees Paid to Owner (Second Payment):", feesPaidInSecondPayment);
-        console.log("Vault Received (Second Payment):", vaultReceivedInSecondPayment);
-        
-        assertEq(feesPaidInSecondPayment, remainingFees, "Second payment should pay remaining fees to owner");
-        assertEq(vaultReceivedInSecondPayment, fewCents, "Second payment should send few cents to vault");
-        
-        // Verify unpaid fees are now zero
-        uint256 unpaidFeesAfterSecond = CollateralFacet(portfolioAccount).getUnpaidFees();
-        assertEq(unpaidFeesAfterSecond, 0, "All unpaid fees should be paid");
-        
-        // Verify debt was reduced: debt is only reduced by (balancePayment - feesToPay)
-        // First payment: debt reduction = (firstPaymentAmount - firstPaymentAmount) = 0 (all went to fees)
-        // Second payment: debt reduction = (secondPaymentAmount - remainingFees) = fewCents
-        // Total debt reduction = fewCents
-        uint256 debtAfterSecond = CollateralFacet(portfolioAccount).getTotalDebt();
-        uint256 expectedDebtAfterSecond = initialBalance - fewCents;
-        assertEq(debtAfterSecond, expectedDebtAfterSecond, "Debt should be reduced only by the portion that went to vault (fewCents)");
-        
-        // Total fees paid should equal initial unpaid fees
-        uint256 totalFeesPaid = feesPaidInFirstPayment + feesPaidInSecondPayment;
-        assertEq(totalFeesPaid, initialUnpaidFees, "Total fees paid should equal initial unpaid fees");
+
+        // Verify partial payment went to vault (no unpaid fees in portfolio)
+        uint256 vaultBalanceAfter = usdc.balanceOf(vault);
+        assertEq(vaultBalanceAfter - vaultBalanceBefore, partialPayment, "Payment should go to vault");
+
+        // Verify debt reduced
+        uint256 debtAfter = CollateralFacet(portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, balanceAfterFeePayment - partialPayment, "Debt should decrease by payment amount");
     }
     
     /**

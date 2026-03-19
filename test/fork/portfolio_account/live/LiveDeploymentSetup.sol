@@ -84,7 +84,10 @@ abstract contract LiveDeploymentSetup is Test {
         // 5. Discover live owner for pranking owner-only operations
         liveOwner = portfolioFactoryConfig.owner();
 
-        // 6. Validate the discovered graph
+        // 6. Validate the discovered graph (skip if not yet deployed)
+        if (!portfolioManager.isRegisteredFactory(address(portfolioFactory))) {
+            vm.skip(true);
+        }
         _validateDiscoveredGraph();
 
         // 7. Create deterministic test user and portfolio
