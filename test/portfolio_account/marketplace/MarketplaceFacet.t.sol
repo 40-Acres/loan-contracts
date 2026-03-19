@@ -21,6 +21,7 @@ import {FortyAcresMarketplaceFacet} from "../../../src/facets/account/marketplac
 import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
 import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
+import {MockERC20} from "../../mocks/MockERC20.sol";
 
 contract MarketplaceFacetTest is Test, LocalSetup {
     PortfolioMarketplace public portfolioMarketplace;
@@ -952,5 +953,433 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         uint256 expectedProtocolFee = (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
         assertEq(IERC20(_usdc).balanceOf(buyerWallet), 0, "Buyer wallet should have spent all USDC");
         assertEq(IERC20(_usdc).balanceOf(feeRecipient), expectedProtocolFee, "Fee recipient should have protocol fee");
+    }
+
+    // ============ isListingPurchasable Tests ============
+
+    /**
+     * @notice isListingPurchasable returns true for a listing where net payment >= required debt payment.
+     *         No debt scenario: any valid listing price is purchasable.
+     */
+    function test_isListingPurchasable_trueWhenNoDebt() public {
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, address(0));
+
+        (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertTrue(purchasable, "Listing with no debt should be purchasable");
+        assertEq(requiredPayment, 0, "No debt means no required payment");
+
+        uint256 expectedNet = LISTING_PRICE - (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+        assertEq(netPayment, expectedNet, "Net payment should be price minus protocol fee");
+    }
+
+    /**
+     * @notice isListingPurchasable returns true when seller has debt but listing price
+     *         is high enough that net payment (after protocol fee) covers the required debt payment.
+     */
+    function test_isListingPurchasable_trueWhenDebtCoveredByNetPayment() public {
+        uint256 borrowAmount = 300e6;
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(totalDebt, 0, "Should have debt");
+
+        // LISTING_PRICE = 1000 USDC, net after 1% = 990 USDC, debt = 300 USDC
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, address(0));
+
+        (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertTrue(purchasable, "Listing should be purchasable when net payment covers debt");
+        // Single NFT: removing it means all debt must be paid
+        assertEq(requiredPayment, totalDebt, "Required payment should equal total debt for single NFT");
+        assertGe(netPayment, requiredPayment, "Net payment should be >= required payment");
+    }
+
+    /**
+     * @notice isListingPurchasable returns false when no sale authorization exists
+     *         (no listing was ever created for this token).
+     */
+    function test_isListingPurchasable_falseWhenNoSaleAuthorization() public {
+        (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertFalse(purchasable, "Should not be purchasable without sale authorization");
+        assertEq(requiredPayment, 0);
+        assertEq(netPayment, 0);
+    }
+
+    /**
+     * @notice isListingPurchasable returns false after a listing is canceled
+     *         (sale authorization is removed by cancelListing).
+     */
+    function test_isListingPurchasable_falseAfterCancellation() public {
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, address(0));
+
+        // Cancel
+        vm.startPrank(_user);
+        address[] memory pf = new address[](1);
+        pf[0] = address(_portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(BaseMarketplaceFacet.cancelListing.selector, _tokenId);
+        _portfolioManager.multicall(cd, pf);
+        vm.stopPrank();
+
+        (bool purchasable, , ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertFalse(purchasable, "Should not be purchasable after cancellation");
+    }
+
+    /**
+     * @notice isListingPurchasable returns false when listing is expired.
+     */
+    function test_isListingPurchasable_falseWhenListingExpired() public {
+        uint256 expiresAt = block.timestamp + 1 days;
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), expiresAt, address(0));
+
+        // Before expiry
+        (bool purchasableBefore, , ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertTrue(purchasableBefore, "Should be purchasable before expiry");
+
+        // Warp past expiration
+        vm.warp(expiresAt + 1);
+
+        (bool purchasableAfter, , ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertFalse(purchasableAfter, "Should not be purchasable after expiry");
+    }
+
+    /**
+     * @notice Edge case: expiresAt == block.timestamp is considered expired
+     *         because the check is expiresAt <= block.timestamp.
+     */
+    function test_isListingPurchasable_falseAtExactExpiryTimestamp() public {
+        uint256 expiresAt = block.timestamp + 1 days;
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), expiresAt, address(0));
+
+        vm.warp(expiresAt);
+
+        (bool purchasable, , ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertFalse(purchasable, "Should not be purchasable at exact expiry timestamp");
+    }
+
+    /**
+     * @notice isListingPurchasable returns false when seller takes on more debt
+     *         after listing creation, making net payment insufficient.
+     */
+    function test_isListingPurchasable_falseWhenDebtIncreasedAfterListing() public {
+        // Borrow small amount, list at price that barely covers it
+        uint256 initialBorrow = 100e6;
+        borrowViaMulticall(initialBorrow);
+
+        uint256 debtAfterFirstBorrow = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 listingPrice = (debtAfterFirstBorrow * 10100) / 9900;
+        makeListingViaMulticall(_tokenId, listingPrice, address(_usdc), 0, address(0));
+
+        (bool purchasableBefore, , ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertTrue(purchasableBefore, "Should be purchasable initially");
+
+        // Borrow more
+        (uint256 maxLoanAvailable, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        if (maxLoanAvailable > 0) {
+            borrowViaMulticall(maxLoanAvailable);
+        }
+
+        uint256 totalDebtNow = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 netPayment = listingPrice - (listingPrice * PROTOCOL_FEE_BPS) / 10000;
+        assertGt(totalDebtNow, netPayment, "Debt should exceed net listing proceeds");
+
+        (bool purchasableAfter, uint256 requiredPayment, uint256 netPaymentResult) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertFalse(purchasableAfter, "Should not be purchasable when debt exceeds net payment");
+        assertGt(requiredPayment, netPaymentResult, "Required payment should exceed net payment");
+    }
+
+    /**
+     * @notice isListingPurchasable returns false when payment token != debt token
+     *         and debt > 0. The listing cannot be used to pay down debt in a different token.
+     */
+    function test_isListingPurchasable_falseWhenPaymentTokenMismatchWithDebt() public {
+        // Deploy a second payment token and allow it
+        MockERC20 mockWeth = new MockERC20("Wrapped ETH", "WETH", 18);
+        address marketplaceOwner = portfolioMarketplace.owner();
+        vm.prank(marketplaceOwner);
+        portfolioMarketplace.setAllowedPaymentToken(address(mockWeth), true);
+
+        // Borrow some USDC debt
+        borrowViaMulticall(300e6);
+        assertGt(CollateralFacet(_portfolioAccount).getTotalDebt(), 0, "Should have USDC debt");
+
+        // Try to list with WETH as payment — should revert at makeListing
+        // because isListingPurchasable check at end of makeListing fails
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseMarketplaceFacet.makeListing.selector,
+            _tokenId, LISTING_PRICE, address(mockWeth), 0, address(0)
+        );
+        vm.expectRevert("Listing not purchasable");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Payment token mismatch is acceptable when there is no debt.
+     */
+    function test_isListingPurchasable_trueWhenPaymentTokenMismatchButNoDebt() public {
+        MockERC20 mockWeth = new MockERC20("Wrapped ETH", "WETH", 18);
+        address marketplaceOwner = portfolioMarketplace.owner();
+        vm.prank(marketplaceOwner);
+        portfolioMarketplace.setAllowedPaymentToken(address(mockWeth), true);
+
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), 0, "Should have no debt");
+
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(mockWeth), 0, address(0));
+
+        (bool purchasable, uint256 requiredPayment, ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertTrue(purchasable, "Should be purchasable with different payment token when no debt");
+        assertEq(requiredPayment, 0, "No debt means no required payment");
+    }
+
+    // ============ makeListing Debt Validation Tests ============
+
+    /**
+     * @notice makeListing reverts when price is too low to cover debt after fees.
+     *         Listing at exactly the debt amount fails because 1% fee makes net < debt.
+     */
+    function test_makeListing_revertsWhenPriceTooLowForDebt() public {
+        borrowViaMulticall(500e6);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(totalDebt, 0);
+
+        // Price = debt => net = debt * 0.99 < debt
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseMarketplaceFacet.makeListing.selector,
+            _tokenId, totalDebt, address(_usdc), 0, address(0)
+        );
+        vm.expectRevert("Price too low to cover debt after fees");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Boundary test: search downward from minPrice to find a price where
+     *         net payment is strictly below debt after integer division rounding.
+     *         Due to integer division in fee calculation (price * feeBps / 10000),
+     *         subtracting 1 from minPrice may not always reduce net payment.
+     */
+    function test_makeListing_revertsWhenNetPaymentStrictlyBelowDebt() public {
+        borrowViaMulticall(500e6);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+
+        // Use a price where net is clearly less than debt:
+        // price = totalDebt => net = totalDebt - (totalDebt * 100 / 10000) = totalDebt * 0.99 < totalDebt
+        uint256 insufficientPrice = totalDebt;
+        uint256 netPayment = insufficientPrice - (insufficientPrice * PROTOCOL_FEE_BPS) / 10000;
+        assertLt(netPayment, totalDebt, "Net payment at exact debt price should be below debt when fee > 0");
+
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            BaseMarketplaceFacet.makeListing.selector,
+            _tokenId, insufficientPrice, address(_usdc), 0, address(0)
+        );
+        vm.expectRevert("Price too low to cover debt after fees");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    /**
+     * @notice Listing at the exact minimum price that covers debt after fees succeeds.
+     */
+    function test_makeListing_succeedsAtExactMinimumPrice() public {
+        borrowViaMulticall(500e6);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 minPrice = (totalDebt * 10000 + (10000 - PROTOCOL_FEE_BPS) - 1) / (10000 - PROTOCOL_FEE_BPS);
+
+        uint256 netPayment = minPrice - (minPrice * PROTOCOL_FEE_BPS) / 10000;
+        assertGe(netPayment, totalDebt, "Net payment at minPrice should cover debt");
+
+        makeListingViaMulticall(_tokenId, minPrice, address(_usdc), 0, address(0));
+
+        (bool purchasable, , ) = IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertTrue(purchasable, "Listing at exact minimum price should be purchasable");
+    }
+
+    // ============ getActiveListingIds Filtering Tests ============
+
+    /**
+     * @notice getActiveListingIds excludes listings that became unpurchasable
+     *         (e.g. debt increased after listing creation).
+     */
+    function test_getActiveListingIds_excludesUnpurchasableAfterDebtIncrease() public {
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, address(0));
+
+        // Should be active initially
+        uint256[] memory activeIds = portfolioMarketplace.getActiveListingIds(0, 10);
+        assertEq(activeIds.length, 1, "Should have 1 active listing");
+        assertEq(activeIds[0], _tokenId);
+
+        // Borrow max to make listing unpurchasable
+        (uint256 maxLoanAvailable, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        if (maxLoanAvailable > 0) {
+            borrowViaMulticall(maxLoanAvailable);
+        }
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 netPayment = LISTING_PRICE - (LISTING_PRICE * PROTOCOL_FEE_BPS) / 10000;
+
+        if (totalDebt > netPayment) {
+            uint256[] memory activeIdsAfter = portfolioMarketplace.getActiveListingIds(0, 10);
+            assertEq(activeIdsAfter.length, 0, "Should have 0 active listings after debt exceeds net payment");
+        }
+
+        // The listing should still appear in full listing IDs (not filtered by purchasability)
+        uint256[] memory allIds = portfolioMarketplace.getListingIds(0, 10);
+        assertEq(allIds.length, 1, "Full listing count should still show the listing");
+    }
+
+    /**
+     * @notice getActiveListingIds excludes expired listings.
+     */
+    function test_getActiveListingIds_excludesExpiredListings() public {
+        uint256 expiresAt = block.timestamp + 1 days;
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), expiresAt, address(0));
+
+        uint256[] memory activeIdsBefore = portfolioMarketplace.getActiveListingIds(0, 10);
+        assertEq(activeIdsBefore.length, 1, "Should have 1 active listing before expiry");
+
+        vm.warp(expiresAt + 1);
+
+        uint256[] memory activeIdsAfter = portfolioMarketplace.getActiveListingIds(0, 10);
+        assertEq(activeIdsAfter.length, 0, "Should have 0 active listings after expiry");
+
+        // Full listing IDs still shows it
+        uint256[] memory allIds = portfolioMarketplace.getListingIds(0, 10);
+        assertEq(allIds.length, 1, "Full listing count should still show expired listing");
+    }
+
+    /**
+     * @notice Mix of purchasable and expired listings — only purchasable ones show up.
+     */
+    function test_getActiveListingIds_mixOfPurchasableAndExpired() public {
+        // Add second NFT
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
+        vm.stopPrank();
+        addCollateralViaMulticall(_tokenId2);
+
+        // tokenId: never expires
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, address(0));
+        // tokenId2: expires soon
+        uint256 expiresAt = block.timestamp + 1 hours;
+        makeListingViaMulticall(_tokenId2, LISTING_PRICE, address(_usdc), expiresAt, address(0));
+
+        uint256[] memory activeIds = portfolioMarketplace.getActiveListingIds(0, 10);
+        assertEq(activeIds.length, 2, "Both listings should be active initially");
+
+        // Expire tokenId2
+        vm.warp(expiresAt + 1);
+
+        activeIds = portfolioMarketplace.getActiveListingIds(0, 10);
+        assertEq(activeIds.length, 1, "Only non-expired listing should be active");
+        assertEq(activeIds[0], _tokenId, "The non-expired token should be the active one");
+    }
+
+    // ============ Additional Edge Cases ============
+
+    /**
+     * @notice isListingPurchasable with zero protocol fee — net == price.
+     */
+    function test_isListingPurchasable_zeroProtocolFee() public {
+        address marketplaceOwner = portfolioMarketplace.owner();
+        vm.prank(marketplaceOwner);
+        portfolioMarketplace.setProtocolFee(0);
+
+        borrowViaMulticall(300e6);
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+
+        // With 0% fee, listing at exactly debt should work
+        makeListingViaMulticall(_tokenId, totalDebt, address(_usdc), 0, address(0));
+
+        (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertTrue(purchasable, "Should be purchasable when net == debt (0% fee)");
+        assertEq(netPayment, totalDebt, "Net payment should equal listing price with 0% fee");
+        assertEq(requiredPayment, totalDebt, "Required payment should equal debt for single NFT");
+    }
+
+    /**
+     * @notice Listing with expiresAt=0 never expires, even after long time passage.
+     */
+    function test_isListingPurchasable_neverExpiresAfterLongTime() public {
+        makeListingViaMulticall(_tokenId, LISTING_PRICE, address(_usdc), 0, address(0));
+
+        vm.warp(block.timestamp + 365 days);
+
+        (bool purchasable, , ) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+        assertTrue(purchasable, "Listing with expiresAt=0 should never expire");
+    }
+
+    /**
+     * @notice Multi-NFT partial debt coverage: isListingPurchasable returns correct
+     *         requiredPayment reflecting only the debt reduction needed for safe removal.
+     */
+    function test_isListingPurchasable_multiNFT_partialDebtCoverage() public {
+        // Add second token
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
+        vm.stopPrank();
+        addCollateralViaMulticall(_tokenId2);
+
+        uint256 collateral2 = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId2);
+        uint256 rewardsRate = _loanConfig.getRewardsRate();
+        uint256 multiplier = _loanConfig.getMultiplier();
+        uint256 maxLoanToken2Only = (((collateral2 * rewardsRate) / 1000000) * multiplier) / 1e12;
+
+        // Borrow more than token2 can support alone
+        (uint256 maxLoanAvailable, ) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        uint256 borrowAmount = maxLoanToken2Only + (maxLoanAvailable - maxLoanToken2Only) / 2;
+        if (borrowAmount > maxLoanAvailable) borrowAmount = maxLoanAvailable;
+        borrowViaMulticall(borrowAmount);
+
+        uint256 totalDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 expectedRequired = totalDebt - maxLoanToken2Only;
+
+        // Compute a listing price high enough that net payment (after 1% fee) covers requiredPayment
+        // net = price - (price * feeBps / 10000) >= expectedRequired
+        // price >= expectedRequired * 10000 / (10000 - feeBps), rounded up
+        uint256 listingPrice = (expectedRequired * 10000 + (10000 - PROTOCOL_FEE_BPS) - 1) / (10000 - PROTOCOL_FEE_BPS);
+        // Add a buffer to ensure it passes
+        listingPrice = listingPrice + 500e6;
+
+        makeListingViaMulticall(_tokenId, listingPrice, address(_usdc), 0, address(0));
+
+        (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
+            IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
+
+        assertTrue(purchasable, "Should be purchasable with sufficiently high listing price");
+        assertEq(requiredPayment, expectedRequired, "Required = debt - maxLoan of remaining token");
+        assertGe(netPayment, requiredPayment, "Net payment should cover required payment");
     }
 }

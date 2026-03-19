@@ -291,7 +291,8 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         for (uint256 i = offset; i < end; i++) {
             uint256 tokenId = _listingIds.at(i);
             Listing storage listing = listings[tokenId];
-            if (listing.expiresAt == 0 || listing.expiresAt > block.timestamp) {
+            (bool purchasable, , ) = IMarketplaceFacet(listing.owner).isListingPurchasable(tokenId);
+            if ((listing.expiresAt == 0 || listing.expiresAt > block.timestamp) && purchasable) {
                 temp[count++] = tokenId;
             }
         }
