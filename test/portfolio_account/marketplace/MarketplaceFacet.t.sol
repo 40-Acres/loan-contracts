@@ -1125,7 +1125,7 @@ contract MarketplaceFacetTest is Test, LocalSetup {
             BaseMarketplaceFacet.makeListing.selector,
             _tokenId, LISTING_PRICE, address(mockWeth), 0, address(0)
         );
-        vm.expectRevert("Listing not purchasable");
+        vm.expectRevert("Payment token must match debt token");
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
     }
