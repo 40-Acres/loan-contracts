@@ -160,10 +160,6 @@ library DynamicCollateralManager {
         return IDynamicFeesVault(address(lendingPool)).getEffectiveDebtBalance(address(this));
     }
 
-    function getUnpaidFees() public pure returns (uint256) {
-        return 0;
-    }
-
     function increaseTotalDebt(address portfolioFactoryConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         // Ensure debt can only be increased via PortfolioManager multicall or authorized callers

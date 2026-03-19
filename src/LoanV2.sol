@@ -302,11 +302,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         (uint256 maxLoan, ) = getMaxLoan(tokenId);
         require(amount <= maxLoan);
         uint256 originationFee = (amount * 80) / 10000; // 0.8%
-        loan.unpaidFees += originationFee;
-        loan.balance += amount + originationFee;
+        loan.balance += amount;
         loan.outstandingCapital += amount;
         _outstandingCapital += amount;
-        _asset.transferFrom(_vault, loan.borrower, amount);
+        _asset.transferFrom(_vault, owner(), originationFee);
+        _asset.transferFrom(_vault, loan.borrower, amount - originationFee);
         emit FundsBorrowed(tokenId, loan.borrower, amount);
     }
 
@@ -359,10 +359,9 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         // take out unpaid fees first
         if(loan.unpaidFees > 0) {
             uint256 feesPaid = loan.unpaidFees;
-            // set maxFees to 25% of the amount being paid
-            uint256 maxFees = (amount * 25) / 100; // 25% of the amount being paid
-            if(feesPaid > maxFees) {
-                feesPaid = maxFees; // cap the fees paid to 25% of the amount being paid
+            // set max fees to the amount being paid
+            if(feesPaid > amount) {
+                feesPaid = amount;
             }
             amount -= feesPaid;
             loan.unpaidFees -= feesPaid;
@@ -1290,6 +1289,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     function migrateToPortfolio(uint256 tokenId) external {
         LoanInfo storage loan = _loanDetails[tokenId];
+        require(loan.unpaidFees == 0);
         PortfolioLoanLib.migrateToPortfolio(tokenId, loan.borrower, loan.unpaidFees, getPortfolioFactory(), _ve);
         delete _loanDetails[tokenId];
     }

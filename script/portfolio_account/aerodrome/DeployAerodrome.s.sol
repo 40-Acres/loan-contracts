@@ -265,15 +265,16 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome-usdc")));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
-        // address votingConfig = address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C);
+        address votingConfig = address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C);
         // address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
-        // SwapConfig swapConfig = SwapConfig(0x3646C436f18f0e2E38E10D1A147f901a96BD4390);
+        SwapConfig swapConfig = SwapConfig(0x3646C436f18f0e2E38E10D1A147f901a96BD4390);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // portfolioFactoryConfig.setVoteConfig(address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C));
         
-        // swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
+        // swapConfig.setApprovedSwapTarget(0xaC4e562d7C6108f971321F14238E24AE2cC398ac, true);
         // Vault vault = Vault(ILoan(portfolioFactoryConfig.getLoanContract())._vault());
+        // VotingConfig _votingConfig = VotingConfig(votingConfig);
 
 
         // portfolioManager.setAuthorizedCaller(0x250600a035d14e0b079d9efa625393e7Bfe83265, true);
@@ -338,14 +339,14 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // // Deploy VotingEscrowFacet
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        // votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy CollateralFacet
         // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioFactoryConfig), VOTING_ESCROW);

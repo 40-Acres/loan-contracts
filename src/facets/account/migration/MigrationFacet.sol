@@ -25,6 +25,7 @@ contract MigrationFacet {
     }
 
     function migrate(uint256 tokenId, uint256 unpaidFees) external onlyLoanContract() {
+        require(unpaidFees == 0);
         IVotingEscrow(address(_ve)).transferFrom(msg.sender, address(this), tokenId);
         _migrateLockedCollateral(tokenId);
 

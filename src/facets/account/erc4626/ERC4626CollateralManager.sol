@@ -147,12 +147,6 @@ library ERC4626CollateralManager {
         return data.debt;
     }
 
-    /**
-     * @dev Get unpaid fees (always 0 for ERC4626 collateral — no migrated-fee concept)
-     */
-    function getUnpaidFees() public pure returns (uint256) {
-        return 0;
-    }
 
     /**
      * @dev Increase total debt by borrowing from lending pool

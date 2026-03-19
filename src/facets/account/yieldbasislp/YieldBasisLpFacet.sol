@@ -131,10 +131,6 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         return ERC4626CollateralManager.getTotalDebt();
     }
 
-    function getUnpaidFees() external view override returns (uint256) {
-        return ERC4626CollateralManager.getUnpaidFees();
-    }
-
     function getMaxLoan() external view override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         return ERC4626CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge));
     }

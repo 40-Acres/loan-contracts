@@ -27,10 +27,6 @@ contract CollateralFacet is BaseCollateralFacet {
         return CollateralManager.getTotalDebt();
     }
 
-    function _getUnpaidFees() internal view override returns (uint256) {
-        return CollateralManager.getUnpaidFees();
-    }
-
     function _getMaxLoan() internal view override returns (uint256, uint256) {
         return CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()));
     }
