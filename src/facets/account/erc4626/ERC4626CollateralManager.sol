@@ -27,6 +27,7 @@ library ERC4626CollateralManager {
     error BadDebt(uint256 debt);
     error UndercollateralizedDebt(uint256 debt);
     error NotPortfolioManager();
+    error InsufficientShareBalance(uint256 required, uint256 actual);
 
     event ERC4626CollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event ERC4626CollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -59,6 +60,14 @@ library ERC4626CollateralManager {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
         ERC4626CollateralData storage data = _getStorage();
+
+        // Ensure the portfolio actually holds the shares being registered
+        uint256 requiredBalance = data.shares + shares;
+        uint256 actualBalance = IERC20(vault).balanceOf(address(this));
+        if (actualBalance < requiredBalance) {
+            revert InsufficientShareBalance(requiredBalance, actualBalance);
+        }
+
         (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
 
         // Calculate asset value of shares

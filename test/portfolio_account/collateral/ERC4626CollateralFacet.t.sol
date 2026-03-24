@@ -637,4 +637,102 @@ contract ERC4626CollateralFacetTest is Test {
         assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalDebt(), 0);
         assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
     }
+
+    // ============ Phantom Shares Attack Prevention Tests ============
+
+    function testAddCollateralRevertsWithoutHoldingShares() public {
+        // Attack: Try to register phantom shares without transferring any to the portfolio
+        uint256 phantomShares = 1_000_000e18;
+
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, phantomShares);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC4626CollateralManager.InsufficientShareBalance.selector,
+                phantomShares,
+                0
+            )
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+
+        // Verify no collateral was registered
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getCollateralShares(), 0);
+    }
+
+    function testAddCollateralRevertsWhenExceedingBalance() public {
+        // User deposits and transfers some shares, then tries to register more than held
+        uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
+        transferSharesToPortfolio(shares);
+
+        uint256 inflatedShares = shares * 2; // Double the actual balance
+
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, inflatedShares);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC4626CollateralManager.InsufficientShareBalance.selector,
+                inflatedShares,
+                shares
+            )
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    function testPhantomSharesBorrowAttackBlocked() public {
+        // Full attack scenario: register phantom shares, then attempt to borrow real tokens
+        uint256 phantomShares = 1_000_000e18;
+
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](2);
+        portfolioFactories[0] = address(_portfolioFactory);
+        portfolioFactories[1] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, phantomShares);
+        calldatas[1] = abi.encodeWithSelector(ERC4626LendingFacet.borrow.selector, 700_000e18);
+
+        vm.expectRevert(); // Should revert on addCollateral due to balance check
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+
+        // Verify no debt was created
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalDebt(), 0);
+    }
+
+    function testCannotDoubleRegisterSameShares() public {
+        // User has real shares but tries to register them twice
+        uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
+        transferSharesToPortfolio(shares);
+
+        // First add succeeds
+        addCollateralViaMulticall(shares);
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getCollateralShares(), shares);
+
+        // Second add should fail: already registered shares + new shares > actual balance
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.addCollateral.selector, shares);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC4626CollateralManager.InsufficientShareBalance.selector,
+                shares * 2,
+                shares
+            )
+        );
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
 }
