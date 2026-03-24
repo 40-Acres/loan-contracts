@@ -808,23 +808,25 @@ contract YieldBasisLpFacetTest is Test {
     ///         covers data.shares + newShares. Since unstaking removes gauge shares
     ///         but doesn't reduce data.shares, the check fails.
     ///         This is correct behavior: admin must restake before new deposits are possible.
-    /// @notice Deposit succeeds even when unstaked balance exists (no balance check on addCollateral)
-    function testDepositSucceedsWhenUnstakedBalanceExists() public {
+    function testDepositRevertsWhenUnstakedBalanceExists() public {
         // First deposit and unstake, leaving ybBTC on the account but 0 gauge shares
         _depositViaMulticall(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
 
-        // Second deposit should succeed — addCollateral doesn't enforce balance check
+        // Second deposit should revert — addCollateral checks gauge share balance
+        // covers data.shares + newShares, but unstake burned gauge shares without
+        // reducing data.shares. Admin must restake before new deposits are possible.
         uint256 secondDeposit = DEPOSIT_AMOUNT / 2;
-        _depositViaMulticall(secondDeposit);
-
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, secondDeposit, "Only new deposit should be staked");
-        assertEq(unstaked, DEPOSIT_AMOUNT, "Previously unstaked ybBTC should remain unstaked");
-
-        uint256 totalCollateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(totalCollateral, DEPOSIT_AMOUNT + secondDeposit, "Collateral should include both deposits");
+        vm.startPrank(_user);
+        _ybBtc.transfer(_portfolioAccount, secondDeposit);
+        address[] memory factories = new address[](1);
+        factories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, secondDeposit);
+        vm.expectRevert();
+        _portfolioManager.multicall(calldatas, factories);
+        vm.stopPrank();
     }
 
     // ============ HARDENED TESTS: Withdraw Edge Cases ============

@@ -226,17 +226,34 @@ contract ClaimingFacetTest is Test, Setup {
         ClaimingFacet(_portfolioAccount).claimLaunchpadToken(bribes, launchPadTokens, _tokenId, swapParams);
         vm.stopPrank();
 
-        // Verify the swap happened - portfolio account should have received USDC
+        // Fee rates: lenderPremium=2000 (20%), treasuryFee=500 (5%)
+        // With 250e6 output:
+        //   treasuryFee    = 250e6 * 500  / 10000 = 12.5e6
+        //   lenderPremium  = 250e6 * 2000 / 10000 = 50e6
+        //   borrowerAmount = 250e6 - 12.5e6 - 50e6 = 187.5e6
+        //   debt = 1e6, so 1e6 goes to vault as debt repayment, 186.5e6 excess → owner
+        uint256 expectedTreasuryFee = (expectedUsdcOutput * 500) / 10000;    // 12.5e6
+        uint256 expectedLenderPremium = (expectedUsdcOutput * 2000) / 10000; // 50e6
+        uint256 expectedBorrowerAmount = expectedUsdcOutput - expectedTreasuryFee - expectedLenderPremium; // 187.5e6
+        uint256 expectedDebtRepaid = borrowAmount; // 1e6 (capped at actual debt)
+        uint256 expectedExcessToOwner = expectedBorrowerAmount - expectedDebtRepaid; // 186.5e6
+
         uint256 portfolioUsdcAfter = IERC20(_usdc).balanceOf(_portfolioAccount);
         uint256 ownerTokenAfter = IERC20(claimingToken).balanceOf(_owner);
         uint256 vaultUsdcAfter = IERC20(_usdc).balanceOf(ILoan(_loanContract)._vault());
         uint256 ownerUsdcAfter = IERC20(_usdc).balanceOf(ILoan(_loanContract).owner());
-        // The portfolio account should have received USDC from the swap
-        assertEq(portfolioUsdcAfter, portfolioUsdcBefore, "Portfolio should have received USDC from swap");
-        // The launchpad token should have been swapped, so owner should receive remaining (after fees)
-        // Note: Some tokens may have been used for fees, so owner may have less than rewardAmount
-        assertGe(ownerTokenAfter, ownerTokenBefore, "Owner should receive remaining launchpad token after swap and fees");
-        assertEq(vaultUsdcAfter, vaultUsdcBefore + 200e6, "Vault should have received USDC from swap");
-        assertEq(ownerUsdcAfter, ownerUsdcBefore + 50e6, "Owner should have received USDC from swap");
+
+        // Portfolio should have no leftover USDC (all distributed)
+        assertEq(portfolioUsdcAfter, portfolioUsdcBefore, "Portfolio should not retain USDC");
+        // Owner should receive remaining launchpad tokens
+        assertGe(ownerTokenAfter, ownerTokenBefore, "Owner should receive remaining launchpad token");
+        // Treasury receives BPS-based fee only (not inflated share)
+        assertEq(ownerUsdcAfter, ownerUsdcBefore + expectedTreasuryFee, "Treasury should receive BPS-based fee");
+        // Vault receives lender premium + actual debt repayment (not the full borrower amount)
+        assertEq(vaultUsdcAfter, vaultUsdcBefore + expectedLenderPremium + expectedDebtRepaid, "Vault should receive lender premium + debt repayment");
+        // Portfolio owner receives excess USDC beyond debt
+        uint256 ownerUsdcTotal = IERC20(_usdc).balanceOf(portfolioOwner);
+        // Owner got: borrow proceeds (1e6 - origination fee) + excess from launchpad claim
+        assertGt(ownerUsdcTotal, expectedExcessToOwner, "Owner should receive excess USDC from borrower share");
     }
 }

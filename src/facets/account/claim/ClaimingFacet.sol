@@ -129,18 +129,24 @@ contract ClaimingFacet is AccessControl {
             }));
             require(address(vault) != address(0), "Vault not set");
 
-            // get treasury fee and lender premium
+            // get treasury fee and lender premium (BPS, consistent with RewardsProcessingFacet)
             (uint256 lenderPremium, uint256 treasuryFee) = _loanConfig.getActiveRates();
 
-            // from the total amount of output amount, calculate the treasury fee and lender premium
-            uint256 totalFees = treasuryFee + lenderPremium;
-            require(totalFees > 0, "Fees not configured");
+            uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / 10000;
+            uint256 lenderPremiumAmount = (outputAmount * lenderPremium) / 10000;
+            uint256 borrowerAmount = outputAmount - treasuryFeeAmount - lenderPremiumAmount;
 
-            uint256 treasuryFeeAmount = (outputAmount * treasuryFee) / totalFees;
-            uint256 lenderPremiumAmount = outputAmount - treasuryFeeAmount;
             address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
             IERC20(outputToken).safeTransfer(ILoan(loanContract).owner(), treasuryFeeAmount);
             IERC20(outputToken).safeTransfer(address(vault), lenderPremiumAmount);
+
+            // Pay down borrower debt with remaining proceeds; send excess to owner
+            if (borrowerAmount > 0) {
+                uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), borrowerAmount);
+                if (excess > 0) {
+                    IERC20(outputToken).safeTransfer(_portfolioFactory.ownerOf(address(this)), excess);
+                }
+            }
         }
 
         // send remaining launchpad token to portfolio owner
