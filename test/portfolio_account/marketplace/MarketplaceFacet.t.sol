@@ -902,7 +902,7 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         MarketplaceFacet marketplaceFacet2 = new MarketplaceFacet(
             address(factory2), address(_ve), address(portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -910,6 +910,7 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         facetRegistry2.registerFacet(address(marketplaceFacet2), marketplaceSelectors, "MarketplaceFacet");
 
         // 3. ERC721ReceiverFacet

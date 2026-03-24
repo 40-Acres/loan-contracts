@@ -249,7 +249,7 @@ contract DynamicMarketplaceFacetTest is Test {
             VOTING_ESCROW,
             address(portfolioMarketplace)
         );
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -257,6 +257,7 @@ contract DynamicMarketplaceFacetTest is Test {
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSelectors, "DynamicMarketplaceFacet");
     }
 

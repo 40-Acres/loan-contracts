@@ -149,7 +149,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -157,6 +157,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy RewardsProcessingFacet
@@ -261,13 +262,13 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         PortfolioManager portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
         
         
-        address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome-usdc")));
-        _portfolioFactory = PortfolioFactory(portfolioFactory);
-        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
-        address votingConfig = address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C);
-        // address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
-        SwapConfig swapConfig = SwapConfig(0x3646C436f18f0e2E38E10D1A147f901a96BD4390);
-        FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
+        // address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome-usdc")));
+        // _portfolioFactory = PortfolioFactory(portfolioFactory);
+        // PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
+        // address votingConfig = address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C);
+        // // address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
+        // SwapConfig swapConfig = SwapConfig(0x3646C436f18f0e2E38E10D1A147f901a96BD4390);
+        // FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // portfolioFactoryConfig.setVoteConfig(address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C));
         

@@ -176,7 +176,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
         // Deploy MarketplaceFacet
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
-        bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
         marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -184,6 +184,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
         marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy RewardsProcessingFacet

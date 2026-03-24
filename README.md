@@ -41,8 +41,6 @@ Full-featured deployment for veAERO/veVELO collateral with marketplace, voting, 
 | **MigrationFacet** | migrate |
 | **MarketplaceFacet** | processPayment, finalizePurchase, buyMarketplaceListing, getListing, makeListing, cancelListing |
 | **RewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
-| **VexyFacet** | buyVexyListing |
-| **OpenXFacet** | buyOpenXListing |
 | **ERC721ReceiverFacet** | onERC721Received |
 
 #### YieldBasis Factory
@@ -64,6 +62,8 @@ Lightweight wallet deployment for cross-portfolio asset transfers, token swaps, 
 | Facet | Functions |
 |-------|-----------|
 | **WalletFacet** | enforceCollateralRequirements, transferERC20, transferNFT, swap, createLock |
+| **VexyFacet** | buyVexyListing |
+| **OpenXFacet** | buyOpenXListing |
 
 #### ERC4626 Vault Factory
 
