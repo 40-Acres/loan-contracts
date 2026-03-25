@@ -12,7 +12,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILoan} from "../../../interfaces/ILoan.sol";
 import {UserClaimingConfig} from "./UserClaimingConfig.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
@@ -28,7 +28,7 @@ contract ClaimingFacet is AccessControl {
     IRewardsDistributor public immutable _rewardsDistributor;
     ILoanConfig public immutable _loanConfig;
     SwapConfig public immutable _swapConfig;
-    IERC4626 public immutable _vault;
+    ILendingVault public immutable _vault;
     error InvalidClaim(address token);
 
     event RebaseClaimed(uint256 indexed tokenId, uint256 amount);
@@ -42,7 +42,7 @@ contract ClaimingFacet is AccessControl {
         _loanConfig = ILoanConfig(loanConfig);
         _swapConfig = SwapConfig(swapConfig);
         // vault can be zero address if there is no vault (no lending)
-        _vault = IERC4626(vault);
+        _vault = ILendingVault(vault);
     }
 
     function claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) public virtual {
@@ -112,7 +112,7 @@ contract ClaimingFacet is AccessControl {
             require(swapParams.swapTarget != address(0));
             require(swapParams.swapData.length > 0);
             require(swapParams.minimumOutputAmount > 0);
-            IERC4626 vault = _vault;
+            ILendingVault vault = _vault;
             address outputToken = vault.asset();
             // Calculate the actual amount of launchpad token received after claiming fees
             uint256 launchpadTokenBalanceAfter = launchpadToken.balanceOf(address(this));
@@ -138,7 +138,8 @@ contract ClaimingFacet is AccessControl {
 
             address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
             IERC20(outputToken).safeTransfer(ILoan(loanContract).owner(), treasuryFeeAmount);
-            IERC20(outputToken).safeTransfer(address(vault), lenderPremiumAmount);
+            IERC20(outputToken).forceApprove(address(vault), lenderPremiumAmount);
+            vault.depositRewards(lenderPremiumAmount);
 
             // Pay down borrower debt with remaining proceeds; send excess to owner
             if (borrowerAmount > 0) {

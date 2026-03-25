@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
-import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
@@ -44,9 +44,9 @@ contract SetRewardsRecipient is Script {
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
-        bytes4 selector = RewardsProcessingFacet.setRecipient.selector;
+        bytes4 selector = RewardsConfigFacet.setRecipient.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
-        require(facet != address(0), "RewardsProcessingFacet.setRecipient not registered in FacetRegistry. Please deploy facets first.");
+        require(facet != address(0), "RewardsConfigFacet.setRecipient not registered in FacetRegistry. Please deploy facets first.");
 
         // Get portfolio address from factory
         address portfolioAddress = factory.portfolioOf(owner);

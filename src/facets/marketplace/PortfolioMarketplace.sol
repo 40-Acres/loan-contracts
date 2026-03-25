@@ -241,14 +241,14 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             IERC20(paymentToken).safeTransfer(feeRecipient, fee);
         }
 
-        // Approve seller portfolio for net payment
-        IERC20(paymentToken).approve(sellerPortfolio, netPayment);
+        // Approve seller portfolio for net payment (forceApprove handles non-standard tokens like USDT)
+        IERC20(paymentToken).forceApprove(sellerPortfolio, netPayment);
 
         // Call seller's receiveSaleProceeds — pays debt, transfers NFT, sends excess to owner
         IMarketplaceFacet(sellerPortfolio).receiveSaleProceeds(tokenId, msg.sender, netPayment);
 
         // Clear any remaining approval
-        IERC20(paymentToken).approve(sellerPortfolio, 0);
+        IERC20(paymentToken).forceApprove(sellerPortfolio, 0);
 
         // Delete listing
         delete listings[tokenId];

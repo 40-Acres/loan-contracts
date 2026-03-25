@@ -28,6 +28,7 @@ import {MarketplaceFacet} from "../../../src/facets/account/marketplace/Marketpl
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 
 
@@ -192,7 +193,7 @@ contract LocalSetup is Test {
     }
 
     // ── Step 4: Loan (V1 proxy → initialize → upgrade V2) + Vault ─────
-    function _deployLoanAndVault() internal {
+    function _deployLoanAndVault() internal virtual {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
 
         Loan loanImpl = new Loan();
@@ -315,25 +316,30 @@ contract LocalSetup is Test {
         marketplaceSel[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
         _facetRegistry.registerFacet(address(marketplaceFacet), marketplaceSel, "MarketplaceFacet");
 
-        // ── 8. RewardsProcessingFacet (10 selectors) ──
+        // ── 8. RewardsProcessingFacet (5 selectors) ──
         RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(
             address(_portfolioFactory),
             address(_swapConfig), address(_ve), _vault, address(_mockAero)
         );
-        bytes4[] memory rewardsSel = new bytes4[](12);
+        bytes4[] memory rewardsSel = new bytes4[](5);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsSel[1] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsSel[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsSel[3] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsSel[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsSel[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsSel[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        rewardsSel[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        rewardsSel[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        rewardsSel[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        rewardsSel[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        rewardsSel[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
+        rewardsSel[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSel[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSel[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSel[4] = RewardsProcessingFacet.calculateRoutes.selector;
         _facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
+
+        // ── 9. RewardsConfigFacet (7 selectors) ──
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(_portfolioFactory));
+        bytes4[] memory rewardsConfigSel = new bytes4[](7);
+        rewardsConfigSel[0] = RewardsConfigFacet.setRewardsToken.selector;
+        rewardsConfigSel[1] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSel[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSel[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSel[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSel[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSel[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        _facetRegistry.registerFacet(address(rewardsConfigFacet), rewardsConfigSel, "RewardsConfigFacet");
 
         vm.stopPrank();
     }

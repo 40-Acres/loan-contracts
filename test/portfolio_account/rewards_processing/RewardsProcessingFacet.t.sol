@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -18,7 +19,7 @@ import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 contract RewardsProcessingFacetTest is Test, LocalSetup {
     RewardsProcessingFacet public rewardsProcessingFacet;
     MockOdosRouterRL public mockRouter;
-    
+
     address public rewardsToken; // USDC
     address public lockedAsset; // AERO (from voting escrow)
     uint256 public rewardsAmount = 1000e6; // 1000 USDC
@@ -52,11 +53,11 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         portfolioFactories[2] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsToken.selector,
+            RewardsConfigFacet.setRewardsToken.selector,
             rewardsToken
         );
         calldatas[1] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRecipient.selector,
+            RewardsConfigFacet.setRecipient.selector,
             recipient
         );
         calldatas[2] = abi.encodeWithSelector(
@@ -156,7 +157,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -202,7 +203,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -294,7 +295,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -472,7 +473,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         calldatas[1] = abi.encodeWithSelector(
@@ -706,7 +707,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsToken.selector,
+            RewardsConfigFacet.setRewardsToken.selector,
             address(0)
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -1036,14 +1037,14 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: recipient
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
         // Verify it was set
-        UserRewardsConfig.DistributionEntry memory stored = rewardsProcessingFacet.getActiveBalanceDistribution();
+        UserRewardsConfig.DistributionEntry memory stored = RewardsConfigFacet(address(rewardsProcessingFacet)).getActiveBalanceDistribution();
         assertEq(uint256(stored.option), uint256(UserRewardsConfig.RewardsOption.PayToRecipient));
         assertEq(stored.percentage, 15);
         assertEq(stored.target, recipient);
@@ -1062,7 +1063,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: recipient
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         vm.expectRevert();
@@ -1083,7 +1084,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: recipient
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         vm.expectRevert();
@@ -1115,7 +1116,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: recipient
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -1174,7 +1175,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -1291,13 +1292,13 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: recipient
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
-        UserRewardsConfig.DistributionEntry memory stored = rewardsProcessingFacet.getActiveBalanceDistribution();
+        UserRewardsConfig.DistributionEntry memory stored = RewardsConfigFacet(address(rewardsProcessingFacet)).getActiveBalanceDistribution();
         assertEq(stored.percentage, 25, "Should accept exactly 25%");
     }
 
@@ -1323,7 +1324,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setActiveBalanceDistribution.selector,
+            RewardsConfigFacet.setActiveBalanceDistribution.selector,
             entry
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -1368,7 +1369,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -1414,7 +1415,7 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);

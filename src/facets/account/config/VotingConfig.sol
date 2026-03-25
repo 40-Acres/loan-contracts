@@ -89,6 +89,7 @@ contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
         VotingConfigData storage votingStorage = _getVotingConfig();
         votingStorage.launchpadPoolTokenForEpoch[ProtocolTimeLibrary.epochStart(epoch)][pool] = launchpadToken;
         votingStorage.approvedPools[pool] = true;
+        votingStorage.approvedPoolsList.add(pool);
         emit ApprovedLaunchpadPool(pool, true, launchpadToken);
     }
 

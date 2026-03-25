@@ -14,6 +14,7 @@ import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
 import {IMigrationFacet} from "../../../src/facets/account/migration/IMigrationFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 
@@ -85,7 +86,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testFacetCount() public view {
         address[] memory facets = facetRegistry.getAllFacets();
-        assertEq(facets.length, 8, "Should have exactly 8 facets registered");
+        assertEq(facets.length, 9, "Should have exactly 9 facets registered");
     }
 
     // ─── Per-facet validation ────────────────────────────────────────
@@ -119,7 +120,7 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
     }
 
     function testRewardsProcessingFacetRegistration() public view {
-        _assertFacetRegistered(address(rewardsProcessingFacet), "RewardsProcessingFacet", 12);
+        _assertFacetRegistered(address(rewardsProcessingFacet), "RewardsProcessingFacet", 5);
     }
 
     // ─── Selector → facet routing ────────────────────────────────────
@@ -157,17 +158,17 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testRewardsProcessingSelectorsRouteCorrectly() public view {
         assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.processRewards.selector), address(rewardsProcessingFacet));
-        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setRewardsToken.selector), address(rewardsProcessingFacet));
-        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setZeroBalanceDistribution.selector), address(rewardsProcessingFacet));
-        assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.setActiveBalanceDistribution.selector), address(rewardsProcessingFacet));
+        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setRewardsToken.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRecipient.selector));
+        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setZeroBalanceDistribution.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRewardsToken.selector));
+        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setActiveBalanceDistribution.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRewardsToken.selector));
     }
 
     // ─── Registry version ────────────────────────────────────────────
 
     function testRegistryVersion() public view {
         // Constructor sets version = 1, each registerFacet increments by 1
-        // 1 (initial) + 8 (registrations) = 9
-        assertEq(facetRegistry.getVersion(), 9, "Registry version should be 9 after 8 registrations");
+        // 1 (initial) + 9 (registrations) = 10
+        assertEq(facetRegistry.getVersion(), 10, "Registry version should be 10 after 9 registrations");
     }
 
     // ─── Loan + Vault linkage ────────────────────────────────────────

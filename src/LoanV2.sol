@@ -917,6 +917,11 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         return _vault;
     }
 
+    function depositRewards(uint256 amount) external {
+        require(amount > 0);
+        _asset.transferFrom(msg.sender, _vault, amount);
+        _rewardsPerEpoch[currentEpochStart()] += amount;
+    }
 
     /**
      * @notice Retrieves the rewards for the current epoch.

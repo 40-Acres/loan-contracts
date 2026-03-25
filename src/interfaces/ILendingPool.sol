@@ -39,4 +39,10 @@ interface ILendingPool {
      * @return The total amount of assets currently loaned out
      */
     function activeAssets() external view returns (uint256);
+
+    /**
+     * @notice Deposit rewards into the vault with epoch-based vesting
+     * @param amount The amount of reward tokens to deposit
+     */
+    function depositRewards(uint256 amount) external;
 }

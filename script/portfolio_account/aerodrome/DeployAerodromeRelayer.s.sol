@@ -23,6 +23,7 @@ import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFac
 import {VexyFacet} from "../../../src/facets/account/marketplace/VexyFacet.sol";
 import {OpenXFacet} from "../../../src/facets/account/marketplace/OpenXFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
@@ -164,20 +165,25 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+
+        // Deploy RewardsConfigFacet
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
         _validateDeployment(portfolioFactoryConfig, address(portfolioFactory));
@@ -311,20 +317,25 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
         // // Step 3: Redeploy RewardsProcessingFacet with fresh config and Aerodrome vault
         RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+
+        // Deploy RewardsConfigFacet
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
         // Step 4: Redeploy all other facets with fresh config
         // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, address(portfolioFactoryConfig), VOTING_ESCROW);

@@ -21,6 +21,7 @@ import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
 import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
@@ -162,20 +163,25 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](12);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
-        rewardsProcessingSelectors[11] = RewardsProcessingFacet.clearActiveBalanceDistribution.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+
+        // Deploy RewardsConfigFacet
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
     /**
@@ -280,19 +286,25 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // portfolioManager.setAuthorizedCaller(0x250600a035d14e0b079d9efa625393e7Bfe83265, true);
         // // Deploy RewardsProcessingFacet
         // RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](11);
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.setRewardsToken.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        // rewardsProcessingSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        // rewardsProcessingSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        // rewardsProcessingSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        // rewardsProcessingSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        // rewardsProcessingSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
         // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        //
+        // // Deploy RewardsConfigFacet
+        // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
+        // bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        // rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
+        // rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
+        // rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
         // Deploy ClaimingFacet
         // ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));

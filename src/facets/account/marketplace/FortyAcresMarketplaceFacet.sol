@@ -58,13 +58,13 @@ contract FortyAcresMarketplaceFacet is AccessControl {
 
         require(paymentToken.balanceOf(address(this)) >= price, "Insufficient balance");
 
-        // Approve marketplace to pull payment
-        paymentToken.approve(address(_marketplace), price);
+        // Approve marketplace to pull payment (forceApprove handles non-standard tokens like USDT)
+        paymentToken.forceApprove(address(_marketplace), price);
 
         // Purchase through marketplace — nonce prevents frontrunning
         _marketplace.purchaseListing(tokenId, nonce);
 
         // Clear remaining approval
-        paymentToken.approve(address(_marketplace), 0);
+        paymentToken.forceApprove(address(_marketplace), 0);
     }
 }

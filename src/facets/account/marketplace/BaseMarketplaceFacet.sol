@@ -225,6 +225,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         if (totalDebt > 0) {
             uint256 requiredPayment = _getRequiredPaymentForCollateralRemoval(configAddress, tokenId);
             if (requiredPayment > 0) {
+                // Payment token must match debt token — a non-debt token can't repay the loan
+                PortfolioFactoryConfig _config = _portfolioFactory.portfolioFactoryConfig();
+                require(auth.paymentToken == _config.getDebtToken(), "Payment token does not match debt token");
                 uint256 debtPayment = requiredPayment > paymentAmount ? paymentAmount : requiredPayment;
                 uint256 excess = _decreaseTotalDebt(configAddress, debtPayment);
                 debtPaid = debtPayment - excess;

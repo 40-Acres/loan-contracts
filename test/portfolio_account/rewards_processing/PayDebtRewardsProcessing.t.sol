@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
@@ -320,11 +321,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         portfolioFactories[2] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsToken.selector,
+            RewardsConfigFacet.setRewardsToken.selector,
             rewardsToken
         );
         calldatas[1] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRecipient.selector,
+            RewardsConfigFacet.setRecipient.selector,
             PortfolioFactory(targetFactory).portfolioOf(_user)
         );
 
@@ -336,7 +337,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             target: targetFactory
         });
         calldatas[2] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -536,11 +537,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         portfolioFactories[2] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsToken.selector,
+            RewardsConfigFacet.setRewardsToken.selector,
             rewardsToken
         );
         calldatas[1] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRecipient.selector,
+            RewardsConfigFacet.setRecipient.selector,
             nonPortfolioRecipient
         );
 
@@ -553,7 +554,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             target: address(0)
         });
         calldatas[2] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);

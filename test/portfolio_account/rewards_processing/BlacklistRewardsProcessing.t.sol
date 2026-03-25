@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {MockBlacklistableERC20} from "../../mocks/MockBlacklistableERC20.sol";
@@ -66,11 +67,11 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         portfolioFactories[2] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](3);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsToken.selector,
+            RewardsConfigFacet.setRewardsToken.selector,
             address(blacklistToken)
         );
         calldatas[1] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRecipient.selector,
+            RewardsConfigFacet.setRecipient.selector,
             blacklistedRecipient
         );
         calldatas[2] = abi.encodeWithSelector(
@@ -96,7 +97,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setZeroBalanceDistribution.selector,
+            RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
@@ -192,7 +193,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsProcessingFacet.setRewardsToken.selector,
+            RewardsConfigFacet.setRewardsToken.selector,
             address(_usdc)
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);

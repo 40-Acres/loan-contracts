@@ -149,6 +149,16 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         return address(this);
     }
 
+    /// @notice ILoan-compatible: returns self so PortfolioFactoryConfig.getVault() works
+    function _vault() external view returns (address) {
+        return address(this);
+    }
+
+    /// @notice ILoan-compatible: returns the underlying asset
+    function _asset() external view returns (address) {
+        return asset();
+    }
+
     function activeAssets() external view returns (uint256) {
         return _getStorage().totalLoanedAssets;
     }

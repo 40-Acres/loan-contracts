@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {veYieldBasisFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisFacet.sol";
 import {veYieldBasisRewardsProcessingFacet} from "../../../../src/facets/account/veyieldbasis/veYieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
+import {RewardsConfigFacet} from "../../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {UserRewardsConfig} from "../../../../src/facets/account/rewards_processing/UserRewardsConfig.sol";
 import {DynamicCollateralFacet} from "../../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
@@ -211,19 +212,25 @@ contract YieldBasisDynamicFeesE2E is Test {
             address(veYBAdapter),
             address(vault)
         );
-        bytes4[] memory rewardsSelectors = new bytes4[](11);
+        bytes4[] memory rewardsSelectors = new bytes4[](5);
         rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsSelectors[1] = RewardsProcessingFacet.setRewardsToken.selector;
-        rewardsSelectors[2] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsSelectors[3] = RewardsProcessingFacet.setRecipient.selector;
-        rewardsSelectors[4] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsSelectors[5] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsSelectors[6] = RewardsProcessingFacet.calculateRoutes.selector;
-        rewardsSelectors[7] = RewardsProcessingFacet.setZeroBalanceDistribution.selector;
-        rewardsSelectors[8] = RewardsProcessingFacet.getZeroBalanceDistribution.selector;
-        rewardsSelectors[9] = RewardsProcessingFacet.setActiveBalanceDistribution.selector;
-        rewardsSelectors[10] = RewardsProcessingFacet.getActiveBalanceDistribution.selector;
+        rewardsSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
         facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSelectors, "veYieldBasisRewardsProcessingFacet");
+
+        // Deploy RewardsConfigFacet
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        facetRegistry.registerFacet(address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
         // Set authorized caller for rewards processing
         portfolioManager.setAuthorizedCaller(authorizedCaller, true);

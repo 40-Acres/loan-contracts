@@ -85,6 +85,11 @@ abstract contract BaseLendingFacet is AccessControl {
         require(toPortfolio != address(0), "No portfolio on target factory");
         require(manager.isPortfolioRegistered(toPortfolio), "Target portfolio not registered");
 
+        uint256 minimumCollateral = _portfolioFactory.portfolioFactoryConfig().getMinimumCollateral();
+        if (minimumCollateral > 0) {
+            require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
+        }
+
         (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
         _lendingToken.safeTransfer(toPortfolio, amountAfterFees);
         emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, toPortfolio);
