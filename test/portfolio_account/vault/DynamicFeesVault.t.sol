@@ -1849,4 +1849,164 @@ contract DynamicFeesVaultTest is Test {
         // Bob deposited 100e6; he should get ~80e6
         assertApproxEqAbs(bobReduction, 80e6, 2e6, "Bob gets ~80% of his 100e6 deposit");
     }
+
+    // ============ Public settleRewards Griefing ============
+
+    /// @notice Attacker settles an expired user from epoch N while epoch N+1 is active.
+    ///         activeEpochRate must not be corrupted — Bob's stream should vest normally.
+    function testPublicSettleRewardsDoesNotCorruptActiveRate() public {
+        address alice    = address(0xA);
+        address bob      = address(0xB);
+        address attacker = address(0xC);
+
+        vm.prank(alice);
+        vault.borrowFromPortfolio(200e6);
+        vm.prank(bob);
+        vault.borrowFromPortfolio(200e6);
+
+        // Epoch 2: alice streams rewards
+        vm.startPrank(alice);
+        deal(address(usdc), alice, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        // Cross into epoch 3
+        vm.warp(EPOCH_3 + 1);
+
+        // Bob starts a stream in epoch 3
+        vm.startPrank(bob);
+        deal(address(usdc), bob, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 activeRateBefore = vault.getActiveEpochRate();
+        assertGt(activeRateBefore, 0, "Bob's stream should be active");
+
+        // Attacker grief-settles alice's expired stream — should NOT touch activeEpochRate
+        vm.prank(attacker);
+        vault.settleRewards(alice);
+
+        uint256 activeRateAfter = vault.getActiveEpochRate();
+        assertEq(activeRateAfter, activeRateBefore, "activeEpochRate must not change when settling an expired user");
+
+        // Bob's stream should vest fully
+        uint256 bobDebtBefore = vault.getDebtBalance(bob);
+        vm.warp(EPOCH_4 + 1);
+        vault.settleRewards(bob);
+        uint256 bobReduction = bobDebtBefore - vault.getDebtBalance(bob);
+
+        assertApproxEqAbs(bobReduction, 80e6, 2e6, "Bob gets full ~80% of his 100e6 deposit");
+    }
+
+    /// @notice Mass griefing: attacker settles many expired users in a new epoch.
+    ///         The active user's rewards must remain intact.
+    function testMassGriefSettleDoesNotDrainActiveRewards() public {
+        address active   = address(0xF);
+        address attacker = address(0xE);
+
+        // 5 users borrow and stream in epoch 2
+        address[5] memory stale;
+        for (uint256 i = 0; i < 5; i++) {
+            stale[i] = address(uint160(0x10 + i));
+            vm.prank(stale[i]);
+            vault.borrowFromPortfolio(100e6);
+
+            vm.startPrank(stale[i]);
+            deal(address(usdc), stale[i], 20e6);
+            usdc.approve(address(vault), 20e6);
+            vault.repayWithRewards(20e6);
+            vm.stopPrank();
+        }
+
+        // Cross into epoch 3
+        vm.warp(EPOCH_3 + 1);
+
+        // Active user borrows and streams in epoch 3
+        vm.prank(active);
+        vault.borrowFromPortfolio(100e6);
+        vm.startPrank(active);
+        deal(address(usdc), active, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 activeRateBefore = vault.getActiveEpochRate();
+
+        // Attacker settles all 5 expired users
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(attacker);
+            vault.settleRewards(stale[i]);
+        }
+
+        uint256 activeRateAfter = vault.getActiveEpochRate();
+        assertEq(activeRateAfter, activeRateBefore, "Settling 5 expired users must not reduce active rate");
+
+        // Active user gets full rewards
+        uint256 debtBefore = vault.getDebtBalance(active);
+        vm.warp(EPOCH_4 + 1);
+        vault.settleRewards(active);
+        uint256 reduction = debtBefore - vault.getDebtBalance(active);
+
+        assertApproxEqAbs(reduction, 80e6, 2e6, "Active user gets ~80% of their 100e6 deposit");
+    }
+
+    /// @notice Double-subtraction: attacker settles an active user mid-epoch, then
+    ///         the user calls repayWithRewards. activeEpochRate must stay consistent.
+    function testNoDoubleSubtractionOnSettleThenRepayWithRewards() public {
+        address alice    = address(0xA);
+        address bob      = address(0xB);
+        address attacker = address(0xC);
+
+        vm.prank(alice);
+        vault.borrowFromPortfolio(200e6);
+        vm.prank(bob);
+        vault.borrowFromPortfolio(200e6);
+
+        // Both stream 50e6 in epoch 2
+        vm.startPrank(alice);
+        deal(address(usdc), alice, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        deal(address(usdc), bob, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
+        vm.stopPrank();
+
+        // Halfway through epoch 2
+        uint256 midEpoch = EPOCH_2 + (EPOCH_3 - EPOCH_2) / 2;
+        vm.warp(midEpoch);
+
+        uint256 rateBefore = vault.getActiveEpochRate();
+
+        // Attacker force-settles alice (stream still active, mid-epoch)
+        vm.prank(attacker);
+        vault.settleRewards(alice);
+
+        // activeEpochRate should not have changed (active stream settle doesn't subtract)
+        assertEq(vault.getActiveEpochRate(), rateBefore, "Settle of active stream must not change activeEpochRate");
+
+        // Alice rolls her stream with new rewards — single subtract + add
+        vm.startPrank(alice);
+        deal(address(usdc), alice, 30e6);
+        usdc.approve(address(vault), 30e6);
+        vault.repayWithRewards(30e6);
+        vm.stopPrank();
+
+        // Rate should reflect: removed old alice rate, added new alice rate, bob unchanged
+        uint256 rateAfter = vault.getActiveEpochRate();
+        assertGt(rateAfter, 0, "Rate should be positive after stream rollover");
+
+        // Let epoch finish, both settle, both should get meaningful debt reduction
+        vm.warp(EPOCH_3 + 1);
+        vault.settleRewards(alice);
+        vault.settleRewards(bob);
+
+        assertLt(vault.getDebtBalance(alice), 200e6, "Alice should have debt reduced");
+        assertLt(vault.getDebtBalance(bob), 200e6, "Bob should have debt reduced");
+    }
 }
