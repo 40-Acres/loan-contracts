@@ -216,7 +216,10 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         // Validate buyer if restricted — check both portfolio address and EOA owner
         if (listing.allowedBuyer != address(0)) {
             address buyerFactory = portfolioManager.portfolioToFactory(msg.sender);
-            address buyerEoa = PortfolioFactory(buyerFactory).ownerOf(msg.sender);
+            address buyerEoa = msg.sender;
+            if (buyerFactory != address(0)) {
+                buyerEoa = PortfolioFactory(buyerFactory).ownerOf(msg.sender);
+            }
             if (listing.allowedBuyer != msg.sender && listing.allowedBuyer != buyerEoa) {
                 revert BuyerNotAllowed();
             }

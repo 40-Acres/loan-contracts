@@ -1383,4 +1383,72 @@ contract MarketplaceFacetTest is Test, LocalSetup {
         assertEq(requiredPayment, expectedRequired, "Required = debt - maxLoan of remaining token");
         assertGe(netPayment, requiredPayment, "Net payment should cover required payment");
     }
+
+    // ============ EOA allowedBuyer Tests ============
+
+    /// @notice An EOA set as allowedBuyer should be able to purchase directly
+    function testEoaAllowedBuyerCanPurchase() public {
+        address eoaBuyer = address(0xBEEF);
+
+        // Create listing with EOA as allowedBuyer
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            eoaBuyer
+        );
+
+        // Fund EOA and approve marketplace
+        deal(address(_usdc), eoaBuyer, LISTING_PRICE);
+        vm.startPrank(eoaBuyer);
+        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
+
+        uint256 nonce = portfolioMarketplace.getListing(_tokenId).nonce;
+        portfolioMarketplace.purchaseListing(_tokenId, nonce);
+        vm.stopPrank();
+
+        // NFT should now be owned by the EOA
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), eoaBuyer);
+    }
+
+    /// @notice A portfolio whose owner is the allowedBuyer should also work
+    function testPortfolioOwnedByAllowedBuyerCanPurchase() public {
+        // allowedBuyer = buyer EOA, purchase comes from buyer's wallet portfolio
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            buyer
+        );
+
+        purchaseListingViaMulticall(buyer, _tokenId, LISTING_PRICE);
+
+        address buyerWallet = _walletFactory.portfolioOf(buyer);
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), buyerWallet);
+    }
+
+    /// @notice An EOA that is NOT the allowedBuyer should be rejected
+    function testUnauthorizedEoaBuyerReverts() public {
+        address eoaBuyer = address(0xBEEF);
+        address unauthorized = address(0xDEAD);
+
+        makeListingViaMulticall(
+            _tokenId,
+            LISTING_PRICE,
+            address(_usdc),
+            0,
+            eoaBuyer
+        );
+
+        deal(address(_usdc), unauthorized, LISTING_PRICE);
+        vm.startPrank(unauthorized);
+        IERC20(_usdc).approve(address(portfolioMarketplace), LISTING_PRICE);
+
+        uint256 nonce = portfolioMarketplace.getListing(_tokenId).nonce;
+        vm.expectRevert(PortfolioMarketplace.BuyerNotAllowed.selector);
+        portfolioMarketplace.purchaseListing(_tokenId, nonce);
+        vm.stopPrank();
+    }
 }
