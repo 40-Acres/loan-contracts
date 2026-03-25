@@ -808,15 +808,13 @@ contract YieldBasisLpFacetTest is Test {
     ///         covers data.shares + newShares. Since unstaking removes gauge shares
     ///         but doesn't reduce data.shares, the check fails.
     ///         This is correct behavior: admin must restake before new deposits are possible.
-    function testDepositRevertsWhenUnstakedBalanceExists() public {
-        // First deposit and unstake, leaving ybBTC on the account but 0 gauge shares
+    function testDepositWorksAfterUnstake() public {
+        // First deposit and unstake — collateral tracking is properly cleared
         _depositViaMulticall(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
 
-        // Second deposit should revert — addCollateral checks gauge share balance
-        // covers data.shares + newShares, but unstake burned gauge shares without
-        // reducing data.shares. Admin must restake before new deposits are possible.
+        // Second deposit should succeed since unstake properly cleared data.shares
         uint256 secondDeposit = DEPOSIT_AMOUNT / 2;
         vm.startPrank(_user);
         _ybBtc.transfer(_portfolioAccount, secondDeposit);
@@ -824,9 +822,13 @@ contract YieldBasisLpFacetTest is Test {
         factories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, secondDeposit);
-        vm.expectRevert();
         _portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
+
+        (uint256 staked, ) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(staked, secondDeposit);
+        uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateral, secondDeposit);
     }
 
     // ============ HARDENED TESTS: Withdraw Edge Cases ============
@@ -987,11 +989,10 @@ contract YieldBasisLpFacetTest is Test {
     // ============ HARDENED TESTS: Collateral Invariants ============
 
     /// @notice Collateral should always equal gauge shares tracked, not ybBTC balance
-    function testCollateralTracksGaugeSharesNotYbBtcBalance() public {
+    function testCollateralClearedAfterUnstake() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
 
-        // After unstaking, ybBTC sits on the contract but collateral should
-        // still reflect the originally tracked shares via ERC4626CollateralManager
+        // Unstake removes gauge shares and updates collateral tracking
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
 
@@ -1000,12 +1001,9 @@ contract YieldBasisLpFacetTest is Test {
         assertEq(staked, 0);
         assertEq(unstaked, DEPOSIT_AMOUNT);
 
-        // Collateral is tracked via ERC4626CollateralManager storage, which uses
-        // gauge.convertToAssets(data.shares). Since data.shares was not updated by
-        // unstake, getTotalLockedCollateral queries gauge with the old share count.
-        // This works because the gauge is 1:1 and convertToAssets is a pure function.
+        // Collateral should be 0 since gauge shares were burned and removed from tracking
         uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral, DEPOSIT_AMOUNT, "Collateral should still reflect tracked shares");
+        assertEq(collateral, 0, "Collateral should be zero after unstake");
     }
 
     /// @notice enforceCollateralRequirements after deposit with no debt should always pass

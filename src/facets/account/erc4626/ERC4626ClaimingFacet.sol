@@ -58,8 +58,8 @@ contract ERC4626ClaimingFacet is AccessControl {
         // Calculate yield (current value - original deposit value)
         require(currentAssets > depositedAssets, "No yield to harvest");
 
-        // Calculate shares to redeem by finding excess shares beyond what's needed for original deposit
-        uint256 sharesNeededForDeposit = IERC4626(vault).convertToShares(depositedAssets);
+        // Use previewWithdraw (rounds up shares) to ensure we keep enough to cover principal
+        uint256 sharesNeededForDeposit = IERC4626(vault).previewWithdraw(depositedAssets);
         uint256 sharesToRedeem = trackedShares - sharesNeededForDeposit;
         require(sharesToRedeem > 0, "Yield too small to harvest");
 
@@ -97,9 +97,8 @@ contract ERC4626ClaimingFacet is AccessControl {
             return (0, 0);
         }
 
-        // Calculate excess shares beyond what's needed for original deposit
-        // This matches the actual redemption calculation in claimVaultYield
-        uint256 sharesNeededForDeposit = IERC4626(vault).convertToShares(depositedAssets);
+        // Must match claimVaultYield: previewWithdraw rounds up to protect principal
+        uint256 sharesNeededForDeposit = IERC4626(vault).previewWithdraw(depositedAssets);
         if (trackedShares <= sharesNeededForDeposit) {
             return (0, 0);
         }

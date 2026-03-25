@@ -68,14 +68,17 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(amount > 0, "Zero amount");
 
-        // Remove collateral tracking first (will revert if undercollateralized via enforceCollateralRequirements)
-        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), amount);
-
-        // Unstake from gauge if needed
+        // Unstake from gauge first so we know the actual shares burned
+        uint256 sharesBurned;
         uint256 unstaked = _lpToken.balanceOf(address(this));
         if (unstaked < amount) {
             uint256 toUnstake = amount - unstaked;
-            _gauge.withdraw(toUnstake, address(this), address(this));
+            sharesBurned = _gauge.withdraw(toUnstake, address(this), address(this));
+        }
+
+        // Remove the burned gauge shares from collateral tracking
+        if (sharesBurned > 0) {
+            ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesBurned);
         }
 
         address owner = _portfolioFactory.ownerOf(address(this));
@@ -93,6 +96,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function unstake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
         require(amount > 0, "Zero amount");
         uint256 sharesBurned = _gauge.withdraw(amount, address(this), address(this));
+        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesBurned);
         emit Unstaked(amount, sharesBurned);
     }
 
@@ -106,6 +110,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         _lpToken.approve(address(_gauge), amount);
         uint256 sharesMinted = _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
+        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesMinted);
         emit Restaked(amount, sharesMinted);
     }
 
