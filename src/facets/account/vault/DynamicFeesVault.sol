@@ -574,8 +574,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.globalLastUpdateTime = block.timestamp;
         }
 
-        uint256 actualVesting = newRate * duration;
-        $.totalUnsettledRewards = $.totalUnsettledRewards - remaining + actualVesting;
+        $.totalUnsettledRewards = $.totalUnsettledRewards - remaining + total;
 
         // Snapshot accumulator for the new stream rate
         $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;
