@@ -175,7 +175,7 @@ library ERC4626CollateralManager {
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
 
-        if (data.debt + amount > maxLoan) {
+        if (amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
         }
 
