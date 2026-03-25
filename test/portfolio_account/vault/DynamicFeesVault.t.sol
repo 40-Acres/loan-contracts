@@ -1796,4 +1796,57 @@ contract DynamicFeesVaultTest is Test {
         assertGt(debtReduction1, 50e6, "User1 should have significant debt reduction");
         assertGt(debtReduction2, 50e6, "User2 should have significant debt reduction");
     }
+
+    // ============ Cross-Epoch Reward Isolation ============
+
+    /// @notice An expired stream from epoch N must not earn credit from epoch N+1.
+    ///         Regression test for the stale-accumulator bug where an unsettled
+    ///         userRewardRate could multiply accumulator deltas it never contributed to.
+    function testExpiredStreamCannotClaimCrossEpochCredit() public {
+        address alice = address(0xA);
+        address bob   = address(0xB);
+
+        vm.prank(alice);
+        vault.borrowFromPortfolio(200e6);
+        vm.prank(bob);
+        vault.borrowFromPortfolio(200e6);
+
+        // Epoch 2: alice streams 50 USDC of rewards
+        vm.startPrank(alice);
+        deal(address(usdc), alice, 50e6);
+        usdc.approve(address(vault), 50e6);
+        vault.repayWithRewards(50e6);
+        vm.stopPrank();
+
+        uint256 aliceDebtAfterStream = vault.getDebtBalance(alice);
+
+        // Cross into epoch 3 without settling alice
+        vm.warp(EPOCH_3 + 1);
+        vault.sync();
+
+        // Epoch 3: bob streams 100 USDC of rewards
+        vm.startPrank(bob);
+        deal(address(usdc), bob, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.repayWithRewards(100e6);
+        vm.stopPrank();
+
+        uint256 bobDebtBefore = vault.getDebtBalance(bob);
+
+        // Let epoch 3 fully vest, then settle both
+        vm.warp(EPOCH_4 + 1);
+
+        vault.settleRewards(alice);
+        uint256 aliceReduction = aliceDebtAfterStream - vault.getDebtBalance(alice);
+
+        vault.settleRewards(bob);
+        uint256 bobReduction = bobDebtBefore - vault.getDebtBalance(bob);
+
+        // Alice deposited 50e6; at ~20% lender fee she should get ~40e6 max
+        assertLe(aliceReduction, 50e6, "Alice must not exceed her own deposit");
+        assertApproxEqAbs(aliceReduction, 40e6, 2e6, "Alice gets ~80% of her 50e6 deposit");
+
+        // Bob deposited 100e6; he should get ~80e6
+        assertApproxEqAbs(bobReduction, 80e6, 2e6, "Bob gets ~80% of his 100e6 deposit");
+    }
 }

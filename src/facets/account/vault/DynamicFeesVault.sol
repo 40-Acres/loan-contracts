@@ -85,6 +85,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 borrowerCreditPerRate;   // accumulated borrower credit per unit of stream rate, scaled by 1e18
         uint8 sharesDecimalsOffset;      // asset decimals used as virtual share offset for inflation attack prevention
         mapping(address => uint256) userBorrowerCreditPerRatePaid; // per-user snapshot of borrowerCreditPerRate
+        mapping(uint256 => uint256) epochEndBorrowerCreditPerRate; // borrowerCreditPerRate frozen at each epoch boundary
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -190,8 +191,19 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             }
         }
 
-        // Simulate per-user settlement
-        uint256 accumulatorDelta = effectiveBorrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[borrower];
+        // Match _settleRewards: expired streams only get credit up to their epoch boundary
+        uint256 accumulatorDelta;
+        if (block.timestamp >= $.userPeriodFinish[borrower]) {
+            uint256 cappedAccumulator = $.epochEndBorrowerCreditPerRate[$.userPeriodFinish[borrower]];
+            // If the snapshot hasn't been written yet, fall back to the simulated value
+            if (cappedAccumulator == 0) {
+                cappedAccumulator = effectiveBorrowerCreditPerRate;
+            }
+            uint256 paid = $.userBorrowerCreditPerRatePaid[borrower];
+            accumulatorDelta = cappedAccumulator > paid ? cappedAccumulator - paid : 0;
+        } else {
+            accumulatorDelta = effectiveBorrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[borrower];
+        }
         uint256 borrowerReward = (userRate * accumulatorDelta) / 1e18;
 
         // Cap at effective global borrower pending (mirrors _settleRewards cap)
@@ -399,11 +411,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
         $.globalLastUpdateTime = currentTime;
 
-        // If past epoch end, clear the rate
-        if (block.timestamp >= $.activeEpochEnd) {
-            $.activeEpochRate = 0;
-            $.activeEpochEnd = 0;
-        }
+        bool epochEnded = block.timestamp >= $.activeEpochEnd;
+        uint256 endingEpoch = $.activeEpochEnd;
 
         // Cap globalVested at totalUnsettledRewards to prevent underflow from rounding
         if (globalVested > $.totalUnsettledRewards) {
@@ -425,13 +434,21 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         }
 
         // Accumulate borrower credit per unit of stream rate (Synthetix-style)
-        // Use captured currentRate since activeEpochRate may have been cleared above
+        // Use captured currentRate since activeEpochRate may be cleared below
         if (borrowerCredit > 0 && currentRate > 0) {
             $.borrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
         }
 
         $.totalUnsettledRewards -= globalVested;
         $.globalBorrowerPending += borrowerCredit;
+
+        // Freeze the accumulator at epoch boundary so expired streams can only
+        // claim credit up to the epoch they participated in
+        if (epochEnded) {
+            $.epochEndBorrowerCreditPerRate[endingEpoch] = $.borrowerCreditPerRate;
+            $.activeEpochRate = 0;
+            $.activeEpochEnd = 0;
+        }
     }
 
     /**
@@ -451,19 +468,24 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         $.userLastSettledTime[user] = currentTime;
 
-        // If past period finish, clear user stream and defensively clean up global rate
+        uint256 accumulatorDelta;
+
         if (block.timestamp >= $.userPeriodFinish[user]) {
-            if ($.activeEpochRate >= rate) {
-                $.activeEpochRate -= rate;
-            }
+            // Stream expired — only credit up to the epoch boundary, not beyond.
+            // activeEpochRate was already zeroed by _processGlobalVesting so we
+            // must not subtract from it here (it may belong to a newer epoch).
+            uint256 cappedAccumulator = $.epochEndBorrowerCreditPerRate[$.userPeriodFinish[user]];
+            uint256 paid = $.userBorrowerCreditPerRatePaid[user];
+            accumulatorDelta = cappedAccumulator > paid ? cappedAccumulator - paid : 0;
+            $.userBorrowerCreditPerRatePaid[user] = cappedAccumulator;
             $.userRewardRate[user] = 0;
             $.userPeriodFinish[user] = 0;
+        } else {
+            accumulatorDelta = $.borrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[user];
+            $.userBorrowerCreditPerRatePaid[user] = $.borrowerCreditPerRate;
         }
 
-        // Compute borrower reward using Synthetix-style accumulator for exact proportional split
-        uint256 accumulatorDelta = $.borrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[user];
         uint256 borrowerReward = (rate * accumulatorDelta) / 1e18;
-        $.userBorrowerCreditPerRatePaid[user] = $.borrowerCreditPerRate;
         if (borrowerReward > $.globalBorrowerPending) {
             borrowerReward = $.globalBorrowerPending;
         }
