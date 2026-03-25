@@ -51,7 +51,11 @@ abstract contract LoanStorage is Ownable2StepUpgradeable {
     /// @dev Subtract total weight for the loan contract
     function subTotalWeight(uint256 weights) internal {
         LoanStorageStruct storage $ = _getLoanStorage();
-        $._totalWeights -= weights;
+        if(weights > $._totalWeights) {
+            $._totalWeights = 0;
+        } else {
+            $._totalWeights -= weights;
+        }
         $._totalWeightPerEpoch[ProtocolTimeLibrary.epochStart(block.timestamp)] = $._totalWeights;
     }
 

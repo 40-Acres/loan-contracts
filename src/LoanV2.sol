@@ -1291,6 +1291,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         LoanInfo storage loan = _loanDetails[tokenId];
         require(loan.unpaidFees == 0);
         PortfolioLoanLib.migrateToPortfolio(tokenId, loan.borrower, loan.unpaidFees, getPortfolioFactory(), _ve);
+        subTotalWeight(loan.weight);
         delete _loanDetails[tokenId];
     }
 
