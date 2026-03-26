@@ -101,6 +101,7 @@ library DynamicCollateralManager {
         collateralManagerData.totalLockedCollateral += newLockedCollateral;
         collateralManagerData.originTimestamps[tokenId] = block.timestamp;
 
+        _notifyCollateralAdded(portfolioFactoryConfig, tokenId);
         emit CollateralAdded(tokenId, address(this));
     }
 
@@ -120,6 +121,7 @@ library DynamicCollateralManager {
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
         _updateUndercollateralizedDebt(portfolioFactoryConfig, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
+        _notifyCollateralRemoved(portfolioFactoryConfig, tokenId);
         emit CollateralRemoved(tokenId, address(this));
     }
 
@@ -330,6 +332,14 @@ library DynamicCollateralManager {
         // NOT affect transaction outcomes — the early return above already zeroes
         // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
         // pass/fail is always correct. The stale value only affects the revert message amount.
+    }
+
+    function _notifyCollateralAdded(address portfolioFactoryConfig, uint256 tokenId) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralAdded(address(0), tokenId) {} catch {}
+    }
+
+    function _notifyCollateralRemoved(address portfolioFactoryConfig, uint256 tokenId) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralRemoved(address(0), tokenId) {} catch {}
     }
 
     /**
