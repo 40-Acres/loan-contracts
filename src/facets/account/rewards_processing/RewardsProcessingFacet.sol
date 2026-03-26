@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {CollateralManager} from "../collateral/CollateralManager.sol";
-import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -73,7 +73,7 @@ contract RewardsProcessingFacet is AccessControl {
 
         // 1. Fees first — computed on original rewardsAmount
         uint256 remaining = rewardsAmount;
-        bool hasDebt = ICollateralFacet(address(this)).getTotalDebt() > 0;
+        bool hasDebt = CollateralManager.getTotalDebt() > 0;
         if (hasDebt) {
             remaining -= _payProtocolFee(tokenId, rewardsAmount, asset);
             remaining -= _payLenderPremium(tokenId, rewardsAmount, asset);
@@ -128,7 +128,7 @@ contract RewardsProcessingFacet is AccessControl {
         * If there is no debt, the rewards token is used if set, otherwise the vault asset is used.
      */
     function getRewardsToken() public view returns (address) {
-        uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
+        uint256 totalDebt = CollateralManager.getTotalDebt();
         address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
         require(loanContract != address(0));
         address vaultAsset = _vault.asset();
@@ -450,7 +450,7 @@ contract RewardsProcessingFacet is AccessControl {
     function calculateRoutes(uint256 tokenId, uint256 rewardsAmount, uint256 gasReclamation) external view returns (SwapRoute[4] memory routes) {
         address asset = getRewardsToken();
         address lockedAsset = _collateralToken;
-        bool hasDebt = ICollateralFacet(address(this)).getTotalDebt() > 0;
+        bool hasDebt = CollateralManager.getTotalDebt() > 0;
 
         // 1. Compute fees
         PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
