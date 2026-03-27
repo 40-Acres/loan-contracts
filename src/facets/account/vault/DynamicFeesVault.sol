@@ -559,7 +559,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 total = remaining + amount;
         uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
         uint256 duration = periodFinish - block.timestamp;
-        uint256 newRate = total / duration;
+        uint256 newRate = (total + duration - 1) / duration;
         require(newRate > 0, "Amount too small");
 
         $.userRewardRate[msg.sender] = newRate;
