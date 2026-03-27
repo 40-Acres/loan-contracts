@@ -175,6 +175,24 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         return IERC20(asset()).balanceOf(address(this)) + _getStorage().totalLoanedAssets - epochRewardsLocked();
     }
 
+    // Override ERC4626 view functions to cap at liquid asset balance  
+    function maxWithdraw(address owner) public view override returns (uint256) {  
+        uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));  
+        uint256 maxAssets = super.maxWithdraw(owner);  
+        return liquidAssets < maxAssets ? liquidAssets : maxAssets;  
+    }  
+  
+    function maxRedeem(address owner) public view override returns (uint256) {  
+        uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));  
+        uint256 maxShares = super.maxRedeem(owner);  
+        uint256 maxAssets = convertToAssets(maxShares);  
+        if (maxAssets > liquidAssets) {  
+            return convertToShares(liquidAssets);  
+        }  
+        return maxShares;  
+    }  
+
+
     // ============ Epoch Reward Vesting ============
 
     /**
