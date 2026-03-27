@@ -574,7 +574,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.globalLastUpdateTime = block.timestamp;
         }
 
-        $.totalUnsettledRewards = $.totalUnsettledRewards - remaining + total;
+        // total = remaining + amount, so the net change is +amount.
+        // Avoid evaluating (totalUnsettledRewards - remaining) first because
+        // ceiling-rounded rates can make remaining slightly exceed the tracked
+        // unsettled balance, causing an intermediate underflow.
+        $.totalUnsettledRewards += amount;
 
         // Snapshot accumulator for the new stream rate
         $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;

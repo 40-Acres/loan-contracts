@@ -16,8 +16,8 @@ contract DynamicCollateralFacet is BaseCollateralFacet {
         DynamicCollateralManager.addLockedCollateral(config, tokenId, ve);
     }
 
-    function _removeLockedCollateral(uint256 tokenId, address config) internal override {
-        DynamicCollateralManager.removeLockedCollateral(tokenId, config);
+    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal override {
+        DynamicCollateralManager.removeLockedCollateral(tokenId, config, ve);
     }
 
     function _getTotalLockedCollateral() internal view override returns (uint256) {

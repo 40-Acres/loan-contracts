@@ -151,7 +151,7 @@ contract LocalSetup is Test {
     }
 
     // ── Step 3: Config contracts via ERC1967Proxy ─────────────────────
-    function _deployConfigs() internal {
+    function _deployConfigs() internal virtual {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
 
         PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();

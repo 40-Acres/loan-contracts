@@ -21,8 +21,8 @@ contract DynamicMarketplaceFacet is BaseMarketplaceFacet {
         IDynamicFeesVaultSettlement(lendingPool).settleRewards(address(this));
     }
 
-    function _removeLockedCollateral(uint256 tokenId, address config) internal override {
-        DynamicCollateralManager.removeLockedCollateral(tokenId, config);
+    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal override {
+        DynamicCollateralManager.removeLockedCollateral(tokenId, config, ve);
     }
 
     function _decreaseTotalDebt(address config, uint256 amount) internal override returns (uint256 excess) {

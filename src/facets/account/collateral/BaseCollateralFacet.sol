@@ -34,7 +34,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     // ──────────────────────────────────────────────
 
     function _addLockedCollateral(address config, uint256 tokenId, address ve) internal virtual;
-    function _removeLockedCollateral(uint256 tokenId, address config) internal virtual;
+    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal virtual;
     function _getTotalLockedCollateral() internal view virtual returns (uint256);
     function _getTotalDebt() internal view virtual returns (uint256);
     function _getMaxLoan() internal view virtual returns (uint256, uint256);
@@ -72,7 +72,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
             revert ListingActive(tokenId);
         }
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()));
+        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()), address(_votingEscrow));
         IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), portfolioOwner, tokenId);
     }
 
@@ -95,7 +95,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
             toPortfolio = targetFactory.createAccount(portfolioOwner);
         }
 
-        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()));
+        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()), address(_votingEscrow));
         IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), toPortfolio, tokenId);
     }
 

@@ -99,7 +99,7 @@ contract VotingEscrowFacet is AccessControl, IERC721Receiver {
         require(weightIncrease >= 0, "Negative weight increase");
 
         // Update collateral: remove burned token, refresh survivor
-        CollateralManager.removeLockedCollateral(fromToken, config);
+        CollateralManager.removeLockedCollateral(fromToken, config, address(_votingEscrow));
         CollateralManager.updateLockedCollateral(config, toToken, address(_votingEscrow));
 
         emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);

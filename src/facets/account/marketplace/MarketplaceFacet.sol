@@ -12,8 +12,8 @@ contract MarketplaceFacet is BaseMarketplaceFacet {
     constructor(address portfolioFactory, address votingEscrow, address marketplace)
         BaseMarketplaceFacet(portfolioFactory, votingEscrow, marketplace) {}
 
-    function _removeLockedCollateral(uint256 tokenId, address config) internal override {
-        CollateralManager.removeLockedCollateral(tokenId, config);
+    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal override {
+        CollateralManager.removeLockedCollateral(tokenId, config, ve);
     }
 
     function _decreaseTotalDebt(address config, uint256 amount) internal override returns (uint256 excess) {

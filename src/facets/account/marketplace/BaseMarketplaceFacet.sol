@@ -40,7 +40,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
     // Abstract internal dispatchers
     // ──────────────────────────────────────────────
 
-    function _removeLockedCollateral(uint256 tokenId, address config) internal virtual;
+    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal virtual;
     function _decreaseTotalDebt(address config, uint256 amount) internal virtual returns (uint256 excess);
     function _getRequiredPaymentForCollateralRemoval(address config, uint256 tokenId) internal view virtual returns (uint256);
     function _enforceCollateralRequirements() internal view virtual returns (bool);
@@ -235,7 +235,7 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         }
 
         // Remove collateral from this portfolio
-        _removeLockedCollateral(tokenId, configAddress);
+        _removeLockedCollateral(tokenId, configAddress, address(_votingEscrow));
 
 
         // Enforce collateral requirements on seller after collateral removal

@@ -101,12 +101,12 @@ library DynamicCollateralManager {
         collateralManagerData.totalLockedCollateral += newLockedCollateral;
         collateralManagerData.originTimestamps[tokenId] = block.timestamp;
 
-        _notifyCollateralAdded(portfolioFactoryConfig, tokenId);
+        _notifyCollateralAdded(portfolioFactoryConfig, ve, tokenId);
         emit CollateralAdded(tokenId, address(this));
     }
 
 
-    function removeLockedCollateral(uint256 tokenId, address portfolioFactoryConfig) external {
+    function removeLockedCollateral(uint256 tokenId, address portfolioFactoryConfig, address ve) external {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 previousLockedCollateral = collateralManagerData.lockedCollaterals[tokenId];
         // if the token is not accounted for, return early
@@ -121,7 +121,7 @@ library DynamicCollateralManager {
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
         _updateUndercollateralizedDebt(portfolioFactoryConfig, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
-        _notifyCollateralRemoved(portfolioFactoryConfig, tokenId);
+        _notifyCollateralRemoved(portfolioFactoryConfig, ve, tokenId);
         emit CollateralRemoved(tokenId, address(this));
     }
 
@@ -334,12 +334,12 @@ library DynamicCollateralManager {
         // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
-    function _notifyCollateralAdded(address portfolioFactoryConfig, uint256 tokenId) internal {
-        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralAdded(address(0), tokenId) {} catch {}
+    function _notifyCollateralAdded(address portfolioFactoryConfig, address ve, uint256 tokenId) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralAdded(ve, tokenId) {} catch {}
     }
 
-    function _notifyCollateralRemoved(address portfolioFactoryConfig, uint256 tokenId) internal {
-        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralRemoved(address(0), tokenId) {} catch {}
+    function _notifyCollateralRemoved(address portfolioFactoryConfig, address ve, uint256 tokenId) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralRemoved(ve, tokenId) {} catch {}
     }
 
     /**
