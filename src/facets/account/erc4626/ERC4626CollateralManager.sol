@@ -38,7 +38,10 @@ library ERC4626CollateralManager {
         // Debt tracking
         uint256 debt;
         uint256 overSuppliedVaultDebt;
-        uint256 undercollateralizedDebt;
+        uint256 undercollateralizedDebt; // legacy — kept for storage layout compatibility
+        // Shortfall snapshot for enforcement (replaces stale undercollateralizedDebt)
+        uint64 snapshotBlockNumber;
+        uint192 startShortfall;
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.ERC4626CollateralManager");
@@ -59,6 +62,7 @@ library ERC4626CollateralManager {
     function addCollateral(address portfolioFactoryConfig, address vault, uint256 shares) external {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
         ERC4626CollateralData storage data = _getStorage();
 
         // Ensure the portfolio actually holds the shares being registered
@@ -90,6 +94,7 @@ library ERC4626CollateralManager {
      */
     function removeCollateral(address portfolioFactoryConfig, address vault, uint256 shares) external {
         require(shares > 0, "Shares must be > 0");
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
 
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient collateral shares");
@@ -166,6 +171,7 @@ library ERC4626CollateralManager {
      * @return originationFee The origination fee
      */
     function increaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
         ERC4626CollateralData storage data = _getStorage();
         // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
@@ -198,6 +204,7 @@ library ERC4626CollateralManager {
      * @return excess Any excess amount after fully paying debt
      */
     function decreaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) external returns (uint256 excess) {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
         ERC4626CollateralData storage data = _getStorage();
 
         uint256 totalDebt = data.debt;
@@ -291,19 +298,63 @@ library ERC4626CollateralManager {
 
         return (maxLoan, maxLoanIgnoreSupply);
     }
+    /**
+     * @dev Compute the current shortfall: how much debt exceeds maxLoanIgnoreSupply.
+     * Reads live vault prices, so always reflects actual collateral value.
+     */
+    function _currentShortfall(address portfolioFactoryConfig, address vault) internal view returns (uint256) {
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
+        uint256 debt = getTotalDebt();
+        return debt > maxLoanIgnoreSupply ? debt - maxLoanIgnoreSupply : 0;
+    }
 
     /**
-     * @dev Enforce collateral requirements
+     * @dev Snapshot the shortfall at the start of the first mutating call in this block.
+     * Subsequent calls in the same block (e.g. within a multicall) are no-ops.
      */
-    function enforceCollateralRequirements() external view returns (bool success) {
+    function snapshotShortfall(address portfolioFactoryConfig, address vault) external {
         ERC4626CollateralData storage data = _getStorage();
+        if (data.snapshotBlockNumber != uint64(block.number)) {
+            data.snapshotBlockNumber = uint64(block.number);
+            data.startShortfall = uint192(_currentShortfall(portfolioFactoryConfig, vault));
+        }
+    }
+
+    /**
+     * @dev Enforce collateral requirements using snapshot comparison.
+     * The position's shortfall at the end of the multicall must not exceed
+     * the shortfall at the start. This replaces the stale delta-based
+     * undercollateralizedDebt check.
+     */
+    function enforceCollateralRequirements(address portfolioFactoryConfig, address vault) external view returns (bool) {
+        ERC4626CollateralData storage data = _getStorage();
+
+        // If no snapshot was taken this block, start shortfall is 0
+        // (position was not touched by any mutating operation)
+        uint256 start = (data.snapshotBlockNumber == uint64(block.number))
+            ? uint256(data.startShortfall)
+            : 0;
+
+        uint256 end = _currentShortfall(portfolioFactoryConfig, vault);
+
+        if (end > start) {
+            revert UndercollateralizedDebt(end - start);
+        }
+
+        // Still enforce overSuppliedVaultDebt as a hard invariant
         if (data.overSuppliedVaultDebt > 0) {
             revert BadDebt(data.overSuppliedVaultDebt);
         }
-        if (data.undercollateralizedDebt > 0) {
-            revert UndercollateralizedDebt(data.undercollateralizedDebt);
-        }
+
         return true;
+    }
+
+    function _snapshotIfNeeded(address portfolioFactoryConfig, address vault) internal {
+        ERC4626CollateralData storage data = _getStorage();
+        if (data.snapshotBlockNumber != uint64(block.number)) {
+            data.snapshotBlockNumber = uint64(block.number);
+            data.startShortfall = uint192(_currentShortfall(portfolioFactoryConfig, vault));
+        }
     }
 
     function _updateUndercollateralizedDebt(
@@ -348,6 +399,7 @@ library ERC4626CollateralManager {
      * @param shares The shares to remove (representing yield)
      */
     function removeSharesForYield(address portfolioFactoryConfig, address vault, uint256 shares) external {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient shares");
 

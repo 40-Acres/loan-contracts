@@ -141,6 +141,9 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     }
 
     function enforceCollateralRequirements() external view override returns (bool success) {
-        return ERC4626CollateralManager.enforceCollateralRequirements();
+        return ERC4626CollateralManager.enforceCollateralRequirements(
+            address(_portfolioFactory.portfolioFactoryConfig()),
+            address(_gauge)
+        );
     }
 }

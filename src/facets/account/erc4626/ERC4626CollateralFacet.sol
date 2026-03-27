@@ -100,10 +100,14 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
     }
 
     /**
-     * @dev Enforce collateral requirements
+     * @dev Enforce collateral requirements using live shortfall comparison.
+     * Reverts if the position's shortfall increased during this block's operations.
      */
     function enforceCollateralRequirements() external view override returns (bool success) {
-        return ERC4626CollateralManager.enforceCollateralRequirements();
+        return ERC4626CollateralManager.enforceCollateralRequirements(
+            address(_portfolioFactory.portfolioFactoryConfig()),
+            address(_vault)
+        );
     }
 
     /**
