@@ -108,6 +108,9 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
         return collateralStorage.minimumCollateral;
     }
 
+    function onCollateralAdded(address asset, uint256 id) external virtual {}
+    function onCollateralRemoved(address asset, uint256 id) external virtual {}
+
     function getVault() public view returns (address) {
         return ILoan(getLoanContract())._vault();
     }

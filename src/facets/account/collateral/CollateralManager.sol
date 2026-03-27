@@ -88,7 +88,8 @@ library CollateralManager {
         collateralManagerData.lockedCollaterals[tokenId] = newLockedCollateral;
         collateralManagerData.totalLockedCollateral += newLockedCollateral;
         collateralManagerData.originTimestamps[tokenId] = block.timestamp;
-        
+
+        _notifyCollateralAdded(portfolioFactoryConfig, tokenId);
         emit CollateralAdded(tokenId, address(this));
     }
 
@@ -108,6 +109,7 @@ library CollateralManager {
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
         _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
+        _notifyCollateralRemoved(portfolioFactoryConfig, tokenId);
         emit CollateralRemoved(tokenId, address(this));
     }
 
@@ -341,6 +343,14 @@ library CollateralManager {
         // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
+
+    function _notifyCollateralAdded(address portfolioFactoryConfig, uint256 tokenId) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralAdded(address(0), tokenId) {} catch {}
+    }
+
+    function _notifyCollateralRemoved(address portfolioFactoryConfig, uint256 tokenId) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralRemoved(address(0), tokenId) {} catch {}
+    }
 
     /**
      * @dev Calculate the minimum payment needed to keep account in good standing after removing a specific token's collateral
