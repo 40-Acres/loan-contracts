@@ -14,6 +14,10 @@ import {SwapConfig} from "../../src/facets/account/config/SwapConfig.sol";
 contract PortfolioFactoryConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 
+    function _createConfigImpl() internal virtual returns (PortfolioFactoryConfig) {
+        return new PortfolioFactoryConfig();
+    }
+
     /**
      * @dev Deploys all config contracts atomically to prevent MITM attacks.
      *
@@ -27,7 +31,7 @@ contract PortfolioFactoryConfigDeploy is Script {
     function _deploy(bool mock, address factory) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
         require(factory != address(0), "Factory required");
         // Deploy PortfolioFactoryConfig atomically (impl + proxy with init in constructor)
-        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        PortfolioFactoryConfig configImpl = _createConfigImpl();
         PortfolioFactoryConfig config = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),

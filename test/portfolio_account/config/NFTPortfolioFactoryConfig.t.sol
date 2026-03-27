@@ -1,41 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-/*
- * =========================================================================
- *  Issue Summary
- * =========================================================================
- *
- * BUG (Medium): onCollateralRemoved has a flawed factory-level tracking
- *   invariant when two portfolios hold the same tokenId (should be impossible
- *   with NFTs, but the code does not prevent it). If portfolio A and
- *   portfolio B both add tokenId X (e.g., via re-mint after burn), then
- *   portfolio A removing X will remove it from factoryTokens even though
- *   portfolio B still has it. The factoryTokens set is treated as a global
- *   "any portfolio has this token" tracker, but the remove logic is:
- *
- *       if (data.portfolioTokens[msg.sender].remove(id)) {
- *           data.factoryTokens.remove(id);
- *       }
- *
- *   This unconditionally removes from factoryTokens without checking if
- *   other portfolios still hold the token. For veNFTs this is unlikely in
- *   practice (token IDs are unique per NFT), but it is a correctness issue
- *   in the data structure design. We test this edge case below.
- *
- * OBSERVATION: The first argument to onCollateralAdded/onCollateralRemoved
- *   (the `address` parameter) is always passed as address(0) by
- *   CollateralManager._notifyCollateralAdded. It is ignored in the
- *   override. This is fine but worth noting for future maintainers.
- *
- * OBSERVATION: The hooks are wrapped in try/catch in CollateralManager,
- *   so a revert inside onCollateralAdded/onCollateralRemoved (e.g., from
- *   onlyPortfolio) would be silently swallowed. This means a misconfigured
- *   factory (wrong config address) would silently skip tracking. Tested
- *   separately below.
- *
- * =========================================================================
- */
 
 import {Test, console} from "forge-std/Test.sol";
 
