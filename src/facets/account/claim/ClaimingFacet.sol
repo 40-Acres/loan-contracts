@@ -81,6 +81,10 @@ contract ClaimingFacet is AccessControl {
         return CollateralManager.getTotalDebt();
     }
 
+    function _decreaseTotalDebt(uint256 amount) internal virtual returns (uint256 excess) {
+        return CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
+    }
+
     /*
     @dev Claims launchpad token rewards, swaps to vault token if there is an active loan, and pays treasury/lenders.
      */
@@ -143,7 +147,7 @@ contract ClaimingFacet is AccessControl {
 
             // Pay down borrower debt with remaining proceeds; send excess to owner
             if (borrowerAmount > 0) {
-                uint256 excess = CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), borrowerAmount);
+                uint256 excess = _decreaseTotalDebt(borrowerAmount);
                 if (excess > 0) {
                     IERC20(outputToken).safeTransfer(_portfolioFactory.ownerOf(address(this)), excess);
                 }

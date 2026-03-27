@@ -26,4 +26,8 @@ contract DynamicClaimingFacet is ClaimingFacet {
     function _getTotalDebt() internal override view returns (uint256) {
         return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
     }
+
+    function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
+        return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
+    }
 }
