@@ -73,7 +73,7 @@ contract RewardsProcessingFacet is AccessControl {
 
         // 1. Fees first — computed on original rewardsAmount
         uint256 remaining = rewardsAmount;
-        bool hasDebt = CollateralManager.getTotalDebt() > 0;
+        bool hasDebt = _getTotalDebt() > 0;
         if (hasDebt) {
             remaining -= _payProtocolFee(tokenId, rewardsAmount, asset);
             remaining -= _payLenderPremium(tokenId, rewardsAmount, asset);
@@ -128,7 +128,7 @@ contract RewardsProcessingFacet is AccessControl {
         * If there is no debt, the rewards token is used if set, otherwise the vault asset is used.
      */
     function getRewardsToken() public view returns (address) {
-        uint256 totalDebt = CollateralManager.getTotalDebt();
+        uint256 totalDebt = _getTotalDebt();
         address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
         require(loanContract != address(0));
         address vaultAsset = _vault.asset();
@@ -149,6 +149,10 @@ contract RewardsProcessingFacet is AccessControl {
         emit LoanPaid(_currentEpochStart(), tokenId, availableAmount-excess, _portfolioFactory.ownerOf(address(this)), address(asset));
 
         return excess;
+    }
+
+    function _getTotalDebt() internal view virtual returns (uint256) {
+        return CollateralManager.getTotalDebt();
     }
 
     function _decreaseTotalDebt(uint256 amount) internal virtual returns (uint256 excess) {
@@ -450,7 +454,7 @@ contract RewardsProcessingFacet is AccessControl {
     function calculateRoutes(uint256 tokenId, uint256 rewardsAmount, uint256 gasReclamation) external view returns (SwapRoute[4] memory routes) {
         address asset = getRewardsToken();
         address lockedAsset = _collateralToken;
-        bool hasDebt = CollateralManager.getTotalDebt() > 0;
+        bool hasDebt = _getTotalDebt() > 0;
 
         // 1. Compute fees
         PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();

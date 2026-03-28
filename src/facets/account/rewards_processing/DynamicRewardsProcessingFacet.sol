@@ -17,6 +17,10 @@ contract DynamicRewardsProcessingFacet is VotingEscrowRewardsProcessingFacet {
     constructor(address portfolioFactory, address swapConfig, address votingEscrow, address vault, address collateralToken)
         VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, collateralToken) {}
 
+    function _getTotalDebt() internal view override returns (uint256) {
+        return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
+    }
+
     function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
         return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
     }
