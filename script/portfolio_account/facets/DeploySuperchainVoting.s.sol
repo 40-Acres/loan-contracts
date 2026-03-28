@@ -11,27 +11,24 @@ contract DeploySuperchainVotingFacet is AccountFacetsDeploy {
         address VOTING_CONFIG = vm.envAddress("VOTING_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address VOTER = vm.envAddress("VOTER");
-        address WETH = vm.envAddress("WETH");
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        SuperchainVotingFacet facet = new SuperchainVotingFacet(PORTFOLIO_FACTORY, VOTING_CONFIG, VOTING_ESCROW, VOTER, WETH);
+        SuperchainVotingFacet facet = new SuperchainVotingFacet(PORTFOLIO_FACTORY, VOTING_CONFIG, VOTING_ESCROW, VOTER);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "SuperchainVotingFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory, address votingConfig, address votingEscrow, address voter, address weth) external {
-        SuperchainVotingFacet newFacet = new SuperchainVotingFacet(portfolioFactory, votingConfig, votingEscrow, voter, weth);
+    function deploy(address portfolioFactory, address votingConfig, address votingEscrow, address voter) external {
+        SuperchainVotingFacet newFacet = new SuperchainVotingFacet(portfolioFactory, votingConfig, votingEscrow, voter);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "SuperchainVotingFacet", true);
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = VotingFacet.vote.selector;
         selectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         selectors[2] = VotingFacet.setVotingMode.selector;
         selectors[3] = VotingFacet.isManualVoting.selector;
         selectors[4] = VotingFacet.defaultVote.selector;
-        selectors[5] = SuperchainVotingFacet.isSuperchainPool.selector;
-        selectors[6] = SuperchainVotingFacet.getMinimumWethBalance.selector;
         return selectors;
     }
 }

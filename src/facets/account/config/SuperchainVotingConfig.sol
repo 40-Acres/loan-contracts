@@ -19,7 +19,7 @@ contract SuperchainVotingConfig is VotingConfig {
     struct SuperchainVotingConfigData {
         mapping(address => bool) superchainPools;
         mapping(address => uint256) superchainPoolChainId;
-        uint256 minimumWethBalance;
+        uint256 minimumLockedBalancePerPool;
         EnumerableSet.AddressSet superchainPoolsList;
     }
 
@@ -71,14 +71,14 @@ contract SuperchainVotingConfig is VotingConfig {
         return superchainVotingStorage.superchainPoolsList.at(index);
     }
     
-    function setMinimumWethBalance(uint256 minimumWethBalance) external onlyOwner {
+    function setMinimumLockedBalancePerPool(uint256 minimumLockedBalancePerPool) external onlyOwner {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
-        superchainVotingStorage.minimumWethBalance = minimumWethBalance;
+        superchainVotingStorage.minimumLockedBalancePerPool = minimumLockedBalancePerPool;
     }
 
-    function getMinimumWethBalance() public view returns (uint256) {
+    function getMinimumLockedBalancePerPool() public view returns (uint256) {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
-        return superchainVotingStorage.minimumWethBalance;
+        return superchainVotingStorage.minimumLockedBalancePerPool;
     }
 
     function getSuperchainPoolChainId(address pool) public view returns (uint256) {

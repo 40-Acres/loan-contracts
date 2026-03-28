@@ -46,8 +46,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
     bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
-    address public constant WETH = 0x4200000000000000000000000000000000000006;
-    
+
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
@@ -134,20 +133,18 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
         // Deploy VotingFacet
-        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER, WETH);
-        bytes4[] memory votingSelectors = new bytes4[](7);
+        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
+        bytes4[] memory votingSelectors = new bytes4[](5);
         votingSelectors[0] = SuperchainVotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         votingSelectors[2] = VotingFacet.setVotingMode.selector;
         votingSelectors[3] = VotingFacet.isManualVoting.selector;
         votingSelectors[4] = VotingFacet.defaultVote.selector;
-        votingSelectors[5] = SuperchainVotingFacet.getMinimumWethBalance.selector;
-        votingSelectors[6] = SuperchainVotingFacet.isSuperchainPool.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // Deploy VotingEscrowFacet
         // Get PortfolioFactory from PortfolioManager
-        
+
         VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         bytes4[] memory votingEscrowSelectors = new bytes4[](4);
         votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
@@ -280,8 +277,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
     bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
-    address public constant WETH = 0x4200000000000000000000000000000000000006;
-    
+
     PortfolioManager public _portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
@@ -310,7 +306,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         SwapConfig swapConfig = SwapConfig(0xBFEB3404337798E7151202e2221a731C54721c55);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
-        // votingConfig.setMinimumWethBalance(1);  // Set minimum WETH balance to 0.1 WETH
+        // votingConfig.setMinimumLockedBalancePerPool(1);  // Set minimum locked balance per superchain pool
 
         // swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
         Vault vault = Vault(ILoan(portfolioFactoryConfig.getLoanContract())._vault());
@@ -362,15 +358,13 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
-        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER, WETH);
-        bytes4[] memory votingSelectors = new bytes4[](7);
+        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
+        bytes4[] memory votingSelectors = new bytes4[](5);
         votingSelectors[0] = SuperchainVotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         votingSelectors[2] = VotingFacet.setVotingMode.selector;
         votingSelectors[3] = VotingFacet.isManualVoting.selector;
         votingSelectors[4] = VotingFacet.defaultVote.selector;
-        votingSelectors[5] = SuperchainVotingFacet.getMinimumWethBalance.selector;
-        votingSelectors[6] = SuperchainVotingFacet.isSuperchainPool.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // // // Deploy VotingEscrowFacet
