@@ -10,7 +10,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
-
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 /**
  * @title LendingVault
  * @dev ERC4626 vault that lends directly to portfolio accounts (no Loan intermediary).
@@ -190,7 +190,12 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
             return convertToShares(liquidAssets);  
         }  
         return maxShares;  
+    }
+
+    function _decimalsOffset() internal view override returns (uint8) {  
+        return IERC20Metadata(asset()).decimals();  
     }  
+
 
 
     // ============ Epoch Reward Vesting ============
