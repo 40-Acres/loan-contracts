@@ -761,12 +761,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     // ============ ERC20 Override ============
     function _update(address from, address to, uint256 value) internal virtual override {
         super._update(from, to, value);
-        // Propagate flash loan protection to share transfer recipients
-        if (from != address(0) && to != address(0)) {
+        // Flash loan protection: track the block of the last deposit for each user
+        if (from == address(0) && to != address(0)) {
             DynamicFeesVaultStorage storage $ = _getStorage();
-            if ($.lastDepositBlock[from] >= block.number) {
-                $.lastDepositBlock[to] = block.number;
-            }
+            $.lastDepositBlock[to] = block.number;
         }
     }
 
