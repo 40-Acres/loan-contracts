@@ -13,101 +13,97 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 /**
  * @title AddCollateral
  * @dev Helper script to add collateral via PortfolioManager multicall
- * 
+ *
  * Portfolio is automatically determined from the factory using the owner address (from PRIVATE_KEY).
- * 
+ *
  * Usage:
- * 1. With parameters: forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run(uint256)" <TOKEN_ID> --rpc-url $RPC_URL --broadcast
- * 2. From env vars: TOKEN_ID=1 forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run()" --rpc-url $RPC_URL --broadcast
- * 
- * Example:
- * forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run(uint256)" 1 --rpc-url $BASE_RPC_URL --broadcast
+ * 1. Single token: TOKEN_ID=1 forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run()" --rpc-url $RPC_URL --broadcast
+ * 2. Multiple tokens: TOKEN_IDS="1,2,3" forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "runBatch()" --rpc-url $RPC_URL --broadcast
  */
 contract AddCollateral is Script {
     using stdJson for string;
 
     /**
-     * @dev Add collateral via PortfolioManager multicall
-     * @param tokenId The token ID of the voting escrow NFT to add as collateral
+     * @dev Add multiple tokens as collateral via PortfolioManager multicall
+     * @param tokenIds Array of token IDs to add as collateral
      * @param owner The owner address (for getting portfolio from factory)
      */
     function addCollateral(
-        uint256 tokenId,
+        uint256[] memory tokenIds,
         address owner
     ) internal {
+        require(tokenIds.length > 0, "No token IDs provided");
+
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
-        
+
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = BaseCollateralFacet.addCollateral.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "CollateralFacet.addCollateral not registered in FacetRegistry. Please deploy facets first.");
-        
+
         // Get portfolio address from factory for token approval
         address portfolioAddress = factory.portfolioOf(owner);
         if (portfolioAddress == address(0)) {
-            // Portfolio will be created by multicall, but we need it for approval
-            // We'll create it here to get the address
             portfolioAddress = factory.createAccount(owner);
         }
 
-        // Get VE address from the registered collateral facet (works for any FACTORY_SALT)
+        // Get VE address from the registered collateral facet
         address ve = BaseCollateralFacet(facet).getCollateralToken();
-        // IVotingEscrow(ve).approve(portfolioAddress, tokenId);
 
-        // Use factory address for multicall
-        address[] memory factories = new address[](1);
-        factories[0] = address(factory);
-        
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            selector,
-            tokenId
-        );
-        
+        // Approve and build multicall for all tokens
+        address[] memory factories = new address[](tokenIds.length);
+        bytes[] memory calldatas = new bytes[](tokenIds.length);
+
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            IVotingEscrow(ve).approve(portfolioAddress, tokenIds[i]);
+            factories[i] = address(factory);
+            calldatas[i] = abi.encodeWithSelector(selector, tokenIds[i]);
+        }
+
         portfolioManager.multicall(calldatas, factories);
-        
+
         console.log("Collateral added successfully!");
         console.log("Portfolio Address:", portfolioAddress);
-        console.log("Token ID:", tokenId);
-        
-        // Optionally check the total locked collateral
+        console.log("Tokens added:", tokenIds.length);
+
         uint256 totalCollateral = CollateralFacet(portfolioAddress).getTotalLockedCollateral();
         console.log("Total Locked Collateral:", totalCollateral);
     }
 
     /**
-     * @dev Main run function for forge script execution
-     * @param tokenId The token ID of the voting escrow NFT to add as collateral
-     */
-    function run(
-        uint256 tokenId
-    ) external {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
-        vm.startBroadcast(privateKey);
-        addCollateral(tokenId, owner);
-        vm.stopBroadcast();
-    }
-
-    /**
-     * @dev Alternative run function that reads parameters from environment variables
-     * Usage: PRIVATE_KEY=0x... TOKEN_ID=1 forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run()" --rpc-url $RPC_URL --broadcast
+     * @dev Run with a single token ID from env
+     * Usage: TOKEN_ID=1 PRIVATE_KEY=0x... forge script ... --sig "run()"
      */
     function run() external {
         uint256 tokenId = vm.envUint("TOKEN_ID");
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        
-        // Get owner address from private key
         address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
-        
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = tokenId;
+
         vm.startBroadcast(privateKey);
-        addCollateral(tokenId, owner);
+        addCollateral(tokenIds, owner);
+        vm.stopBroadcast();
+    }
+
+    /**
+     * @dev Run with multiple token IDs from env (comma-separated)
+     * Usage: TOKEN_IDS="1,2,3" PRIVATE_KEY=0x... forge script ... --sig "runBatch()"
+     */
+    function runBatch() external {
+        uint256[] memory tokenIds = vm.envUint("TOKEN_IDS", ",");
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address owner = PortfolioHelperUtils.getAddressFromPrivateKey(vm, privateKey);
+
+        vm.startBroadcast(privateKey);
+        addCollateral(tokenIds, owner);
         vm.stopBroadcast();
     }
 }
 
 // Example usage:
 // TOKEN_ID=109382 forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
-
+// TOKEN_IDS="109382,64196,12345" forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "runBatch()" --rpc-url $BASE_RPC_URL --broadcast

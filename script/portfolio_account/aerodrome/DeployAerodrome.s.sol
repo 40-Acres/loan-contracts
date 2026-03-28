@@ -342,7 +342,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
-        // VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), votingConfig, VOTING_ESCROW, VOTER);
+        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), votingConfig, VOTING_ESCROW, VOTER);
         bytes4[] memory votingSelectors = new bytes4[](8);
         votingSelectors[0] = VotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
@@ -365,7 +365,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), address(portfolioFactoryConfig), VOTING_ESCROW);
+        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](10);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -384,7 +384,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // LoanV2 loanImplementation = new LoanV2();
         // LoanV2(address(portfolioFactoryConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
 
-        // _upgradePortfolioFactoryConfig(portfolioFactoryConfig);
+        _upgradePortfolioFactoryConfig(portfolioFactoryConfig);
 
         // Post-upgrade validation - reverts the entire script if anything is wrong
         // _validateDeployment(portfolioFactoryConfig, address(_portfolioFactory));
