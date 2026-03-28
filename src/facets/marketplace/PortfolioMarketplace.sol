@@ -130,6 +130,7 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
             require(existing.expiresAt > 0 && existing.expiresAt <= block.timestamp, "Listing already exists");
             // Clean up expired listing
             delete listings[tokenId];
+            IMarketplaceFacet(existing.owner).clearExpiredSaleAuthorization(tokenId);
         }
 
         uint256 nonce = nextNonce++;
