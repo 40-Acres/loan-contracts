@@ -475,7 +475,7 @@ contract RewardsProcessingFacet is AccessControl {
         if (hasDebt) {
             if (UserRewardsConfig.hasActiveBalanceDistribution()) {
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
-                uint256 entryAmount = postFeesAmount * entry.percentage / 100;
+                uint256 entryAmount = remaining * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;
                 routes[0] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
             }
@@ -484,7 +484,7 @@ contract RewardsProcessingFacet is AccessControl {
             for (uint8 i = 0; i < count; i++) {
                 if (remaining == 0) break;
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getZeroBalanceDistributionEntry(i);
-                uint256 entryAmount = postFeesAmount * entry.percentage / 100;
+                uint256 entryAmount = remaining * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;
                 routes[i] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
                 remaining -= entryAmount;
