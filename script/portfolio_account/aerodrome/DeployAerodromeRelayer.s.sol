@@ -276,7 +276,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
     function upgradeFacets() internal {
         // Get relayer's factory from PortfolioManager
-        PortfolioManager portfolioManager = PortfolioManager(0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5);
+        PortfolioManager portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome")));
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 

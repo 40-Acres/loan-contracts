@@ -25,7 +25,7 @@ DeployMigrationFacet deployMigrationFacet = new DeployMigrationFacet();
     DeployMarketplaceFacet deployMarketplaceFacet = new DeployMarketplaceFacet();
 
     function deploy(address portfolioFactory, address votingConfig, address votingEscrow, address voter, address rewardsDistributor, address loanConfig, address usdc, address tokenMessenger, address swapConfig, address loanContract, address lendingToken, address vault) external {
-        deployBridgeFacet.deploy(portfolioFactory, usdc, tokenMessenger);
+        deployBridgeFacet.deploy(portfolioFactory, usdc, tokenMessenger, swapConfig);
         deployClaimingFacet.deploy(portfolioFactory, votingEscrow, voter, rewardsDistributor, loanConfig, swapConfig, vault);
         deployCollateralFacet.deploy(portfolioFactory, votingEscrow);
         deployLendingFacet.deploy(portfolioFactory, lendingToken);

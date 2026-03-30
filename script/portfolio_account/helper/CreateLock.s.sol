@@ -8,6 +8,7 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {VotingEscrowFacet} from "../../../src/facets/account/votingEscrow/VotingEscrowFacet.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
@@ -28,16 +29,9 @@ contract CreateLock is Script {
     using stdJson for string;
 
     /**
-     * @dev Get voting escrow address - hardcoded for Aerodrome on Base
-     */
-    function getVotingEscrow() internal pure returns (address) {
-        return 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO on Base
-    }
-
-    /**
      * @dev Create a lock via PortfolioManager multicall
      * @param amount The amount of tokens to lock (in wei)
-     * @param lockDuration The lock duration in seconds
+     * @param lockDuration The lock duration in seconds (unused by facet, kept for interface compat)
      * @param owner The owner address (for token approval)
      * @return tokenId The token ID of the created lock
      */
@@ -47,24 +41,24 @@ contract CreateLock is Script {
         address owner
     ) internal returns (uint256 tokenId) {
         PortfolioManager portfolioManager = PortfolioHelperUtils.loadPortfolioManager(vm);
-        
+
         // Verify the facet is registered
         PortfolioFactory factory = PortfolioHelperUtils.getAerodromeFactory(vm, portfolioManager);
         FacetRegistry facetRegistry = factory.facetRegistry();
         bytes4 selector = VotingEscrowFacet.createLock.selector;
         address facet = facetRegistry.getFacetForSelector(selector);
         require(facet != address(0), "VotingEscrowFacet.createLock not registered in FacetRegistry. Please deploy facets first.");
-        
+
         // Get portfolio address from factory for token approval
         address portfolioAddress = factory.portfolioOf(owner);
         if (portfolioAddress == address(0)) {
-            // Portfolio will be created by multicall, but we need it for approval
-            // We'll create it here to get the address
             portfolioAddress = factory.createAccount(owner);
         }
-        
-        // Get voting escrow and underlying token
-        address votingEscrowAddr = getVotingEscrow();
+
+        // Get voting escrow from the registered collateral facet
+        address collateralFacet = facetRegistry.getFacetForSelector(BaseCollateralFacet.getCollateralToken.selector);
+        require(collateralFacet != address(0), "CollateralFacet not registered");
+        address votingEscrowAddr = BaseCollateralFacet(collateralFacet).getCollateralToken();
         IVotingEscrow votingEscrow = IVotingEscrow(votingEscrowAddr);
         address tokenAddress = votingEscrow.token();
         IERC20 token = IERC20(tokenAddress);

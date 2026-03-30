@@ -62,7 +62,7 @@ contract ClaimingFacet is AccessControl {
         claimRebase(tokenId);
     }
 
-    function claimRebase(uint256 tokenId) public {
+    function claimRebase(uint256 tokenId) public virtual {
         uint256 claimable = _rewardsDistributor.claimable(tokenId);
         if (claimable > 0) {
             try _rewardsDistributor.claim(tokenId) {

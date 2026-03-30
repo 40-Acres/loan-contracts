@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
+import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
@@ -51,14 +52,16 @@ contract BridgeFacetTest is Test {
         
         // Deploy config contracts
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (_portfolioFactoryConfig, _votingConfig, _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory));
-        
+        SwapConfig swapConfig;
+        (_portfolioFactoryConfig, _votingConfig, _loanConfig, swapConfig) = configDeployer.deploy(address(_portfolioFactory));
+
         // Deploy BridgeFacet
         DeployBridgeFacet bridgeDeployer = new DeployBridgeFacet();
         bridgeDeployer.deploy(
             address(_portfolioFactory),
             INK_USDC,
-            TOKEN_MESSENGER
+            TOKEN_MESSENGER,
+            address(swapConfig)
         );
         
         // Get the deployed BridgeFacet address from the registry

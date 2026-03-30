@@ -27,17 +27,17 @@ library PortfolioHelperUtils {
      * @return PortfolioManager instance
      */
     function loadPortfolioManager(Vm vm) internal view returns (PortfolioManager) {
-        address portfolioManagerAddr;
-        
-        // Try to read from addresses.json
-        try vm.readFile(string.concat(vm.projectRoot(), "/addresses/addresses.json")) returns (string memory addressesJson) {
-            portfolioManagerAddr = addressesJson.readAddress(".portfoliomanager");
-        } catch {
-            // Fall back to environment variable
-            portfolioManagerAddr = vm.envAddress("PORTFOLIO_MANAGER");
+        // Env var takes priority over addresses.json
+        address portfolioManagerAddr = vm.envOr("PORTFOLIO_MANAGER", address(0));
+
+        if (portfolioManagerAddr == address(0)) {
+            // Fall back to addresses.json
+            try vm.readFile(string.concat(vm.projectRoot(), "/addresses/addresses.json")) returns (string memory addressesJson) {
+                portfolioManagerAddr = addressesJson.readAddress(".portfoliomanager");
+            } catch {}
         }
-        
-        require(portfolioManagerAddr != address(0), "PortfolioManager address not found. Set PORTFOLIO_MANAGER env var or allow file access with --fs addresses");
+
+        require(portfolioManagerAddr != address(0), "PortfolioManager address not found. Set PORTFOLIO_MANAGER env var or add to addresses/addresses.json");
         return PortfolioManager(portfolioManagerAddr);
     }
 
