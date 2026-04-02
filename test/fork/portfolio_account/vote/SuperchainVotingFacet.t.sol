@@ -210,7 +210,7 @@ contract SuperchainVotingFacetTest is Test, Setup {
         // Mark the pool as a superchain pool
         vm.startPrank(_owner);
         _superchainVotingConfig.setApprovedPool(pools[0], true);
-        _superchainVotingConfig.setSuperchainPool(pools[0], true, 57073);
+        _superchainVotingConfig.setSuperchainPool(pools[0], true);
 
         // Get the veNFT's locked balance
         int128 lockedAmount = _ve.locked(_tokenId).amount;
@@ -296,7 +296,7 @@ contract SuperchainVotingFacetTest is Test, Setup {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         portfolioFactoryConfig.setLoanContract(loanContract);
 
-        superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true, 57073);
+        superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true);
 
         uint256 tokenId = 5005;
 

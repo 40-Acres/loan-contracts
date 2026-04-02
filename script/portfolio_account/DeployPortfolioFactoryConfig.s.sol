@@ -13,6 +13,8 @@ import {SwapConfig} from "../../src/facets/account/config/SwapConfig.sol";
 
 contract PortfolioFactoryConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
+    address public constant MULTISIG_ADDRESS = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
+    address public constant PORTFOLIO_MANAGER_ADDRESS = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
 
     function _createConfigImpl() internal virtual returns (PortfolioFactoryConfig) {
         return new PortfolioFactoryConfig();
@@ -76,6 +78,31 @@ contract PortfolioFactoryConfigDeploy is Script {
             vm.stopPrank();
         }
         return (config, votingConfig, loanConfig, swapConfig);
+    }
+
+    /**
+     * @dev Helper function to register or replace a facet in the FacetRegistry.
+     * Loops through all selectors to find an existing facet, handling cases where
+     * new selectors are added during upgrades.
+     */
+    function _registerFacet(
+        FacetRegistry facetRegistry,
+        address facetAddress,
+        bytes4[] memory selectors,
+        string memory name
+    ) internal {
+        address oldFacet;
+        for (uint256 i = 0; i < selectors.length; i++) {
+            address existingFacet = facetRegistry.getFacetForSelector(selectors[i]);
+            if (existingFacet != address(0)) {
+                oldFacet = existingFacet;
+            }
+        }
+        if (oldFacet == address(0)) {
+            facetRegistry.registerFacet(facetAddress, selectors, name);
+        } else {
+            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
+        }
     }
 }
 

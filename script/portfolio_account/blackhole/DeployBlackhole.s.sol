@@ -167,22 +167,6 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
-    /**
-     * @dev Helper function to register or replace a facet in the FacetRegistry
-     */
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 // How 

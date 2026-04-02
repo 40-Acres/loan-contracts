@@ -18,7 +18,6 @@ contract SuperchainVotingConfig is VotingConfig {
 
     struct SuperchainVotingConfigData {
         mapping(address => bool) superchainPools;
-        mapping(address => uint256) superchainPoolChainId;
         uint256 minimumLockedBalancePerPool;
         EnumerableSet.AddressSet superchainPoolsList;
     }
@@ -39,10 +38,9 @@ contract SuperchainVotingConfig is VotingConfig {
     /**
      * @dev Set superchain pool
      */
-    function setSuperchainPool(address pool, bool approved, uint256 chainId) external onlyOwner {
+    function setSuperchainPool(address pool, bool approved) external onlyOwner {
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.superchainPools[pool] = approved;
-        superchainVotingStorage.superchainPoolChainId[pool] = chainId;
         if(approved) {
             superchainVotingStorage.superchainPoolsList.add(pool);
         } else {
@@ -81,8 +79,4 @@ contract SuperchainVotingConfig is VotingConfig {
         return superchainVotingStorage.minimumLockedBalancePerPool;
     }
 
-    function getSuperchainPoolChainId(address pool) public view returns (uint256) {
-        SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
-        return superchainVotingStorage.superchainPoolChainId[pool];
-    }
 }

@@ -6,6 +6,7 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {VotingFacet} from "./VotingFacet.sol";
 import {SuperchainVotingConfig} from "../config/SuperchainVotingConfig.sol";
 import {IRootVotingRewardsFactory} from "../../../interfaces/IRootVotingRewardsFactory.sol";
+import {IRootPool} from "../../../interfaces/IRootPool.sol";
 
 /**
  * @title SuperchainVotingFacet
@@ -14,8 +15,7 @@ import {IRootVotingRewardsFactory} from "../../../interfaces/IRootVotingRewardsF
  *      ensuring the token generates enough rewards to cover cross-chain claim costs.
  */
 contract SuperchainVotingFacet is VotingFacet {
-    address public immutable ROOT_VOTING_REWARDS_FACTORY = address(0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F);
-
+    address public constant ROOT_VOTING_REWARDS_FACTORY = 0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F;
     SuperchainVotingConfig public immutable _superchainVotingConfig;
 
     error InsufficientLockedBalance();
@@ -31,7 +31,7 @@ contract SuperchainVotingFacet is VotingFacet {
         for(uint256 i = 0; i < pools.length; i++) {
             if(_superchainVotingConfig.isSuperchainPool(pools[i])) {
                 superchainPoolCount++;
-                uint256 chainId = _superchainVotingConfig.getSuperchainPoolChainId(pools[i]);
+                uint256 chainId = IRootPool(pools[i]).chainid();
                 address recipient = IRootVotingRewardsFactory(ROOT_VOTING_REWARDS_FACTORY).recipient(address(this), chainId);
                 if(recipient != address(this)) {
                     IRootVotingRewardsFactory(ROOT_VOTING_REWARDS_FACTORY).setRecipient(chainId, address(this));

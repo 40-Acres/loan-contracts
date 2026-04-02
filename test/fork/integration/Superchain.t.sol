@@ -113,7 +113,7 @@ contract SuperchainTest is Test, Setup {
         address authorizedCaller = address(0xaaaaa);
         _pm.setAuthorizedCaller(authorizedCaller, true);
 
-        superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true, 57073);
+        superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true);
 
         uint256 tokenId = 5005;
 

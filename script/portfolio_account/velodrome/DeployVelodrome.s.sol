@@ -37,6 +37,7 @@ import {ILoan} from "../../../src/interfaces/ILoan.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {SuperchainVotingFacet} from "../../../src/facets/account/vote/SuperchainVoting.sol";
 import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
+import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/SuperchainClaimingFacet.sol";
 import {console} from "forge-std/console.sol";
 
 contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
@@ -201,29 +202,12 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
-    /**
-     * @dev Helper function to register or replace a facet in the FacetRegistry
-     * Since we're at script level during broadcast, calls will be from deployer
-     */
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 contract VelodromeLeafDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x2D270e6886d130D724215A266106e6832161EAEd; // INK USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
-    bytes32 public constant SALT = keccak256(abi.encodePacked("velodrome-usdc"));
+    bytes32 public constant SALT = bytes32(uint256(0x4040ac2e));
     
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
@@ -234,31 +218,32 @@ contract VelodromeLeafDeploy is PortfolioFactoryConfigDeploy {
         vm.stopBroadcast();
     }
 
-    // only deploy the swap and bridge facets
+    // Register extra selectors on existing BridgeFacet
     function _deploy() internal {
-        _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
-        
-        // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
-        _portfolioFactory = portfolioFactory;
-        
-        // Deploy only swap and bridge facets directly (no contract instances)
-        // This allows calls to be broadcast from deployer account
-        
-        // Deploy BridgeFacet
-        BridgeFacet bridgeFacet = new BridgeFacet(address(portfolioFactory), USDC, TOKEN_MESSENGER, 2, address(swapConfig));
-        bytes4[] memory bridgeSelectors = new bytes4[](2);
-        bridgeSelectors[0] = BridgeFacet.bridge.selector;
-        bridgeSelectors[1] = BridgeFacet.swapAndBridge.selector;
-        // Check if facet already exists
-        address oldBridgeFacet = facetRegistry.getFacetForSelector(bridgeSelectors[0]);
-        if (oldBridgeFacet == address(0)) {
-            facetRegistry.registerFacet(address(bridgeFacet), bridgeSelectors, "BridgeFacet");
-        } else {
-            facetRegistry.replaceFacet(oldBridgeFacet, address(bridgeFacet), bridgeSelectors, "BridgeFacet");
-        }
-        
+        _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
+        address portfolioFactory = _portfolioManager.factoryBySalt(keccak256(abi.encodePacked("velodrome-usdc")));
+        FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
+        // _portfolioFactory = PortfolioFactory(portfolioFactory);
+
+        // // Get existing BridgeFacet address from registry
+        address existingBridgeFacet = facetRegistry.getFacetForSelector(BridgeFacet.bridge.selector);
+        // require(existingBridgeFacet != address(0), "BridgeFacet not found");
+
+        // // Remove then re-register with expanded selectors (same facet address)
+        // facetRegistry.removeFacet(existingBridgeFacet);
+
+        // bytes4[] memory bridgeSelectors = new bytes4[](6);
+        // bridgeSelectors[0] = BridgeFacet.bridge.selector;
+        // bridgeSelectors[1] = BridgeFacet.swapAndBridge.selector;
+        // bridgeSelectors[2] = bytes4(keccak256("_token()"));
+        // bridgeSelectors[3] = bytes4(keccak256("_tokenMessenger()"));
+        // bridgeSelectors[4] = bytes4(keccak256("_destinationDomain()"));
+        // bridgeSelectors[5] = bytes4(keccak256("_swapConfig()"));
+        // facetRegistry.registerFacet(existingBridgeFacet, bridgeSelectors, "BridgeFacet");
+
+        // Approve swap target on the SwapConfig used by BridgeFacet
+        SwapConfig swapConfig = BridgeFacet(existingBridgeFacet)._swapConfig();
+        swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
     }
 }
 
@@ -284,25 +269,14 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
     function upgradeFacets() internal {
         PortfolioManager portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
-        
 
-        // Deploy VotingConfig atomically
-        SuperchainVotingConfig votingConfig = SuperchainVotingConfig(0x20F0C0c7a861ADA21FD465563Afb7529dfB41Bc7);
-        console.log("Superchain VotingConfig deployed at:", address(votingConfig));
-
-        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(0x5c7B76E545af04dcFBACAC979c31fAE454fAa680);
-        // portfolioFactoryConfig.setVoteConfig(address(votingConfig));
-        address portfolioFactory = address(0x2B2Ad15724924A52cc7C4Db47d54Ab4754ccACA8);
+        address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("velodrome-usdc")));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        // votingConfig.setSuperchainPool(0x9f99185d476aA3632dFdB69faE43007E92B7ef7d, true, 57073);
-        VotingConfig _votingConfig = VotingConfig(votingConfig);
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
+        SuperchainVotingConfig votingConfig = SuperchainVotingConfig(portfolioFactoryConfig.getVoteConfig());
         address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
-        SwapConfig swapConfig = SwapConfig(0xBFEB3404337798E7151202e2221a731C54721c55);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
-        // votingConfig.setMinimumLockedBalancePerPool(1);  // Set minimum locked balance per superchain pool
-
-        // swapConfig.setApprovedSwapTarget(0x0000000000001fF3684f28c67538d4D072C22734, true);
         Vault vault = Vault(ILoan(portfolioFactoryConfig.getLoanContract())._vault());
 
 
@@ -352,14 +326,20 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
-        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
-        bytes4[] memory votingSelectors = new bytes4[](5);
-        votingSelectors[0] = SuperchainVotingFacet.vote.selector;
-        votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
-        votingSelectors[2] = VotingFacet.setVotingMode.selector;
-        votingSelectors[3] = VotingFacet.isManualVoting.selector;
-        votingSelectors[4] = VotingFacet.defaultVote.selector;
-        _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
+        // SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingSelectors = new bytes4[](5);
+        // votingSelectors[0] = SuperchainVotingFacet.vote.selector;
+        // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
+        // votingSelectors[2] = VotingFacet.setVotingMode.selector;
+        // votingSelectors[3] = VotingFacet.isManualVoting.selector;
+        // votingSelectors[4] = VotingFacet.defaultVote.selector;
+        // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
+
+        // Deploy SuperchainClaimingFacet
+        SuperchainClaimingFacet superchainClaimingFacet = new SuperchainClaimingFacet();
+        bytes4[] memory superchainClaimingSelectors = new bytes4[](1);
+        superchainClaimingSelectors[0] = SuperchainClaimingFacet.claimSuperchainRewards.selector;
+        _registerFacet(facetRegistry, address(superchainClaimingFacet), superchainClaimingSelectors, "SuperchainClaimingFacet");
 
         // // // Deploy VotingEscrowFacet
         // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
@@ -387,31 +367,15 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // Loan loanImplementation = new Loan();
         // Loan(address(portfolioFactoryConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
     }
-    
-    /**
-     * @dev Helper function to register or replace a facet in the FacetRegistry
-     * Since we're at script level during broadcast, calls will be from deployer
-     */
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet;
-        for(uint256 i = 0; i < selectors.length; i++) {
-            address existingFacet = facetRegistry.getFacetForSelector(selectors[i]);
-            if (existingFacet != address(0)) {
-                oldFacet = existingFacet;
-            }
-        }
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeRootDeploy --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeLeafDeploy --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeRootUpgrade --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
+
+
+// forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeLeafDeploy \
+//     --chain-id 57073 \
+//     --rpc-url $INK_RPC_URL \
+//     --broadcast \
+//     --verify \
+//     --via-ir

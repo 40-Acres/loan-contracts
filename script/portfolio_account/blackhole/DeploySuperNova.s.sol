@@ -165,19 +165,6 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 // forge script script/portfolio_account/blackhole/DeploySuperNova.s.sol:SuperNovaRootDeploy --chain-id 1 --rpc-url $ETH_RPC_URL --broadcast --verify --via-ir

@@ -104,27 +104,13 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         lendingSelectors[1] = ERC4626LendingFacet.pay.selector;
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "ERC4626LendingFacet");
     }
-
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 /**
  * @title YieldBasisLpUpgrade
  * @dev Upgrades LP facets for an existing YieldBasis LP deployment
  */
-contract YieldBasisLpUpgrade is Script {
+contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
     // TODO: Fill in after initial deployment
     address public constant PORTFOLIO_FACTORY = address(0);
     address public constant PORTFOLIO_ACCOUNT_CONFIG = address(0);
@@ -169,20 +155,6 @@ contract YieldBasisLpUpgrade is Script {
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "ERC4626LendingFacet");
 
         vm.stopBroadcast();
-    }
-
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
     }
 }
 

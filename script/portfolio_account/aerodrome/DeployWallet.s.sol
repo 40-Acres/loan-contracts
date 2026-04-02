@@ -58,7 +58,7 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
         walletSelectors[3] = WalletFacet.swap.selector;
         walletSelectors[4] = WalletFacet.onERC721Received.selector;
         walletSelectors[5] = WalletFacet.enforceCollateralRequirements.selector;
-        _registerFacet(facetRegistry, address(walletFacet), walletSelectors, "WalletFacet");
+        // _registerFacet(facetRegistry, address(walletFacet), walletSelectors, "WalletFacet");
 
         // Deploy MarketplaceFacet (seller-side: makeListing, cancelListing, receiveSaleProceeds)
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, MARKETPLACE);
@@ -71,43 +71,30 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
-        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy FortyAcresMarketplaceFacet (buyer-side: buy from other 40 Acres portfolios)
         FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, MARKETPLACE);
         bytes4[] memory fortyAcresSelectors = new bytes4[](1);
         fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
-        _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
+        // _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
 
         // Deploy OpenXFacet
         OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory openXSelectors = new bytes4[](1);
         openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
-        _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
+        // _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // Deploy VexyFacet
         VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory vexySelectors = new bytes4[](1);
         vexySelectors[0] = VexyFacet.buyVexyListing.selector;
-        _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
+        // _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
     }
 
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
-contract WalletUpgrade is Script {
+contract WalletUpgrade is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
     address public constant MARKETPLACE = 0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8;
@@ -172,19 +159,6 @@ contract WalletUpgrade is Script {
         vm.stopBroadcast();
     }
 
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 // forge script script/portfolio_account/aerodrome/DeployWallet.s.sol:WalletDeploy --sig "run()" --rpc-url $BASE_RPC_URL --broadcast

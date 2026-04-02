@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Script} from "forge-std/Script.sol";
+import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
@@ -33,9 +34,8 @@ import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/Base
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 
-contract AerodromeDynamicFeesRootDeploy is Script {
+contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
     // Existing deployed addresses
-    address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     address public constant EXISTING_PORTFOLIO_FACTORY = 0xfeEB5C58786617230095a008164b096e3205EAF2;
     address public constant SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
 
@@ -210,23 +210,6 @@ contract AerodromeDynamicFeesRootDeploy is Script {
         _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
-    /**
-     * @dev Helper function to register or replace a facet in the FacetRegistry
-     * Since we're at script level during broadcast, calls will be from deployer
-     */
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 // forge script script/portfolio_account/aerodrome/DeployAerodromeDynamicFees.s.sol:AerodromeDynamicFeesRootDeploy --chain-id 8453 --rpc-url $BASE_RPC_URL --broadcast --verify --via-ir
@@ -235,8 +218,7 @@ interface IFactoryWithConfig {
     function portfolioFactoryConfig() external view returns (PortfolioFactoryConfig);
 }
 
-contract AerodromeDynamicFeesRootUpgrade is Script {
-    address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
+contract AerodromeDynamicFeesRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
     bytes32 public constant FACTORY_SALT = keccak256(abi.encodePacked("aerodrome-usdc-dynamic-fees"));
 
@@ -405,22 +387,6 @@ contract AerodromeDynamicFeesRootUpgrade is Script {
         DynamicFeesVault(vaultProxy).upgradeToAndCall(address(newImplementation), new bytes(0));
     }
 
-    /**
-     * @dev Helper function to register or replace a facet in the FacetRegistry
-     */
-    function _registerFacet(
-        FacetRegistry facetRegistry,
-        address facetAddress,
-        bytes4[] memory selectors,
-        string memory name
-    ) internal {
-        address oldFacet = facetRegistry.getFacetForSelector(selectors[0]);
-        if (oldFacet == address(0)) {
-            facetRegistry.registerFacet(facetAddress, selectors, name);
-        } else {
-            facetRegistry.replaceFacet(oldFacet, facetAddress, selectors, name);
-        }
-    }
 }
 
 // forge script script/portfolio_account/aerodrome/DeployAerodromeDynamicFees.s.sol:AerodromeDynamicFeesRootUpgrade --chain-id 8453 --rpc-url $BASE_RPC_URL --broadcast --verify --via-ir
