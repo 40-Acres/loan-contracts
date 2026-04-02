@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
 import {PortfolioFactory} from "../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../src/facets/account/config/PortfolioFactoryConfig.sol";
@@ -15,6 +16,9 @@ contract PortfolioFactoryConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     address public constant MULTISIG_ADDRESS = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
     address public constant PORTFOLIO_MANAGER_ADDRESS = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
+    address public constant AERO_VOTING_CONFIG =0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C;
+    address public constant SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
+    bytes32 public constant SALT = bytes32(uint256(0x0000000000000000000000000000000000000000000000000e000005c6c57005));
 
     function _createConfigImpl() internal virtual returns (PortfolioFactoryConfig) {
         return new PortfolioFactoryConfig();
@@ -37,7 +41,7 @@ contract PortfolioFactoryConfigDeploy is Script {
         PortfolioFactoryConfig config = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER_ADDRESS, factory))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (MULTISIG_ADDRESS, factory))
             ))
         );
 
@@ -46,7 +50,7 @@ contract PortfolioFactoryConfigDeploy is Script {
         VotingConfig votingConfig = VotingConfig(
             address(new ERC1967Proxy(
                 address(votingConfigImpl),
-                abi.encodeCall(VotingConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(VotingConfig.initialize, (MULTISIG_ADDRESS))
             ))
         );
 
@@ -55,7 +59,7 @@ contract PortfolioFactoryConfigDeploy is Script {
         LoanConfig loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(LoanConfig.initialize, (MULTISIG_ADDRESS))
             ))
         );
 
@@ -64,13 +68,13 @@ contract PortfolioFactoryConfigDeploy is Script {
         SwapConfig swapConfig = SwapConfig(
             address(new ERC1967Proxy(
                 address(swapConfigImpl),
-                abi.encodeCall(SwapConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(SwapConfig.initialize, (MULTISIG_ADDRESS))
             ))
         );
 
         // Link configs together (owner-only operations, safe after atomic init)
         if(mock) {
-            vm.startPrank(DEPLOYER_ADDRESS);
+            vm.startPrank(MULTISIG_ADDRESS);
         }
         config.setVoteConfig(address(votingConfig));
         config.setLoanConfig(address(loanConfig));
@@ -98,6 +102,36 @@ contract PortfolioFactoryConfigDeploy is Script {
                 oldFacet = existingFacet;
             }
         }
+
+        // If broadcaster is not the registry owner, output Safe tx data instead
+        address owner = facetRegistry.owner();
+        if (owner != msg.sender) {
+            console.log("=== Safe Transaction Data ===");
+            console.log("To (FacetRegistry):", address(facetRegistry));
+            if (oldFacet == address(0)) {
+                console.log("Function: registerFacet(address,bytes4[],string)");
+                console.log("Calldata:");
+                console.logBytes(abi.encodeWithSelector(
+                    FacetRegistry.registerFacet.selector, facetAddress, selectors, name
+                ));
+            } else {
+                console.log("Function: replaceFacet(address,address,bytes4[],string)");
+                console.log("Old Facet:", oldFacet);
+                console.log("Calldata:");
+                console.logBytes(abi.encodeWithSelector(
+                    FacetRegistry.replaceFacet.selector, oldFacet, facetAddress, selectors, name
+                ));
+            }
+            console.log("New Facet:", facetAddress);
+            console.log("Facet Name:", name);
+            console.log("Selectors:");
+            for (uint256 i = 0; i < selectors.length; i++) {
+                console.logBytes4(selectors[i]);
+            }
+            console.log("=============================");
+            return;
+        }
+
         if (oldFacet == address(0)) {
             facetRegistry.registerFacet(facetAddress, selectors, name);
         } else {

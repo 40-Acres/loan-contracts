@@ -45,13 +45,50 @@ contract AccountFacetsDeploy is Script {
     ) internal {
         PortfolioFactory factory = PortfolioFactory(portfolioFactory);
         FacetRegistry registry = factory.facetRegistry();
-        
+
         // Get the owner of the FacetRegistry
         address owner = IOwnable(address(registry)).owner();
-        
+
         // Check if facet already exists
         address oldFacet = registry.getFacetForSelector(selectors[0]);
-        
+
+        // If not impersonating and owner is not msg.sender (multisig), output Safe tx data
+        if (!impersonate && owner != msg.sender) {
+            console.log("=== Safe Transaction Data ===");
+            console.log("To (FacetRegistry):", address(registry));
+            if (oldFacet == address(0)) {
+                console.log("Function: registerFacet(address,bytes4[],string)");
+                bytes memory callData = abi.encodeWithSelector(
+                    FacetRegistry.registerFacet.selector,
+                    facetAddress,
+                    selectors,
+                    name
+                );
+                console.log("Calldata:");
+                console.logBytes(callData);
+            } else {
+                console.log("Function: replaceFacet(address,address,bytes4[],string)");
+                console.log("Old Facet:", oldFacet);
+                bytes memory callData = abi.encodeWithSelector(
+                    FacetRegistry.replaceFacet.selector,
+                    oldFacet,
+                    facetAddress,
+                    selectors,
+                    name
+                );
+                console.log("Calldata:");
+                console.logBytes(callData);
+            }
+            console.log("New Facet:", facetAddress);
+            console.log("Facet Name:", name);
+            console.log("Selectors:");
+            for (uint256 i = 0; i < selectors.length; i++) {
+                console.logBytes4(selectors[i]);
+            }
+            console.log("=============================");
+            return;
+        }
+
         // Impersonate the owner to register/replace the facet
         if (impersonate) {
             vm.startPrank(owner);

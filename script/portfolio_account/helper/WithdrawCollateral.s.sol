@@ -105,5 +105,5 @@ contract WithdrawCollateral is Script {
 }
 
 // Example usage:
-// TOKEN_ID=109382 forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
+// FACTORY_SALT=aerodrome TOKEN_ID=116738 forge script script/portfolio_account/helper/WithdrawCollateral.s.sol:WithdrawCollateral --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
 

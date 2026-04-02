@@ -42,7 +42,6 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4; // Aerodrome veAERO
     address public constant VOTER = 0x16613524e02ad97eDfeF371bC883F2F5d6C480A5; // Aerodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x227f65131A261548b057215bB1D5Ab2997964C7d; // Aerodrome RewardsDistributor
-    bytes32 public constant SALT = bytes32(uint256(0x0000000000000000000000000000000000000000000000000e000005c6c57005));
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
@@ -369,7 +368,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // LoanV2 loanImplementation = new LoanV2();
         // // LoanV2(address(portfolioFactoryConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
 
-        // _upgradePortfolioFactoryConfig(portfolioFactoryConfig);
+        _upgradePortfolioFactoryConfig(portfolioFactoryConfig);
 
         // Post-upgrade validation - reverts the entire script if anything is wrong
         // _validateDeployment(portfolioFactoryConfig, address(_portfolioFactory));
