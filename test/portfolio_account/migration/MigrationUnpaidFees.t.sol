@@ -177,8 +177,9 @@ contract MigrationUnpaidFeesTest is LocalSetup {
     function test_migrateByNonBorrower_reverts() public {
         _createLoanForUser(migrationTokenId);
 
-        // A random address tries to migrate - should revert because borrower != msg.sender
-        // (enforced in PortfolioLoanLib.migrateToPortfolio: require(borrower == msg.sender))
+        // A random address tries to migrate - should revert because msg.sender is
+        // neither owner() nor loan.borrower (enforced by the access control require
+        // in LoanV2.migrateToPortfolio)
         address attacker = address(0xBAD);
         vm.prank(attacker);
         vm.expectRevert();
@@ -186,7 +187,44 @@ contract MigrationUnpaidFeesTest is LocalSetup {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // Test 5: Fuzz - any non-zero unpaidFees blocks migration
+    // Test 5: Contract owner can call migrateToPortfolio on behalf of borrower
+    // ══════════════════════════════════════════════════════════════════════
+
+    function test_migrateByOwner_succeeds() public {
+        // Create a loan owned by _user
+        _createLoanForUser(migrationTokenId2);
+
+        // Verify the loan belongs to _user, not the owner
+        (, address borrower) = LoanV2(_loanContract).getLoanDetails(migrationTokenId2);
+        assertEq(borrower, _user, "borrower should be _user");
+
+        // Verify that the caller (_owner) is NOT the borrower
+        address contractOwner = LoanV2(_loanContract).owner();
+        assertEq(contractOwner, _owner, "contract owner should be FORTY_ACRES_DEPLOYER");
+        assertTrue(contractOwner != _user, "owner and borrower must be different for this test");
+
+        // Verify the veNFT is currently held by the loan contract
+        assertEq(_mockVe.ownerOf(migrationTokenId2), _loanContract, "veNFT should be in loan contract");
+
+        // Owner migrates on behalf of borrower - should succeed
+        vm.prank(_owner);
+        LoanV2(_loanContract).migrateToPortfolio(migrationTokenId2);
+
+        // veNFT should be in the borrower's portfolio account
+        assertEq(
+            _mockVe.ownerOf(migrationTokenId2),
+            _portfolioAccount,
+            "veNFT should be transferred to borrower's portfolio account"
+        );
+
+        // Loan details should be deleted
+        (uint256 balance, address borrowerAfter) = LoanV2(_loanContract).getLoanDetails(migrationTokenId2);
+        assertEq(borrowerAfter, address(0), "borrower should be zero after loan deletion");
+        assertEq(balance, 0, "balance should be zero after loan deletion");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Test 6: Fuzz - any non-zero unpaidFees blocks migration
     // ══════════════════════════════════════════════════════════════════════
 
     function testFuzz_migrateWithNonZeroUnpaidFees_reverts(uint256 fees) public {

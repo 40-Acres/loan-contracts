@@ -21,7 +21,7 @@ library PortfolioLoanLib {
     /**
      * @notice Migrates a loan to be controlled by the user's portfolio account.
      * @param tokenId The ID of the loan to migrate.
-     * @param borrower The borrower address (must equal msg.sender).
+     * @param borrower The borrower address.
      * @param unpaidFees The unpaid fees on the loan.
      * @param factory The portfolio factory address.
      * @param ve The voting escrow contract.
@@ -33,12 +33,11 @@ library PortfolioLoanLib {
         address factory,
         IVotingEscrow ve
     ) external {
-        require(borrower == msg.sender);
         require(factory != address(0));
 
-        address portfolio = IPortfolioFactory(factory).portfolioOf(msg.sender);
+        address portfolio = IPortfolioFactory(factory).portfolioOf(borrower);
         if (portfolio == address(0)) {
-            portfolio = IPortfolioFactory(factory).createAccount(msg.sender);
+            portfolio = IPortfolioFactory(factory).createAccount(borrower);
         }
 
         ve.approve(portfolio, tokenId);

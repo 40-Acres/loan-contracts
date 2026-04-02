@@ -1294,6 +1294,7 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
 
     function migrateToPortfolio(uint256 tokenId) external {
         LoanInfo storage loan = _loanDetails[tokenId];
+        require(msg.sender == owner() || msg.sender == loan.borrower);
         require(loan.unpaidFees == 0);
         PortfolioLoanLib.migrateToPortfolio(tokenId, loan.borrower, loan.unpaidFees, getPortfolioFactory(), _ve);
         subTotalWeight(loan.weight);
