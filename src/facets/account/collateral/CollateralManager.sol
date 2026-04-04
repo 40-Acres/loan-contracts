@@ -307,7 +307,7 @@ library CollateralManager {
     function _updateUndercollateralizedDebt(uint256 previousMaxLoanIgnoreSupply, uint256 newMaxLoanIgnoreSupply) internal {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         uint256 totalDebt = collateralManagerData.debt;
-        
+
         bool isRemovingCollateral = previousMaxLoanIgnoreSupply > newMaxLoanIgnoreSupply;
 
         // If debt is now fully covered, set undercollateralized debt to 0
@@ -315,7 +315,14 @@ library CollateralManager {
             collateralManagerData.undercollateralizedDebt = 0;
             return;
         }
-        
+
+        // When prev == new (no delta), the incremental logic would be a no-op,
+        // but debt > maxLoan means we're undercollateralized. Set the full shortfall.
+        if(previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply) {
+            collateralManagerData.undercollateralizedDebt = totalDebt - newMaxLoanIgnoreSupply;
+            return;
+        }
+
         // Calculate the change in undercollateralized debt
         // The difference is simply the change in maxLoanIgnoreSupply:
         // - When removing collateral: maxLoanIgnoreSupply decreases, so undercollateralized debt increases
@@ -334,13 +341,6 @@ library CollateralManager {
                 collateralManagerData.undercollateralizedDebt -= difference;
             }
         }
-
-        // NOTE: When previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply (e.g., repayment
-        // where only debt changes), the delta is 0 and undercollateralizedDebt is unchanged.
-        // This can leave a stale value that overstates the actual shortfall. However, it does
-        // NOT affect transaction outcomes — the early return above already zeroes
-        // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
-        // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
 
