@@ -105,5 +105,5 @@ contract AddCollateral is Script {
 }
 
 // Example usage:
-// TOKEN_ID=109382 forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
+// TOKEN_ID=64196 forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
 // TOKEN_IDS="109382,64196,12345" forge script script/portfolio_account/helper/AddCollateral.s.sol:AddCollateral --sig "runBatch()" --rpc-url $BASE_RPC_URL --broadcast

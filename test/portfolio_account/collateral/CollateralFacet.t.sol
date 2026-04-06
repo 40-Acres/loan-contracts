@@ -21,6 +21,7 @@ import {LocalSetup} from "../utils/LocalSetup.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {ILoan} from "../../../src/interfaces/ILoan.sol";
+import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
 
 contract CollateralFacetTest is Test, LocalSetup {
 
@@ -426,67 +427,79 @@ contract CollateralFacetTest is Test, LocalSetup {
         // because overcollateralization doesn't increase
     }
 
-    /// @notice Multicall [removeCollateral, pay] and [pay, removeCollateral] both succeed
-    ///         when payment fully covers the shortfall from removing collateral.
-    /// @dev The early return in _updateUndercollateralizedDebt (totalDebt <= maxLoanIgnoreSupply → 0)
-    ///      ensures undercollateralizedDebt is zeroed regardless of operation order.
-    function testRemoveCollateralAndPayOrderIndependent() public {
-        uint256 tokenId2 = _tokenId2;
-
-        // Transfer token2 to portfolio account
-        vm.startPrank(_tokenId2Owner);
-        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, tokenId2);
-        vm.stopPrank();
-
-        // Add both tokens as collateral
+    /// @notice Regression test: when rewardsRate drops to 0 (e.g., post-migration),
+    ///         both previousMaxLoanIgnoreSupply and newMaxLoanIgnoreSupply are 0.
+    ///         Before the fix, the delta logic in _updateUndercollateralizedDebt was a no-op
+    ///         when prev == new, leaving undercollateralizedDebt at 0 even though debt > maxLoan.
+    ///         This allowed users to remove collateral while having outstanding debt.
+    function testRegressionZeroMaxLoanWithDebt() public {
+        // Step 1: Add collateral and borrow
         addCollateralViaMulticall(_tokenId);
-        addCollateralViaMulticall(tokenId2);
 
-        // Get each token's contribution to maxLoanIgnoreSupply
-        uint256 locked1 = CollateralFacet(_portfolioAccount).getLockedCollateral(_tokenId);
-        uint256 locked2 = CollateralFacet(_portfolioAccount).getLockedCollateral(tokenId2);
-        uint256 rewardsRate = _loanConfig.getRewardsRate();
-        uint256 multiplier = _loanConfig.getMultiplier();
-
-        uint256 M1 = (((locked1 * rewardsRate) / 1e6) * multiplier) / 1e12;
-        uint256 M2 = (((locked2 * rewardsRate) / 1e6) * multiplier) / 1e12;
-
-        // Borrow D = M1 + M2/2 (exceeds single-token capacity, within both)
-        uint256 D = M1 + (M2 / 2);
-
-        // Fund vault with enough liquidity
+        uint256 borrowAmount = 1e6; // 1 USDC
         address loanContract = _portfolioFactoryConfig.getLoanContract();
         address vault = ILoan(loanContract)._vault();
-        deal(address(_asset), vault, D * 10);
+        uint256 vaultBalance = (borrowAmount * 10000) / 8000;
+        deal(address(_asset), vault, vaultBalance);
 
-        borrowViaMulticall(D);
+        borrowViaMulticall(borrowAmount);
 
-        // Payment P = D - M1 = M2/2 (exactly covers shortfall from removing token2)
-        uint256 P = D - M1;
+        uint256 debtAfterBorrow = CollateralFacet(_portfolioAccount).getTotalDebt();
+        assertGt(debtAfterBorrow, 0, "Should have debt after borrowing");
 
-        // --- Order 1: [removeCollateral, pay] ---
-        deal(address(_asset), _user, P);
+        // Step 2: Set rewardsRate to 0 (simulates rates=0 post-migration scenario)
+        // This makes maxLoanIgnoreSupply = 0 for all collateral
+        vm.startPrank(_owner);
+        _loanConfig.setRewardsRate(0);
+        vm.stopPrank();
+
+        // Verify maxLoan is now 0
+        (, uint256 maxLoanIgnoreSupply) = CollateralFacet(_portfolioAccount).getMaxLoan();
+        assertEq(maxLoanIgnoreSupply, 0, "maxLoanIgnoreSupply should be 0 with rewardsRate=0");
+        assertGt(debtAfterBorrow, maxLoanIgnoreSupply, "debt > maxLoan: position is undercollateralized");
+
+        // Step 3: Removing collateral should revert because the account is undercollateralized.
+        // The fix ensures _updateUndercollateralizedDebt sets undercollateralizedDebt = debt - maxLoan
+        // when prev == new but debt > maxLoan. enforceCollateralRequirements then catches it.
+        vm.expectRevert();
+        removeCollateralViaMulticall(_tokenId);
+
+        // Verify collateral is still in place
+        assertGt(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0, "Collateral should not have been removed");
+
+        // Step 4: Non-collateral/debt operations should still work even when undercollateralized.
+        // setVotingMode(tokenId, false) sets automatic voting — no eligibility check needed.
         vm.startPrank(_user);
-        IERC20(address(_asset)).approve(_portfolioAccount, P);
-
-        address[] memory portfolioFactories = new address[](2);
+        address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
-        portfolioFactories[1] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](2);
+        bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(
-            BaseCollateralFacet.removeCollateral.selector,
-            tokenId2
+            VotingFacet.setVotingMode.selector,
+            _tokenId,
+            false
         );
-        calldatas[1] = abi.encodeWithSelector(
-            BaseLendingFacet.pay.selector,
-            P
-        );
-
-        // Should succeed: after both ops, debt = M1, maxLoanIgnoreSupply = M1
+        // This multicall should succeed: setVotingMode doesn't change collateral or debt,
+        // so enforceCollateralRequirements sees no increase in undercollateralization.
         _portfolioManager.multicall(calldatas, portfolioFactories);
         vm.stopPrank();
 
-        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), M1, "Debt should equal M1");
-        assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), locked1, "Only token1 collateral remains");
+        // Step 5: Pay off all debt, then removing collateral should succeed
+        uint256 fullDebt = CollateralFacet(_portfolioAccount).getTotalDebt();
+        uint256 currentBalance = _asset.balanceOf(_portfolioAccount);
+        deal(address(_asset), _portfolioAccount, currentBalance + fullDebt);
+
+        vm.startPrank(_user);
+        IERC20(_asset).approve(_portfolioAccount, fullDebt);
+        vm.stopPrank();
+
+        pay(_portfolioAccount, fullDebt);
+
+        assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), 0, "Debt should be fully paid");
+
+        // Now collateral removal should succeed
+        removeCollateralViaMulticall(_tokenId);
+
+        assertEq(CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0, "Collateral should be removed after paying debt");
+        assertEq(IVotingEscrow(_ve).ownerOf(_tokenId), _portfolioFactory.ownerOf(_portfolioAccount), "Token should be returned to user");
     }
 }

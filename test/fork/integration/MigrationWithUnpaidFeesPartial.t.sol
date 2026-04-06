@@ -155,10 +155,9 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         // Re-read balance after fee payment
         (uint256 balanceAfterFeePayment,) = loanContract.getLoanDetails(TOKEN_ID);
 
-        // Step 2: Migrate
-        vm.startPrank(user);
+        // Step 2: Migrate (only owner can migrate)
+        vm.prank(protocolOwner);
         loanContract.migrateToPortfolio(TOKEN_ID);
-        vm.stopPrank();
 
         // Verify migration
         assertEq(ve.ownerOf(TOKEN_ID), portfolioAccount, "Token should be in portfolio account");

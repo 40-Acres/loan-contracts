@@ -1138,13 +1138,14 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
         uint256 postFeesAmount = rewardsAmount - protocolFee - lenderPremium;
-        uint256 recipientAmount = postFeesAmount * 15 / 100;
+        uint256 recipientAmount = rewardsAmount * 15 / 100; // 15% of total
+        if (recipientAmount > postFeesAmount) recipientAmount = postFeesAmount;
 
-        // Verify recipient received 15% of post-fees
+        // Verify recipient received 15% of total rewards
         uint256 recipientBalanceAfter = IERC20(loanAsset).balanceOf(recipient);
-        assertEq(recipientBalanceAfter - recipientBalanceBefore, recipientAmount, "Recipient should receive 15% of post-fees");
+        assertEq(recipientBalanceAfter - recipientBalanceBefore, recipientAmount, "Recipient should receive 15% of total rewards");
 
-        // Verify debt was decreased by remaining (85% of post-fees)
+        // Verify debt was decreased by remaining (post-fees minus ABD)
         uint256 debtAfter = CollateralFacet(_portfolioAccount).getTotalDebt();
         uint256 amountForDebt = postFeesAmount - recipientAmount;
         uint256 expectedDebt = debtBefore > amountForDebt ? debtBefore - amountForDebt : 0;
@@ -1338,11 +1339,12 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         uint256 protocolFee = (rewardsAmount * _loanConfig.getTreasuryFee()) / 10000;
         uint256 lenderPremium = (rewardsAmount * _loanConfig.getLenderPremium()) / 10000;
         uint256 postFeesAmount = rewardsAmount - protocolFee - lenderPremium;
-        uint256 expectedSwapAmount = postFeesAmount * 10 / 100;
+        uint256 expectedSwapAmount = rewardsAmount * 10 / 100; // 10% of total
+        if (expectedSwapAmount > postFeesAmount) expectedSwapAmount = postFeesAmount;
 
         assertEq(routes[0].inputToken, loanAsset, "Route should swap from loan asset");
         assertEq(routes[0].outputToken, lockedAsset, "Route should swap to locked asset");
-        assertEq(routes[0].inputAmount, expectedSwapAmount, "Route should swap 10% of post-fees");
+        assertEq(routes[0].inputAmount, expectedSwapAmount, "Route should swap 10% of total rewards");
 
         // Verify other slots are empty
         assertEq(routes[1].inputAmount, 0, "Slot 1 should be empty");

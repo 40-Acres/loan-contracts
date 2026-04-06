@@ -116,8 +116,8 @@ contract MigrationUnpaidFeesTest is LocalSetup {
         uint256 fees = _getUnpaidFees(migrationTokenId);
         assertEq(fees, 30e6, "unpaidFees should be 30 USDC after vm.store");
 
-        // Attempt migration - should revert because unpaidFees > 0
-        vm.prank(_user);
+        // Attempt migration as owner - should revert because unpaidFees > 0
+        vm.prank(_owner);
         vm.expectRevert();
         LoanV2(_loanContract).migrateToPortfolio(migrationTokenId);
     }
@@ -137,8 +137,8 @@ contract MigrationUnpaidFeesTest is LocalSetup {
         // Verify the veNFT is currently held by the loan contract
         assertEq(_mockVe.ownerOf(migrationTokenId2), _loanContract, "veNFT should be in loan contract");
 
-        // Migrate - should succeed
-        vm.prank(_user);
+        // Migrate as owner - should succeed
+        vm.prank(_owner);
         LoanV2(_loanContract).migrateToPortfolio(migrationTokenId2);
 
         // After migration: veNFT should be in the portfolio account
@@ -165,21 +165,24 @@ contract MigrationUnpaidFeesTest is LocalSetup {
         _setUnpaidFees(migrationTokenId, 1);
         assertEq(_getUnpaidFees(migrationTokenId), 1, "unpaidFees should be 1");
 
-        vm.prank(_user);
+        vm.prank(_owner);
         vm.expectRevert();
         LoanV2(_loanContract).migrateToPortfolio(migrationTokenId);
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // Test 4: Non-borrower cannot call migrateToPortfolio
+    // Test 4: Non-owner cannot call migrateToPortfolio (including borrower)
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_migrateByNonBorrower_reverts() public {
+    function test_migrateByNonOwner_reverts() public {
         _createLoanForUser(migrationTokenId);
 
-        // A random address tries to migrate - should revert because msg.sender is
-        // neither owner() nor loan.borrower (enforced by the access control require
-        // in LoanV2.migrateToPortfolio)
+        // Borrower tries to migrate - should revert because only owner() can call
+        vm.prank(_user);
+        vm.expectRevert();
+        LoanV2(_loanContract).migrateToPortfolio(migrationTokenId);
+
+        // A random address tries to migrate - should also revert
         address attacker = address(0xBAD);
         vm.prank(attacker);
         vm.expectRevert();
@@ -233,7 +236,7 @@ contract MigrationUnpaidFeesTest is LocalSetup {
         _createLoanForUser(migrationTokenId);
         _setUnpaidFees(migrationTokenId, fees);
 
-        vm.prank(_user);
+        vm.prank(_owner);
         vm.expectRevert();
         LoanV2(_loanContract).migrateToPortfolio(migrationTokenId);
     }

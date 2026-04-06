@@ -63,7 +63,7 @@ contract ERC4626ClaimingFacetTest is Test {
 
         // Deploy config contracts
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory));
+        (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         // Deploy mock underlying asset and vault
         _underlyingAsset = new MockERC20("Mock USDC", "mUSDC", 6);

@@ -109,6 +109,9 @@ library CollateralManager {
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
         _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
+        uint256 totalDebt = collateralManagerData.debt;
+        require(totalDebt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+
         _notifyCollateralRemoved(portfolioFactoryConfig, ve, tokenId);
         emit CollateralRemoved(tokenId, address(this));
     }

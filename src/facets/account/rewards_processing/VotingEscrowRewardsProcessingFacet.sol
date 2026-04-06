@@ -41,10 +41,15 @@ contract VotingEscrowRewardsProcessingFacet is RewardsProcessingFacet {
             return 0;
         }
         IERC20(lockedAsset).approve(address(_votingEscrow), increaseAmount);
-        IVotingEscrow(address(_votingEscrow)).increaseAmount(tokenId, increaseAmount);
+        try IVotingEscrow(address(_votingEscrow)).increaseAmount(tokenId, increaseAmount) {
+            CollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
+            emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+        } catch {
+            emit IncreaseCollateralFailed(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+            IERC20(lockedAsset).approve(address(_votingEscrow), 0);
+            return 0;
+        }
         IERC20(lockedAsset).approve(address(_votingEscrow), 0);
-        CollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
-        emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
         return increaseAmount;
     }
 

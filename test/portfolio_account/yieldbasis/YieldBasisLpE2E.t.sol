@@ -89,7 +89,7 @@ contract YieldBasisBtcE2ETest is Test {
 
         // --- Deploy config contracts ---
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory));
+        (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         // --- Deploy mock tokens ---
         _ybBtc = new MockERC20("ybBTC", "ybBTC", 8);

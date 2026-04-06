@@ -49,7 +49,7 @@ library PortfolioHelperUtils {
      * @notice Set FACTORY_SALT env var to override (e.g., "aerodrome-usdc-dynamic-fees"). Defaults to "aerodrome-usdc"
      */
     function getAerodromeFactory(Vm vm, PortfolioManager portfolioManager) internal view returns (PortfolioFactory) {
-        string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome"));
+        string memory factorySalt = vm.envOr("FACTORY_SALT", string("aerodrome-usdc"));
         bytes32 salt = keccak256(abi.encodePacked(factorySalt));
         address factoryAddress = portfolioManager.factoryBySalt(salt);
         require(factoryAddress != address(0), string.concat("Factory not found for salt: ", factorySalt));

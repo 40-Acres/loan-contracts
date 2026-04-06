@@ -174,7 +174,7 @@ contract LocalSetup is Test {
         _loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (FORTY_ACRES_DEPLOYER))
+                abi.encodeCall(LoanConfig.initialize, (FORTY_ACRES_DEPLOYER, 20_00, 5_00, 1_00))
             ))
         );
 

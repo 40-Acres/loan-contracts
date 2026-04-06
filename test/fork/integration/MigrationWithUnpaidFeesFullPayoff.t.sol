@@ -160,10 +160,9 @@ contract MigrationWithUnpaidFeesTest is Test {
         (uint256 balanceAfterFeePayment,) = loanContract.getLoanDetails(TOKEN_ID);
         assertEq(balanceAfterFeePayment, initialBalance - initialUnpaidFees, "Balance should decrease by fees paid");
 
-        // Step 2: Migrate the loan to portfolio account
-        vm.startPrank(user);
+        // Step 2: Migrate the loan to portfolio account (only owner can migrate)
+        vm.prank(protocolOwner);
         loanContract.migrateToPortfolio(TOKEN_ID);
-        vm.stopPrank();
 
         // Verify migration
         address tokenOwner = ve.ownerOf(TOKEN_ID);
@@ -206,11 +205,10 @@ contract MigrationWithUnpaidFeesTest is Test {
         uint256 initialUnpaidFees = _getUnpaidFees(TOKEN_ID);
         require(initialUnpaidFees > 0, "Token must have unpaid fees for this test");
 
-        // Attempt migration without clearing fees — should revert
-        vm.startPrank(user);
+        // Attempt migration without clearing fees — should revert even for owner
+        vm.prank(protocolOwner);
         vm.expectRevert();
         loanContract.migrateToPortfolio(TOKEN_ID);
-        vm.stopPrank();
     }
 
     /**

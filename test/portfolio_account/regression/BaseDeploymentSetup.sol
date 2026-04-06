@@ -155,7 +155,7 @@ abstract contract BaseDeploymentSetup is Test {
         loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (DEPLOYER))
+                abi.encodeCall(LoanConfig.initialize, (DEPLOYER, 20_00, 5_00, 1_00))
             ))
         );
 

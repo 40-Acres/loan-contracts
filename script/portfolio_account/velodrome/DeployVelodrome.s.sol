@@ -46,7 +46,6 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veAERO
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
-    bytes32 public constant SALT = bytes32(uint256(0x4040ac2e));
 
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
@@ -207,8 +206,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
 contract VelodromeLeafDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x2D270e6886d130D724215A266106e6832161EAEd; // INK USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
-    bytes32 public constant SALT = bytes32(uint256(0x4040ac2e));
-    
+
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
     
@@ -255,7 +253,6 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veAERO
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
-    bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
 
     PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     PortfolioFactory public _portfolioFactory;

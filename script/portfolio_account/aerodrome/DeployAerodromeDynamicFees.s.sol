@@ -37,7 +37,6 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
     // Existing deployed addresses
     address public constant EXISTING_PORTFOLIO_FACTORY = 0xfeEB5C58786617230095a008164b096e3205EAF2;
-    address public constant SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
 
     // Base chain addresses
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
@@ -84,7 +83,7 @@ contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
         LoanConfig loanConfigImpl = new LoanConfig();
         ERC1967Proxy loanConfigProxy = new ERC1967Proxy(address(loanConfigImpl), "");
         LoanConfig loanConfig = LoanConfig(address(loanConfigProxy));
-        loanConfig.initialize(DEPLOYER_ADDRESS);
+        loanConfig.initialize(DEPLOYER_ADDRESS, 20_00, 5_00, 1_00);
 
         // Set default loan config values
         loanConfig.setRewardsRate(2850);
@@ -219,7 +218,6 @@ interface IFactoryWithConfig {
 }
 
 contract AerodromeDynamicFeesRootUpgrade is PortfolioFactoryConfigDeploy {
-    address public constant SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
     bytes32 public constant FACTORY_SALT = keccak256(abi.encodePacked("aerodrome-usdc-dynamic-fees"));
 
     // Base chain addresses

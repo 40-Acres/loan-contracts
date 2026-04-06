@@ -61,6 +61,20 @@ contract VotingConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable
         emit ApprovedPool(pool, approved);
     }
 
+    function setApprovedPools(address[] memory pools, bool approved) public onlyOwner {
+        VotingConfigData storage votingStorage = _getVotingConfig();
+        for (uint256 i = 0; i < pools.length; i++) {
+            address pool = pools[i];
+            votingStorage.approvedPools[pool] = approved;
+            if(approved) {
+                votingStorage.approvedPoolsList.add(pool);
+            } else {
+                votingStorage.approvedPoolsList.remove(pool);
+            }
+            emit ApprovedPool(pool, approved);
+        }
+    }
+
     function isApprovedPool(address pool) public view returns (bool) {
         VotingConfigData storage votingStorage = _getVotingConfig();
         return votingStorage.approvedPools[pool];

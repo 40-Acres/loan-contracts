@@ -75,7 +75,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
         LoanConfig loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 20_00, 5_00, 1_00))
             ))
         );
 
@@ -156,9 +156,10 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome-usdc")));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
+        // PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
         address votingConfig = address(AERO_VOTING_CONFIG);
-        address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
+        // address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
+        address loanConfig = 0xa5b8bC2C39c669132930AdFD3e56E988e5629C88;
         SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
@@ -167,7 +168,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         VotingConfig _votingConfig = VotingConfig(votingConfig);
 
 
-        // Deploy RewardsProcessingFacet
+        // // Deploy RewardsProcessingFacet
         RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(AERO_USDC_VAULT), IVotingEscrow(VOTING_ESCROW).token());
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
@@ -176,75 +177,75 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
         rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
-        //
-        // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        // // Deploy RewardsConfigFacet (on-chain code is 87-byte stub)
+        // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
+        // bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        // rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
+        // rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
+        // rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
-        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
-
-        // Deploy ClaimingFacet
-        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(AERO_USDC_VAULT));
-        bytes4[] memory claimingSelectors = new bytes4[](3);
-        claimingSelectors[0] = ClaimingFacet.claimFees.selector;
-        claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
-        claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
-        _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
+        // // Deploy ClaimingFacet
+        // ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(AERO_USDC_VAULT));
+        // bytes4[] memory claimingSelectors = new bytes4[](3);
+        // claimingSelectors[0] = ClaimingFacet.claimFees.selector;
+        // claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
+        // claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
+        // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
         
-        // Deploy LendingFacet
-        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
-        bytes4[] memory lendingSelectors = new bytes4[](7);
-        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
-        lendingSelectors[1] = BaseLendingFacet.pay.selector;
-        lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
-        lendingSelectors[3] = BaseLendingFacet.topUp.selector;
-        lendingSelectors[4] = BaseLendingFacet.borrowTo.selector;
-        lendingSelectors[5] = BaseLendingFacet.getPortfolioFactoryConfig.selector;
-        lendingSelectors[6] = BaseLendingFacet.getLendingToken.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
+        // // Deploy LendingFacet (on-chain code is 87-byte stub)
+        // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
+        // bytes4[] memory lendingSelectors = new bytes4[](7);
+        // lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        // lendingSelectors[1] = BaseLendingFacet.pay.selector;
+        // lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
+        // lendingSelectors[3] = BaseLendingFacet.topUp.selector;
+        // lendingSelectors[4] = BaseLendingFacet.borrowTo.selector;
+        // lendingSelectors[5] = BaseLendingFacet.getPortfolioFactoryConfig.selector;
+        // lendingSelectors[6] = BaseLendingFacet.getLendingToken.selector;
+        // _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
-        // Deploy MarketplaceFacet
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(VEAERO_MARKETPLACE));
-        bytes4[] memory marketplaceSelectors = new bytes4[](6);
-        marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
-        marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
-        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        // // Deploy MarketplaceFacet (on-chain code is empty)
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(VEAERO_MARKETPLACE));
+        // bytes4[] memory marketplaceSelectors = new bytes4[](7);
+        // marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        // marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
+        // marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
+        // marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
+        // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        // marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
 
-        VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), votingConfig, VOTING_ESCROW, VOTER);
-        bytes4[] memory votingSelectors = new bytes4[](8);
-        votingSelectors[0] = VotingFacet.vote.selector;
-        votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
-        votingSelectors[2] = VotingFacet.setVotingMode.selector;
-        votingSelectors[3] = VotingFacet.isManualVoting.selector;
-        votingSelectors[4] = VotingFacet.defaultVote.selector;
-        votingSelectors[5] = VotingFacet.batchVote.selector;
-        votingSelectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
-        votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
-        _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
+        // // Deploy VotingFacet (on-chain code is empty)
+        // VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), votingConfig, VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingSelectors = new bytes4[](8);
+        // votingSelectors[0] = VotingFacet.vote.selector;
+        // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
+        // votingSelectors[2] = VotingFacet.setVotingMode.selector;
+        // votingSelectors[3] = VotingFacet.isManualVoting.selector;
+        // votingSelectors[4] = VotingFacet.defaultVote.selector;
+        // votingSelectors[5] = VotingFacet.batchVote.selector;
+        // votingSelectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
+        // votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
+        // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
-        // // Deploy VotingEscrowFacet
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        // // Deploy VotingEscrowFacet (on-chain code is empty)
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        // votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
-        // Deploy CollateralFacet
+        // Deploy CollateralFacet (on-chain code is empty)
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         bytes4[] memory collateralSelectors = new bytes4[](10);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
@@ -265,6 +266,12 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // // LoanV2(address(portfolioFactoryConfig.getLoanContract())).upgradeToAndCall(address(loanImplementation), new bytes(0));
 
         // _upgradePortfolioFactoryConfig(portfolioFactoryConfig);
+
+        // Deploy MigrationFacet
+        // MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), VOTING_ESCROW);
+        // bytes4[] memory migrationSelectors = new bytes4[](1);
+        // migrationSelectors[0] = IMigrationFacet.migrate.selector;
+        // _registerFacet(facetRegistry, address(migrationFacet), migrationSelectors, "MigrationFacet");
 
         // Post-upgrade validation - reverts the entire script if anything is wrong
         // _validateDeployment(portfolioFactoryConfig, address(_portfolioFactory));
@@ -317,10 +324,10 @@ contract UpgradeMarketplaceFacet is Script {
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        // Remove and re-register with all 10 selectors
+        // Remove and re-register with all selectors including isListingPurchasable
         facetRegistry.removeFacet(existingFacet);
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         selectors[1] = BaseMarketplaceFacet.makeListing.selector;
         selectors[2] = BaseMarketplaceFacet.cancelListing.selector;
@@ -328,6 +335,7 @@ contract UpgradeMarketplaceFacet is Script {
         selectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         selectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         selectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        selectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
 
         facetRegistry.registerFacet(existingFacet, selectors, "MarketplaceFacet");
 

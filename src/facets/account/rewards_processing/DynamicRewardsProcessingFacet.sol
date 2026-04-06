@@ -26,11 +26,17 @@ contract DynamicRewardsProcessingFacet is VotingEscrowRewardsProcessingFacet {
     }
 
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override  returns (uint256 usedAmount) {
+        if(tokenId == 0) return 0;
         IERC20(lockedAsset).approve(address(_votingEscrow), increaseAmount);
-        IVotingEscrow(address(_votingEscrow)).increaseAmount(tokenId, increaseAmount);
+        try IVotingEscrow(address(_votingEscrow)).increaseAmount(tokenId, increaseAmount) {
+            DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
+            emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+        } catch {
+            emit IncreaseCollateralFailed(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+            IERC20(lockedAsset).approve(address(_votingEscrow), 0);
+            return 0;
+        }
         IERC20(lockedAsset).approve(address(_votingEscrow), 0);
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
-        emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
         return increaseAmount;
     }
 }

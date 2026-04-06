@@ -37,7 +37,6 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTER = 0xE30D0C8532721551a51a9FeC7FB233759964d9e3; // Blackhole Voter
     address public constant REWARDS_DISTRIBUTOR = 0x88a49cFCee0Ed5B176073DDE12186C4c922A9cD0;
     address public constant AERO = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6; // BLACK token
-    bytes32 public constant SALT = bytes32(uint256(0x4040ac2e));
 
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;

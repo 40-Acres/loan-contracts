@@ -37,13 +37,17 @@ contract PortfolioFactoryConfigDeploy is Script {
      * @param mock If true, uses vm.startPrank for testing; if false, assumes broadcast context
      */
     function _deploy(bool mock, address factory) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
+        return _deploy(mock, factory, MULTISIG_ADDRESS);
+    }
+
+    function _deploy(bool mock, address factory, address owner) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
         require(factory != address(0), "Factory required");
         // Deploy PortfolioFactoryConfig atomically (impl + proxy with init in constructor)
         PortfolioFactoryConfig configImpl = _createConfigImpl();
         PortfolioFactoryConfig config = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioFactoryConfig.initialize, (MULTISIG_ADDRESS, factory))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (owner, factory))
             ))
         );
 
@@ -52,7 +56,7 @@ contract PortfolioFactoryConfigDeploy is Script {
         VotingConfig votingConfig = VotingConfig(
             address(new ERC1967Proxy(
                 address(votingConfigImpl),
-                abi.encodeCall(VotingConfig.initialize, (MULTISIG_ADDRESS))
+                abi.encodeCall(VotingConfig.initialize, (owner))
             ))
         );
 
@@ -61,7 +65,7 @@ contract PortfolioFactoryConfigDeploy is Script {
         LoanConfig loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (MULTISIG_ADDRESS))
+                abi.encodeCall(LoanConfig.initialize, (owner, 20_00, 5_00, 1_00))
             ))
         );
 
@@ -70,13 +74,13 @@ contract PortfolioFactoryConfigDeploy is Script {
         SwapConfig swapConfig = SwapConfig(
             address(new ERC1967Proxy(
                 address(swapConfigImpl),
-                abi.encodeCall(SwapConfig.initialize, (MULTISIG_ADDRESS))
+                abi.encodeCall(SwapConfig.initialize, (owner))
             ))
         );
 
         // Link configs together (owner-only operations, safe after atomic init)
         if(mock) {
-            vm.startPrank(MULTISIG_ADDRESS);
+            vm.startPrank(owner);
         }
         config.setVoteConfig(address(votingConfig));
         config.setLoanConfig(address(loanConfig));
@@ -152,9 +156,11 @@ contract DeployPortfolioFactoryConfig is PortfolioFactoryConfigDeploy {
     }
 
     function deploy(address factory) external returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = _deploy(true, factory);
+        return _deploy(true, factory);
+    }
 
-        return (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig);
+    function deploy(address factory, address owner) external returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
+        return _deploy(true, factory, owner);
     }
 }
 

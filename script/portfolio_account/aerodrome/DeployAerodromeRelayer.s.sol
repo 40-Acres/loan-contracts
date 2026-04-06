@@ -77,7 +77,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
         LoanConfig loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS))
+                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 20_00, 5_00, 1_00))
             ))
         );
 
@@ -164,21 +164,18 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("aerodrome")));
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
-        NoOpVault noOpVault = new NoOpVault(portfolioFactory, 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
-
+        // NoOpVault noOpVault = new NoOpVault(portfolioFactory, 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913);
 
         // PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
         // console.log("Deployed PortfolioMarketplace at", address(portfolioMarketplace));
 
-        // // Read existing Aerodrome deployment configs
+        // Read existing Aerodrome deployment configs
         // SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
         // address votingConfig = AERO_VOTING_CONFIG;
         // address loanConfig = address(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getLoanConfig());
         // Vault vault = Vault(AERO_USDC_VAULT);
 
-         // Deploy BridgeFacet
-
-        // // // Step 2: Redeploy ClaimingFacet with fresh config
+        // // Deploy ClaimingFacet
         // ClaimingFacet claimingFacet = new ClaimingFacet(portfolioFactory, VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
         // bytes4[] memory claimingSelectors = new bytes4[](3);
         // claimingSelectors[0] = ClaimingFacet.claimFees.selector;
@@ -186,7 +183,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
         // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
-        // // // Step 3: Redeploy RewardsProcessingFacet with fresh config and Aerodrome vault
+        // // Deploy RewardsProcessingFacet
         // RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
         // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
@@ -208,7 +205,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
-        // // Step 4: Redeploy all other facets with fresh config
+        // // Deploy CollateralFacet
         // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, VOTING_ESCROW);
         // bytes4[] memory collateralSelectors = new bytes4[](10);
         // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
@@ -223,33 +220,42 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
         // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
-        // VotingFacet votingFacet = new VotingFacet(portfolioFactory, votingConfig, VOTING_ESCROW, VOTER);
-        // bytes4[] memory votingSelectors = new bytes4[](5);
-        // votingSelectors[0] = VotingFacet.vote.selector;
-        // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
-        // votingSelectors[2] = VotingFacet.setVotingMode.selector;
-        // votingSelectors[3] = VotingFacet.isManualVoting.selector;
-        // votingSelectors[4] = VotingFacet.defaultVote.selector;
-        // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
-
-        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
-        // bytes4[] memory votingEscrowSelectors = new bytes4[](4);
-        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
-
+        // // Deploy MarketplaceFacet
         // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, VOTING_ESCROW, address(portfolioMarketplace));
         // bytes4[] memory marketplaceSelectors = new bytes4[](7);
-        // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
-        // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
         // marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
+        // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         // marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
+        // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
         // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
         // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         // marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+
+
+        // Upgrade VotingFacet with missing selectors (batchVote, batchVoteForLaunchpadToken, isElligibleForManualVoting)
+        address votingConfig = address(AERO_VOTING_CONFIG);
+        VotingFacet votingFacet = new VotingFacet(portfolioFactory, votingConfig, VOTING_ESCROW, VOTER);
+        bytes4[] memory votingSelectors = new bytes4[](8);
+        votingSelectors[0] = VotingFacet.vote.selector;
+        votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
+        votingSelectors[2] = VotingFacet.setVotingMode.selector;
+        votingSelectors[3] = VotingFacet.isManualVoting.selector;
+        votingSelectors[4] = VotingFacet.defaultVote.selector;
+        votingSelectors[5] = VotingFacet.batchVote.selector;
+        votingSelectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
+        votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
+        _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
+
+        // Upgrade VotingEscrowFacet with missing mergeInternal selector
+        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
+        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
         // _validateDeployment(portfolioFactoryConfig, portfolioFactory);

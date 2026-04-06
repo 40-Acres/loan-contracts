@@ -121,6 +121,9 @@ library DynamicCollateralManager {
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
         _updateUndercollateralizedDebt(portfolioFactoryConfig, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
+        uint256 totalDebt = getTotalDebt(portfolioFactoryConfig);
+        require(totalDebt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+
         _notifyCollateralRemoved(portfolioFactoryConfig, ve, tokenId);
         emit CollateralRemoved(tokenId, address(this));
     }

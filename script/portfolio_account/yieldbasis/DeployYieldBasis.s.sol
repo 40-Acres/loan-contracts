@@ -45,8 +45,6 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant GAUGE_CONTROLLER = 0x1Be14811A3a06F6aF4fA64310a636e1Df04c1c21;
     address public constant FEE_DISTRIBUTOR = 0xD11b416573EbC59b6B2387DA0D2c0D1b3b1F7A90;
 
-    bytes32 public constant SALT = bytes32(uint256(0x420ac2e));
-
     PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
@@ -218,7 +216,6 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant PORTFOLIO_MANAGER = address(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     address public constant PORTFOLIO_FACTORY = address(0x6D5B539BFf0c1Dc36A6486CB3C3c5d5Ce740e96a);
     address public constant PORTFOLIO_ACCOUNT_CONFIG = address(0x0e23a4eB753334E747CD164C8DEa620e0306D0EC);
-    address public constant SWAP_CONFIG = address(0xA4bB092F2049e8eF7bbF1a3cdD7dAdd27b5b77e4);
     address public constant VAULT = address(0x24914636DAb84236Cb7D4394cD25D15Ec6e3Bd50);
     address public constant FAUCET = address(0xcaa4a36B5179672719256Df77E0943146C548193);
     address public constant VE_YB_ADAPTER = address(0x54F394ebC8Aa2b71f431Dc90f7675b7360465464);

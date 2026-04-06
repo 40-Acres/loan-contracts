@@ -46,12 +46,14 @@ contract RewardsProcessingFacet is AccessControl {
     event CollateralIncreased(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed owner);
     event ActiveBalanceRewardsProcessed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event SwapFailed(uint256 epoch, uint256 indexed tokenId, uint256 inputAmount, address inputToken, address outputToken, address indexed owner);
+    event InvestToVaultFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
+    event IncreaseCollateralFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed owner);
 
     constructor(address portfolioFactory, address swapConfig, address collateralToken, address vault) {
         require(portfolioFactory != address(0));
         require(swapConfig != address(0));
         require(collateralToken != address(0));
-        // vault can be zero address if there is no vault (no lending)
+        require(vault != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _swapConfig = SwapConfig(swapConfig);
         _collateralToken = collateralToken;
@@ -90,7 +92,7 @@ contract RewardsProcessingFacet is AccessControl {
         // 3. Branch based on debt status
         if (hasDebt) {
             if (UserRewardsConfig.hasActiveBalanceDistribution()) {
-                remaining = _processActiveBalanceDistribution(tokenId, postFeesAmount, remaining, asset, swapParams[0]);
+                remaining = _processActiveBalanceDistribution(tokenId, rewardsAmount, remaining, asset, swapParams[0]);
             }
             remaining = _processActiveLoanRewards(tokenId, remaining, asset);
             if (remaining > 0) {
@@ -117,8 +119,13 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _depositRemainingToVault(uint256 amount, address asset) internal {
         address vaultAddress = address(_vault);
+        address recipient = _portfolioFactory.ownerOf(address(this));
         IERC20(asset).approve(vaultAddress, amount);
-        _vault.deposit(amount, _portfolioFactory.ownerOf(address(this)));
+        try _vault.deposit(amount, recipient) {
+        } catch {
+            _sendToWalletAccount(asset, amount);
+            emit InvestToVaultFailed(_currentEpochStart(), 0, amount, asset, recipient);
+        }
         IERC20(asset).approve(vaultAddress, 0);
     }
 
@@ -176,18 +183,22 @@ contract RewardsProcessingFacet is AccessControl {
         }
         // Remainder → default recipient
         if (remaining > 0) {
-            IERC20(asset).safeTransfer(_getRecipient(), remaining);
+            bool success = IERC20(asset).trySafeTransfer(_getRecipient(), remaining);
+            if (!success) {
+                _sendToWalletAccount(asset, remaining);
+                emit TransferFailed(_currentEpochStart(), tokenId, remaining, _getRecipient(), asset, _portfolioFactory.ownerOf(address(this)));
+            }
         }
         emit ZeroBalanceRewardsProcessed(_currentEpochStart(), tokenId, postFeesAmount, _getRecipient(), asset, _portfolioFactory.ownerOf(address(this)));
     }
 
     function _processActiveBalanceDistribution(
-        uint256 tokenId, uint256 postFeesAmount, uint256 remaining,
+        uint256 tokenId, uint256 rewardsAmount, uint256 remaining,
         address asset, SwapMod.RouteParams memory swapParams
     ) internal returns (uint256) {
         if (remaining == 0) return remaining;
         UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
-        uint256 entryAmount = remaining * entry.percentage / 100;
+        uint256 entryAmount = rewardsAmount * entry.percentage / 100;
         if (entryAmount > remaining) entryAmount = remaining;
         uint256 used = _executeDistributionEntry(tokenId, entry, entryAmount, asset, swapParams);
         remaining -= used;
@@ -212,8 +223,9 @@ contract RewardsProcessingFacet is AccessControl {
             address target = entry.target != address(0) ? entry.target : _getRecipient();
             bool success = IERC20(asset).trySafeTransfer(target, amount);
             if (!success) {
-                _sendToWalletAccount(asset, amount);
+                uint256 walletUsed = _sendToWalletAccount(asset, amount);
                 emit TransferFailed(_currentEpochStart(), tokenId, amount, target, asset, _portfolioFactory.ownerOf(address(this)));
+                if (walletUsed == 0) return 0;
             }
             return amount;
         }
@@ -241,15 +253,17 @@ contract RewardsProcessingFacet is AccessControl {
             // Try transfer; if recipient is blacklisted, send to wallet account
             bool success = IERC20(outputToken).trySafeTransfer(recipient, swappedAmount);
             if (!success) {
-                _sendToWalletAccount(outputToken, swappedAmount);
+                uint256 walletUsed = _sendToWalletAccount(outputToken, swappedAmount);
                 emit TransferFailed(_currentEpochStart(), tokenId, swappedAmount, recipient, outputToken, _portfolioFactory.ownerOf(address(this)));
+                if (walletUsed == 0) return 0;
             }
         } else {
             // Try transfer; if recipient is blacklisted, send to wallet account
             bool success = IERC20(asset).trySafeTransfer(recipient, amount);
             if (!success) {
-                _sendToWalletAccount(asset, amount);
+                uint256 walletUsed = _sendToWalletAccount(asset, amount);
                 emit TransferFailed(_currentEpochStart(), tokenId, amount, recipient, asset, _portfolioFactory.ownerOf(address(this)));
+                if (walletUsed == 0) return 0;
             }
         }
 
@@ -257,14 +271,15 @@ contract RewardsProcessingFacet is AccessControl {
         return amount;
     }
 
-    function _sendToWalletAccount(address token, uint256 amount) internal {
+    function _sendToWalletAccount(address token, uint256 amount) internal returns (uint256 amountUsed) {
         IPortfolioManager portfolioManager = IPortfolioManager(address(_portfolioFactory.portfolioManager()));
         address walletFactory = portfolioManager.factoryBySalt(bytes32(0));
-        require(walletFactory != address(0), "Wallet factory not deployed");
+        if (walletFactory == address(0)) return 0;
         address owner = _portfolioFactory.ownerOf(address(this));
         address walletAccount = PortfolioFactory(walletFactory).portfolioOf(owner);
-        require(walletAccount != address(0), "Wallet account not deployed");
-        IERC20(token).safeTransfer(walletAccount, amount);
+        if (walletAccount == address(0)) return 0;
+        bool success = IERC20(token).trySafeTransfer(walletAccount, amount);
+        return success ? amount : 0;
     }
 
     function _investToVaultTarget(
@@ -299,10 +314,20 @@ contract RewardsProcessingFacet is AccessControl {
 
         IERC20(vaultAsset).approve(address(vault), amountToDeposit);
         address recipient = _portfolioFactory.ownerOf(address(this));
-        vault.deposit(amountToDeposit, recipient);
+        try vault.deposit(amountToDeposit, recipient) {
+            emit InvestedToVault(_currentEpochStart(), tokenId, amountToDeposit, asset, recipient);
+        } catch {
+            emit InvestToVaultFailed(_currentEpochStart(), tokenId, amountToDeposit, asset, recipient);
+            IERC20(vaultAsset).approve(address(vault), 0);
+            if (asset != vaultAsset) {
+                // Swap already happened — original tokens are gone, send swapped tokens to wallet
+                _sendToWalletAccount(vaultAsset, amountToDeposit);
+                return optionAmount;
+            }
+            return 0;
+        }
         IERC20(vaultAsset).approve(address(vault), 0);
 
-        emit InvestedToVault(_currentEpochStart(), tokenId, amountToDeposit, asset, recipient);
         return optionAmount;
     }
 
@@ -338,8 +363,9 @@ contract RewardsProcessingFacet is AccessControl {
         address lockedAsset = _collateralToken;
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         if(rewardsToken == lockedAsset) {
-            _increaseLock(tokenId, optionAmount, lockedAsset);
-            return optionAmount;
+            uint256 used = _increaseLock(tokenId, optionAmount, lockedAsset);
+            // No swap happened — return 0 so tokens stay in remaining
+            return used;
         }
 
         require(swapParams.swapTarget != address(0), "Swap target must be provided");
@@ -355,7 +381,11 @@ contract RewardsProcessingFacet is AccessControl {
 
         uint256 endingLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         uint256 increaseAmount = endingLockedAssetBalance - beginningLockedAssetBalance;
-        _increaseLock(tokenId, increaseAmount, lockedAsset);
+        uint256 used = _increaseLock(tokenId, increaseAmount, lockedAsset);
+        if (used == 0) {
+            // Swap already happened — original tokens are gone, send swapped tokens to wallet
+            _sendToWalletAccount(lockedAsset, increaseAmount);
+        }
         return optionAmount;
     }
 
@@ -420,6 +450,7 @@ contract RewardsProcessingFacet is AccessControl {
         address loanContract = config.getLoanContract();
         IERC20(asset).forceApprove(loanContract, lenderPremium);
         ILendingPool(loanContract).depositRewards(lenderPremium);
+        IERC20(asset).approve(loanContract, 0);
         emit LenderPremiumPaid(_currentEpochStart(), tokenId, lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
     }
@@ -465,7 +496,6 @@ contract RewardsProcessingFacet is AccessControl {
         } else {
             remaining -= (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
         }
-        uint256 postFeesAmount = remaining;
 
         // 2. Gas reclamation
         if(gasReclamation > 0) {
@@ -479,16 +509,17 @@ contract RewardsProcessingFacet is AccessControl {
         if (hasDebt) {
             if (UserRewardsConfig.hasActiveBalanceDistribution()) {
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
-                uint256 entryAmount = remaining * entry.percentage / 100;
+                uint256 entryAmount = rewardsAmount * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;
                 routes[0] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
             }
         } else {
             uint8 count = UserRewardsConfig.getZeroBalanceDistributionCount();
+            uint256 distributable = remaining;
             for (uint8 i = 0; i < count; i++) {
                 if (remaining == 0) break;
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getZeroBalanceDistributionEntry(i);
-                uint256 entryAmount = remaining * entry.percentage / 100;
+                uint256 entryAmount = distributable * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;
                 routes[i] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
                 remaining -= entryAmount;

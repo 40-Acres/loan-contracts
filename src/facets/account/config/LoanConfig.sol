@@ -11,16 +11,24 @@ import {ILoanConfig} from "./ILoanConfig.sol";
  */
 contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     uint256 public constant MAX_FEE_BPS = 100_00; // 100% in basis points
-    uint256 public constant MAX_COMBINED_FEES = 50_00; // 50% in basis points
-
     error TooHigh(uint256 value, uint256 max);
     error CombinedFeesTooHigh(uint256 combined, uint256 max);
     constructor() {
         _disableInitializers();
     }
-    
-    function initialize(address owner) initializer public {
-        __Ownable_init(owner); 
+
+    function initialize(address owner, uint256 lenderPremium, uint256 treasuryFee, uint256 zeroBalanceFee) initializer public {
+        __Ownable_init(owner);
+        require(lenderPremium > 0, "Lender premium must be > 0");
+        require(treasuryFee > 0, "Treasury fee must be > 0");
+        require(zeroBalanceFee > 0, "Zero balance fee must be > 0");
+        require(zeroBalanceFee <= MAX_FEE_BPS, "Zero balance fee cannot exceed max fee");
+        uint256 combined = lenderPremium + treasuryFee;
+        require(combined <= MAX_FEE_BPS, CombinedFeesTooHigh(combined, MAX_FEE_BPS));
+        LoanConfigData storage config = _getLoanConfig();
+        config.lenderPremium = lenderPremium;
+        config.treasuryFee = treasuryFee;
+        config.zeroBalanceFee = zeroBalanceFee;
     }
     
     /**
@@ -90,9 +98,9 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
 
     function setLenderPremium(uint256 lenderPremium) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
-        require(lenderPremium <= MAX_FEE_BPS, "Lender premium cannot exceed max fee");
+        require(lenderPremium > 0, "Lender premium must be > 0");
         uint256 combined = lenderPremium + collateralStorage.treasuryFee;
-        require(combined <= MAX_COMBINED_FEES, CombinedFeesTooHigh(combined, MAX_COMBINED_FEES));
+        require(combined <= MAX_FEE_BPS, CombinedFeesTooHigh(combined, MAX_FEE_BPS));
         collateralStorage.lenderPremium = lenderPremium;
     }
 
@@ -103,9 +111,9 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
 
     function setTreasuryFee(uint256 treasuryFee) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
-        require(treasuryFee <= MAX_FEE_BPS, "Treasury fee cannot exceed max fee");
+        require(treasuryFee > 0, "Treasury fee must be > 0");
         uint256 combined = collateralStorage.lenderPremium + treasuryFee;
-        require(combined <= MAX_COMBINED_FEES, CombinedFeesTooHigh(combined, MAX_COMBINED_FEES));
+        require(combined <= MAX_FEE_BPS, CombinedFeesTooHigh(combined, MAX_FEE_BPS));
         collateralStorage.treasuryFee = treasuryFee;
     }
 
@@ -116,6 +124,7 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
 
     function setZeroBalanceFee(uint256 zeroBalanceFee) public onlyOwner {
         LoanConfigData storage collateralStorage = _getLoanConfig();
+        require(zeroBalanceFee > 0, "Zero balance fee must be > 0");
         require(zeroBalanceFee <= MAX_FEE_BPS, "Zero balance fee cannot exceed max fee");
         collateralStorage.zeroBalanceFee = zeroBalanceFee;
     }

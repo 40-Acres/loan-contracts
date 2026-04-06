@@ -25,7 +25,7 @@ import {WalletFacet} from "../../../../src/facets/account/wallet/WalletFacet.sol
  * @dev Full lifecycle and configuration validation tests against the live Base deployment.
  *      Tests the entire call chain, config consistency, and facet registry integrity.
  *
- *      Run: FORGE_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveAerodromeE2E.t.sol -vvv
+ *      Run: FORGE_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveAerodromeE2E.t.sol --no-match-path 'NONE' -vvv
  */
 contract LiveAerodromeE2E is LiveDeploymentSetup {
 
@@ -260,17 +260,17 @@ contract LiveAerodromeE2E is LiveDeploymentSetup {
 
         // ── Create seller with veNFT collateral ──────────────────────
         address seller = address(uint160(uint256(keccak256("live-marketplace-seller"))));
-        deal(AERO, seller, 5000e18);
+        deal(AERO, seller, 50_000e18);
 
         // Create seller's aerodrome portfolio + veNFT
         address sellerPortfolio = portfolioFactory.createAccount(seller);
         vm.startPrank(seller);
-        IERC20(AERO).approve(sellerPortfolio, 5000e18);
+        IERC20(AERO).approve(sellerPortfolio, 50_000e18);
         {
             address[] memory factories = new address[](1);
             factories[0] = address(portfolioFactory);
             bytes[] memory calls = new bytes[](1);
-            calls[0] = abi.encodeWithSelector(VotingEscrowFacet.createLock.selector, 5000e18);
+            calls[0] = abi.encodeWithSelector(VotingEscrowFacet.createLock.selector, 50_000e18);
             bytes[] memory results = portfolioManager.multicall(calls, factories);
             uint256 sellerTokenId = abi.decode(results[0], (uint256));
 

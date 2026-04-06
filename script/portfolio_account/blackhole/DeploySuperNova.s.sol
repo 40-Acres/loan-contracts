@@ -36,7 +36,6 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTER = 0x1c7BF2532dfa34eeea02C3759E0ca8D87B1D8171; // SuperNova VoterV3
     address public constant REWARDS_DISTRIBUTOR = 0xB3410A30af5033aF822B8eA5Ad3bd0a19490ea97; // SuperNova RewardsDistributor
     address public constant SNOVA_TOKEN = 0x00Da8466B296E382E5Da2Bf20962D0cB87200c78; // NOVA token
-    bytes32 public constant SALT = bytes32(uint256(0x4040ac2e));
 
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
