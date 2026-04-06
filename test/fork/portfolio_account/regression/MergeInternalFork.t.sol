@@ -264,14 +264,72 @@ contract MergeInternalFork is BaseForkSetup {
     }
 
     // -----------------------------------------------------------------------
-    // Test 6: Undercollateralized user can still merge (no collateral loss)
+    // Test 6: Merge with active debt preserves collateral and debt
     //
-    // Scenario: User borrows, then admin lowers rewardsRate so user becomes
-    // undercollateralized. User should still be able to mergeInternal since
-    // merge doesn't reduce total collateral.
+    // Scenario: User borrows at a safe ratio, then merges two tokens.
+    // Debt and total collateral must be identical before and after.
     // -----------------------------------------------------------------------
 
-    function testMergeInternal_undercollateralizedCanStillMerge() public {
+    function testMergeInternal_withDebt_preservesCollateralAndDebt() public {
+        tokenIdA = _createLockInAccount(LOCK_AMOUNT_1);
+        tokenIdB = _createLockInAccount(LOCK_AMOUNT_2);
+
+        // Fund vault so borrow can succeed
+        _fundVault(1_000_000e6);
+
+        // Borrow 50% of max loan (safe ratio)
+        (uint256 maxLoan,) = BaseCollateralFacet(portfolioAccount).getMaxLoan();
+        uint256 borrowAmount = maxLoan * 50 / 100;
+        _borrow(borrowAmount);
+
+        // Snapshot before merge
+        uint256 debtBefore = BaseCollateralFacet(portfolioAccount).getTotalDebt();
+        uint256 totalCollateralBefore = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        uint256 collateralA = BaseCollateralFacet(portfolioAccount).getLockedCollateral(tokenIdA);
+        uint256 collateralB = BaseCollateralFacet(portfolioAccount).getLockedCollateral(tokenIdB);
+
+        assertGt(debtBefore, 0, "Should have debt");
+        assertEq(totalCollateralBefore, collateralA + collateralB, "Total should be sum of both tokens");
+
+        // Merge tokenIdA into tokenIdB
+        _singleMulticallAsUser(
+            abi.encodeWithSelector(VotingEscrowFacet.mergeInternal.selector, tokenIdA, tokenIdB)
+        );
+
+        // Debt unchanged
+        uint256 debtAfter = BaseCollateralFacet(portfolioAccount).getTotalDebt();
+        assertEq(debtAfter, debtBefore, "Debt should be unchanged after merge");
+
+        // Total collateral unchanged
+        uint256 totalCollateralAfter = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
+        assertEq(totalCollateralAfter, totalCollateralBefore, "Total collateral should be unchanged");
+
+        // fromToken collateral zeroed, toToken holds everything
+        assertEq(BaseCollateralFacet(portfolioAccount).getLockedCollateral(tokenIdA), 0, "fromToken collateral should be 0");
+        assertEq(
+            BaseCollateralFacet(portfolioAccount).getLockedCollateral(tokenIdB),
+            totalCollateralAfter,
+            "toToken should hold all collateral"
+        );
+
+        // VE state: merged amount equals sum of lock amounts
+        int128 mergedAmount = IVotingEscrow(VOTING_ESCROW).locked(tokenIdB).amount;
+        assertEq(
+            uint256(uint128(mergedAmount)),
+            LOCK_AMOUNT_1 + LOCK_AMOUNT_2,
+            "Merged token should have combined locked amount"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 7: Undercollateralized user cannot merge
+    //
+    // Scenario: User borrows, then admin lowers rewardsRate so user becomes
+    // undercollateralized. Merge now correctly detects the shortfall and
+    // reverts via enforceCollateralRequirements (since af2f22b).
+    // -----------------------------------------------------------------------
+
+    function testMergeInternal_undercollateralizedCannotMerge() public {
         tokenIdA = _createLockInAccount(LOCK_AMOUNT_1);
         tokenIdB = _createLockInAccount(LOCK_AMOUNT_2);
 
@@ -295,28 +353,11 @@ contract MergeInternalFork is BaseForkSetup {
         (uint256 newMaxLoan,) = BaseCollateralFacet(portfolioAccount).getMaxLoan();
         assertLt(newMaxLoan, debtBefore, "User should be undercollateralized after rate drop");
 
-        // Merge should still succeed because it doesn't reduce collateral
-        // PortfolioManager.multicall enforces collateral at the end, but
-        // since merge preserves total collateral, undercollateralizedDebt
-        // doesn't increase -- it stays the same as before the merge
+        // Merge reverts because enforceCollateralRequirements now correctly
+        // detects the full shortfall when collateral delta is zero (prev==new).
+        vm.expectRevert();
         _singleMulticallAsUser(
             abi.encodeWithSelector(VotingEscrowFacet.mergeInternal.selector, tokenIdA, tokenIdB)
         );
-
-        // Verify merge succeeded
-        int128 mergedAmount = IVotingEscrow(VOTING_ESCROW).locked(tokenIdB).amount;
-        assertEq(
-            uint256(uint128(mergedAmount)),
-            LOCK_AMOUNT_1 + LOCK_AMOUNT_2,
-            "Tokens should be merged"
-        );
-
-        // Debt unchanged
-        uint256 debtAfter = BaseCollateralFacet(portfolioAccount).getTotalDebt();
-        assertEq(debtAfter, debtBefore, "Debt should be unchanged after merge");
-
-        // Total collateral unchanged
-        uint256 totalCollateral = CollateralFacet(portfolioAccount).getTotalLockedCollateral();
-        assertEq(totalCollateral, LOCK_AMOUNT_1 + LOCK_AMOUNT_2, "Collateral preserved");
     }
 }

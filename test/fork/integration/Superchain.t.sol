@@ -26,7 +26,7 @@ import {CollateralFacet} from "../../../src/facets/account/collateral/Collateral
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
 import {DeployBridgeFacet} from "../../../script/portfolio_account/facets/DeployBridgeFacet.s.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
-import {MockRootVotingRewardsFactory} from "../../mocks/MockRootVotingRewardsFactory.sol";
+
 import {DeployCollateralFacet} from "../../../script/portfolio_account/facets/DeployCollateralFacet.s.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
@@ -52,16 +52,11 @@ contract SuperchainTest is Test, Setup {
         // USDC address on Optimism fork (different from Base)
         address usdc = address(0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85);
 
-        // Deploy and overwrite ROOT_VOTING_REWARDS_FACTORY with mock
-        address rootVotingRewardsFactoryAddress = address(0x7dc9fd82f91B36F416A89f5478375e4a79f4Fb2F);
-        MockRootVotingRewardsFactory mockFactory = new MockRootVotingRewardsFactory();
-        vm.etch(rootVotingRewardsFactoryAddress, address(mockFactory).code);
-
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy(address(portfolioFactory), FORTY_ACRES_DEPLOYER);
 
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
@@ -113,7 +108,9 @@ contract SuperchainTest is Test, Setup {
         address authorizedCaller = address(0xaaaaa);
         _pm.setAuthorizedCaller(authorizedCaller, true);
 
-        superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true);
+        // Real root pool (implements IRootPool.chainid() → 1868 Soneium)
+        address superchainPool = 0x21cD02d175D61a4b4D6b62d8707186B1FedaaEAd;
+        superchainVotingConfig.setSuperchainPool(superchainPool, true);
 
         uint256 tokenId = 5005;
 
@@ -133,7 +130,7 @@ contract SuperchainTest is Test, Setup {
 
         // vote on superchain pool
         address[] memory votePools = new address[](1);
-        votePools[0] = address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952);
+        votePools[0] = superchainPool;
         uint256[] memory voteWeights = new uint256[](1);
         voteWeights[0] = 100e18;
 
@@ -155,20 +152,28 @@ contract SuperchainTest is Test, Setup {
         vm.warp(nextEpochStart + 3 hours);
         vm.roll(block.number + 1);
 
-        // claim for token 5005 using base ClaimingFacet
+        // claim for token 5005 using base ClaimingFacet with root pool's reward contracts
+        // Fee reward: 0x22796dEA87c141aBEc616E38247074e9e51C6B20
+        // Bribe reward: 0x2be8990C7057018b29Da8Af2F5b8c397babB2203
+        // Pool tokens: USDT0 (0x0555...) and WETH (0x4200...06)
         address[] memory claimBribes = new address[](2);
-        claimBribes[0] = address(0x6c7c646Ff5AFC2D9071aD5f53e879954d815c3F6);
-        claimBribes[1] = address(0x554E077BF8201a43C1E1212B33452695B6c8D321);
+        claimBribes[0] = address(0x22796dEA87c141aBEc616E38247074e9e51C6B20);
+        claimBribes[1] = address(0x2be8990C7057018b29Da8Af2F5b8c397babB2203);
 
         address[][] memory claimTokens = new address[][](2);
         claimTokens[0] = new address[](2);
-        claimTokens[0][0] = address(0x4200000000000000000000000000000000000006);
-        claimTokens[0][1] = address(0x7f9AdFbd38b669F03d1d11000Bc76b9AaEA28A81);
+        claimTokens[0][0] = address(0x4200000000000000000000000000000000000006); // WETH
+        claimTokens[0][1] = address(0x0555E30da8f98308EdB960aa94C0Db47230d2B9c); // USDT0
         claimTokens[1] = new address[](2);
-        claimTokens[1][0] = address(0x7f9AdFbd38b669F03d1d11000Bc76b9AaEA28A81);
-        claimTokens[1][1] = address(0x4200000000000000000000000000000000000006);
+        claimTokens[1][0] = address(0x4200000000000000000000000000000000000006); // WETH
+        claimTokens[1][1] = address(0x0555E30da8f98308EdB960aa94C0Db47230d2B9c); // USDT0
 
+        // Fund authorizedCaller with WETH for Hyperlane cross-chain messaging fees
+        address weth = 0x4200000000000000000000000000000000000006;
+        address hyperlaneRouter = 0xF278761576f45472bdD721EACA19317cE159c011;
+        deal(weth, authorizedCaller, 1 ether);
         vm.startPrank(authorizedCaller, authorizedCaller);
+        IERC20(weth).approve(hyperlaneRouter, type(uint256).max);
         ClaimingFacet(portfolioAccount).claimFees(claimBribes, claimTokens, tokenId);
         vm.stopPrank();
 
@@ -180,7 +185,7 @@ contract SuperchainTest is Test, Setup {
         PortfolioManager ink_pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory ink_portfolioFactory, FacetRegistry ink_facetRegistry) = ink_pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         DeployPortfolioFactoryConfig ink_configDeployer = new DeployPortfolioFactoryConfig();
-        (PortfolioFactoryConfig ink_portfolioFactoryConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig, SwapConfig ink_swapConfig) = ink_configDeployer.deploy(address(ink_portfolioFactory));
+        (PortfolioFactoryConfig ink_portfolioFactoryConfig, VotingConfig ink_votingConfig, LoanConfig ink_loanConfig, SwapConfig ink_swapConfig) = ink_configDeployer.deploy(address(ink_portfolioFactory), FORTY_ACRES_DEPLOYER);
 
         // deploy the bridge facet
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();

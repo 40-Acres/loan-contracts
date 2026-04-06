@@ -6,8 +6,11 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {VotingConfig} from "./VotingConfig.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {IRootPool} from "../../../interfaces/IRootPool.sol";
 /**
- * @title VotingConfig
+ * @title SuperchainVotingConfig
+ * @dev Extension of VotingConfig for superchain pools. Only root pools that
+ *      implement IRootPool.chainid() may be registered as superchain pools.
  */
 contract SuperchainVotingConfig is VotingConfig {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -15,6 +18,8 @@ contract SuperchainVotingConfig is VotingConfig {
         _disableInitializers();
     }
     
+
+    error NotARootPool(address pool);
 
     struct SuperchainVotingConfigData {
         mapping(address => bool) superchainPools;
@@ -39,6 +44,16 @@ contract SuperchainVotingConfig is VotingConfig {
      * @dev Set superchain pool
      */
     function setSuperchainPool(address pool, bool approved) external onlyOwner {
+        if (approved) {
+            // Validate the pool implements IRootPool.chainid() before accepting.
+            // Only root pools have this — registering a CL or AMM pool would
+            // cause SuperchainVotingFacet.vote() to revert at runtime.
+            try IRootPool(pool).chainid() returns (uint256 chainId) {
+                require(chainId > 0, "chainid must be > 0");
+            } catch {
+                revert NotARootPool(pool);
+            }
+        }
         SuperchainVotingConfigData storage superchainVotingStorage = _getSuperchainVotingConfig();
         superchainVotingStorage.superchainPools[pool] = approved;
         if(approved) {

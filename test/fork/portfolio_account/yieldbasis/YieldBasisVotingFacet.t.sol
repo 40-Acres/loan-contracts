@@ -154,7 +154,7 @@ contract YieldBasisVotingFacetTest is Test {
 
         // Deploy configs
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory), DEPLOYER);
 
         // Deploy mock vault and lending pool for CollateralManager
         mockVault = new MockVault(USDC);

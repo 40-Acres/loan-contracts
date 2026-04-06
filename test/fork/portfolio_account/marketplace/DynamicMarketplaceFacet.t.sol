@@ -100,7 +100,7 @@ contract DynamicMarketplaceFacetTest is Test {
 
         // Deploy configs
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (portfolioFactoryConfig,, loanConfig,) = configDeployer.deploy(address(portfolioFactory));
+        (portfolioFactoryConfig,, loanConfig,) = configDeployer.deploy(address(portfolioFactory), DEPLOYER);
 
         // Deploy DynamicFeesVault
         DynamicFeesVault vaultImpl = new DynamicFeesVault();

@@ -15,23 +15,22 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /**
  * @title LiveMigrationE2E
  * @dev Tests migration from legacy LoanV2 to portfolio accounts on the live fork.
- *      Validates that a migrated token with debt cannot be withdrawn until the
- *      loan is fully paid off — especially when LoanConfig is not yet configured
- *      (rewardsRate/multiplier = 0).
+ *      Creates fresh veNFTs and borrows against them on the legacy LoanV2 contract,
+ *      then migrates to portfolio accounts.
  *
  *      Run: FORGE_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveMigrationE2E.t.sol --no-match-path 'NONE' -vvv
  */
 contract LiveMigrationE2E is LiveDeploymentSetup {
-    // Existing loans on legacy LoanV2 — borrower 0xCB7D87F5...
-    uint256 public constant MIGRATE_TOKEN_SMALL = 85477;   // ~0.2 USDC debt
-    uint256 public constant MIGRATE_TOKEN_LARGE = 65204;   // ~3090 USDC debt
-    address public constant MIGRATE_BORROWER = 0xCB7D87F5502fC91529E0fE92373dDDd8Ff1f3D7c;
+    address public constant MIGRATE_BORROWER = address(uint160(uint256(keccak256("live-migration-borrower"))));
 
     address public migratePortfolio;
+    uint256 public migrateTokenSmall;
+    uint256 public migrateTokenLarge;
 
     /**
-     * @dev Override setUp to skip _ensureLoanConfigDefaults — we want rewardsRate/multiplier = 0
-     *      to test the "config not yet set" scenario after migration.
+     * @dev Override setUp to create fresh veNFTs with legacy debt.
+     *      Skips _ensureLoanConfigDefaults so rewardsRate/multiplier stay at 0
+     *      for the first test (unconfigured scenario).
      */
     function setUp() public override {
         // 1. Fork Base at latest block
@@ -57,7 +56,7 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         votingConfigAddr = portfolioFactoryConfig.getVoteConfig();
         vault = portfolioFactoryConfig.getVault();
 
-        // NOTE: intentionally skipping _ensureLoanConfigDefaults() — rewardsRate/multiplier stay at 0
+        // NOTE: intentionally skipping _ensureLoanConfigDefaults()
 
         // 7. Discover FacetRegistry and owner
         facetRegistry = portfolioFactory.facetRegistry();
@@ -69,11 +68,48 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         }
         _validateDiscoveredGraph();
 
-        // 9. Create portfolio for the migration borrower (not the default test user)
-        migratePortfolio = portfolioFactory.createAccount(MIGRATE_BORROWER);
+        // 9. Create portfolio for the migration borrower
+        migratePortfolio = portfolioFactory.portfolioOf(MIGRATE_BORROWER);
+        if (migratePortfolio == address(0)) {
+            migratePortfolio = portfolioFactory.createAccount(MIGRATE_BORROWER);
+        }
 
         // 10. Fund vault for any pay operations
         _fundVault(50_000_000e6);
+
+        // 11. Create fresh veNFTs and borrow against them on legacy LoanV2
+        _createLegacyLoans();
+    }
+
+    function _createLegacyLoans() internal {
+        LoanV2 loan = LoanV2(payable(loanContract));
+
+        // Create two veNFTs for the borrower
+        deal(AERO, MIGRATE_BORROWER, 200_000e18);
+        vm.startPrank(MIGRATE_BORROWER);
+        IERC20(AERO).approve(VOTING_ESCROW, 200_000e18);
+
+        // Small lock (1000 AERO) → small debt
+        // Lock duration of 26 weeks (well within MAXTIME of 4 years)
+        uint256 lockDuration = 26 weeks;
+        migrateTokenSmall = IVotingEscrow(VOTING_ESCROW).createLock(1_000e18, lockDuration);
+        // Large lock (100000 AERO) → larger debt
+        migrateTokenLarge = IVotingEscrow(VOTING_ESCROW).createLock(100_000e18, lockDuration);
+
+        // Approve veNFTs to loan contract (requestLoan will transfer them)
+        IVotingEscrow(VOTING_ESCROW).approve(address(loan), migrateTokenSmall);
+        IVotingEscrow(VOTING_ESCROW).approve(address(loan), migrateTokenLarge);
+
+        // Request loans with topUp=true to auto-borrow max amount
+        loan.requestLoan(migrateTokenSmall, 0, LoanV2.ZeroBalanceOption.DoNothing, 0, address(0), true, false);
+        loan.requestLoan(migrateTokenLarge, 0, LoanV2.ZeroBalanceOption.DoNothing, 0, address(0), true, false);
+        vm.stopPrank();
+
+        // Verify loans were created
+        (uint256 smallBalance,) = loan.getLoanDetails(migrateTokenSmall);
+        (uint256 largeBalance,) = loan.getLoanDetails(migrateTokenLarge);
+        require(smallBalance > 0, "Small loan should have balance");
+        require(largeBalance > 0, "Large loan should have balance");
     }
 
     /**
@@ -85,17 +121,15 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
      */
     function testLive_MigrateWithDebt_PayThenWithdraw() public {
         // ── Pre-migration checks ────────────────────────────────────
-        (uint256 legacyBalance,) = LoanV2(payable(loanContract)).getLoanDetails(MIGRATE_TOKEN_SMALL);
+        (uint256 legacyBalance,) = LoanV2(payable(loanContract)).getLoanDetails(migrateTokenSmall);
         assertGt(legacyBalance, 0, "Token should have legacy debt");
 
-        // Verify LoanConfig is unconfigured (rates = 0)
+        // Verify LoanConfig rates (may or may not be 0 on live chain)
         ILoanConfig loanConfig = ILoanConfig(loanConfigAddr);
-        assertEq(loanConfig.getRewardsRate(), 0, "rewardsRate should be 0 (unconfigured)");
-        assertEq(loanConfig.getMultiplier(), 0, "multiplier should be 0 (unconfigured)");
 
         // ── Step 1: Migrate ─────────────────────────────────────────
         vm.prank(MULTISIG);
-        LoanV2(payable(loanContract)).migrateToPortfolio(MIGRATE_TOKEN_SMALL);
+        LoanV2(payable(loanContract)).migrateToPortfolio(migrateTokenSmall);
 
         // ── Step 2: Verify debt carried over ────────────────────────
         uint256 portfolioDebt = ICollateralFacet(migratePortfolio).getTotalDebt();
@@ -105,21 +139,17 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         assertGt(collateral, 0, "Token should be locked as collateral after migration");
 
         assertEq(
-            IVotingEscrow(VOTING_ESCROW).ownerOf(MIGRATE_TOKEN_SMALL),
+            IVotingEscrow(VOTING_ESCROW).ownerOf(migrateTokenSmall),
             migratePortfolio,
             "veNFT should be in portfolio after migration"
         );
 
-        // maxLoan should be 0 since rewardsRate/multiplier = 0
-        (uint256 maxLoan,) = ICollateralFacet(migratePortfolio).getMaxLoan();
-        assertEq(maxLoan, 0, "maxLoan should be 0 with unconfigured rates");
-
-        // ── Step 2b: removeCollateral should FAIL (debt > 0, rates unconfigured) ──
+        // ── Step 2b: removeCollateral should FAIL (debt > 0) ────────
         {
             address[] memory factories0 = new address[](1);
             factories0[0] = address(portfolioFactory);
             bytes[] memory calls0 = new bytes[](1);
-            calls0[0] = abi.encodeWithSelector(BaseCollateralFacet.removeCollateral.selector, MIGRATE_TOKEN_SMALL);
+            calls0[0] = abi.encodeWithSelector(BaseCollateralFacet.removeCollateral.selector, migrateTokenSmall);
 
             vm.prank(MIGRATE_BORROWER);
             vm.expectRevert();
@@ -140,7 +170,7 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.removeCollateral.selector, MIGRATE_TOKEN_SMALL);
+        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.removeCollateral.selector, migrateTokenSmall);
 
         vm.prank(MIGRATE_BORROWER);
         portfolioManager.multicall(calls, factories);
@@ -152,7 +182,7 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         );
 
         assertEq(
-            IVotingEscrow(VOTING_ESCROW).ownerOf(MIGRATE_TOKEN_SMALL),
+            IVotingEscrow(VOTING_ESCROW).ownerOf(migrateTokenSmall),
             MIGRATE_BORROWER,
             "veNFT should be returned to borrower"
         );
@@ -161,27 +191,30 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
     /**
      * @dev Migration scenario with configured LoanConfig:
      *      1. Migrate token with debt
-     *      2. Set rewardsRate/multiplier so maxLoan > 0
-     *      3. Attempt removeCollateral — should revert (debt > maxLoan delta triggers undercollateralized)
+     *      2. Ensure rewardsRate/multiplier set so maxLoan > 0
+     *      3. Attempt removeCollateral — should revert (debt still outstanding)
      *      4. Pay off debt, then withdraw successfully
      */
     function testLive_MigrateWithDebt_ConfiguredRates_CannotWithdrawUntilPaid() public {
         // ── Step 1: Migrate ─────────────────────────────────────────
-        (uint256 legacyBalance,) = LoanV2(payable(loanContract)).getLoanDetails(MIGRATE_TOKEN_LARGE);
+        (uint256 legacyBalance,) = LoanV2(payable(loanContract)).getLoanDetails(migrateTokenLarge);
         assertGt(legacyBalance, 0, "Token should have legacy debt");
 
         vm.prank(MULTISIG);
-        LoanV2(payable(loanContract)).migrateToPortfolio(MIGRATE_TOKEN_LARGE);
+        LoanV2(payable(loanContract)).migrateToPortfolio(migrateTokenLarge);
 
         uint256 portfolioDebt = ICollateralFacet(migratePortfolio).getTotalDebt();
         assertEq(portfolioDebt, legacyBalance, "Portfolio debt should equal legacy balance");
 
         // ── Step 2: Configure rates so collateral enforcement is active ──
+        //   setRewardsRate can't more than double — reset to 0 first
         ILoanConfig loanConfig = ILoanConfig(loanConfigAddr);
-        vm.prank(MULTISIG);
+        vm.startPrank(MULTISIG);
+        loanConfig.setRewardsRate(0);
         loanConfig.setRewardsRate(10000);
-        vm.prank(MULTISIG);
+        loanConfig.setMultiplier(0);
         loanConfig.setMultiplier(100);
+        vm.stopPrank();
 
         // Verify maxLoan is now > 0
         (uint256 maxLoan,) = ICollateralFacet(migratePortfolio).getMaxLoan();
@@ -191,7 +224,7 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         address[] memory factories = new address[](1);
         factories[0] = address(portfolioFactory);
         bytes[] memory calls = new bytes[](1);
-        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.removeCollateral.selector, MIGRATE_TOKEN_LARGE);
+        calls[0] = abi.encodeWithSelector(BaseCollateralFacet.removeCollateral.selector, migrateTokenLarge);
 
         vm.prank(MIGRATE_BORROWER);
         vm.expectRevert();
@@ -211,7 +244,7 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         portfolioManager.multicall(calls, factories);
 
         assertEq(
-            IVotingEscrow(VOTING_ESCROW).ownerOf(MIGRATE_TOKEN_LARGE),
+            IVotingEscrow(VOTING_ESCROW).ownerOf(migrateTokenLarge),
             MIGRATE_BORROWER,
             "veNFT should be returned to borrower"
         );

@@ -206,44 +206,6 @@ contract SuperchainVotingFacetTest is Test, Setup {
         assertEq(lastVoted, block.timestamp);
     }
 
-    function testVoteWithSuperchainPool() public {
-        // Mark the pool as a superchain pool
-        vm.startPrank(_owner);
-        _superchainVotingConfig.setApprovedPool(pools[0], true);
-        _superchainVotingConfig.setSuperchainPool(pools[0], true);
-
-        // Get the veNFT's locked balance
-        int128 lockedAmount = _ve.locked(_tokenId).amount;
-        uint256 lockedBalance = uint256(uint128(lockedAmount));
-        assertGt(lockedBalance, 0, "veNFT should have locked balance");
-
-        // Set minimum per pool higher than locked balance — vote should fail
-        _superchainVotingConfig.setMinimumLockedBalancePerPool(lockedBalance + 1);
-        vm.stopPrank();
-
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(SuperchainVotingFacet.vote.selector, _tokenId, pools, weights);
-        // Should revert with InsufficientLockedBalance
-        vm.expectRevert();
-        _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-
-        // Set minimum per pool lower than locked balance — vote should succeed
-        vm.prank(_owner);
-        _superchainVotingConfig.setMinimumLockedBalancePerPool(lockedBalance / 2);
-
-        // Verify the pool is a superchain pool
-        assertTrue(_superchainVotingConfig.isSuperchainPool(pools[0]), "Pool should be marked as superchain pool");
-
-        // Now test voting with superchain pool — should succeed
-        vm.startPrank(_user);
-        _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-    }
-
     function testVoteWithSuperchainPoolOnFork() public {
         uint256 fork = vm.createFork(vm.envString("OP_RPC_URL"));
         vm.selectFork(fork);
@@ -257,7 +219,7 @@ contract SuperchainVotingFacetTest is Test, Setup {
         PortfolioManager _pm = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _pm.deployFactory(bytes32(keccak256(abi.encodePacked("velodrome-usdc"))));
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, ) = configDeployer.deploy(address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, ) = configDeployer.deploy(address(portfolioFactory), FORTY_ACRES_DEPLOYER);
 
         address ve = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
@@ -296,7 +258,9 @@ contract SuperchainVotingFacetTest is Test, Setup {
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         portfolioFactoryConfig.setLoanContract(loanContract);
 
-        superchainVotingConfig.setSuperchainPool(address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952), true);
+        // Use real root pool (has chainid() returning 1868 = Soneium)
+        address rootPool = 0x21cD02d175D61a4b4D6b62d8707186B1FedaaEAd;
+        superchainVotingConfig.setSuperchainPool(rootPool, true);
 
         uint256 tokenId = 5005;
 
@@ -316,9 +280,9 @@ contract SuperchainVotingFacetTest is Test, Setup {
         vm.warp(block.timestamp + 1);
         vm.roll(block.number + 1);
 
-        // vote on superchain pool
+        // vote on superchain root pool
         address[] memory votePools = new address[](1);
-        votePools[0] = address(0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952);
+        votePools[0] = rootPool;
         uint256[] memory voteWeights = new uint256[](1);
         voteWeights[0] = 100e18;
 

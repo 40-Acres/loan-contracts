@@ -61,7 +61,7 @@ contract Setup is Test {
         _portfolioManager = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = configDeployer.deploy(address(portfolioFactory), FORTY_ACRES_DEPLOYER);
         _portfolioFactory = portfolioFactory;
         DeployFacets deployer = new DeployFacets();
 

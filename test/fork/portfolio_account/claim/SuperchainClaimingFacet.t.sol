@@ -43,7 +43,7 @@ import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {SuperchainVotingFacet} from "../../../../src/facets/account/vote/SuperchainVoting.sol";
 import {ClaimingFacet} from "../../../../src/facets/account/claim/ClaimingFacet.sol";
-import {MockRootVotingRewardsFactory} from "../../../mocks/MockRootVotingRewardsFactory.sol";
+
 import {Loan as LoanV2} from "../../../../src/LoanV2.sol";
 import {Loan} from "../../../../src/Loan.sol";
 import {Vault} from "../../../../src/VaultV2.sol";
@@ -63,21 +63,16 @@ contract SuperchainClaimingFacetTest is Test {
 
     // Fee tokens on Optimism
     address constant WETH = 0x4200000000000000000000000000000000000006;
-    address constant XVELO = 0x7f9AdFbd38b669F03d1d11000Bc76b9AaEA28A81;
+    address constant USDT0 = 0x0555E30da8f98308EdB960aa94C0Db47230d2B9c;
 
-    // Superchain pool on Ink (USDT0/WETH CL)
-    address constant SUPERCHAIN_POOL = 0x894d6Ea97767EbeCEfE01c9410f6Bd67935AA952;
+    // Real root pool on Optimism (implements IRootPool.chainid() → 1868 Soneium)
+    // Pair: USDT0/WETH
+    address constant SUPERCHAIN_POOL = 0x21cD02d175D61a4b4D6b62d8707186B1FedaaEAd;
 
-    // Fee voting reward for the superchain pool (from Voter.gaugeToFees)
-    address constant POOL_FEE_REWARD = 0xD99c51c481aD25cb77501aAE878F8B5c957b8C1A;
-    // Bribe voting reward for the superchain pool (from Voter.gaugeToBribe)
-    address constant POOL_BRIBE_REWARD = 0x554E077BF8201a43C1E1212B33452695B6c8D321;
-
-    // Root reward contracts - these are what SuperchainClaimingFacet is designed for.
-    // Calling Voter.claimFees with these fails because Voter isn't approved for the NFT
-    // on the root contracts.
-    address constant ROOT_FEE_CONTRACT = 0xF685451dCf9648a95fCB27b62a73121a2f1657DE;
-    address constant ROOT_INCENTIVE_CONTRACT = 0x7b27C3779a4Ba985AFC7E63c6c2dDAe2724545CA;
+    // Fee voting reward for the root pool's gauge (from Voter.gaugeToFees(gauge))
+    address constant POOL_FEE_REWARD = 0x22796dEA87c141aBEc616E38247074e9e51C6B20;
+    // Bribe voting reward for the root pool's gauge (from Voter.gaugeToBribe(gauge))
+    address constant POOL_BRIBE_REWARD = 0x2be8990C7057018b29Da8Af2F5b8c397babB2203;
 
     // Test NFT
     uint256 constant TOKEN_ID = 5005;
@@ -104,10 +99,6 @@ contract SuperchainClaimingFacetTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.envString("OP_RPC_URL"), FORK_BLOCK);
 
-        // Deploy mock for RootVotingRewardsFactory
-        MockRootVotingRewardsFactory mockFactory = new MockRootVotingRewardsFactory();
-        vm.etch(ROOT_VOTING_REWARDS_FACTORY, address(mockFactory).code);
-
         vm.startPrank(FORTY_ACRES_DEPLOYER);
 
         // Deploy PortfolioManager and Factory
@@ -120,7 +111,7 @@ contract SuperchainClaimingFacetTest is Test {
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
         PortfolioFactoryConfig portfolioFactoryConfig;
         VotingConfig votingConfig;
-        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory), FORTY_ACRES_DEPLOYER);
 
         // Deploy SuperchainVotingConfig
         SuperchainVotingConfig scVotingConfigImpl = new SuperchainVotingConfig();
@@ -166,7 +157,7 @@ contract SuperchainClaimingFacetTest is Test {
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
         portfolioFactoryConfig.setLoanContract(address(loanProxy));
 
-        // Configure superchain pool
+        // Configure superchain pool (real root pool with chainid())
         superchainVotingConfig.setApprovedPool(SUPERCHAIN_POOL, true);
         superchainVotingConfig.setSuperchainPool(SUPERCHAIN_POOL, true);
 
@@ -207,15 +198,15 @@ contract SuperchainClaimingFacetTest is Test {
         vm.roll(block.number + 1);
 
         // Attempt to claim fees through ClaimingFacet (which routes through Voter.claimFees).
-        // Using ROOT fee contracts should fail because the Voter contract is not approved
-        // on root reward contracts to call getReward for this tokenId.
+        // Using the root pool's fee reward contract via Voter.claimFees should fail because
+        // the Voter contract is not isApprovedOrOwner on root reward contracts.
         address[] memory fees = new address[](1);
-        fees[0] = ROOT_FEE_CONTRACT;
+        fees[0] = POOL_FEE_REWARD;
 
         address[][] memory tokens = new address[][](1);
         tokens[0] = new address[](2);
         tokens[0][0] = WETH;
-        tokens[0][1] = XVELO;
+        tokens[0][1] = USDT0;
 
         // ClaimingFacet.claimFees -> Voter.claimFees -> rootRewardContract.getReward
         // This reverts because Voter is NOT isApprovedOrOwner on the root contract.
@@ -241,7 +232,7 @@ contract SuperchainClaimingFacetTest is Test {
 
         // Record balances before
         uint256 wethBefore = IERC20(WETH).balanceOf(portfolioAccount);
-        uint256 xveloBefore = IERC20(XVELO).balanceOf(portfolioAccount);
+        uint256 xveloBefore = IERC20(USDT0).balanceOf(portfolioAccount);
 
         // Use the regular fee voting reward contract (which the portfolio CAN call
         // getReward on because it owns the veNFT). This demonstrates the core mechanism.
@@ -251,7 +242,7 @@ contract SuperchainClaimingFacetTest is Test {
         address[][] memory tokens = new address[][](1);
         tokens[0] = new address[](2);
         tokens[0][0] = WETH;
-        tokens[0][1] = XVELO;
+        tokens[0][1] = USDT0;
 
         // Call claimSuperchainRewards through the diamond
         // Portfolio -> SuperchainClaimingFacet.claimSuperchainRewards -> rewardContract.getReward
@@ -263,10 +254,10 @@ contract SuperchainClaimingFacetTest is Test {
         // The call succeeded without revert -- this is the primary assertion.
         // Balances should not decrease.
         uint256 wethAfter = IERC20(WETH).balanceOf(portfolioAccount);
-        uint256 xveloAfter = IERC20(XVELO).balanceOf(portfolioAccount);
+        uint256 xveloAfter = IERC20(USDT0).balanceOf(portfolioAccount);
 
         assertGe(wethAfter, wethBefore, "WETH balance should not decrease");
-        assertGe(xveloAfter, xveloBefore, "XVELO balance should not decrease");
+        assertGe(xveloAfter, xveloBefore, "USDT0 balance should not decrease");
     }
 
     // -----------------------------------------------------------------------
@@ -319,7 +310,7 @@ contract SuperchainClaimingFacetTest is Test {
         vm.roll(block.number + 1);
 
         uint256 wethBefore = IERC20(WETH).balanceOf(portfolioAccount);
-        uint256 xveloBefore = IERC20(XVELO).balanceOf(portfolioAccount);
+        uint256 xveloBefore = IERC20(USDT0).balanceOf(portfolioAccount);
 
         // Claim from both fee and bribe reward contracts in a single call
         address[] memory rewardContracts = new address[](2);
@@ -329,20 +320,20 @@ contract SuperchainClaimingFacetTest is Test {
         address[][] memory tokens = new address[][](2);
         tokens[0] = new address[](2);
         tokens[0][0] = WETH;
-        tokens[0][1] = XVELO;
+        tokens[0][1] = USDT0;
         tokens[1] = new address[](2);
         tokens[1][0] = WETH;
-        tokens[1][1] = XVELO;
+        tokens[1][1] = USDT0;
 
         vm.startPrank(user, user);
         _multicallClaim(rewardContracts, tokens);
         vm.stopPrank();
 
         uint256 wethAfter = IERC20(WETH).balanceOf(portfolioAccount);
-        uint256 xveloAfter = IERC20(XVELO).balanceOf(portfolioAccount);
+        uint256 xveloAfter = IERC20(USDT0).balanceOf(portfolioAccount);
 
         assertGe(wethAfter, wethBefore, "WETH balance should not decrease after multi-claim");
-        assertGe(xveloAfter, xveloBefore, "XVELO balance should not decrease after multi-claim");
+        assertGe(xveloAfter, xveloBefore, "USDT0 balance should not decrease after multi-claim");
     }
 
     // -----------------------------------------------------------------------
@@ -380,7 +371,7 @@ contract SuperchainClaimingFacetTest is Test {
         address[][] memory tokens = new address[][](1);
         tokens[0] = new address[](2);
         tokens[0][0] = WETH;
-        tokens[0][1] = XVELO;
+        tokens[0][1] = USDT0;
 
         // Create a separate portfolio that does NOT own the veNFT
         address attacker = address(uint160(uint256(keccak256("attacker"))));
@@ -409,7 +400,7 @@ contract SuperchainClaimingFacetTest is Test {
         tokens[0] = new address[](1);
         tokens[0][0] = WETH;
         tokens[1] = new address[](1);
-        tokens[1][0] = XVELO;
+        tokens[1][0] = USDT0;
 
         vm.prank(portfolioAccount);
         vm.expectRevert("Length mismatch");

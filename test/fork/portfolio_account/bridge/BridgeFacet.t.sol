@@ -53,7 +53,7 @@ contract BridgeFacetTest is Test {
         // Deploy config contracts
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
         SwapConfig swapConfig;
-        (_portfolioFactoryConfig, _votingConfig, _loanConfig, swapConfig) = configDeployer.deploy(address(_portfolioFactory));
+        (_portfolioFactoryConfig, _votingConfig, _loanConfig, swapConfig) = configDeployer.deploy(address(_portfolioFactory), FORTY_ACRES_DEPLOYER);
 
         // Deploy BridgeFacet
         DeployBridgeFacet bridgeDeployer = new DeployBridgeFacet();

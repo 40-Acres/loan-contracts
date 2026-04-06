@@ -22,7 +22,7 @@ contract DeployCollateralFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](11);
+        bytes4[] memory selectors = new bytes4[](10);
         selectors[0] = BaseCollateralFacet.addCollateral.selector;
         selectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         selectors[2] = BaseCollateralFacet.getTotalDebt.selector;

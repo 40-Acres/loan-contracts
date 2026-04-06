@@ -166,7 +166,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         // Deploy configs
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory), DEPLOYER);
 
         // Deploy mock vault and lending pool
         mockVault = new MockVault(USDC);
@@ -399,13 +399,14 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Verify lock amount increased
         uint256 finalLockedAmount = uint256(uint128(veYB.locked(portfolioAccount).amount));
 
-        // With IncreaseCollateral option at 100%, the entire rewards amount goes to collateral
-        // (Zero balance fee from config is 0, so no fee deducted)
+        // With IncreaseCollateral option at 100%, the rewards amount minus zero balance fee goes to collateral
         // veYB rounds down slightly due to lock mechanics
+        uint256 zeroBalanceFee = rewardsAmount * loanConfig.getZeroBalanceFee() / 10000;
+        uint256 expectedIncrease = rewardsAmount - zeroBalanceFee;
         assertApproxEqAbs(
             finalLockedAmount - initialLockedAmount,
-            rewardsAmount,
-            rewardsAmount / 100, // 1% tolerance for veYB rounding
+            expectedIncrease,
+            expectedIncrease / 100, // 1% tolerance for veYB rounding
             "Lock amount should increase by rewards amount"
         );
     }
@@ -447,9 +448,11 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
             0
         );
 
-        // Verify lock amount increased by 25%
+        // Verify lock amount increased by 25% of rewards after zero balance fee
         uint256 finalLockedAmount = uint256(uint128(veYB.locked(portfolioAccount).amount));
-        uint256 expectedIncrease = rewardsAmount * 25 / 100; // 25% goes to collateral
+        uint256 zeroBalanceFee = rewardsAmount * loanConfig.getZeroBalanceFee() / 10000;
+        uint256 afterFee = rewardsAmount - zeroBalanceFee;
+        uint256 expectedIncrease = afterFee * 25 / 100; // 25% of post-fee amount goes to collateral
         assertApproxEqAbs(
             finalLockedAmount - initialLockedAmount,
             expectedIncrease,
@@ -498,15 +501,14 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         uint256 recipientBalanceAfter = ybToken.balanceOf(recipient);
 
-        // With zero balance fee at 0% in test config:
-        // - 50% goes to PayToRecipient
-        // - Remaining 50% goes through zero balance processing (0% fee)
-        // - So all 50% remaining goes to recipient
-        // Total: 50% + 50% = 100%
+        // Zero balance fee is deducted from the full rewardsAmount first.
+        // Then the remaining is split: 50% PayToRecipient + 50% remainder → both go to recipient.
+        uint256 zeroBalanceFee = rewardsAmount * loanConfig.getZeroBalanceFee() / 10000;
+        uint256 expectedRecipient = rewardsAmount - zeroBalanceFee;
         assertEq(
             recipientBalanceAfter - recipientBalanceBefore,
-            rewardsAmount,
-            "Recipient should receive 100% of rewards (no zero balance fee configured)"
+            expectedRecipient,
+            "Recipient should receive rewards minus zero balance fee"
         );
     }
 

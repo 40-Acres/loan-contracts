@@ -84,7 +84,7 @@ contract AerodromeDynamicFeesE2E is Test {
 
         // Deploy configs
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory), DEPLOYER);
 
         // Deploy DynamicFeesVault
         DynamicFeesVault vaultImpl = new DynamicFeesVault();

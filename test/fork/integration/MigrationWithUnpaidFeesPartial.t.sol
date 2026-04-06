@@ -81,7 +81,7 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         
         // Deploy config contracts
         DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (portfolioFactoryConfig, , loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory));
+        (portfolioFactoryConfig, , loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory), FORTY_ACRES_DEPLOYER);
         
         // Deploy facets
         DeployFacets deployer = new DeployFacets();
@@ -111,8 +111,12 @@ contract MigrationWithUnpaidFeesPartialPayoffTest is Test {
         }
 
         // Now set loan contract in config (validation will pass)
-        vm.prank(FORTY_ACRES_DEPLOYER);
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
         portfolioFactoryConfig.setLoanContract(BASE_LOAN_CONTRACT);
+        // Configure rates so migrated collateral produces a maxLoan > migrated debt
+        loanConfig.setRewardsRate(10000);
+        loanConfig.setMultiplier(100);
+        vm.stopPrank();
         
         
         // Create portfolio account for user
