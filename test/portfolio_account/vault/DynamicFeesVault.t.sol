@@ -276,7 +276,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Debt should NOT be reduced immediately — rewards are streaming
@@ -292,7 +292,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to end of epoch and settle
@@ -315,7 +315,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp and settle both users
@@ -344,13 +344,13 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 80e6);
         usdc.approve(address(vault), 80e6);
-        vault.repayWithRewards(80e6);
+        vault.depositRewards(80e6);
         vm.stopPrank();
 
         // Warp and settle all users
@@ -377,7 +377,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 150e6);
         usdc.approve(address(vault), 150e6);
-        vault.repayWithRewards(150e6);
+        vault.depositRewards(150e6);
         vm.stopPrank();
 
         // Warp and settle — excess should be sent as USDC
@@ -398,7 +398,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        vault.depositRewards(200e6);
         vm.stopPrank();
 
         // Share price shouldn't decrease immediately
@@ -428,9 +428,9 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 300e6);
         usdc.approve(address(vault), 300e6);
-        vault.repayWithRewards(100e6);
-        vault.repayWithRewards(100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
+        vault.depositRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // All 300 should be streaming
@@ -459,13 +459,13 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 150e6);
         usdc.approve(address(vault), 150e6);
-        vault.repayWithRewards(150e6);
+        vault.depositRewards(150e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp and settle both
@@ -498,25 +498,25 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 75e6);
         usdc.approve(address(vault), 75e6);
-        vault.repayWithRewards(75e6);
+        vault.depositRewards(75e6);
         vm.stopPrank();
 
         vm.startPrank(user3);
         deal(address(usdc), user3, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         vm.startPrank(user4);
         deal(address(usdc), user4, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         // Warp and settle all users
@@ -555,7 +555,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to 50% of epoch duration
@@ -581,7 +581,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to 50% and make second deposit
@@ -589,7 +589,7 @@ contract DynamicFeesVaultTest is Test {
         vm.warp(halfwayPoint);
 
         vm.startPrank(user1);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to end and settle
@@ -617,7 +617,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // totalAssets should be approximately unchanged (tiny dust from rate truncation)
@@ -637,7 +637,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to end of stream epoch — triggers global vesting via sync
@@ -679,7 +679,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // totalAssets approximately unchanged in deposit epoch (tiny dust from rate truncation)
@@ -712,7 +712,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp and settle
@@ -740,7 +740,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to 50% and settle — first half at 20% fee
@@ -894,7 +894,7 @@ contract DynamicFeesVaultTest is Test {
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
         vm.expectRevert(DynamicFeesVault.ContractPaused.selector);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
     }
 
@@ -945,7 +945,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Stream is active — debt not yet reduced
@@ -994,7 +994,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, rewardAmount);
         usdc.approve(address(vault), rewardAmount);
-        vault.repayWithRewards(rewardAmount);
+        vault.depositRewards(rewardAmount);
         vm.stopPrank();
 
         // Debt not reduced yet — streaming
@@ -1042,7 +1042,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Before vesting, debt unchanged
@@ -1062,7 +1062,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         assertEq(vault.getDebtBalance(user1), 0, "Still no debt");
@@ -1084,7 +1084,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        vault.depositRewards(200e6);
         vm.stopPrank();
 
         // Warp and settle — excess sent as USDC
@@ -1107,7 +1107,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        vault.depositRewards(200e6);
         vm.stopPrank();
 
         // Warp and settle user1 — should get excess
@@ -1120,7 +1120,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user2);
         deal(address(usdc), user2, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp and settle user2
@@ -1153,13 +1153,13 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 debtUser1Before = vault.getDebtBalance(user1);
@@ -1219,19 +1219,19 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 80e6);
         usdc.approve(address(vault), 80e6);
-        vault.repayWithRewards(80e6);
+        vault.depositRewards(80e6);
         vm.stopPrank();
 
         vm.startPrank(user3);
         deal(address(usdc), user3, 120e6);
         usdc.approve(address(vault), 120e6);
-        vault.repayWithRewards(120e6);
+        vault.depositRewards(120e6);
         vm.stopPrank();
 
         // Warp to epoch end, settle all
@@ -1258,7 +1258,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 debtBefore = vault.getDebtBalance(user1);
@@ -1309,7 +1309,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        vault.depositRewards(200e6);
         vm.stopPrank();
 
         // Fee ratio should stay within bounds
@@ -1359,7 +1359,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp and settle to see debt reduction at high util
@@ -1389,7 +1389,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user2);
         deal(address(usdc), user2, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(200e6);
+        vault.depositRewards(200e6);
         vm.stopPrank();
 
         // Warp and settle
@@ -1439,7 +1439,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // totalAssets should be approximately unchanged (tiny dust from rate truncation)
@@ -1462,7 +1462,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Lender premium = 20% of 100 = 20 USDC
@@ -1505,7 +1505,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // EPOCH_2: rewards deposited (streaming)
@@ -1538,8 +1538,8 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 200e6);
         usdc.approve(address(vault), 200e6);
-        vault.repayWithRewards(100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // totalAssets approximately unchanged (tiny dust from rate truncation)
@@ -1581,7 +1581,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Share price should NOT have jumped meaningfully (tiny dust from rate truncation)
@@ -1605,7 +1605,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Pending should be approximately the full amount (minus rounding from rate)
@@ -1632,7 +1632,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Warp to end of epoch
@@ -1671,13 +1671,13 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 debtUser1Before = vault.getDebtBalance(user1);
@@ -1747,13 +1747,13 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         vm.startPrank(user2);
         deal(address(usdc), user2, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 debtUser1Before = vault.getDebtBalance(user1);
@@ -1815,7 +1815,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(alice);
         deal(address(usdc), alice, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         uint256 aliceDebtAfterStream = vault.getDebtBalance(alice);
@@ -1828,7 +1828,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(bob);
         deal(address(usdc), bob, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 bobDebtBefore = vault.getDebtBalance(bob);
@@ -1868,7 +1868,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(alice);
         deal(address(usdc), alice, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         // Cross into epoch 3
@@ -1878,7 +1878,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(bob);
         deal(address(usdc), bob, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 activeRateBefore = vault.getActiveEpochRate();
@@ -1916,7 +1916,7 @@ contract DynamicFeesVaultTest is Test {
             vm.startPrank(stale[i]);
             deal(address(usdc), stale[i], 20e6);
             usdc.approve(address(vault), 20e6);
-            vault.repayWithRewards(20e6);
+            vault.depositRewards(20e6);
             vm.stopPrank();
         }
 
@@ -1929,7 +1929,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(active);
         deal(address(usdc), active, 100e6);
         usdc.approve(address(vault), 100e6);
-        vault.repayWithRewards(100e6);
+        vault.depositRewards(100e6);
         vm.stopPrank();
 
         uint256 activeRateBefore = vault.getActiveEpochRate();
@@ -1953,7 +1953,7 @@ contract DynamicFeesVaultTest is Test {
     }
 
     /// @notice Double-subtraction: attacker settles an active user mid-epoch, then
-    ///         the user calls repayWithRewards. activeEpochRate must stay consistent.
+    ///         the user calls depositRewards. activeEpochRate must stay consistent.
     function testNoDoubleSubtractionOnSettleThenRepayWithRewards() public {
         address alice    = address(0xA);
         address bob      = address(0xB);
@@ -1968,13 +1968,13 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(alice);
         deal(address(usdc), alice, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         vm.startPrank(bob);
         deal(address(usdc), bob, 50e6);
         usdc.approve(address(vault), 50e6);
-        vault.repayWithRewards(50e6);
+        vault.depositRewards(50e6);
         vm.stopPrank();
 
         // Halfway through epoch 2
@@ -1994,7 +1994,7 @@ contract DynamicFeesVaultTest is Test {
         vm.startPrank(alice);
         deal(address(usdc), alice, 30e6);
         usdc.approve(address(vault), 30e6);
-        vault.repayWithRewards(30e6);
+        vault.depositRewards(30e6);
         vm.stopPrank();
 
         // Rate should reflect: removed old alice rate, added new alice rate, bob unchanged

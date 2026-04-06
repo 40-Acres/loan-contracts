@@ -538,7 +538,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.totalDebtBalance -= amountToRepay;
     }
 
-    function repayWithRewards(uint256 amount) external whenNotPaused onlyPortfolio {
+    function depositRewards(uint256 amount) external whenNotPaused onlyPortfolio {
         if (amount == 0) revert ZeroAmount();
 
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);

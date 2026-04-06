@@ -231,7 +231,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
      *      Can be called by portfolio accounts or authorized callers.
      * @param amount Amount of reward tokens (same as vault asset) to deposit
      */
-    function repayWithRewards(uint256 amount) external whenNotPaused {
+    function depositRewards(uint256 amount) external whenNotPaused {
         if (amount == 0) revert ZeroAmount();
 
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);

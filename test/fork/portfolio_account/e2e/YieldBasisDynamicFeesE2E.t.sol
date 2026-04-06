@@ -297,12 +297,12 @@ contract YieldBasisDynamicFeesE2E is Test {
         vm.stopPrank();
     }
 
-    function _repayWithRewards(uint256 amount) internal {
-        // Simulate reward payment going through the vault's repayWithRewards
+    function _depositRewards(uint256 amount) internal {
+        // Simulate reward payment going through the vault's depositRewards
         vm.startPrank(portfolioAccount);
         deal(USDC, portfolioAccount, amount);
         usdc.approve(address(vault), amount);
-        vault.repayWithRewards(amount);
+        vault.depositRewards(amount);
         vm.stopPrank();
     }
 
@@ -360,7 +360,7 @@ contract YieldBasisDynamicFeesE2E is Test {
 
                 // Simulate reward payment (25% of original debt per epoch)
                 uint256 rewardAmount = borrowAmount / 4;
-                _repayWithRewards(rewardAmount);
+                _depositRewards(rewardAmount);
 
                 console.log("Epoch", i + 1, "- Rewards deposited:", rewardAmount);
             }
@@ -441,7 +441,7 @@ contract YieldBasisDynamicFeesE2E is Test {
 
             // Repay with rewards that EXCEED the debt (200% of debt)
             uint256 excessiveRewards = initialDebt * 2;
-            _repayWithRewards(excessiveRewards);
+            _depositRewards(excessiveRewards);
 
             console.log("Rewards deposited (2x debt):", excessiveRewards);
 
@@ -500,13 +500,13 @@ contract YieldBasisDynamicFeesE2E is Test {
             // Epoch 1: First reward deposit
             vm.warp(epoch1Start + 1 hours);
             uint256 rewardAmount = borrowAmount / 4;
-            _repayWithRewards(rewardAmount);
+            _depositRewards(rewardAmount);
 
             // Epoch 2: Settle stream1 first, then deposit stream2
             vm.warp(epoch2Start + 1 hours);
             vault.settleRewards(portfolioAccount); // settle stream1 so debtBefore is accurate
             uint256 debtBefore = vault.getDebtBalance(portfolioAccount);
-            _repayWithRewards(rewardAmount);
+            _depositRewards(rewardAmount);
 
             // Warp to end of epoch and settle stream2
             vm.warp(epoch3Start + 1 hours);
@@ -590,7 +590,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             vm.startPrank(portfolioAccount);
             deal(USDC, portfolioAccount, borrow1 / 2);
             usdc.approve(address(vault), borrow1 / 2);
-            vault.repayWithRewards(borrow1 / 2);
+            vault.depositRewards(borrow1 / 2);
             vm.stopPrank();
         }
 
@@ -598,7 +598,7 @@ contract YieldBasisDynamicFeesE2E is Test {
             vm.startPrank(portfolioAccount2);
             deal(USDC, portfolioAccount2, borrow2 / 2);
             usdc.approve(address(vault), borrow2 / 2);
-            vault.repayWithRewards(borrow2 / 2);
+            vault.depositRewards(borrow2 / 2);
             vm.stopPrank();
         }
 
@@ -656,7 +656,7 @@ contract YieldBasisDynamicFeesE2E is Test {
 
             // Repay with excess rewards (3x debt)
             uint256 excessRewards = borrowAmount * 3;
-            _repayWithRewards(excessRewards);
+            _depositRewards(excessRewards);
 
             // Move to next epoch for vesting and settle
             vm.warp(epoch2Start + 1 hours);

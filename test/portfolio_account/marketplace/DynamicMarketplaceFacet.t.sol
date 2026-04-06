@@ -675,7 +675,7 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
      * @notice Verifies that isListingPurchasable reflects vested-but-unsettled
      *         borrower rewards that reduce effective debt, rather than stale stored debt.
      *
-     *         Scenario: Seller borrows, rewards are deposited via repayWithRewards,
+     *         Scenario: Seller borrows, rewards are deposited via depositRewards,
      *         time passes (rewards vest linearly), and isListingPurchasable should show
      *         the reduced effective debt — not the stale pre-settlement value.
      */
@@ -687,13 +687,13 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
         uint256 storedDebt = _dynamicVault.getDebtBalance(_portfolioAccount);
         assertEq(storedDebt, borrowAmount, "Stored debt should match borrow amount");
 
-        // 2. Deposit rewards via repayWithRewards (starts linear vesting)
+        // 2. Deposit rewards via depositRewards (starts linear vesting)
         uint256 rewardAmount = 200e6;
         deal(address(_usdc), _portfolioAccount, rewardAmount);
         vm.prank(_portfolioAccount);
         IERC20(_usdc).approve(_vault, rewardAmount);
         vm.prank(_portfolioAccount);
-        _dynamicVault.repayWithRewards(rewardAmount);
+        _dynamicVault.depositRewards(rewardAmount);
 
         // Stored debt unchanged (rewards haven't vested yet at this instant)
         uint256 storedDebtAfterReward = _dynamicVault.getDebtBalance(_portfolioAccount);

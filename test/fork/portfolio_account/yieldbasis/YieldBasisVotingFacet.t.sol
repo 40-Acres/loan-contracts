@@ -64,7 +64,7 @@ contract MockLendingPool is ILendingPool {
         return _activeAssets;
     }
 
-    function repayWithRewards(uint256) external {}
+    function depositRewards(uint256) external {}
 
     function setActiveAssets(uint256 amount) external {
         _activeAssets = amount;
