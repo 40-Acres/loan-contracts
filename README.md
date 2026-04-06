@@ -1,5 +1,7 @@
 ## 40 Acres Loan Contracts
 
+[Bug Bounty](https://audits.sherlock.xyz/bug-bounties/102)
+
 40 Acres provides utility for veNFT holders including instant access to loans based on their veNFTs future revenue. Each week the veNFT rewards are used to repay the loan automatically. Additionally, veNFTs can be listed on the marketplace and purchased with or without outstanding loans. Supports aggregation of external markets and leveraged buyouts of veNFTs using flash loans.
 
 ## Contract Architecture
