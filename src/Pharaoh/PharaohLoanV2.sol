@@ -181,24 +181,4 @@ contract PharaohLoanV2 is Loan {
         );
     }
 
-    /**
-     * @notice Migrates an NFT from Pharaoh Loan to XPharaoh Loan.
-     * @dev This function kicks off the migration process by approving the veNFT to the XPharaoh Loan contract.
-     * @param tokenId The ID of the NFT to migrate.
-     * @param xPharaohLoan The address of the XPharaoh Loan contract.
-     */
-    function migrateNft(uint256 tokenId, address xPharaohLoan, address portfolioFactory) public onlyOwner {
-        LoanInfo storage loan = _loanDetails[tokenId];
-        require(loan.borrower != address(0), "no borrower");
-        address portfolio = PortfolioFactory(portfolioFactory).portfolioOf(loan.borrower);
-        (uint256 previousBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
-        _voter.reset(tokenId);
-        IERC721(address(_ve)).approve(xPharaohLoan, tokenId);
-        IXPharaohLoan(xPharaohLoan).migrateNft(loan.borrower, tokenId, loan.balance, loan.outstandingCapital, loan.preferredToken, loan.increasePercentage, loan.topUp, uint8(loan.zeroBalanceOption), loan.unpaidFees);
-        // Get the portfolio address again after migration (it might have been created)
-        portfolio = PortfolioFactory(portfolioFactory).portfolioOf(loan.borrower);
-        (uint256 postBalance,) = IXPharaohLoan(xPharaohLoan).getLoanDetails(portfolio);
-        require(previousBalance + loan.balance == postBalance);
-        delete _loanDetails[tokenId];
-    }
 }
