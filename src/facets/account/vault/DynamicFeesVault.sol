@@ -34,6 +34,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event RewardsMinted(address indexed to, uint256 amount);
     event FeeCalculatorUpdated(address indexed oldCalculator, address indexed newCalculator);
     event ExcessRewardsPaid(address indexed borrower, uint256 amount);
+    event ExcessRewardsEscrowed(address indexed borrower, uint256 amount);
+    event EscrowClaimed(address indexed borrower, uint256 amount);
+    event Borrowed(address indexed borrower, uint256 amount);
+    event Repaid(address indexed borrower, uint256 amount, uint256 remainingDebt);
 
     // ============ Errors ============
     error ContractPaused();
@@ -86,6 +90,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint8 sharesDecimalsOffset;      // asset decimals used as virtual share offset for inflation attack prevention
         mapping(address => uint256) userBorrowerCreditPerRatePaid; // per-user snapshot of borrowerCreditPerRate
         mapping(uint256 => uint256) epochEndBorrowerCreditPerRate; // borrowerCreditPerRate frozen at each epoch boundary
+        mapping(address => uint256) escrowedExcess; // excess rewards escrowed when transfer fails (e.g. USDC blacklist)
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -320,7 +325,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 total = totalAssets();
         if (total == 0) return 0;
         DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 util = ($.totalLoanedAssets * 10000) / total;
+        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
+        uint256 effectiveLoaned = $.totalLoanedAssets > totalReduction ? $.totalLoanedAssets - totalReduction : 0;
+        uint256 util = (effectiveLoaned * 10000) / total;
         return util > 10000 ? 10000 : util;
     }
 
@@ -499,8 +506,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
                 $.totalDebtBalance -= oldDebtBalance;
                 $.totalVestedRewardsApplied += oldDebtBalance;
                 $.globalBorrowerPending -= borrowerReward;
-                IERC20(asset()).safeTransfer(user, excess);
-                emit ExcessRewardsPaid(user, excess);
+                _transferOrEscrow($, user, excess);
             } else {
                 $.debtBalance[user] -= borrowerReward;
                 $.totalDebtBalance -= borrowerReward;
@@ -512,9 +518,35 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         } else if (borrowerReward > 0 && oldDebtBalance == 0) {
             // No debt — send full borrower reward as excess
             $.globalBorrowerPending -= borrowerReward;
-            IERC20(asset()).safeTransfer(user, borrowerReward);
-            emit ExcessRewardsPaid(user, borrowerReward);
+            _transferOrEscrow($, user, borrowerReward);
         }
+    }
+
+    /**
+     * @notice Attempt transfer, escrow on failure (e.g. USDC blacklist)
+     */
+    function _transferOrEscrow(DynamicFeesVaultStorage storage $, address user, uint256 amount) internal {
+        (bool success, bytes memory data) = asset().call(
+            abi.encodeWithSelector(IERC20.transfer.selector, user, amount)
+        );
+        if (success && (data.length == 0 || abi.decode(data, (bool)))) {
+            emit ExcessRewardsPaid(user, amount);
+        } else {
+            $.escrowedExcess[user] += amount;
+            emit ExcessRewardsEscrowed(user, amount);
+        }
+    }
+
+    /**
+     * @notice Claim escrowed excess rewards that failed to transfer
+     */
+    function claimEscrow() external {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 amount = $.escrowedExcess[msg.sender];
+        if (amount == 0) revert ZeroAmount();
+        $.escrowedExcess[msg.sender] = 0;
+        IERC20(asset()).safeTransfer(msg.sender, amount);
+        emit EscrowClaimed(msg.sender, amount);
     }
 
     /**
@@ -536,10 +568,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.totalLoanedAssets -= amountToRepay;
         $.debtBalance[msg.sender] -= amountToRepay;
         $.totalDebtBalance -= amountToRepay;
+        emit Repaid(msg.sender, amountToRepay, $.debtBalance[msg.sender]);
     }
 
     function depositRewards(uint256 amount) external whenNotPaused onlyPortfolio {
         if (amount == 0) revert ZeroAmount();
+        require(_getStorage().debtBalance[msg.sender] > 0, "No debt to repay");
 
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
 
@@ -597,10 +631,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
         require(postBorrowUtilization < 8000, "Borrow would exceed 80% utilization");
 
-        IERC20(asset()).safeTransfer(msg.sender, amount);
         $.debtBalance[msg.sender] += amount;
         $.totalDebtBalance += amount;
         $.totalLoanedAssets += amount;
+        IERC20(asset()).safeTransfer(msg.sender, amount);
+
+        emit Borrowed(msg.sender, amount);
 
         return 0;
     }
@@ -629,6 +665,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.totalLoanedAssets -= amountToRepay;
             $.debtBalance[msg.sender] -= amountToRepay;
             $.totalDebtBalance -= amountToRepay;
+            emit Repaid(msg.sender, amountToRepay, $.debtBalance[msg.sender]);
         }
 
         return feesToPay + amountToRepay;
@@ -704,6 +741,19 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function maxMint(address) public view override returns (uint256) {
         if (_getStorage().paused) return 0;
         return type(uint256).max;
+    }
+
+    function previewWithdraw(uint256 assets) public view override returns (uint256) {
+        uint256 liquid = IERC20(asset()).balanceOf(address(this));
+        require(assets <= liquid, "Insufficient liquidity");
+        return super.previewWithdraw(assets);
+    }
+
+    function previewRedeem(uint256 shares) public view override returns (uint256) {
+        uint256 assets = convertToAssets(shares);
+        uint256 liquid = IERC20(asset()).balanceOf(address(this));
+        require(assets <= liquid, "Insufficient liquidity");
+        return super.previewRedeem(shares);
     }
 
     function maxWithdraw(address owner) public view override returns (uint256) {

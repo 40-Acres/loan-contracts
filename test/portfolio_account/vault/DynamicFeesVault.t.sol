@@ -2009,4 +2009,158 @@ contract DynamicFeesVaultTest is Test {
         assertLt(vault.getDebtBalance(alice), 200e6, "Alice should have debt reduced");
         assertLt(vault.getDebtBalance(bob), 200e6, "Bob should have debt reduced");
     }
+
+    // ============ Effective Utilization Tests ============
+    // These tests verify that getUtilizationPercent() uses effective outstanding
+    // debt (totalLoanedAssets - totalVestedRewardsApplied - globalBorrowerPending)
+    // rather than raw totalLoanedAssets.
+
+    /// @notice After rewards vest and settle, utilization should drop because
+    ///         effective debt is lower, even though totalLoanedAssets is unchanged
+    ///         until the actual repay call clears it.
+    function testUtilizationDropsAfterRewardsVest() public {
+        vm.prank(user1);
+        vault.borrowFromPortfolio(500e6);
+
+        // Utilization before rewards: 500/1000 = 50%
+        uint256 utilBefore = vault.getUtilizationPercent();
+        assertEq(utilBefore, 5000, "Utilization should be 50% before rewards");
+
+        // Deposit 200 USDC of rewards
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.depositRewards(200e6);
+        vm.stopPrank();
+
+        // Warp to end of epoch so rewards fully vest, then settle
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+
+        // After settling, globalBorrowerPending should be drained to user,
+        // but totalVestedRewardsApplied increases. Effective debt < 500.
+        uint256 utilAfter = vault.getUtilizationPercent();
+        assertLt(utilAfter, utilBefore, "Utilization should drop after rewards vest and settle");
+
+        // Verify the components: totalLoanedAssets is still 500 but effective is lower
+        uint256 rawLoaned = vault.totalLoanedAssets();
+        assertEq(rawLoaned, 500e6, "Raw totalLoanedAssets unchanged until repay clears it");
+
+        uint256 vestedApplied = vault.totalVestedRewardsApplied();
+        assertGt(vestedApplied, 0, "Some rewards should have been applied to debt");
+    }
+
+    /// @notice Utilization should reflect globalBorrowerPending even before
+    ///         per-user settlement, as long as global vesting has run.
+    function testUtilizationReflectsGlobalBorrowerPending() public {
+        vm.prank(user1);
+        vault.borrowFromPortfolio(500e6);
+
+        // Deposit rewards
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.depositRewards(100e6);
+        vm.stopPrank();
+
+        // Warp to mid-epoch
+        uint256 midEpoch = EPOCH_2 + (WEEK / 2);
+        vm.warp(midEpoch);
+
+        // Trigger global vesting via sync (does NOT settle per-user)
+        vault.sync();
+
+        uint256 globalPending = vault.getGlobalBorrowerPending();
+        assertGt(globalPending, 0, "Global borrower pending should be > 0 after vesting");
+
+        // Utilization should account for globalBorrowerPending
+        uint256 utilization = vault.getUtilizationPercent();
+
+        // Compute expected: effectiveLoaned = 500e6 - totalVestedApplied - globalPending
+        uint256 vestedApplied = vault.totalVestedRewardsApplied();
+        uint256 effectiveLoaned = 500e6 - vestedApplied - globalPending;
+        uint256 expectedUtil = (effectiveLoaned * 10000) / vault.totalAssets();
+
+        assertEq(utilization, expectedUtil, "Utilization should use effective loaned amount");
+        assertLt(utilization, 5000, "Utilization should be below 50% due to pending rewards");
+    }
+
+    /// @notice When rewards exceed debt (excess paid out), utilization should
+    ///         drop to 0 for that borrower's portion.
+    function testUtilizationDropsToZeroWhenDebtFullyPaid() public {
+        vm.prank(user1);
+        vault.borrowFromPortfolio(100e6);
+
+        // Deposit more rewards than debt
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 200e6);
+        usdc.approve(address(vault), 200e6);
+        vault.depositRewards(200e6);
+        vm.stopPrank();
+
+        // Vest and settle
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+
+        // Debt should be 0, utilization should be 0
+        assertEq(vault.getDebtBalance(user1), 0, "Debt should be fully paid");
+        assertEq(vault.getUtilizationPercent(), 0, "Utilization should be 0 when all debt paid");
+    }
+
+    /// @notice With two borrowers, partial vesting for one should reduce
+    ///         utilization proportionally.
+    function testUtilizationWithMultipleBorrowersPartialVesting() public {
+        address user2 = address(0x3);
+
+        vm.prank(user1);
+        vault.borrowFromPortfolio(300e6);
+        vm.prank(user2);
+        vault.borrowFromPortfolio(200e6);
+
+        // 500/1000 = 50% utilization
+        assertEq(vault.getUtilizationPercent(), 5000, "Initial utilization should be 50%");
+
+        // Only user1 deposits rewards
+        vm.startPrank(user1);
+        deal(address(usdc), user1, 100e6);
+        usdc.approve(address(vault), 100e6);
+        vault.depositRewards(100e6);
+        vm.stopPrank();
+
+        // Vest and settle user1 only
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+
+        uint256 util = vault.getUtilizationPercent();
+        // Effective debt should be less than 500 but more than 200 (user2 still owes 200)
+        assertLt(util, 5000, "Utilization should drop below 50%");
+        assertGt(util, 0, "Utilization should be > 0 since user2 still has debt");
+    }
+
+    /// @notice Fuzz test: utilization should never exceed what raw totalLoanedAssets
+    ///         would produce, since effective debt <= raw debt.
+    function testFuzz_utilizationNeverExceedsRawLoanedRatio(uint256 borrowAmt, uint256 rewardAmt) public {
+        borrowAmt = bound(borrowAmt, 1e6, 790e6);
+        rewardAmt = bound(rewardAmt, 1e6, 500e6);
+
+        vm.prank(user1);
+        vault.borrowFromPortfolio(borrowAmt);
+
+        uint256 utilBeforeRewards = vault.getUtilizationPercent();
+
+        vm.startPrank(user1);
+        deal(address(usdc), user1, rewardAmt);
+        usdc.approve(address(vault), rewardAmt);
+        vault.depositRewards(rewardAmt);
+        vm.stopPrank();
+
+        // Warp and settle
+        vm.warp(EPOCH_3);
+        vault.settleRewards(user1);
+
+        uint256 utilAfterRewards = vault.getUtilizationPercent();
+        assertLe(utilAfterRewards, utilBeforeRewards,
+            "Utilization after rewards should never exceed utilization before rewards");
+        assertLe(utilAfterRewards, 10000, "Utilization should never exceed 100%");
+    }
 }
