@@ -650,11 +650,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return _getStorage().totalLoanedAssets;
     }
 
-    function depositRewards(uint256 amount) external whenNotPaused {
-        require(amount > 0);
-        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
-    }
-
     function sync() public {
         _processGlobalVesting();
         DynamicFeesVaultStorage storage $ = _getStorage();

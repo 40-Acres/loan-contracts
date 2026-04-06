@@ -44,5 +44,5 @@ interface ILendingPool {
      * @notice Deposit rewards into the vault with epoch-based vesting
      * @param amount The amount of reward tokens to deposit
      */
-    function depositRewards(uint256 amount) external;
+    function repayWithRewards(uint256 amount) external;
 }

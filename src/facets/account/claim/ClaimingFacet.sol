@@ -144,7 +144,7 @@ contract ClaimingFacet is AccessControl {
             address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
             IERC20(outputToken).safeTransfer(ILoan(loanContract).owner(), treasuryFeeAmount);
             IERC20(outputToken).forceApprove(loanContract, lenderPremiumAmount);
-            ILendingPool(loanContract).depositRewards(lenderPremiumAmount);
+            ILendingPool(loanContract).repayWithRewards(lenderPremiumAmount);
             IERC20(outputToken).approve(loanContract, 0);
 
             // Pay down borrower debt with remaining proceeds; send excess to owner

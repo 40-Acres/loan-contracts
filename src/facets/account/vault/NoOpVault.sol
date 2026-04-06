@@ -31,7 +31,7 @@ contract NoOpVault is ILendingPool {
         revert Disabled();
     }
 
-    function depositRewards(uint256) external pure {
+    function repayWithRewards(uint256) external pure {
         revert Disabled();
     }
 

@@ -449,7 +449,7 @@ contract RewardsProcessingFacet is AccessControl {
 
         address loanContract = config.getLoanContract();
         IERC20(asset).forceApprove(loanContract, lenderPremium);
-        ILendingPool(loanContract).depositRewards(lenderPremium);
+        ILendingPool(loanContract).repayWithRewards(lenderPremium);
         IERC20(asset).approve(loanContract, 0);
         emit LenderPremiumPaid(_currentEpochStart(), tokenId, lenderPremium, _portfolioFactory.ownerOf(address(this)), address(asset));
         return lenderPremium;
