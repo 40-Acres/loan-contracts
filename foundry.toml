@@ -32,5 +32,6 @@ verbosity = 2
 fuzz = { runs = 256 }
 verbosity = 2
 match_path = "test/fork/**"
+no_match_path = "test/SKIP_NOTHING"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

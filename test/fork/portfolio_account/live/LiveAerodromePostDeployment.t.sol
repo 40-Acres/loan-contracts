@@ -14,7 +14,7 @@ import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
  * @dev Smoke tests against the live Base deployment. Validates that the actual
  *      deployed contracts work correctly for core operations.
  *
- *      Run: FORGE_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveAerodromePostDeployment.t.sol --no-match-path 'NONE' -vvv
+ *      Run: FOUNDRY_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveAerodromePostDeployment.t.sol --no-match-path 'NONE' -vvv
  */
 contract LiveAerodromePostDeployment is LiveDeploymentSetup {
 

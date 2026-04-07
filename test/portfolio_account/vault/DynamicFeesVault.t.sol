@@ -1058,21 +1058,13 @@ contract DynamicFeesVaultTest is Test {
     // ============ Edge Cases ============
 
     function testRepayWithRewardsNoDebt() public {
-        // User has no debt — should not revert, rewards stream and excess paid on settle
+        // User has no debt — depositRewards should revert because there's nothing to repay
         vm.startPrank(user1);
         deal(address(usdc), user1, 100e6);
         usdc.approve(address(vault), 100e6);
+        vm.expectRevert("No debt to repay");
         vault.depositRewards(100e6);
         vm.stopPrank();
-
-        assertEq(vault.getDebtBalance(user1), 0, "Still no debt");
-
-        // After vesting, excess should be returned
-        _warpAndSettle(user1);
-
-        assertEq(vault.getDebtBalance(user1), 0, "Still no debt after settle");
-        // Borrower portion returned as excess USDC
-        assertGt(usdc.balanceOf(user1), 0, "Should receive borrower portion as excess");
     }
 
     function testExcessRewardsPaidAsUSDC() public {

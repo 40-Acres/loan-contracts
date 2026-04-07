@@ -8,17 +8,17 @@ import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step
 
 /**
  * @title YieldBasisFaucet
- * @dev Dispenses 1 wei of YB tokens to portfolio accounts to bootstrap locks.
+ * @dev Dispenses a small amount of YB tokens to portfolio accounts to bootstrap locks.
  *
  * When a user wants to deposit an existing veYB position but their portfolio account
  * doesn't have an existing lock (required by veYB for transfers), this faucet provides
- * 1 wei of YB to create an initial lock. The gas cost to call this far exceeds the
- * value dispensed, making abuse uneconomical.
+ * YB to create an initial lock. The dispense amount must exceed the veYB minimum lock
+ * value (UMAXTIME = 4 * 365 * 86400 = 126,144,000 wei) after any transfer fees.
  *
  * Abuse Prevention:
  * - Each portfolio can only receive once (hasReceived mapping)
  * - Only valid portfolios registered with PortfolioManager can request
- * - Dispense amount is trivial (1 wei)
+ * - Dispense amount is minimal
  */
 contract YieldBasisFaucet is Ownable2Step {
     using SafeERC20 for IERC20;

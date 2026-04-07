@@ -192,7 +192,7 @@ contract YieldBasisVotingFacetTest is Test {
         YieldBasisFaucet faucet = new YieldBasisFaucet(
             address(portfolioManager),
             YB,
-            1
+            4 * 365 * 86400 // UMAXTIME - minimum for veYB create_lock
         );
         // Fund the faucet
         deal(YB, address(faucet), 1000 ether);
@@ -786,8 +786,9 @@ contract YieldBasisVotingFacetTest is Test {
 
         // Verify the lock was created and merged (faucet amount + user's lock)
         uint256 finalAmount = uint256(uint128(veYB.locked(portfolioAccount).amount));
-        // Should be approximately LOCK_AMOUNT + 0.00001 ether (faucet dispense amount)
-        assertApproxEqAbs(finalAmount, LOCK_AMOUNT + 0.00001 ether, (LOCK_AMOUNT + 0.00001 ether) / 10000, "Final lock should be ~LOCK_AMOUNT + faucet amount");
+        // Should be approximately LOCK_AMOUNT + UMAXTIME (faucet dispense amount), minus transfer fees
+        uint256 UMAXTIME = 4 * 365 * 86400;
+        assertApproxEqRel(finalAmount, LOCK_AMOUNT + UMAXTIME, 0.01e18, "Final lock should be ~LOCK_AMOUNT + faucet amount");
     }
 
     function testDepositLockSucceedsWithExistingLock() public {

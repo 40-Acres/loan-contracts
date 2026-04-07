@@ -95,9 +95,11 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
      */
     function unstake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
         require(amount > 0, "Zero amount");
+        uint256 sharesToBurn = _gauge.previewWithdraw(amount);
+        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesToBurn);
         uint256 claimed = _gauge.claim(_rewardToken, address(this));
         _gauge.withdraw(amount, address(this), address(this));
-        emit Unstaked(amount, amount, claimed);
+        emit Unstaked(amount, sharesToBurn, claimed);
     }
 
     /**
@@ -108,9 +110,10 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function restake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
         require(amount > 0, "Zero amount");
         _lpToken.approve(address(_gauge), amount);
-        _gauge.deposit(amount, address(this));
+        uint256 sharesMinted = _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
-        emit Restaked(amount, amount);
+        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesMinted);
+        emit Restaked(amount, sharesMinted);
     }
 
     // ============ View Functions ============

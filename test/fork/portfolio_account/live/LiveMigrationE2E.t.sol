@@ -18,7 +18,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *      Creates fresh veNFTs and borrows against them on the legacy LoanV2 contract,
  *      then migrates to portfolio accounts.
  *
- *      Run: FORGE_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveMigrationE2E.t.sol --no-match-path 'NONE' -vvv
+ *      Run: FOUNDRY_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveMigrationE2E.t.sol --no-match-path 'NONE' -vvv
  */
 contract LiveMigrationE2E is LiveDeploymentSetup {
     address public constant MIGRATE_BORROWER = address(uint160(uint256(keccak256("live-migration-borrower"))));

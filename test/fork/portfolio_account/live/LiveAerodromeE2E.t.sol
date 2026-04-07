@@ -25,7 +25,7 @@ import {WalletFacet} from "../../../../src/facets/account/wallet/WalletFacet.sol
  * @dev Full lifecycle and configuration validation tests against the live Base deployment.
  *      Tests the entire call chain, config consistency, and facet registry integrity.
  *
- *      Run: FORGE_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveAerodromeE2E.t.sol --no-match-path 'NONE' -vvv
+ *      Run: FOUNDRY_PROFILE=fork forge test --match-path test/fork/portfolio_account/live/LiveAerodromeE2E.t.sol --no-match-path 'NONE' -vvv
  */
 contract LiveAerodromeE2E is LiveDeploymentSetup {
 

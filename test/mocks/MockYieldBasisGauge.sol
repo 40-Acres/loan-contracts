@@ -58,6 +58,10 @@ contract MockYieldBasisGauge is ERC20 {
         return assets; // 1:1
     }
 
+    function previewWithdraw(uint256 assets) external pure returns (uint256) {
+        return assets; // 1:1
+    }
+
     // ============ Reward Mechanics ============
 
     function claim(address reward, address user) external returns (uint256 amount) {
