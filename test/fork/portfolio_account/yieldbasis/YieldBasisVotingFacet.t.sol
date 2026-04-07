@@ -192,9 +192,7 @@ contract YieldBasisVotingFacetTest is Test {
         YieldBasisFaucet faucet = new YieldBasisFaucet(
             address(portfolioManager),
             YB,
-            .00001 ether,
-            100,      // maxDispensesPerWindow
-            1 hours   // windowDuration
+            1
         );
         // Fund the faucet
         deal(YB, address(faucet), 1000 ether);
@@ -217,8 +215,7 @@ contract YieldBasisVotingFacetTest is Test {
         yieldBasisVotingFacet = new veYieldBasisVotingFacet(
             address(portfolioFactory),
             VE_YB,
-            GAUGE_CONTROLLER,
-            FEE_DISTRIBUTOR
+            GAUGE_CONTROLLER
         );
         bytes4[] memory votingSelectors = new bytes4[](2);
         votingSelectors[0] = veYieldBasisVotingFacet.vote.selector;

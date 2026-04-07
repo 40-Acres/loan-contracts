@@ -32,7 +32,8 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
     // Ethereum Mainnet USDC
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
-    // YieldBasis gauge for the LP token (set before deployment)
+    // YieldBasis protocol addresses
+    address public constant YB = 0x01791F726B4103694969820be083196cC7c045fF;
     address public constant GAUGE = address(0); // TODO: Set gauge address
 
     // Vault configuration
@@ -53,7 +54,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         require(GAUGE != address(0), "Set GAUGE address before deployment");
 
         // Deploy factory under existing PortfolioManager
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-lp-v1"))));
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-lp"))));
 
         // Deploy configs
         (PortfolioFactoryConfig portfolioFactoryConfig,, LoanConfig loanConfig,) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
@@ -76,7 +77,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         // ============ Deploy YieldBasisLpFacet ============
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(address(portfolioFactory), GAUGE);
+        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(address(portfolioFactory), GAUGE, YB);
         bytes4[] memory lpSelectors = new bytes4[](9);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -115,6 +116,7 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
     address public constant PORTFOLIO_FACTORY = address(0);
     address public constant PORTFOLIO_ACCOUNT_CONFIG = address(0);
     address public constant GAUGE = address(0);
+    address public constant YB = 0x01791F726B4103694969820be083196cC7c045fF;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
     function run() external {
@@ -127,8 +129,8 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         FacetRegistry facetRegistry = PortfolioFactory(PORTFOLIO_FACTORY).facetRegistry();
 
         // Upgrade YieldBasisLpFacet
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(PORTFOLIO_FACTORY, GAUGE);
-        bytes4[] memory lpSelectors = new bytes4[](10);
+        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(PORTFOLIO_FACTORY, GAUGE, YB);
+        bytes4[] memory lpSelectors = new bytes4[](9);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
         lpSelectors[2] = YieldBasisLpFacet.unstake.selector;

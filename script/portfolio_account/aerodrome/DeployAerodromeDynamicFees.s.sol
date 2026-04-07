@@ -96,7 +96,7 @@ contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
         // Deploy DynamicFeesVault with proxyd
 
         // Initialize DynamicFeesVault
-        _vault.initialize(USDC, "40base-USDC-DYNAMIC-VAULT", "40base-USDC-DV", address(portfolioFactory));
+        _vault.initialize(USDC, "40base-USDC-DYNAMIC-VAULT", "40base-USDC-DV", address(portfolioFactory), 8000);
 
         // Set the vault as the loan contract in config (DynamicFeesVault implements ILendingPool)
         portfolioFactoryConfig.setLoanContract(address(_vault));

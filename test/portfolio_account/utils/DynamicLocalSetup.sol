@@ -203,7 +203,8 @@ contract DynamicLocalSetup is Test {
             _usdc,
             "Dynamic USDC Vault",
             "DV-USDC",
-            address(_portfolioFactory)
+            address(_portfolioFactory),
+            8000
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
         _dynamicVault = DynamicFeesVault(address(vaultProxy));

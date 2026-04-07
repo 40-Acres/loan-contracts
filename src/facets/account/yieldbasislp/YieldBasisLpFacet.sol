@@ -28,18 +28,21 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     PortfolioFactory public immutable _portfolioFactory;
     IYieldBasisGauge public immutable _gauge;
     IERC20 public immutable _lpToken;
+    address public immutable _rewardToken;
 
     event Deposited(address indexed from, uint256 amount, uint256 sharesMinted);
     event Withdrawn(address indexed to, uint256 amount);
-    event Unstaked(uint256 assets, uint256 sharesBurned);
+    event Unstaked(uint256 assets, uint256 sharesBurned, uint256 rewardsClaimed);
     event Restaked(uint256 assets, uint256 sharesMinted);
 
-    constructor(address portfolioFactory, address gauge) {
+    constructor(address portfolioFactory, address gauge, address rewardToken) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(gauge != address(0), "Invalid gauge");
+        require(rewardToken != address(0), "Invalid reward token");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _gauge = IYieldBasisGauge(gauge);
         _lpToken = IERC20(IYieldBasisGauge(gauge).asset());
+        _rewardToken = rewardToken;
     }
 
     // ============ Deposit / Withdraw ============
@@ -68,19 +71,16 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(amount > 0, "Zero amount");
 
-        // Unstake from gauge first so we know the actual shares burned
-        uint256 sharesBurned;
+        // Check — compute shares to burn and update collateral state first
         uint256 unstaked = _lpToken.balanceOf(address(this));
-        if (unstaked < amount) {
-            uint256 toUnstake = amount - unstaked;
-            sharesBurned = _gauge.withdraw(toUnstake, address(this), address(this));
+        uint256 toUnstake = unstaked < amount ? amount - unstaked : 0;
+        if (toUnstake > 0) {
+            uint256 sharesToBurn = _gauge.previewWithdraw(toUnstake);
+            ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesToBurn);
+            _gauge.withdraw(toUnstake, address(this), address(this));
         }
 
-        // Remove the burned gauge shares from collateral tracking
-        if (sharesBurned > 0) {
-            ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesBurned);
-        }
-
+        // Interaction — transfer LP tokens to owner
         address owner = _portfolioFactory.ownerOf(address(this));
         _lpToken.safeTransfer(owner, amount);
         emit Withdrawn(owner, amount);
@@ -95,9 +95,9 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
      */
     function unstake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
         require(amount > 0, "Zero amount");
-        uint256 sharesBurned = _gauge.withdraw(amount, address(this), address(this));
-        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesBurned);
-        emit Unstaked(amount, sharesBurned);
+        uint256 claimed = _gauge.claim(_rewardToken, address(this));
+        _gauge.withdraw(amount, address(this), address(this));
+        emit Unstaked(amount, amount, claimed);
     }
 
     /**
@@ -108,18 +108,17 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function restake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
         require(amount > 0, "Zero amount");
         _lpToken.approve(address(_gauge), amount);
-        uint256 sharesMinted = _gauge.deposit(amount, address(this));
+        _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
-        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesMinted);
-        emit Restaked(amount, sharesMinted);
+        emit Restaked(amount, amount);
     }
 
     // ============ View Functions ============
 
     /**
      * @notice Get the current staking state
-     * @return staked Amount of LP token staked in gauge (as gauge shares)
-     * @return unstaked Amount of LP token held on this contract (not staked)
+     * @return staked Gauge shares held (may differ from LP amount if share price != 1:1)
+     * @return unstaked LP token balance held directly on this contract (not staked)
      */
     function getStakingState() external view returns (uint256 staked, uint256 unstaked) {
         staked = _gauge.balanceOf(address(this));

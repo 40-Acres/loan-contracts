@@ -92,7 +92,7 @@ contract YieldBasisLpFacetTest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // Deploy and register YieldBasisLpFacet with ALL selectors including ICollateralFacet
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken));
         bytes4[] memory facetSelectors = new bytes4[](9);
         facetSelectors[0] = YieldBasisLpFacet.deposit.selector;
         facetSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -566,7 +566,7 @@ contract YieldBasisLpFacetTest is Test {
         _depositViaMulticall(DEPOSIT_AMOUNT);
 
         vm.expectEmit(false, false, false, true, _portfolioAccount);
-        emit YieldBasisLpFacet.Unstaked(DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+        emit YieldBasisLpFacet.Unstaked(DEPOSIT_AMOUNT, DEPOSIT_AMOUNT, 0);
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
     }
@@ -1145,13 +1145,13 @@ contract YieldBasisLpFacetTest is Test {
     /// @notice Constructor should revert with zero address for portfolioFactory
     function testConstructorRevertsZeroFactory() public {
         vm.expectRevert("Invalid portfolio factory");
-        new YieldBasisLpFacet(address(0), address(_gauge));
+        new YieldBasisLpFacet(address(0), address(_gauge), address(_ybToken));
     }
 
     /// @notice Constructor should revert with zero address for gauge
     function testConstructorRevertsZeroGauge() public {
         vm.expectRevert("Invalid gauge");
-        new YieldBasisLpFacet(address(_portfolioFactory), address(0));
+        new YieldBasisLpFacet(address(_portfolioFactory), address(0), address(_ybToken));
     }
 
     /// @notice ClaimingFacet constructor should revert with zero address

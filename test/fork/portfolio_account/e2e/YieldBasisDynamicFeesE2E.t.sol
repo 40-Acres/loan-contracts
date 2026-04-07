@@ -108,7 +108,8 @@ contract YieldBasisDynamicFeesE2E is Test {
             USDC,
             "40Acres YB USDC Vault",
             "40YB-USDC",
-            address(portfolioFactory)
+            address(portfolioFactory),
+            8000
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
         vault = DynamicFeesVault(address(vaultProxy));
@@ -148,9 +149,7 @@ contract YieldBasisDynamicFeesE2E is Test {
         faucet = new YieldBasisFaucet(
             address(portfolioManager),
             YB,
-            0.00001 ether,
-            100,
-            1 hours
+            1
         );
         deal(YB, address(faucet), 1000 ether);
 

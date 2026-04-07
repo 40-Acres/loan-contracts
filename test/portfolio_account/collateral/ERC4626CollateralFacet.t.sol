@@ -117,7 +117,8 @@ contract ERC4626CollateralFacetTest is Test {
             address(_underlyingAsset),
             "ERC4626 Lending Vault",
             "lVAULT",
-            address(_portfolioFactory)
+            address(_portfolioFactory),
+            8000
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
         DynamicFeesVault dynamicVault = DynamicFeesVault(address(vaultProxy));

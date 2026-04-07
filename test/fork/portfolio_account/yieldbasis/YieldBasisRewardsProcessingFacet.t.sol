@@ -203,9 +203,7 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         faucet = new YieldBasisFaucet(
             address(portfolioManager),
             YB,
-            0.00001 ether,
-            100,      // maxDispensesPerWindow
-            1 hours   // windowDuration
+            1
         );
         deal(YB, address(faucet), 1000 ether);
 

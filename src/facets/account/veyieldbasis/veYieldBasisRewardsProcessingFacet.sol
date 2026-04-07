@@ -40,16 +40,26 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         _veYBAdapter = veYieldBasisAdapter(veYBAdapter);
     }
 
+    function _getTotalDebt() internal view override returns (uint256) {
+        return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
+    }
+
     function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
         return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
     }
 
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override returns (uint256 usedAmount) {
+        if (tokenId == 0) return 0;
         IERC20(lockedAsset).approve(address(_veYB), increaseAmount);
-        _veYB.increase_amount(increaseAmount);
+        try _veYB.increase_amount(increaseAmount) {
+            DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
+            emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+        } catch {
+            emit IncreaseCollateralFailed(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
+            IERC20(lockedAsset).approve(address(_veYB), 0);
+            return 0;
+        }
         IERC20(lockedAsset).approve(address(_veYB), 0);
-        DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
-        emit CollateralIncreased(_currentEpochStart(), tokenId, increaseAmount, _portfolioFactory.ownerOf(address(this)));
         return increaseAmount;
     }
 }

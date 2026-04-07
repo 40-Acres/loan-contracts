@@ -98,7 +98,7 @@ contract DynamicFeesVaultTest is Test {
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory)
+            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory), 8000
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(vaultImpl), initData);
         vault = DynamicFeesVault(address(proxy));
@@ -244,7 +244,7 @@ contract DynamicFeesVaultTest is Test {
 
         address user2 = address(0x3);
         vm.prank(user2);
-        vm.expectRevert("Borrow would exceed 80% utilization");
+        vm.expectRevert("Borrow would exceed max utilization");
         vault.borrowFromPortfolio(100e6);
     }
 

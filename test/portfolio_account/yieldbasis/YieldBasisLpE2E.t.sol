@@ -123,7 +123,7 @@ contract YieldBasisBtcE2ETest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // --- Deploy and register YieldBasisLpFacet with ALL selectors (including ICollateralFacet) ---
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken));
         {
             bytes4[] memory selectors = new bytes4[](9);
             selectors[0] = YieldBasisLpFacet.deposit.selector;

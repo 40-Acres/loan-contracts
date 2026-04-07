@@ -9,6 +9,7 @@ import {AccessControl} from "../utils/AccessControl.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
 import {veYieldBasisAdapter} from "../../../adapters/veYieldBasisAdapter.sol";
 import {YieldBasisFaucet} from "../../../faucets/YieldBasisFaucet.sol";
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 /**
  * @title veYieldBasisFacet
@@ -22,7 +23,7 @@ import {YieldBasisFaucet} from "../../../faucets/YieldBasisFaucet.sol";
  * - YB Token: 0x01791F726B4103694969820be083196cC7c045fF
  * - veYB: 0x8235c179E9e84688FBd8B12295EfC26834dAC211
  */
-contract veYieldBasisFacet is AccessControl {
+contract veYieldBasisFacet is AccessControl, IERC721Receiver {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
@@ -58,6 +59,13 @@ contract veYieldBasisFacet is AccessControl {
         _yb = IERC20(yb);
         _veYBAdapter = veYieldBasisAdapter(veYBAdapter);
         _faucet = YieldBasisFaucet(faucet);
+    }
+
+    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
+        if (msg.sender == address(_veYB)) {
+            DynamicCollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
+        }
+        return IERC721Receiver.onERC721Received.selector;
     }
 
     /**

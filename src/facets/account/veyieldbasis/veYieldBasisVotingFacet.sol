@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IYieldBasisVotingEscrow} from "../../../interfaces/IYieldBasisVotingEscrow.sol";
 import {IYieldBasisGaugeController} from "../../../interfaces/IYieldBasisGaugeController.sol";
-import {IYieldBasisFeeDistributor} from "../../../interfaces/IYieldBasisFeeDistributor.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 
 /**
@@ -26,7 +25,6 @@ contract veYieldBasisVotingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     IYieldBasisVotingEscrow public immutable _veYB;
     IYieldBasisGaugeController public immutable _gaugeController;
-    IYieldBasisFeeDistributor public immutable _feeDistributor;
 
     uint256 public constant MAX_WEIGHT = 10000; // 100% in bps
     uint256 public constant VOTE_COOLDOWN = 15 days; // if user hasnt voted in 15 days, they will be in automatic voting mode
@@ -37,18 +35,15 @@ contract veYieldBasisVotingFacet is AccessControl {
     constructor(
         address portfolioFactory,
         address veYB,
-        address gaugeController,
-        address feeDistributor
+        address gaugeController
     ) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(veYB != address(0), "Invalid veYB");
         require(gaugeController != address(0), "Invalid gauge controller");
-        require(feeDistributor != address(0), "Invalid fee distributor");
 
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _veYB = IYieldBasisVotingEscrow(veYB);
         _gaugeController = IYieldBasisGaugeController(gaugeController);
-        _feeDistributor = IYieldBasisFeeDistributor(feeDistributor);
     }
 
 

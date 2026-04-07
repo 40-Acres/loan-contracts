@@ -25,6 +25,11 @@ interface IYieldBasisGauge {
     /// @return shares Amount of gauge shares minted
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
 
+    /// @notice Preview shares that would be burned for a given asset withdrawal
+    /// @param assets Amount of ybBTC to preview
+    /// @return shares Amount of gauge shares that would be burned
+    function previewWithdraw(uint256 assets) external view returns (uint256 shares);
+
     /// @notice Withdraw ybBTC LP tokens from the gauge
     /// @param assets Amount of ybBTC to unstake
     /// @param receiver Address to receive ybBTC

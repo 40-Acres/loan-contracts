@@ -2,25 +2,22 @@
 pragma solidity ^0.8.30;
 
 import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
-import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 import {veYieldBasisFacet} from "../../../src/facets/account/veyieldbasis/veYieldBasisFacet.sol";
 import {veYieldBasisVotingFacet} from "../../../src/facets/account/veyieldbasis/veYieldBasisVotingFacet.sol";
-import {ERC721ReceiverFacet} from "../../../src/facets/ERC721ReceiverFacet.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {DynamicCollateralFacet} from "../../../src/facets/account/collateral/DynamicCollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {veYieldBasisRewardsProcessingFacet} from "../../../src/facets/account/veyieldbasis/veYieldBasisRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
-import {Loan} from "../../../src/Loan.sol";
-import {Loan as LoanV2} from "../../../src/LoanV2.sol";
-import {Vault} from "../../../src/VaultV2.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {veYieldBasisAdapter} from "../../../src/adapters/veYieldBasisAdapter.sol";
 import {YieldBasisFaucet} from "../../../src/faucets/YieldBasisFaucet.sol";
@@ -47,7 +44,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
 
     PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
     PortfolioFactory public _portfolioFactory;
-    address public _loanContract;
+    DynamicFeesVault public _vault;
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -58,142 +55,82 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
     function _deploy() internal {
         // _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
         // require(address(_portfolioManager) == address(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9), "PortfolioManager deployment failed");
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-usdc-v2"))));
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-usdc"))));
 
-        // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        // Deploy config contracts (no VotingConfig needed for YieldBasis)
+        // Initialize with deployer as owner so we can configure, then transfer to multisig
+        address deployer = vm.addr(vm.envUint("FORTY_ACRES_DEPLOYER"));
 
-        // Set configs at script level - these calls will be broadcast from deployer
-        portfolioFactoryConfig.setVoteConfig(address(votingConfig));
+        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(
+            address(new ERC1967Proxy(
+                address(configImpl),
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (deployer, address(portfolioFactory)))
+            ))
+        );
+
+        LoanConfig loanConfigImpl = new LoanConfig();
+        LoanConfig loanConfig = LoanConfig(
+            address(new ERC1967Proxy(
+                address(loanConfigImpl),
+                abi.encodeCall(LoanConfig.initialize, (deployer, 70_00, 5_00, 1_00))
+            ))
+        );
+
+        SwapConfig swapConfigImpl = new SwapConfig();
+        SwapConfig swapConfig = SwapConfig(
+            address(new ERC1967Proxy(
+                address(swapConfigImpl),
+                abi.encodeCall(SwapConfig.initialize, (deployer))
+            ))
+        );
+
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
         _portfolioFactory = portfolioFactory;
 
-        // Deploy Loan and Vault atomically using CREATE2 to pre-compute addresses
-        // This prevents MITM attacks by initializing in the proxy constructor
-        (address loanProxy, address vaultProxy) = _deployLoanAndVaultAtomic(address(portfolioFactory));
-        _loanContract = loanProxy;
-        Vault vault = Vault(vaultProxy);
+        // Deploy DynamicFeesVault (implements ILendingPool — no separate Loan contract needed)
+        DynamicFeesVault vaultImpl = new DynamicFeesVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(
+            address(vaultImpl),
+            abi.encodeCall(DynamicFeesVault.initialize, (USDC, "40eth-USDC-DYNAMIC-VAULT", "40eth-USDC-DV", address(portfolioFactory), 8000))
+        );
+        _vault = DynamicFeesVault(address(vaultProxy));
 
-        portfolioFactoryConfig.setLoanContract(address(_loanContract));
+        portfolioFactoryConfig.setLoanContract(address(_vault));
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
-
-        // Deploy CollateralFacet (required for enforceCollateralRequirements)
-        // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VE_YB);
-        bytes4[] memory collateralSelectors = new bytes4[](7);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[6] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy YieldBasis VotingEscrow Adapter (adapts veYB to CollateralManager's IVotingEscrow interface)
         veYieldBasisAdapter veYBAdapter = new veYieldBasisAdapter(VE_YB);
 
         // Deploy YieldBasis Faucet (dispenses YB for bootstrapping locks)
         // Note: Faucet needs to be funded with YB tokens after deployment
-        // Rate limit: 100 dispenses per hour to prevent abuse
         YieldBasisFaucet faucet = new YieldBasisFaucet(
             address(_portfolioManager),
             YB,
-            0.000001 ether,    // dispenseAmount
-            10,        // maxDispensesPerWindow
-            1 hours     // windowDuration
+            1     // dispenseAmount: 1 wei of YB
         );
 
-        // Deploy veYieldBasisFacet
-        veYieldBasisFacet yieldBasisFacet = new veYieldBasisFacet(address(portfolioFactory), VE_YB, YB, address(veYBAdapter), address(faucet));
-        bytes4[] memory yieldBasisSelectors = new bytes4[](3);
-        yieldBasisSelectors[0] = veYieldBasisFacet.createLock.selector;
-        yieldBasisSelectors[1] = veYieldBasisFacet.increaseLock.selector;
-        yieldBasisSelectors[2] = veYieldBasisFacet.depositLock.selector;
-        _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "veYieldBasisFacet");
+        // Facets are deployed separately via YieldBasisRootUpgrade
 
-        // Deploy veYieldBasisVotingFacet
-        veYieldBasisVotingFacet yieldBasisVotingFacet = new veYieldBasisVotingFacet(address(portfolioFactory), VE_YB, GAUGE_CONTROLLER, FEE_DISTRIBUTOR);
-        bytes4[] memory yieldBasisVotingSelectors = new bytes4[](2);
-        yieldBasisVotingSelectors[0] = veYieldBasisVotingFacet.vote.selector;
-        yieldBasisVotingSelectors[1] = veYieldBasisVotingFacet.defaultVote.selector;
-        _registerFacet(facetRegistry, address(yieldBasisVotingFacet), yieldBasisVotingSelectors, "veYieldBasisVotingFacet");
+        // Transfer ownership to multisig (all use Ownable2Step — multisig must acceptOwnership)
+        portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
+        loanConfig.transferOwnership(MULTISIG_ADDRESS);
+        swapConfig.transferOwnership(MULTISIG_ADDRESS);
+        _vault.transferOwnership(MULTISIG_ADDRESS);
+        facetRegistry.transferOwnership(MULTISIG_ADDRESS);
+        faucet.transferOwnership(MULTISIG_ADDRESS);
 
-        // Deploy ERC721ReceiverFacet (needed for veYB NFT transfers)
-        ERC721ReceiverFacet erc721ReceiverFacet = new ERC721ReceiverFacet();
-        bytes4[] memory erc721ReceiverSelectors = new bytes4[](1);
-        erc721ReceiverSelectors[0] = ERC721ReceiverFacet.onERC721Received.selector;
-        _registerFacet(facetRegistry, address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
-
-        // Deploy veYieldBasisRewardsProcessingFacet
-        veYieldBasisRewardsProcessingFacet rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VE_YB, address(veYBAdapter), address(vault));
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "veYieldBasisRewardsProcessingFacet");
-
-        // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
-        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
-    }
-
-    /**
-     * @dev Deploys Loan and Vault contracts atomically using a factory to prevent MITM attacks.
-     *
-     * The circular dependency (Vault needs Loan, Loan needs Vault) is resolved by:
-     * 1. Deploying implementation contracts separately
-     * 2. Deploying an AtomicLoanVaultDeployer factory contract
-     * 3. Calling deploy() which handles proxy deployment and initialization in a single transaction
-     *
-     * This ensures initialization happens atomically with deployment, preventing:
-     * - Front-running of initialization calls
-     * - Hijacking of uninitialized proxies
-     *
-     * After deployment, we accept ownership (Loan uses 2-step ownership transfer).
-     */
-    function _deployLoanAndVaultAtomic(address portfolioFactory) internal returns (address loanProxy, address vaultProxy) {
-        // Deploy implementations separately (keeps factory contract small)
-        Loan loanImpl = new Loan{salt: keccak256("loan-impl")}();
-        LoanV2 loanV2Impl = new LoanV2{salt: keccak256("loan-v2-impl")}();
-        Vault vaultImpl = new Vault{salt: keccak256("vault-impl")}();
-
-        // Deploy the atomic deployer factory
-        AtomicLoanVaultDeployer deployer = new AtomicLoanVaultDeployer{salt: SALT}();
-
-        // Deploy proxies and initialize atomically in a single transaction
-        (loanProxy, vaultProxy) = deployer.deploy(
-            address(loanImpl),
-            address(loanV2Impl),
-            address(vaultImpl),
-            USDC,
-            portfolioFactory,
-            "40eth-USDC-VAULT",
-            "40eth-USDC-VAULT"
-        );
-
-        // Accept ownership of the loan contract (2-step transfer)
-        // The factory initiated the transfer; we complete it here
-        LoanV2(loanProxy).acceptOwnership();
-    }
-
-    function _trimSelectors(bytes4[] memory selectors, uint256 length) internal pure returns (bytes4[] memory) {
-        bytes4[] memory trimmed = new bytes4[](length);
-        for (uint256 i = 0; i < length; i++) {
-            trimmed[i] = selectors[i];
-        }
-        return trimmed;
+        console.log("=== Deployed Addresses ===");
+        console.log("PortfolioFactory:", address(portfolioFactory));
+        console.log("FacetRegistry:", address(facetRegistry));
+        console.log("PortfolioFactoryConfig:", address(portfolioFactoryConfig));
+        console.log("LoanConfig:", address(loanConfig));
+        console.log("SwapConfig:", address(swapConfig));
+        console.log("DynamicFeesVault:", address(_vault));
+        console.log("veYBAdapter:", address(veYBAdapter));
+        console.log("Faucet:", address(faucet));
+        console.log("=== Ownership transferred to multisig (pending acceptance) ===");
     }
 
 }
@@ -235,9 +172,9 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         YieldBasisFaucet faucet = YieldBasisFaucet(FAUCET);
         veYieldBasisAdapter veYBAdapter = veYieldBasisAdapter(VE_YB_ADAPTER);
 
-        // Deploy CollateralFacet (required for enforceCollateralRequirements)
+        // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
-        CollateralFacet collateralFacet = new CollateralFacet(PORTFOLIO_FACTORY, VE_YB);
+        DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(PORTFOLIO_FACTORY, VE_YB);
         bytes4[] memory collateralSelectors = new bytes4[](7);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
@@ -246,18 +183,19 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
         collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
         collateralSelectors[6] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy veYieldBasisFacet
         veYieldBasisFacet yieldBasisFacet = new veYieldBasisFacet(PORTFOLIO_FACTORY, VE_YB, YB, address(veYBAdapter), address(faucet));
-        bytes4[] memory yieldBasisSelectors = new bytes4[](3);
+        bytes4[] memory yieldBasisSelectors = new bytes4[](4);
         yieldBasisSelectors[0] = veYieldBasisFacet.createLock.selector;
         yieldBasisSelectors[1] = veYieldBasisFacet.increaseLock.selector;
         yieldBasisSelectors[2] = veYieldBasisFacet.depositLock.selector;
+        yieldBasisSelectors[3] = veYieldBasisFacet.onERC721Received.selector;
         _registerFacet(facetRegistry, address(yieldBasisFacet), yieldBasisSelectors, "veYieldBasisFacet");
 
         // Deploy veYieldBasisVotingFacet
-        veYieldBasisVotingFacet yieldBasisVotingFacet = new veYieldBasisVotingFacet(PORTFOLIO_FACTORY, VE_YB, GAUGE_CONTROLLER, FEE_DISTRIBUTOR);
+        veYieldBasisVotingFacet yieldBasisVotingFacet = new veYieldBasisVotingFacet(PORTFOLIO_FACTORY, VE_YB, GAUGE_CONTROLLER);
         bytes4[] memory yieldBasisVotingSelectors = new bytes4[](2);
         yieldBasisVotingSelectors[0] = veYieldBasisVotingFacet.vote.selector;
         yieldBasisVotingSelectors[1] = veYieldBasisVotingFacet.defaultVote.selector;
@@ -288,101 +226,6 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
-}
-
-/**
- * @title AtomicLoanVaultDeployer
- * @dev Factory contract that deploys Loan and Vault proxies atomically in a single transaction.
- *
- * This solves the circular dependency problem:
- * - Vault.initialize() needs the loan address
- * - Loan.initialize() needs the vault address
- *
- * All deployments and initializations happen in a single transaction, preventing:
- * - Front-running of initialization calls
- * - Hijacking of uninitialized proxies
- * - Man-in-the-middle attacks on the deployment process
- *
- * Security: The factory transfers ownership to the caller (msg.sender) after deployment.
- * Since Loan uses Ownable2StepUpgradeable, the caller must call acceptOwnership() on the
- * loan contract to complete the transfer (can be done in the same broadcast).
- *
- * Note: Implementation contracts must be deployed separately and passed to deploy() to
- * keep this contract under the EIP-170 size limit.
- */
-contract AtomicLoanVaultDeployer {
-    error DeploymentFailed(string reason);
-
-    event AtomicDeployment(
-        address indexed loanProxy,
-        address indexed vaultProxy,
-        address loanImplementation,
-        address vaultImplementation,
-        address indexed pendingOwner
-    );
-
-    /**
-     * @dev Deploys Loan and Vault proxies atomically using pre-deployed implementations.
-     * @param loanImpl The pre-deployed Loan implementation address
-     * @param loanV2Impl The pre-deployed LoanV2 implementation address
-     * @param vaultImpl The pre-deployed Vault implementation address
-     * @param asset The asset token (e.g., USDC)
-     * @param portfolioFactory The portfolio factory address for loan configuration
-     * @param vaultName The name for the vault token
-     * @param vaultSymbol The symbol for the vault token
-     * @return loanProxy The deployed loan proxy address
-     * @return vaultProxy The deployed vault proxy address
-     *
-     * @notice After calling this function, the caller should call:
-     *         LoanV2(loanProxy).acceptOwnership() to complete ownership transfer
-     */
-    function deploy(
-        address loanImpl,
-        address loanV2Impl,
-        address vaultImpl,
-        address asset,
-        address portfolioFactory,
-        string memory vaultName,
-        string memory vaultSymbol
-    ) external returns (address loanProxy, address vaultProxy) {
-        address intendedOwner = msg.sender;
-
-        // Step 1: Deploy loan proxy without initialization first
-        // This is necessary because of the circular dependency with vault
-        bytes32 loanProxySalt = keccak256("loan-proxy");
-        bytes32 vaultProxySalt = keccak256("vault-proxy");
-
-        loanProxy = address(new ERC1967Proxy{salt: loanProxySalt}(
-            loanImpl,
-            "" // No init data - we'll initialize after vault is deployed
-        ));
-
-        // Step 2: Deploy vault proxy with initialization (it knows the loan address)
-        bytes memory vaultInitData = abi.encodeCall(
-            Vault.initialize,
-            (asset, loanProxy, vaultName, vaultSymbol)
-        );
-        vaultProxy = address(new ERC1967Proxy{salt: vaultProxySalt}(
-            vaultImpl,
-            vaultInitData
-        ));
-
-        // Step 3: Initialize loan with correct vault address
-        // Safe because we're still in the same transaction - no one can front-run
-        Loan(loanProxy).initialize(vaultProxy, asset);
-
-        // Step 4: Configure loan
-        Loan(loanProxy).setPortfolioFactory(portfolioFactory);
-
-        // Step 5: Upgrade to LoanV2
-        LoanV2(loanProxy).upgradeToAndCall(loanV2Impl, "");
-
-        // Step 6: Transfer ownership to the intended owner (2-step process)
-        // The factory is currently the owner; transfer to the caller
-        LoanV2(loanProxy).transferOwnership(intendedOwner);
-
-        emit AtomicDeployment(loanProxy, vaultProxy, loanImpl, vaultImpl, intendedOwner);
-    }
 }
 
 // forge script script/portfolio_account/yieldbasis/DeployYieldBasis.s.sol:YieldBasisRootDeploy --chain-id 1 --rpc-url $ETH_RPC_URL --broadcast --verify --via-ir

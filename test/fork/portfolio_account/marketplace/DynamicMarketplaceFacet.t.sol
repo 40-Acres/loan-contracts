@@ -109,7 +109,8 @@ contract DynamicMarketplaceFacetTest is Test {
             USDC,
             "Test Dynamic USDC Vault",
             "T-DV-USDC",
-            address(portfolioFactory)
+            address(portfolioFactory),
+            8000
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
         vault = DynamicFeesVault(address(vaultProxy));

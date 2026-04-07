@@ -46,6 +46,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     error NotAPauser();
     error ZeroAmount();
     error ZeroAddress();
+    error InvalidMaxUtilization();
 
     // ============ ERC-7201 Namespaced Storage ============
     /// @custom:storage-location erc7201:dynamicfeesvault.storage
@@ -91,6 +92,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         mapping(address => uint256) userBorrowerCreditPerRatePaid; // per-user snapshot of borrowerCreditPerRate
         mapping(uint256 => uint256) epochEndBorrowerCreditPerRate; // borrowerCreditPerRate frozen at each epoch boundary
         mapping(address => uint256) escrowedExcess; // excess rewards escrowed when transfer fails (e.g. USDC blacklist)
+        uint256 maxUtilizationBps; // e.g. 8000 = 80%
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -113,10 +115,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address _asset,
         string memory _name,
         string memory _symbol,
-        address _portfolioFactory
+        address _portfolioFactory,
+        uint256 _maxUtilizationBps
     ) public initializer {
         if (_asset == address(0)) revert ZeroAddress();
         if (_portfolioFactory == address(0)) revert ZeroAddress();
+        if (_maxUtilizationBps == 0 || _maxUtilizationBps > 10000) revert InvalidMaxUtilization();
 
         __ERC4626_init(ERC20(_asset));
         __ERC20_init(_name, _symbol);
@@ -127,6 +131,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         $.portfolioFactory = _portfolioFactory;
         $.sharesDecimalsOffset = ERC20(_asset).decimals();
+        $.maxUtilizationBps = _maxUtilizationBps;
 
         // Deploy the default fee calculator
         FeeCalculator feeCalc = new FeeCalculator();
@@ -145,9 +150,18 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         emit FeeCalculatorUpdated(oldCalculator, _newFeeCalculator);
     }
 
+    function setMaxUtilization(uint256 _maxUtilizationBps) external onlyOwner {
+        if (_maxUtilizationBps == 0 || _maxUtilizationBps > 10000) revert InvalidMaxUtilization();
+        _getStorage().maxUtilizationBps = _maxUtilizationBps;
+    }
+
     // ============ View Functions ============
     function feeCalculator() public view returns (address) {
         return _getStorage().feeCalculator;
+    }
+
+    function maxUtilizationBps() external view returns (uint256) {
+        return _getStorage().maxUtilizationBps;
     }
 
     function totalLoanedAssets() public view returns (uint256) {
@@ -629,7 +643,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 total = totalAssets();
         uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
         uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
-        require(postBorrowUtilization < 8000, "Borrow would exceed 80% utilization");
+        require(postBorrowUtilization < $.maxUtilizationBps, "Borrow would exceed max utilization");
 
         $.debtBalance[msg.sender] += amount;
         $.totalDebtBalance += amount;
