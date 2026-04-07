@@ -21,6 +21,7 @@ import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
 
     address public immutable _gauge;
+    address public immutable _lpToken;
 
     constructor(
         address portfolioFactory,
@@ -35,6 +36,7 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
     ) {
         require(gauge != address(0), "Invalid gauge");
         _gauge = gauge;
+        _lpToken = IYieldBasisGauge(gauge).asset();
     }
 
     function _getTotalDebt() internal view override returns (uint256) {
@@ -45,7 +47,14 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
         return ERC4626CollateralManager.decreaseTotalDebt(
             address(_portfolioFactory.portfolioFactoryConfig()),
             _gauge,
+            _lpToken,
             amount
         );
+    }
+
+    /// @dev Block swapping gauge shares in addition to LP token (already blocked by base)
+    function _validateSwapInput(address inputToken) internal view override {
+        super._validateSwapInput(inputToken);
+        require(inputToken != _gauge, "Input token cannot be gauge token");
     }
 }

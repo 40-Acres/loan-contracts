@@ -21,6 +21,7 @@ import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
 
 // Mocks
 import {MockERC20} from "../../mocks/MockERC20.sol";
+import {MockYieldBasisLP} from "../../mocks/MockYieldBasisLP.sol";
 import {MockYieldBasisGauge} from "../../mocks/MockYieldBasisGauge.sol";
 
 // OpenZeppelin
@@ -58,7 +59,7 @@ contract YieldBasisBtcE2ETest is Test {
     LoanConfig public _loanConfig;
 
     // Mock contracts
-    MockERC20 public _ybBtc;       // underlying LP token (8 decimals like BTC)
+    MockYieldBasisLP public _ybBtc;       // underlying LP token (8 decimals like BTC)
     MockERC20 public _usdc;        // lending asset (8 decimals)
     MockERC20 public _ybToken;     // YB reward token (18 decimals)
     MockYieldBasisGauge public _gauge;
@@ -92,7 +93,7 @@ contract YieldBasisBtcE2ETest is Test {
         (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         // --- Deploy mock tokens ---
-        _ybBtc = new MockERC20("ybBTC", "ybBTC", 8);
+        _ybBtc = new MockYieldBasisLP("ybBTC", "ybBTC", 8);
         _usdc = new MockERC20("USDC", "USDC", 8);
         _ybToken = new MockERC20("YieldBasis", "YB", 18);
 

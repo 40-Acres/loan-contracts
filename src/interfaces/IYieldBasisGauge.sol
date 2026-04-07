@@ -60,4 +60,14 @@ interface IYieldBasisGauge {
     /// @notice Total ybBTC LP tokens managed by the gauge
     /// @return Total underlying assets
     function totalAssets() external view returns (uint256);
+
+    /// @notice Convert gauge shares to underlying LP token amount
+    /// @param shares Amount of gauge shares
+    /// @return assets Equivalent LP token amount
+    function convertToAssets(uint256 shares) external view returns (uint256 assets);
+
+    /// @notice Convert LP token amount to gauge shares
+    /// @param assets Amount of LP tokens
+    /// @return shares Equivalent gauge shares
+    function convertToShares(uint256 assets) external view returns (uint256 shares);
 }

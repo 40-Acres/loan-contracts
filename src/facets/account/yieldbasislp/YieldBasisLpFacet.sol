@@ -12,13 +12,13 @@ import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 /**
  * @title YieldBasisLpFacet
  * @dev Manages LP token deposits, withdrawals, and staking/unstaking in YieldBasis gauges.
- * Integrates with ERC4626CollateralManager for collateral tracking since the gauge
- * is ERC4626-compatible (gauge shares = collateral).
+ * Integrates with ERC4626CollateralManager for collateral tracking. Collateral is
+ * denominated in the underlying asset (e.g. WBTC, WETH) via LP pricePerShare().
  *
  * When LP token is staked in a gauge, it earns YB emissions but forgoes trading fees.
  * When unstaked, LP token earns trading fees via price-per-share appreciation (minus dynamic admin fee to veYB).
  *
- * Deposit flow: user sends LP token → staked in gauge → gauge shares tracked as collateral
+ * Deposit flow: user sends LP token → staked in gauge → gauge shares tracked as collateral (underlying value)
  * Withdraw flow: remove collateral tracking → unstake from gauge → send LP token to user
  * Mode switch (admin only): unstake/restake to toggle between trading yield and YB emissions
  */
@@ -45,10 +45,14 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         _rewardToken = rewardToken;
     }
 
+    function _config() internal view returns (address) {
+        return address(_portfolioFactory.portfolioFactoryConfig());
+    }
+
     // ============ Deposit / Withdraw ============
 
     /**
-     * @notice Deposit LP token: stake in gauge and track gauge shares as collateral
+     * @notice Deposit LP token: stake in gauge and track gauge shares as collateral (underlying value)
      * @dev LP token must already be in the portfolio account (transferred via multicall)
      * @param amount Amount of LP token to deposit and stake
      */
@@ -58,8 +62,8 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         uint256 sharesMinted = _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
 
-        // Track gauge shares as collateral
-        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesMinted);
+        // Track gauge shares as collateral — depositedAssetValue stored in underlying (e.g. BTC) units
+        ERC4626CollateralManager.addCollateral(_config(), address(_gauge), address(_lpToken), sharesMinted);
 
         emit Deposited(msg.sender, amount, sharesMinted);
     }
@@ -76,7 +80,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         uint256 toUnstake = unstaked < amount ? amount - unstaked : 0;
         if (toUnstake > 0) {
             uint256 sharesToBurn = _gauge.previewWithdraw(toUnstake);
-            ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesToBurn);
+            ERC4626CollateralManager.removeCollateral(_config(), address(_gauge), address(_lpToken), sharesToBurn);
             _gauge.withdraw(toUnstake, address(this), address(this));
         }
 
@@ -90,30 +94,29 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
 
     /**
      * @notice Unstake LP token from gauge to earn trading fees (forgoes YB emissions)
-     * @dev Admin-only: protocol decides which yield mode is optimal
-     * @param amount Amount of LP token to unstake
+     * @dev Admin-only: protocol decides which yield mode is optimal.
+     *      Does NOT modify collateral tracking — LP stays in portfolio account.
+     * @param shares Amount of gauge shares to redeem
      */
-    function unstake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
-        require(amount > 0, "Zero amount");
-        uint256 sharesToBurn = _gauge.previewWithdraw(amount);
-        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesToBurn);
+    function unstake(uint256 shares) external onlyAuthorizedCaller(_portfolioFactory) {
+        require(shares > 0, "Zero amount");
         uint256 claimed = _gauge.claim(_rewardToken, address(this));
-        _gauge.withdraw(amount, address(this), address(this));
-        emit Unstaked(amount, sharesToBurn, claimed);
+        uint256 assets = _gauge.redeem(shares, address(this), address(this));
+        emit Unstaked(assets, shares, claimed);
     }
 
     /**
      * @notice Restake LP token into gauge to earn YB emissions (forgoes trading fees)
-     * @dev Admin-only: protocol decides which yield mode is optimal
+     * @dev Admin-only: protocol decides which yield mode is optimal.
+     *      Does NOT modify collateral tracking — LP was already tracked from deposit.
      * @param amount Amount of LP token to stake
      */
     function restake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
         require(amount > 0, "Zero amount");
         _lpToken.approve(address(_gauge), amount);
-        uint256 sharesMinted = _gauge.deposit(amount, address(this));
+        _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
-        ERC4626CollateralManager.addCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge), sharesMinted);
-        emit Restaked(amount, sharesMinted);
+        emit Restaked(amount, amount);
     }
 
     // ============ View Functions ============
@@ -131,7 +134,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     // ============ ICollateralFacet Implementation ============
 
     function getTotalLockedCollateral() external view override returns (uint256) {
-        return ERC4626CollateralManager.getTotalCollateralValue(address(_gauge));
+        return ERC4626CollateralManager.getTotalCollateralValue(address(_gauge), address(_lpToken));
     }
 
     function getTotalDebt() external view override returns (uint256) {
@@ -139,13 +142,10 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     }
 
     function getMaxLoan() external view override returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()), address(_gauge));
+        return ERC4626CollateralManager.getMaxLoan(_config(), address(_gauge), address(_lpToken));
     }
 
     function enforceCollateralRequirements() external view override returns (bool success) {
-        return ERC4626CollateralManager.enforceCollateralRequirements(
-            address(_portfolioFactory.portfolioFactoryConfig()),
-            address(_gauge)
-        );
+        return ERC4626CollateralManager.enforceCollateralRequirements(_config(), address(_gauge), address(_lpToken));
     }
 }

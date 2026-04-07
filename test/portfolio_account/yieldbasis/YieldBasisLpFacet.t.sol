@@ -14,6 +14,7 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {MockERC20} from "../../mocks/MockERC20.sol";
+import {MockYieldBasisLP} from "../../mocks/MockYieldBasisLP.sol";
 import {MockYieldBasisGauge} from "../../mocks/MockYieldBasisGauge.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
@@ -31,7 +32,7 @@ contract YieldBasisLpFacetTest is Test {
     PortfolioFactoryConfig public _portfolioFactoryConfig;
     LoanConfig public _loanConfig;
 
-    MockERC20 public _ybBtc;
+    MockYieldBasisLP public _ybBtc;
     MockERC20 public _ybToken; // YB reward token
     MockERC20 public _usdc;
     MockYieldBasisGauge public _gauge;
@@ -61,7 +62,7 @@ contract YieldBasisLpFacetTest is Test {
         (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         // Deploy mock tokens
-        _ybBtc = new MockERC20("ybBTC", "ybBTC", 18);
+        _ybBtc = new MockYieldBasisLP("ybBTC", "ybBTC", 18);
         _ybToken = new MockERC20("YieldBasis", "YB", 18);
         _usdc = new MockERC20("USDC", "USDC", 18);
 
@@ -808,13 +809,15 @@ contract YieldBasisLpFacetTest is Test {
     ///         covers data.shares + newShares. Since unstaking removes gauge shares
     ///         but doesn't reduce data.shares, the check fails.
     ///         This is correct behavior: admin must restake before new deposits are possible.
-    function testDepositWorksAfterUnstake() public {
-        // First deposit and unstake — collateral tracking is properly cleared
+    function testDepositWorksAfterUnstakeRestake() public {
+        // First deposit, unstake, then restake — collateral tracking preserved throughout
         _depositViaMulticall(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).restake(DEPOSIT_AMOUNT);
 
-        // Second deposit should succeed since unstake properly cleared data.shares
+        // Second deposit should succeed after restake
         uint256 secondDeposit = DEPOSIT_AMOUNT / 2;
         vm.startPrank(_user);
         _ybBtc.transfer(_portfolioAccount, secondDeposit);
@@ -826,9 +829,9 @@ contract YieldBasisLpFacetTest is Test {
         vm.stopPrank();
 
         (uint256 staked, ) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, secondDeposit);
+        assertEq(staked, DEPOSIT_AMOUNT + secondDeposit);
         uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral, secondDeposit);
+        assertEq(collateral, DEPOSIT_AMOUNT + secondDeposit);
     }
 
     // ============ HARDENED TESTS: Withdraw Edge Cases ============
@@ -988,22 +991,26 @@ contract YieldBasisLpFacetTest is Test {
 
     // ============ HARDENED TESTS: Collateral Invariants ============
 
-    /// @notice Collateral should always equal gauge shares tracked, not ybBTC balance
-    function testCollateralClearedAfterUnstake() public {
+    /// @notice Collateral is preserved across unstake/restake — LP stays in portfolio
+    function testCollateralPreservedAcrossUnstakeRestake() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
 
-        // Unstake removes gauge shares and updates collateral tracking
+        uint256 collateralBefore = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertGt(collateralBefore, 0, "Should have collateral after deposit");
+
+        // Unstake does NOT remove collateral — LP stays in portfolio
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
 
-        // Gauge balance is 0, ybBTC balance is DEPOSIT_AMOUNT
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, 0);
-        assertEq(unstaked, DEPOSIT_AMOUNT);
+        uint256 collateralAfterUnstake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateralAfterUnstake, collateralBefore, "Collateral preserved after unstake");
 
-        // Collateral should be 0 since gauge shares were burned and removed from tracking
-        uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral, 0, "Collateral should be zero after unstake");
+        // Restake doesn't change collateral either
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).restake(DEPOSIT_AMOUNT);
+
+        uint256 collateralAfterRestake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateralAfterRestake, collateralBefore, "Collateral preserved after restake");
     }
 
     /// @notice enforceCollateralRequirements after deposit with no debt should always pass

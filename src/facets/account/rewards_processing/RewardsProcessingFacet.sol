@@ -393,10 +393,16 @@ contract RewardsProcessingFacet is AccessControl {
         return 0;
     }
 
+    /**
+     * @dev Validate that the input token is allowed for swapping.
+     *      Override in subclasses to add additional blocked tokens.
+     */
+    function _validateSwapInput(address inputToken) internal view virtual {
+        require(inputToken != _collateralToken, "Input token cannot be collateral token");
+    }
+
     function swapToRewardsToken(SwapMod.RouteParams memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
-        if(params.inputToken == _collateralToken) {
-            revert("Input token cannot be collateral token");
-        }
+        _validateSwapInput(params.inputToken);
         address rewardsToken = getRewardsToken();
         require(params.inputToken != rewardsToken, "Input token cannot be rewards token");
         return SwapMod.swap(SwapMod.RouteParams({
@@ -421,9 +427,7 @@ contract RewardsProcessingFacet is AccessControl {
     function swapToRewardsTokenMultiple(SwapMod.RouteParams[] memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
         address rewardsToken = getRewardsToken();
         for(uint256 i = 0; i < params.length; i++) {
-            if(params[i].inputToken == _collateralToken) {
-                revert("Input token cannot be collateral token");
-            }
+            _validateSwapInput(params[i].inputToken);
             require(params[i].inputToken != rewardsToken, "Input token cannot be rewards token");
             try SwapMod.swap(SwapMod.RouteParams({
                 swapConfig: address(_swapConfig),
