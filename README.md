@@ -2,6 +2,24 @@
 
 [Bug Bounty](https://audits.sherlock.xyz/bug-bounties/102)
 
+## Security Warning
+
+**We will NEVER:**
+- Recruit through unsolicited LinkedIn/GitHub interactions
+- Ask you to run code from unknown, unverified sources, or private repos
+- DM you job offers
+
+**Our only official channels:**
+- Website: [40acres.finance](https://40acres.finance)
+- Docs: [docs.40acres.finance](https://docs.40acres.finance/)
+- Twitter: [@40acres_Finance](https://x.com/40acres_Finance)
+- Discord: [Discord](https://discord.gg/7f8mjjd8bM)
+- GitHub: [github.com/40-Acres](https://github.com/40-Acres)
+
+If you were approached by anyone claiming to be 40 Acres Finance outside of these channels, **do not run any code or connect your wallet.**
+
+## Overview
+
 40 Acres provides utility for veNFT holders including instant access to loans based on their veNFTs future revenue. Each week the veNFT rewards are used to repay the loan automatically. Additionally, veNFTs can be listed on the marketplace and purchased with or without outstanding loans. Supports aggregation of external markets and leveraged buyouts of veNFTs using flash loans.
 
 ## Contract Architecture
