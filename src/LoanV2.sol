@@ -680,6 +680,14 @@ contract Loan is ReentrancyGuard, Initializable, UUPSUpgradeable, Ownable2StepUp
         
         // Handle NFT increase
         _increaseNft(loan, amountToIncrease, false);
+
+        // Pay unpaid fees before payoff token redirect to prevent them being starved
+        if (loan.unpaidFees > 0 && remaining > 0) {
+            uint256 feesToPay = loan.unpaidFees > remaining ? remaining : loan.unpaidFees;
+            remaining -= feesToPay;
+            _pay(tokenId, feesToPay, false);
+        }
+
         // Handle payoff token and payment
         remaining -= _handlePayoffToken(loan.borrower, tokenId, remaining);
         _pay(tokenId, remaining, false);
