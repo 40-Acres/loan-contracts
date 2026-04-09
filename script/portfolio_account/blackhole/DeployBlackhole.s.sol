@@ -54,7 +54,8 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("blackhole-usdc"))));
 
         // Deploy config contracts
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        SwapConfig swapConfig = _deploySwapConfig(DEPLOYER_ADDRESS);
 
         portfolioFactoryConfig.setVoteConfig(address(votingConfig));
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));

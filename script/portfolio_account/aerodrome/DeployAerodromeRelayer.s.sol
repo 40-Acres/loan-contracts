@@ -81,7 +81,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
-        SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
         address votingConfig = address(AERO_VOTING_CONFIG);
         Vault vault = Vault(AERO_USDC_VAULT);
 
@@ -123,7 +123,7 @@ contract AerodromeLeafDeploy is PortfolioFactoryConfigDeploy {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
         
         // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
         _portfolioFactory = portfolioFactory;
         
         // Deploy only swap and bridge facets directly (no contract instances)
@@ -170,7 +170,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // console.log("Deployed PortfolioMarketplace at", address(portfolioMarketplace));
 
         // Read existing Aerodrome deployment configs
-        // SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        // SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
         // address votingConfig = AERO_VOTING_CONFIG;
         // address loanConfig = address(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getLoanConfig());
         // Vault vault = Vault(AERO_USDC_VAULT);

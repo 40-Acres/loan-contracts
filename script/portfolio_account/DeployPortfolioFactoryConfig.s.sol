@@ -17,7 +17,9 @@ contract PortfolioFactoryConfigDeploy is Script {
     address public constant MULTISIG_ADDRESS = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
     address public constant PORTFOLIO_MANAGER_ADDRESS = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
     address public constant AERO_VOTING_CONFIG =0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C;
-    address public constant SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
+    // SwapConfig is per-network: all deployments on the same chain share one SwapConfig
+    address public constant BASE_SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
+    address public constant OP_SWAP_CONFIG = 0x0000000000000000000000000000000000000000; // TODO: fill from Velodrome deployment records
     bytes32 public constant SALT = bytes32(uint256(0x0000000000000000000000000000000000000000000000000e000005c6c57005));
     address public constant VEAERO_MARKETPLACE = 0xA62C351b3DEDAB4C3e0Cab59B1bc9E5e3097BdF6;
     address public constant AERO_USDC_VAULT = 0xB99B6dF96d4d5448cC0a5B3e0ef7896df9507Cf5;
@@ -36,11 +38,13 @@ contract PortfolioFactoryConfigDeploy is Script {
      *
      * @param mock If true, uses vm.startPrank for testing; if false, assumes broadcast context
      */
-    function _deploy(bool mock, address factory) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
+    function _deploy(bool mock, address factory) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig) {
         return _deploy(mock, factory, MULTISIG_ADDRESS);
     }
 
-    function _deploy(bool mock, address factory, address owner) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
+    // VotingConfig is per-collateral: each PortfolioFactory deployment gets its own
+    // SwapConfig is per-network: deploy separately via _deploySwapConfig() for initial network setup
+    function _deploy(bool mock, address factory, address owner) internal returns (PortfolioFactoryConfig, VotingConfig, LoanConfig) {
         require(factory != address(0), "Factory required");
         // Deploy PortfolioFactoryConfig atomically (impl + proxy with init in constructor)
         PortfolioFactoryConfig configImpl = _createConfigImpl();
@@ -51,7 +55,7 @@ contract PortfolioFactoryConfigDeploy is Script {
             ))
         );
 
-        // Deploy VotingConfig atomically
+        // Deploy VotingConfig atomically (per-collateral)
         VotingConfig votingConfigImpl = new VotingConfig();
         VotingConfig votingConfig = VotingConfig(
             address(new ERC1967Proxy(
@@ -69,15 +73,6 @@ contract PortfolioFactoryConfigDeploy is Script {
             ))
         );
 
-        // Deploy SwapConfig atomically
-        SwapConfig swapConfigImpl = new SwapConfig();
-        SwapConfig swapConfig = SwapConfig(
-            address(new ERC1967Proxy(
-                address(swapConfigImpl),
-                abi.encodeCall(SwapConfig.initialize, (owner))
-            ))
-        );
-
         // Link configs together (owner-only operations, safe after atomic init)
         if(mock) {
             vm.startPrank(owner);
@@ -87,7 +82,18 @@ contract PortfolioFactoryConfigDeploy is Script {
         if(mock) {
             vm.stopPrank();
         }
-        return (config, votingConfig, loanConfig, swapConfig);
+        return (config, votingConfig, loanConfig);
+    }
+
+    /// @dev Deploy a standalone SwapConfig. Call once per network, then share across all factories.
+    function _deploySwapConfig(address owner) internal returns (SwapConfig) {
+        SwapConfig swapConfigImpl = new SwapConfig();
+        return SwapConfig(
+            address(new ERC1967Proxy(
+                address(swapConfigImpl),
+                abi.encodeCall(SwapConfig.initialize, (owner))
+            ))
+        );
     }
 
     /**
@@ -156,11 +162,15 @@ contract DeployPortfolioFactoryConfig is PortfolioFactoryConfigDeploy {
     }
 
     function deploy(address factory) external returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
-        return _deploy(true, factory);
+        (PortfolioFactoryConfig config, VotingConfig votingConfig, LoanConfig loanConfig) = _deploy(true, factory);
+        SwapConfig swapConfig = _deploySwapConfig(MULTISIG_ADDRESS);
+        return (config, votingConfig, loanConfig, swapConfig);
     }
 
     function deploy(address factory, address owner) external returns (PortfolioFactoryConfig, VotingConfig, LoanConfig, SwapConfig) {
-        return _deploy(true, factory, owner);
+        (PortfolioFactoryConfig config, VotingConfig votingConfig, LoanConfig loanConfig) = _deploy(true, factory, owner);
+        SwapConfig swapConfig = _deploySwapConfig(owner);
+        return (config, votingConfig, loanConfig, swapConfig);
     }
 }
 

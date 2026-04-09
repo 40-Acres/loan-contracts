@@ -59,7 +59,7 @@ contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
         PortfolioManager portfolioManager = PortfolioFactory(EXISTING_PORTFOLIO_FACTORY).portfolioManager();
 
         // Use existing swap config
-        SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
 
         // Deploy new PortfolioFactory with new FacetRegistry for dynamic fees
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = portfolioManager.deployFactory(
@@ -253,7 +253,7 @@ contract AerodromeDynamicFeesRootUpgrade is PortfolioFactoryConfigDeploy {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry, PortfolioFactoryConfig portfolioFactoryConfig) = _resolveFromSalt();
         address votingConfig = address(portfolioFactoryConfig.getVoteConfig());
         address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
-        SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
 
         // The vault IS the loan contract for DynamicFees
         DynamicFeesVault vault = DynamicFeesVault(portfolioFactoryConfig.getLoanContract());

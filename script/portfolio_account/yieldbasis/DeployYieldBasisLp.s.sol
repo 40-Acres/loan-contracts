@@ -57,7 +57,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-lp"))));
 
         // Deploy configs
-        (PortfolioFactoryConfig portfolioFactoryConfig,, LoanConfig loanConfig,) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig,, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
         _portfolioFactory = portfolioFactory;

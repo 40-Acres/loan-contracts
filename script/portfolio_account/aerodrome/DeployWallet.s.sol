@@ -35,7 +35,8 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
 
         console.log("Deployed wallet factory at:", address(portfolioFactory));
         // Deploy configs
-        (PortfolioFactoryConfig portfolioFactoryConfig, , , SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, ,) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
         // Deploy and register all facets
@@ -97,7 +98,7 @@ contract WalletUpgrade is PortfolioFactoryConfigDeploy {
         PortfolioFactory portfolioFactory = PortfolioFactory(walletFactory);
         FacetRegistry facetRegistry = portfolioFactory.facetRegistry();
         PortfolioFactoryConfig portfolioFactoryConfig = portfolioFactory.portfolioFactoryConfig();
-        SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
 
         // Deploy WalletFacet
         WalletFacet walletFacet = new WalletFacet(address(portfolioFactory), address(swapConfig));

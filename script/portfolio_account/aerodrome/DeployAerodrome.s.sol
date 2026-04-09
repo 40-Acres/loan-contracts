@@ -79,7 +79,7 @@ contract AerodromeRootDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
-        SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
         address votingConfig = address(AERO_VOTING_CONFIG);
 
         // // Link configs on the new PortfolioFactoryConfig (deployer is owner of these)
@@ -111,7 +111,7 @@ contract AerodromeLeafDeploy is PortfolioFactoryConfigDeploy {
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));
         
         // Use inherited _deploy() function from PortfolioFactoryConfigDeploy
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig, SwapConfig swapConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
         _portfolioFactory = portfolioFactory;
         
         // Deploy only swap and bridge facets directly (no contract instances)
@@ -160,7 +160,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         address votingConfig = address(AERO_VOTING_CONFIG);
         // address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
         address loanConfig = 0xa5b8bC2C39c669132930AdFD3e56E988e5629C88;
-        SwapConfig swapConfig = SwapConfig(SWAP_CONFIG);
+        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // portfolioFactoryConfig.setVoteConfig(address(0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C));
