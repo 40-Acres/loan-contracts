@@ -15,7 +15,7 @@ import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
  *
  * Key difference from veNFT variants:
  * - Debt tracked via ERC4626CollateralManager (not CollateralManager/DynamicCollateralManager)
- * - _collateralToken set to LP token to prevent selling collateral
+ * - _underlyingLockedAsset set to LP token to prevent selling collateral
  * - _increaseLock is a no-op (base default) — no veNFT lock to compound into
  */
 contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
@@ -31,7 +31,7 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
-        IYieldBasisGauge(gauge).asset(), // LP token as collateralToken — blocks selling it
+        IYieldBasisGauge(gauge).asset(), // LP token as underlyingLockedAsset — blocks selling it
         vault
     ) {
         require(gauge != address(0), "Invalid gauge");
@@ -52,9 +52,8 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
         );
     }
 
-    /// @dev Block swapping gauge shares in addition to LP token (already blocked by base)
-    function _validateSwapInput(address inputToken) internal view override {
-        super._validateSwapInput(inputToken);
-        require(inputToken != _gauge, "Input token cannot be gauge token");
+    /// @dev Block swapping LP token (fungible collateral) and gauge shares
+    function _isSwapAllowed(address inputToken) internal view override returns (bool) {
+        return inputToken != _underlyingLockedAsset && inputToken != _gauge;
     }
 }

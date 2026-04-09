@@ -726,20 +726,208 @@ contract RewardsProcessingAdvancedTest is Test, LocalSetup {
         assertEq(IERC20(rewardsToken).balanceOf(_portfolioAccount), outputAmount, "Portfolio received rewards token");
     }
 
-    function test_swapToRewards_inputIsCollateralToken() public {
+    function test_swapToRewards_inputIsVotingEscrow_reverts() public {
         SwapMod.RouteParams memory params = SwapMod.RouteParams({
             swapConfig: address(0),
             swapTarget: address(mockRouter),
             swapData: "",
-            inputToken: lockedAsset, // collateral token
+            inputToken: address(_ve), // veAERO — blocked by VotingEscrowRewardsProcessingFacet
             inputAmount: 100e18,
             outputToken: address(0),
             minimumOutputAmount: 0
         });
 
         vm.prank(_authorizedCaller);
-        vm.expectRevert("Input token cannot be collateral token");
+        vm.expectRevert("Input token not allowed");
         rewardsProcessingFacet.swapToRewardsToken(params);
+    }
+
+    function test_swapToRewards_inputIsUnderlyingLockedAsset_allowed() public {
+        // AERO (the underlying locked asset) is a legitimate fee reward and must be swappable
+        uint256 inputAmount = 100e18;
+        uint256 outputAmount = 50e6;
+
+        deal(lockedAsset, _portfolioAccount, inputAmount);
+        deal(rewardsToken, address(mockRouter), outputAmount);
+
+        vm.prank(_portfolioAccount);
+        IERC20(lockedAsset).approve(address(mockRouter), inputAmount);
+
+        SwapMod.RouteParams memory params = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: abi.encodeWithSelector(
+                MockOdosRouterRL.executeSwap.selector,
+                lockedAsset, rewardsToken, inputAmount, outputAmount, _portfolioAccount
+            ),
+            inputToken: lockedAsset,
+            inputAmount: inputAmount,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        vm.prank(_authorizedCaller);
+        uint256 result = rewardsProcessingFacet.swapToRewardsToken(params);
+        assertEq(result, outputAmount, "AERO swap should succeed");
+    }
+
+    function test_swapToRewardsMultiple_votingEscrowInBatch_skipsGracefully() public {
+        // Batch with veAERO (blocked), tokenB (succeeds), tokenC (succeeds)
+        // veAERO should be skipped without killing the batch
+        uint256 out1 = 100e6;
+        uint256 out2 = 50e6;
+        uint256 in1 = 50e18;
+        uint256 in2 = 25e8;
+
+        deal(address(tokenB), _portfolioAccount, in1);
+        deal(address(outputToken), _portfolioAccount, in2);
+
+        SwapMod.RouteParams[] memory params = new SwapMod.RouteParams[](3);
+
+        // Swap 0: veAERO — should be skipped
+        params[0] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: "",
+            inputToken: address(_ve), // veAERO — blocked
+            inputAmount: 100e18,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        // Swap 1: tokenB -> rewards (success)
+        deal(rewardsToken, address(mockRouter), out1);
+        vm.prank(_portfolioAccount);
+        IERC20(address(tokenB)).approve(address(mockRouter), in1);
+        params[1] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: abi.encodeWithSelector(
+                MockOdosRouterRL.executeSwap.selector,
+                address(tokenB), rewardsToken, in1, out1, _portfolioAccount
+            ),
+            inputToken: address(tokenB),
+            inputAmount: in1,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        // Swap 2: outputToken -> rewards (success)
+        deal(rewardsToken, address(mockRouter), out2);
+        vm.prank(_portfolioAccount);
+        IERC20(address(outputToken)).approve(address(mockRouter), in2);
+        params[2] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: abi.encodeWithSelector(
+                MockOdosRouterRL.executeSwap.selector,
+                address(outputToken), rewardsToken, in2, out2, _portfolioAccount
+            ),
+            inputToken: address(outputToken),
+            inputAmount: in2,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        vm.prank(_authorizedCaller);
+        uint256 total = rewardsProcessingFacet.swapToRewardsTokenMultiple(params);
+
+        assertEq(total, out1 + out2, "veAERO skipped, other swaps succeed");
+    }
+
+    function test_swapToRewardsMultiple_rewardsTokenInBatch_skipsGracefully() public {
+        // Batch with rewardsToken (USDC) + tokenB — USDC should be skipped
+        uint256 out1 = 100e6;
+        uint256 in1 = 50e18;
+
+        deal(address(tokenB), _portfolioAccount, in1);
+
+        SwapMod.RouteParams[] memory params = new SwapMod.RouteParams[](2);
+
+        // Swap 0: USDC (rewardsToken) — should be skipped
+        params[0] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: "",
+            inputToken: rewardsToken,
+            inputAmount: 100e6,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        // Swap 1: tokenB -> rewards (success)
+        deal(rewardsToken, address(mockRouter), out1);
+        vm.prank(_portfolioAccount);
+        IERC20(address(tokenB)).approve(address(mockRouter), in1);
+        params[1] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: abi.encodeWithSelector(
+                MockOdosRouterRL.executeSwap.selector,
+                address(tokenB), rewardsToken, in1, out1, _portfolioAccount
+            ),
+            inputToken: address(tokenB),
+            inputAmount: in1,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        vm.prank(_authorizedCaller);
+        uint256 total = rewardsProcessingFacet.swapToRewardsTokenMultiple(params);
+
+        assertEq(total, out1, "rewardsToken skipped, tokenB swap succeeds");
+    }
+
+    function test_swapToRewardsMultiple_underlyingLockedAssetInBatch_succeeds() public {
+        // AERO in a batch should swap successfully (not blocked for veNFT portfolios)
+        uint256 aeroOut = 75e6;
+        uint256 tokenBOut = 100e6;
+        uint256 aeroIn = 200e18;
+        uint256 tokenBIn = 50e18;
+
+        deal(lockedAsset, _portfolioAccount, aeroIn);
+        deal(address(tokenB), _portfolioAccount, tokenBIn);
+
+        SwapMod.RouteParams[] memory params = new SwapMod.RouteParams[](2);
+
+        // Swap 0: AERO -> rewards (should succeed)
+        deal(rewardsToken, address(mockRouter), aeroOut);
+        vm.prank(_portfolioAccount);
+        IERC20(lockedAsset).approve(address(mockRouter), aeroIn);
+        params[0] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: abi.encodeWithSelector(
+                MockOdosRouterRL.executeSwap.selector,
+                lockedAsset, rewardsToken, aeroIn, aeroOut, _portfolioAccount
+            ),
+            inputToken: lockedAsset,
+            inputAmount: aeroIn,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        // Swap 1: tokenB -> rewards (should succeed)
+        deal(rewardsToken, address(mockRouter), tokenBOut);
+        vm.prank(_portfolioAccount);
+        IERC20(address(tokenB)).approve(address(mockRouter), tokenBIn);
+        params[1] = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(mockRouter),
+            swapData: abi.encodeWithSelector(
+                MockOdosRouterRL.executeSwap.selector,
+                address(tokenB), rewardsToken, tokenBIn, tokenBOut, _portfolioAccount
+            ),
+            inputToken: address(tokenB),
+            inputAmount: tokenBIn,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+
+        vm.prank(_authorizedCaller);
+        uint256 total = rewardsProcessingFacet.swapToRewardsTokenMultiple(params);
+
+        assertEq(total, aeroOut + tokenBOut, "AERO + tokenB both swap successfully in batch");
     }
 
     function test_swapToRewards_inputIsRewardsToken() public {

@@ -21,8 +21,8 @@ contract AerodromeRewardsProcessingConfigRegression is BaseDeploymentSetup {
         assertEq(address(rewardsProcessingFacet._swapConfig()), address(swapConfig));
     }
 
-    function testRewardsProcessingFacetCollateralToken() public view {
-        assertEq(rewardsProcessingFacet._collateralToken(), AERO);
+    function testRewardsProcessingFacetUnderlyingLockedAsset() public view {
+        assertEq(rewardsProcessingFacet._underlyingLockedAsset(), AERO);
     }
 
     function testRewardsProcessingFacetVault() public view {

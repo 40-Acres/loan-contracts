@@ -25,15 +25,21 @@ contract VotingEscrowRewardsProcessingFacet is RewardsProcessingFacet {
         address swapConfig,
         address votingEscrow,
         address vault,
-        address collateralToken
+        address underlyingLockedAsset
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
-        collateralToken,
+        underlyingLockedAsset,
         vault
     ) {
         require(votingEscrow != address(0), "Invalid votingEscrow");
         _votingEscrow = IVotingEscrow(votingEscrow);
+    }
+
+    /// @dev Block swapping the veNFT token (e.g. veAERO). The underlying ERC20 (AERO)
+    ///      is a legitimate fee reward and must remain swappable.
+    function _isSwapAllowed(address inputToken) internal view virtual override returns (bool) {
+        return inputToken != address(_votingEscrow);
     }
 
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal virtual override returns (uint256 usedAmount) {

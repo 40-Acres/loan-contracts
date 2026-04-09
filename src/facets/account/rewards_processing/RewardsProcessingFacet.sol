@@ -29,7 +29,7 @@ contract RewardsProcessingFacet is AccessControl {
     using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     SwapConfig public immutable _swapConfig;
-    address public immutable _collateralToken;
+    address public immutable _underlyingLockedAsset;
     IERC4626 public immutable _vault;
 
     event GasReclamationPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
@@ -49,14 +49,14 @@ contract RewardsProcessingFacet is AccessControl {
     event InvestToVaultFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event IncreaseCollateralFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed owner);
 
-    constructor(address portfolioFactory, address swapConfig, address collateralToken, address vault) {
+    constructor(address portfolioFactory, address swapConfig, address underlyingLockedAsset, address vault) {
         require(portfolioFactory != address(0));
         require(swapConfig != address(0));
-        require(collateralToken != address(0));
+        require(underlyingLockedAsset != address(0));
         require(vault != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _swapConfig = SwapConfig(swapConfig);
-        _collateralToken = collateralToken;
+        _underlyingLockedAsset = underlyingLockedAsset;
         _vault = IERC4626(vault);
     }
 
@@ -360,7 +360,7 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _increaseCollateral(uint256 tokenId, address rewardsToken, uint256 optionAmount, SwapMod.RouteParams memory swapParams) internal virtual returns (uint256 amountUsed) {
-        address lockedAsset = _collateralToken;
+        address lockedAsset = _underlyingLockedAsset;
         uint256 beginningLockedAssetBalance = IERC20(lockedAsset).balanceOf(address(this));
         if(rewardsToken == lockedAsset) {
             uint256 used = _increaseLock(tokenId, optionAmount, lockedAsset);
@@ -394,15 +394,15 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     /**
-     * @dev Validate that the input token is allowed for swapping.
-     *      Override in subclasses to add additional blocked tokens.
+     * @dev Returns true if the input token is allowed for swapping.
+     *      Returns true by default — override in subclasses to block specific tokens.
      */
-    function _validateSwapInput(address inputToken) internal view virtual {
-        require(inputToken != _collateralToken, "Input token cannot be collateral token");
+    function _isSwapAllowed(address) internal view virtual returns (bool) {
+        return true;
     }
 
     function swapToRewardsToken(SwapMod.RouteParams memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
-        _validateSwapInput(params.inputToken);
+        require(_isSwapAllowed(params.inputToken), "Input token not allowed");
         address rewardsToken = getRewardsToken();
         require(params.inputToken != rewardsToken, "Input token cannot be rewards token");
         return SwapMod.swap(SwapMod.RouteParams({
@@ -427,8 +427,8 @@ contract RewardsProcessingFacet is AccessControl {
     function swapToRewardsTokenMultiple(SwapMod.RouteParams[] memory params) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 amount) {
         address rewardsToken = getRewardsToken();
         for(uint256 i = 0; i < params.length; i++) {
-            _validateSwapInput(params[i].inputToken);
-            require(params[i].inputToken != rewardsToken, "Input token cannot be rewards token");
+            if (params[i].inputToken == rewardsToken) continue;
+            if (!_isSwapAllowed(params[i].inputToken)) continue;
             try SwapMod.swap(SwapMod.RouteParams({
                 swapConfig: address(_swapConfig),
                 swapTarget: params[i].swapTarget,
@@ -488,7 +488,7 @@ contract RewardsProcessingFacet is AccessControl {
      */
     function calculateRoutes(uint256 tokenId, uint256 rewardsAmount, uint256 gasReclamation) external view returns (SwapRoute[4] memory routes) {
         address asset = getRewardsToken();
-        address lockedAsset = _collateralToken;
+        address lockedAsset = _underlyingLockedAsset;
         bool hasDebt = _getTotalDebt() > 0;
 
         // 1. Compute fees

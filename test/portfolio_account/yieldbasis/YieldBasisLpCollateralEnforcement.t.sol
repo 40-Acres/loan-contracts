@@ -472,7 +472,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     // ============ Test 4: swapToRewardsToken blocks LP token swap ============
 
     /**
-     * @notice The YieldBasisLpRewardsProcessingFacet sets the LP token as _collateralToken
+     * @notice The YieldBasisLpRewardsProcessingFacet sets the LP token as _underlyingLockedAsset
      *         in its constructor. swapToRewardsToken must revert when attempting to swap
      *         the LP token (collateral) to prevent selling collateral.
      *
@@ -491,7 +491,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         });
 
         vm.prank(_authorizedCaller);
-        vm.expectRevert("Input token cannot be collateral token");
+        vm.expectRevert("Input token not allowed");
         RewardsProcessingFacet(_portfolioAccount).swapToRewardsToken(params);
     }
 
@@ -916,7 +916,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     // ============ Test 10: WBTC (underlying) is NOT the collateral token ============
 
     /**
-     * @notice The _collateralToken in YieldBasisLpRewardsProcessingFacet is the LP token
+     * @notice The _underlyingLockedAsset in YieldBasisLpRewardsProcessingFacet is the LP token
      *         (ybBTC), not the underlying asset (WBTC). After fee harvesting, the underlying
      *         asset lands on the account and should be freely usable (swappable).
      *
@@ -965,22 +965,22 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     // ============ Test 11: LP token (ybBTC) IS the collateral token ============
 
     /**
-     * @notice Explicitly verify that _collateralToken in the rewards processing facet
+     * @notice Explicitly verify that _underlyingLockedAsset in the rewards processing facet
      *         equals the LP token address (ybBTC). This is the foundational assertion
      *         for the swap guard: LP = collateral, so swapping LP is blocked.
      */
-    function test_collateralToken_isLpToken() public view {
+    function test_underlyingLockedAsset_isLpToken() public view {
         // The YieldBasisLpRewardsProcessingFacet constructor sets:
-        //   _collateralToken = IYieldBasisGauge(gauge).asset() = LP token
+        //   _underlyingLockedAsset = IYieldBasisGauge(gauge).asset() = LP token
         // Verify by checking that swapping the LP token hits the collateral guard
         // (already tested in test_swapLpToken_isBlocked), but here we verify the
         // address equality directly.
         address lpTokenAddress = address(_ybBtc);
-        address collateralToken = _ybBtcRewardsProcessingFacet._collateralToken();
+        address underlyingLockedAsset = _ybBtcRewardsProcessingFacet._underlyingLockedAsset();
         assertEq(
-            collateralToken,
+            underlyingLockedAsset,
             lpTokenAddress,
-            "_collateralToken must equal the LP token (ybBTC) address"
+            "_underlyingLockedAsset must equal the LP token (ybBTC) address"
         );
     }
 
