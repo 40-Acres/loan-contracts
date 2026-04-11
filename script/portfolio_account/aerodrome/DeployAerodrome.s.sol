@@ -246,19 +246,19 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy CollateralFacet (on-chain code is empty)
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](10);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
+        // bytes4[] memory collateralSelectors = new bytes4[](10);
+        // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        // collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        // collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        // collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        // collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        // collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
+        // collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        // collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        // collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
+        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
 
         // // // Upgrade Loan Contract

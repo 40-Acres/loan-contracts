@@ -91,7 +91,9 @@ contract RewardsProcessingFacet is AccessControl {
 
         // 3. Branch based on debt status
         if (hasDebt) {
-            if (UserRewardsConfig.hasActiveBalanceDistribution()) {
+            // Only allow active balance distribution if LTV <= 100 (debt <= maxLoanIgnoreSupply).
+            // Underwater accounts (LTV > 100) send 100% of post-fees rewards to debt repayment.
+            if (_getLTVRatio() <= 100 && UserRewardsConfig.hasActiveBalanceDistribution()) {
                 remaining = _processActiveBalanceDistribution(tokenId, rewardsAmount, remaining, asset, swapParams[0]);
             }
             remaining = _processActiveLoanRewards(tokenId, remaining, asset);
@@ -160,6 +162,15 @@ contract RewardsProcessingFacet is AccessControl {
 
     function _getTotalDebt() internal view virtual returns (uint256) {
         return CollateralManager.getTotalDebt();
+    }
+
+    /**
+     * @dev Returns the LTV ratio: 0 = no debt, 100 = at capacity, >100 = underwater.
+     *      Used to gate active balance distribution (disabled when > 100) and
+     *      can be used for liquidation thresholds (e.g. 150).
+     */
+    function _getLTVRatio() internal view virtual returns (uint256) {
+        return CollateralManager.getLTVRatio(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _decreaseTotalDebt(uint256 amount) internal virtual returns (uint256 excess) {
@@ -511,7 +522,7 @@ contract RewardsProcessingFacet is AccessControl {
         }
 
         if (hasDebt) {
-            if (UserRewardsConfig.hasActiveBalanceDistribution()) {
+            if (_getLTVRatio() <= 100 && UserRewardsConfig.hasActiveBalanceDistribution()) {
                 UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
                 uint256 entryAmount = rewardsAmount * entry.percentage / 100;
                 if (entryAmount > remaining) entryAmount = remaining;

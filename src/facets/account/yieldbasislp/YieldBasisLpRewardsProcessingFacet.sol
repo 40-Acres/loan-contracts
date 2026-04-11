@@ -52,6 +52,11 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
         );
     }
 
+    /// @dev LTV gating not yet implemented for ERC4626 collateral — always healthy (0 = no debt equivalent)
+    function _getLTVRatio() internal view override returns (uint256) {
+        return 0;
+    }
+
     /// @dev Block swapping LP token (fungible collateral) and gauge shares
     function _isSwapAllowed(address inputToken) internal view override returns (bool) {
         return inputToken != _underlyingLockedAsset && inputToken != _gauge;

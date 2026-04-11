@@ -48,6 +48,11 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
     }
 
+    /// @dev LTV gating not yet implemented for DynamicCollateralManager — always healthy (0 = no debt equivalent)
+    function _getLTVRatio() internal view override returns (uint256) {
+        return 0;
+    }
+
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override returns (uint256 usedAmount) {
         if (tokenId == 0) return 0;
         IERC20(lockedAsset).approve(address(_veYB), increaseAmount);

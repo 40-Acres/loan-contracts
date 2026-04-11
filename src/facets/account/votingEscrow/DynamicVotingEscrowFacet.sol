@@ -8,6 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {DynamicCollateralManager} from "../collateral/DynamicCollateralManager.sol";
+import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 
 /**
@@ -23,6 +24,8 @@ contract DynamicVotingEscrowFacet is AccessControl, IERC721Receiver {
     event LockIncreased(uint256 indexed tokenId, uint256 amount, address indexed owner);
     event LockCreated(uint256 indexed tokenId, uint256 amount, address indexed owner);
     event LockMerged(uint256 indexed from, uint256 indexed to, uint256 weightIncrease, address indexed owner);
+
+    error ListingActive(uint256 tokenId);
 
     constructor(address portfolioFactory, address votingEscrow, address voter) {
         require(portfolioFactory != address(0));
@@ -81,6 +84,9 @@ contract DynamicVotingEscrowFacet is AccessControl, IERC721Receiver {
         require(fromToken != toToken, "SameNFT");
         require(_votingEscrow.ownerOf(fromToken) == address(this), "from not in account");
         require(_votingEscrow.ownerOf(toToken) == address(this), "to not in account");
+        if (UserMarketplaceModule.hasSaleAuthorization(fromToken)) {
+            revert ListingActive(fromToken);
+        }
 
         address config = address(_portfolioFactory.portfolioFactoryConfig());
         address owner = _portfolioFactory.ownerOf(address(this));
