@@ -256,6 +256,16 @@ library DynamicCollateralManager {
         return collateralManagerData.lockedCollaterals[tokenId];
     }
 
+    function getLTVRatio(address portfolioFactoryConfig) public view returns (uint256) {
+        uint256 totalDebt = getTotalDebt(portfolioFactoryConfig);
+        if (totalDebt == 0) return 0;
+
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
+        if (maxLoanIgnoreSupply == 0) return type(uint256).max;
+
+        return (totalDebt * 100) / maxLoanIgnoreSupply;
+    }
+
     function enforceCollateralRequirements() external view returns (bool success) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         if(collateralManagerData.overSuppliedVaultDebt > 0) {

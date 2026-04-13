@@ -41,11 +41,11 @@ contract VexyFacet is AccessControl {
         IERC20 currencyToken = IERC20(currency);
         require(currencyToken.balanceOf(address(this)) >= price, "Insufficient balance");
         // approve the marketplace to spend the funds
-        currencyToken.approve(address(_vexy), price);
+        currencyToken.forceApprove(address(_vexy), price);
         // buy the listing
         _vexy.buyListing(listingId);
         // clear remaining approval
-        currencyToken.approve(address(_vexy), 0);
+        currencyToken.forceApprove(address(_vexy), 0);
         require(_votingEscrow.ownerOf(nftId) == address(this), "veNFT not received");
     }
 }

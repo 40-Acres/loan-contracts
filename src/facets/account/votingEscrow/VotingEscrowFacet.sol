@@ -88,6 +88,9 @@ contract VotingEscrowFacet is AccessControl, IERC721Receiver {
         if (UserMarketplaceModule.hasSaleAuthorization(fromToken)) {
             revert ListingActive(fromToken);
         }
+        if (UserMarketplaceModule.hasSaleAuthorization(toToken)) {
+            revert ListingActive(toToken);
+        }
 
         address config = address(_portfolioFactory.portfolioFactoryConfig());
         address owner = _portfolioFactory.ownerOf(address(this));

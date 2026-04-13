@@ -37,11 +37,11 @@ contract OpenXFacet is AccessControl {
         IERC20 currencyToken = IERC20(currency);
         require(currencyToken.balanceOf(address(this)) >= price, "Insufficient balance");
         // approve the marketplace to spend the funds
-        currencyToken.approve(address(_openx), price);
+        currencyToken.forceApprove(address(_openx), price);
         // buy the listing
         _openx.buyNFT(listingId);
         // clear remaining approval
-        currencyToken.approve(address(_openx), 0);
+        currencyToken.forceApprove(address(_openx), 0);
         require(_votingEscrow.ownerOf(nftId) == address(this), "veNFT not received");
     }
 }

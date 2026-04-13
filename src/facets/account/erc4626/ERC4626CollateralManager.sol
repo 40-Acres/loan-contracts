@@ -40,10 +40,8 @@ library ERC4626CollateralManager {
         // Debt tracking
         uint256 debt;
         uint256 overSuppliedVaultDebt;
-        uint256 undercollateralizedDebt; // legacy — kept for storage layout compatibility
-        // Shortfall snapshot for enforcement (replaces stale undercollateralizedDebt)
-        uint64 snapshotBlockNumber;
-        uint192 startShortfall;
+        uint256 startShortfall; // overwrites deprecated undercollateralizedDebt slot
+        uint256 snapshotBlockNumber;
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.ERC4626CollateralManager");
@@ -115,16 +113,11 @@ library ERC4626CollateralManager {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
 
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-
         // Calculate asset value of shares (underlying value if lpToken provided)
         uint256 assetValue = _resolveCollateralValue(vault, lpToken, shares);
 
         data.shares += shares;
         data.depositedAssetValue += assetValue;
-
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-        _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
 
         emit ERC4626CollateralAdded(vault, shares, assetValue, address(this));
     }
@@ -146,8 +139,6 @@ library ERC4626CollateralManager {
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient collateral shares");
 
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-
         // Calculate proportional asset value to remove
         uint256 assetValueToRemove = (data.depositedAssetValue * shares) / data.shares;
 
@@ -155,7 +146,7 @@ library ERC4626CollateralManager {
         data.depositedAssetValue -= assetValueToRemove;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-        _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+        require(data.debt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         emit ERC4626CollateralRemoved(vault, shares, assetValueToRemove, address(this));
     }
@@ -238,15 +229,10 @@ library ERC4626CollateralManager {
         if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
-        (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+        (uint256 maxLoan,) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
 
         if (amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
-        }
-
-        uint256 projectedTotalDebt = data.debt + amount;
-        if (projectedTotalDebt > maxLoanIgnoreSupply) {
-            data.undercollateralizedDebt = projectedTotalDebt - maxLoanIgnoreSupply;
         }
 
         data.debt += amount;
@@ -268,6 +254,10 @@ library ERC4626CollateralManager {
 
     function decreaseTotalDebt(address portfolioFactoryConfig, address vault, address lpToken, uint256 amount) public returns (uint256 excess) {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+        return _decreaseTotalDebt(portfolioFactoryConfig, vault, lpToken, amount);
+    }
+
+    function _decreaseTotalDebt(address portfolioFactoryConfig, address vault, address lpToken, uint256 amount) internal returns (uint256 excess) {
         ERC4626CollateralData storage data = _getStorage();
 
         uint256 totalDebt = data.debt;
@@ -275,8 +265,6 @@ library ERC4626CollateralManager {
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
-        // Pay vault first — vault may settle vested rewards before applying payment,
-        // implicitly reducing debt beyond what actualPaid reports.
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
         uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
@@ -284,20 +272,11 @@ library ERC4626CollateralManager {
         excess = amount - actualPaid;
 
         // Sync local debt with vault's actual debt balance.
-        // _settleRewards() fires inside payFromPortfolio and reduces the vault-side
-        // debtBalance by vested borrower rewards. The actualPaid return only reflects
-        // the explicit payment, not this implicit settlement.
+        // The vault may have implicitly reduced debt via reward settlement beyond the explicit payment.
         data.debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
 
-        // Recalculate enforcement flags from actual debt state
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-        if (data.debt > maxLoanIgnoreSupply) {
-            uint256 debtExcess = data.debt - maxLoanIgnoreSupply;
-            data.overSuppliedVaultDebt = debtExcess;
-            data.undercollateralizedDebt = debtExcess;
-        } else {
-            data.overSuppliedVaultDebt = 0;
-            data.undercollateralizedDebt = 0;
+        if (data.overSuppliedVaultDebt > 0) {
+            data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > actualPaid ? actualPaid : data.overSuppliedVaultDebt;
         }
 
         return excess;
@@ -364,6 +343,21 @@ library ERC4626CollateralManager {
 
         return (maxLoan, maxLoanIgnoreSupply);
     }
+
+    function getLTVRatio(address portfolioFactoryConfig, address vault) public view returns (uint256) {
+        return getLTVRatio(portfolioFactoryConfig, vault, address(0));
+    }
+
+    function getLTVRatio(address portfolioFactoryConfig, address vault, address lpToken) public view returns (uint256) {
+        uint256 totalDebt = getTotalDebt();
+        if (totalDebt == 0) return 0;
+
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+        if (maxLoanIgnoreSupply == 0) return type(uint256).max;
+
+        return (totalDebt * 100) / maxLoanIgnoreSupply;
+    }
+
     /**
      * @dev Compute the current shortfall: how much debt exceeds maxLoanIgnoreSupply.
      */
@@ -382,9 +376,9 @@ library ERC4626CollateralManager {
 
     function snapshotShortfall(address portfolioFactoryConfig, address vault, address lpToken) public {
         ERC4626CollateralData storage data = _getStorage();
-        if (data.snapshotBlockNumber != uint64(block.number)) {
-            data.snapshotBlockNumber = uint64(block.number);
-            data.startShortfall = uint192(_currentShortfall(portfolioFactoryConfig, vault, lpToken));
+        if (data.snapshotBlockNumber != block.number) {
+            data.snapshotBlockNumber = block.number;
+            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, lpToken);
         }
     }
 
@@ -398,11 +392,13 @@ library ERC4626CollateralManager {
     function enforceCollateralRequirements(address portfolioFactoryConfig, address vault, address lpToken) public view returns (bool) {
         ERC4626CollateralData storage data = _getStorage();
 
-        uint256 start = (data.snapshotBlockNumber == uint64(block.number))
-            ? uint256(data.startShortfall)
-            : 0;
-
         uint256 end = _currentShortfall(portfolioFactoryConfig, vault, lpToken);
+
+        // If a snapshot was taken this block, use it as the baseline.
+        // Otherwise no collateral/debt operation ran, so start == end (no change).
+        uint256 start = (data.snapshotBlockNumber == block.number)
+            ? data.startShortfall
+            : end;
 
         if (end > start) {
             revert UndercollateralizedDebt(end - start);
@@ -417,45 +413,10 @@ library ERC4626CollateralManager {
 
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address lpToken) internal {
         ERC4626CollateralData storage data = _getStorage();
-        if (data.snapshotBlockNumber != uint64(block.number)) {
-            data.snapshotBlockNumber = uint64(block.number);
-            data.startShortfall = uint192(_currentShortfall(portfolioFactoryConfig, vault, lpToken));
+        if (data.snapshotBlockNumber != block.number) {
+            data.snapshotBlockNumber = block.number;
+            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, lpToken);
         }
-    }
-
-    function _updateUndercollateralizedDebt(
-        ERC4626CollateralData storage data,
-        uint256 previousMaxLoanIgnoreSupply,
-        uint256 newMaxLoanIgnoreSupply
-    ) internal {
-        uint256 totalDebt = data.debt;
-
-        bool isRemovingCollateral = previousMaxLoanIgnoreSupply > newMaxLoanIgnoreSupply;
-
-        if (totalDebt <= newMaxLoanIgnoreSupply) {
-            data.undercollateralizedDebt = 0;
-            return;
-        }
-
-        uint256 difference;
-        if (isRemovingCollateral) {
-            difference = previousMaxLoanIgnoreSupply - newMaxLoanIgnoreSupply;
-            data.undercollateralizedDebt += difference;
-        } else {
-            difference = newMaxLoanIgnoreSupply - previousMaxLoanIgnoreSupply;
-            if (data.undercollateralizedDebt < difference) {
-                data.undercollateralizedDebt = 0;
-            } else {
-                data.undercollateralizedDebt -= difference;
-            }
-        }
-
-        // NOTE: When previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply (e.g., repayment
-        // where only debt changes), the delta is 0 and undercollateralizedDebt is unchanged.
-        // This can leave a stale value that overstates the actual shortfall. However, it does
-        // NOT affect transaction outcomes — the early return above already zeroes
-        // undercollateralizedDebt when totalDebt <= maxLoanIgnoreSupply, so enforceCollateralRequirements
-        // pass/fail is always correct. The stale value only affects the revert message amount.
     }
 
     /**
@@ -470,8 +431,6 @@ library ERC4626CollateralManager {
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient shares");
 
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-
         uint256 remainingShares = data.shares - shares;
         uint256 remainingValue = _resolveCollateralValue(vault, lpToken, remainingShares);
         require(remainingValue >= data.depositedAssetValue, "Would remove principal");
@@ -479,6 +438,6 @@ library ERC4626CollateralManager {
         data.shares = remainingShares;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-        _updateUndercollateralizedDebt(data, previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+        require(data.debt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
     }
 }

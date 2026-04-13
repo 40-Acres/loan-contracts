@@ -69,7 +69,11 @@ contract ERC4626ClaimingFacet is AccessControl {
 
         // Update collateral tracking - remove redeemed shares
         // Note: This reduces shares but keeps depositedAssets the same (we're only removing yield)
-        ERC4626CollateralManager.removeSharesForYield(address(_portfolioFactory.portfolioFactoryConfig()), vault, sharesToRedeem);
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        ERC4626CollateralManager.removeSharesForYield(config, vault, sharesToRedeem);
+
+        // Enforce collateral requirements after yield removal (runs outside multicall)
+        ERC4626CollateralManager.enforceCollateralRequirements(config, vault);
 
         emit VaultYieldClaimed(vault, assetsReceived, sharesToRedeem, vaultAsset, _portfolioFactory.ownerOf(address(this)));
 

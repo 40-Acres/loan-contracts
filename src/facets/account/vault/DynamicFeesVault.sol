@@ -214,9 +214,22 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 accumulatorDelta;
         if (block.timestamp >= $.userPeriodFinish[borrower]) {
             uint256 cappedAccumulator = $.epochEndBorrowerCreditPerRate[$.userPeriodFinish[borrower]];
-            // If the snapshot hasn't been written yet, fall back to the simulated value
+            // If the snapshot hasn't been written yet, simulate vesting only up to userPeriodFinish
+            // (not block.timestamp) to avoid crediting rewards from epochs after the stream expired
             if (cappedAccumulator == 0) {
-                cappedAccumulator = effectiveBorrowerCreditPerRate;
+                cappedAccumulator = $.borrowerCreditPerRate;
+                if (currentRate > 0 && $.userPeriodFinish[borrower] > $.globalLastUpdateTime) {
+                    uint256 vestedToFinish = currentRate * ($.userPeriodFinish[borrower] - $.globalLastUpdateTime);
+                    if (vestedToFinish > $.totalUnsettledRewards) {
+                        vestedToFinish = $.totalUnsettledRewards;
+                    }
+                    uint256 ratio = getCurrentVaultRatioBps();
+                    uint256 lenderPremium = (vestedToFinish * ratio) / 10000;
+                    uint256 borrowerCredit = vestedToFinish - lenderPremium;
+                    if (borrowerCredit > 0) {
+                        cappedAccumulator += (borrowerCredit * 1e18) / currentRate;
+                    }
+                }
             }
             uint256 paid = $.userBorrowerCreditPerRatePaid[borrower];
             accumulatorDelta = cappedAccumulator > paid ? cappedAccumulator - paid : 0;

@@ -190,8 +190,6 @@ library CollateralManager {
         uint256 totalDebt = collateralManagerData.debt;
         uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
 
-        (, uint256 previousMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
-
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
@@ -205,9 +203,9 @@ library CollateralManager {
             collateralManagerData.overSuppliedVaultDebt -= collateralManagerData.overSuppliedVaultDebt > actualPaid ? actualPaid : collateralManagerData.overSuppliedVaultDebt;
         }
 
-
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
-        _updateUndercollateralizedDebt(previousMaxLoanIgnoreSupply, newMaxLoanIgnoreSupply);
+        if(collateralManagerData.undercollateralizedDebt > 0) {
+            collateralManagerData.undercollateralizedDebt -= collateralManagerData.undercollateralizedDebt > actualPaid ? actualPaid : collateralManagerData.undercollateralizedDebt;
+        }
 
         return excess;
     }
@@ -241,6 +239,16 @@ library CollateralManager {
     function getLockedCollateral(uint256 tokenId) external view returns (uint256) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         return collateralManagerData.lockedCollaterals[tokenId];
+    }
+
+    function getLTVRatio(address portfolioFactoryConfig) public view returns (uint256) {
+        uint256 totalDebt = getTotalDebt();
+        if (totalDebt == 0) return 0;
+
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
+        if (maxLoanIgnoreSupply == 0) return type(uint256).max;
+
+        return (totalDebt * 100) / maxLoanIgnoreSupply;
     }
 
     /**
