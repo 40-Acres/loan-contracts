@@ -23,7 +23,7 @@ import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFac
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {BlackholeRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/BlackholeRewardsProcessingFacet.sol";
-import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BlackholeMarketplaceFacet} from "../../../src/facets/account/marketplace/BlackholeMarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {Loan} from "../../../src/Loan.sol";
@@ -145,7 +145,7 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy PortfolioMarketplace (veNOVA marketplace)
         PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), VOTING_ESCROW, 100, DEPLOYER_ADDRESS, DEPLOYER_ADDRESS);
-        MarketplaceFacet marketplaceFacet = MarketplaceFacet(address(VENOVA_MARKETPLACE));
+        BlackholeMarketplaceFacet marketplaceFacet = new BlackholeMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace), VOTER);
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;

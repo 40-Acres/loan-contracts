@@ -75,9 +75,18 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(amount > 0, "Zero amount");
 
-        // Always remove collateral for the full withdrawal amount
+        // Remove collateral shares, capped to what's actually tracked.
+        // After harvestLpFees, some LP on the account is no longer tracked
+        // as collateral (surplus shares were removed via removeSharesForYield),
+        // so sharesToRemove may exceed tracked shares.
         uint256 sharesToRemove = _gauge.previewWithdraw(amount);
-        ERC4626CollateralManager.removeCollateral(_config(), address(_gauge), address(_lpToken), sharesToRemove);
+        uint256 trackedShares = ERC4626CollateralManager.getCollateralShares();
+        if (sharesToRemove > trackedShares) {
+            sharesToRemove = trackedShares;
+        }
+        if (sharesToRemove > 0) {
+            ERC4626CollateralManager.removeCollateral(_config(), address(_gauge), address(_lpToken), sharesToRemove);
+        }
 
         // Only unstake from gauge for the portion not already held as LP
         uint256 unstaked = _lpToken.balanceOf(address(this));

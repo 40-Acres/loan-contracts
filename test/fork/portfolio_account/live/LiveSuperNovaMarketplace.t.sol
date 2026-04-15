@@ -17,7 +17,7 @@ import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/Bas
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {VotingFacet} from "../../../../src/facets/account/vote/VotingFacet.sol";
 import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
-import {MarketplaceFacet} from "../../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BlackholeMarketplaceFacet} from "../../../../src/facets/account/marketplace/BlackholeMarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../../src/facets/marketplace/PortfolioMarketplace.sol";
 
@@ -204,7 +204,7 @@ contract LiveSuperNovaMarketplace is Test {
     }
 
     function _registerMarketplaceFacet() internal {
-        MarketplaceFacet facet = new MarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(marketplace));
+        BlackholeMarketplaceFacet facet = new BlackholeMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(marketplace), VOTER);
         bytes4[] memory sel = new bytes4[](8);
         sel[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
         sel[1] = BaseMarketplaceFacet.makeListing.selector;
@@ -312,22 +312,24 @@ contract LiveSuperNovaMarketplace is Test {
         assertGt(sellerBalance, 0, "Seller should receive payment");
     }
 
-    /// @notice Buy a listing when seller's veNFT HAS voted - expected to revert on transfer
-    function testBuyListing_withVotes_reverts() public {
+    /// @notice Same-epoch vote after listing: isListingPurchasable returns false
+    function testBuyListing_sameEpochVote_notPurchasable() public {
         uint256 tokenId = _createLockInAccount(seller, 1000e18);
 
-        // Vote to set the voted flag on the veNFT
-        _voteOnPool(tokenId);
-
-        bool isVoted = IBlackholeVE(VOTING_ESCROW).voted(tokenId);
-        console.log("Token voted after vote:", isVoted);
-        assertTrue(isVoted, "Token should be voted after voting");
-
-        // Make listing
+        // Make listing FIRST (before voting)
         uint256 price = 50e6;
         uint256 nonce = _makeListing(tokenId, price);
 
-        // Purchase should revert - safeTransferFrom fails when token has active votes
+        // Then vote in the same epoch (e.g. defaultVote by authorized caller)
+        _voteOnPool(tokenId);
+        assertTrue(IBlackholeVE(VOTING_ESCROW).voted(tokenId), "Token should be voted");
+
+        // isListingPurchasable should return false due to same-epoch vote
+        (bool purchasable, , ) = BlackholeMarketplaceFacet(sellerAccount).isListingPurchasable(tokenId);
+        assertFalse(purchasable, "Should not be purchasable in same epoch as vote");
+        console.log("isListingPurchasable correctly returns false for same-epoch vote");
+
+        // Purchase should revert (voter.reset reverts with "VOTED" in same epoch)
         deal(USDC, buyer, price);
         vm.startPrank(buyer);
         IERC20(USDC).approve(address(marketplace), price);
@@ -335,35 +337,33 @@ contract LiveSuperNovaMarketplace is Test {
         marketplace.purchaseListing(tokenId, nonce);
         vm.stopPrank();
 
-        // NFT should still belong to seller
         assertEq(IVotingEscrow(VOTING_ESCROW).ownerOf(tokenId), sellerAccount, "NFT still in seller account");
-        console.log("Purchase reverted - token needs voter.reset() before transfer");
     }
 
-    /// @notice Confirm voter.reset() enables transfer after voting (must warp to next epoch)
-    function testBuyListing_resetThenBuy_succeeds() public {
+    /// @notice Next-epoch buy: BlackholeMarketplaceFacet auto-resets and transfer succeeds
+    function testBuyListing_nextEpoch_autoResetSucceeds() public {
         uint256 tokenId = _createLockInAccount(seller, 1000e18);
 
-        // Vote
+        // Vote in current epoch
         _voteOnPool(tokenId);
         assertTrue(IBlackholeVE(VOTING_ESCROW).voted(tokenId), "Should be voted");
 
-        // Warp to next epoch - voter.reset() has same-epoch restriction ("VOTED")
+        // Warp to next epoch so voter.reset() is allowed
         vm.warp(block.timestamp + 7 days);
         vm.roll(block.number + 50400);
 
-        // Reset vote (simulating what the fix should do)
-        vm.prank(sellerAccount);
-        ISuperNovaVoter(VOTER).reset(tokenId);
-        assertFalse(IBlackholeVE(VOTING_ESCROW).voted(tokenId), "Should be reset after voter.reset()");
-
-        // Make listing and buy - should succeed now
+        // Make listing and buy - BlackholeMarketplaceFacet auto-calls voter.reset()
         uint256 price = 50e6;
         uint256 nonce = _makeListing(tokenId, price);
+
+        // isListingPurchasable should return true (vote was in prior epoch)
+        (bool purchasable, , ) = BlackholeMarketplaceFacet(sellerAccount).isListingPurchasable(tokenId);
+        assertTrue(purchasable, "Should be purchasable after epoch flip");
+
         _buyListing(tokenId, nonce, price);
 
-        assertEq(IVotingEscrow(VOTING_ESCROW).ownerOf(tokenId), buyer, "Buyer should own veNFT after reset+buy");
-        console.log("Reset then buy: OK");
+        assertEq(IVotingEscrow(VOTING_ESCROW).ownerOf(tokenId), buyer, "Buyer should own veNFT");
+        console.log("Next-epoch auto-reset buy: OK");
     }
 
     /// @notice Sanity: direct veNFT transfer without votes succeeds

@@ -56,6 +56,22 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
      */
     function _syncDebtState() internal virtual {}
 
+    /**
+     * @dev Hook called before the NFT is transferred to the buyer in receiveSaleProceeds.
+     *      BlackholeMarketplaceFacet overrides this to call voter.reset(tokenId)
+     *      since Blackhole VEs block transfers for tokens with active votes.
+     */
+    function _prepareTokenForTransfer(uint256 tokenId) internal virtual {}
+
+    /**
+     * @dev Hook to check if a token has a current-epoch vote that would block transfer.
+     *      BlackholeMarketplaceFacet overrides this to return true when the token
+     *      was voted in the current epoch (voter.reset() would revert with "VOTED").
+     */
+    function _hasCurrentEpochVote(uint256 tokenId) internal view virtual returns (bool) {
+        return false;
+    }
+
     // ──────────────────────────────────────────────
     // Public view functions
     // ──────────────────────────────────────────────
@@ -105,6 +121,11 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         PortfolioFactoryConfig _portfolioFactoryConfig = _portfolioFactory.portfolioFactoryConfig();
         // Get current required payment (reflects current debt state, not listing-time state)
         requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioFactoryConfig), tokenId);
+
+        // Check if token has a current-epoch vote that would block transfer
+        if (_hasCurrentEpochVote(tokenId)) {
+            return (false, requiredPayment, netPayment);
+        }
 
         if(requiredPayment > 0) {
             address debtToken = _portfolioFactoryConfig.getDebtToken();
@@ -240,6 +261,9 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
 
         // Enforce collateral requirements on seller after collateral removal
         _enforceCollateralRequirements();
+
+        // Prepare token for transfer (e.g. reset votes on Blackhole VEs)
+        _prepareTokenForTransfer(tokenId);
 
         // Transfer NFT to buyer portfolio
         _votingEscrow.safeTransferFrom(address(this), buyerPortfolio, tokenId);

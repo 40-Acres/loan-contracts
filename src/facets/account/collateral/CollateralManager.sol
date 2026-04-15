@@ -216,14 +216,18 @@ library CollateralManager {
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
 
-        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        uint256 outstandingCapital = lendingPool.activeAssets();
-
-        address vault = lendingPool.lendingVault();
+        address loanContract = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract();
+        uint256 outstandingCapital;
         uint256 vaultBalance;
-        if (vault != address(0)) {
-            address underlyingAsset = IERC4626(vault).asset();
-            vaultBalance = IERC20(underlyingAsset).balanceOf(vault);
+        if (loanContract != address(0)) {
+            ILendingPool lendingPool = ILendingPool(loanContract);
+            outstandingCapital = lendingPool.activeAssets();
+
+            address vault = lendingPool.lendingVault();
+            if (vault != address(0)) {
+                address underlyingAsset = IERC4626(vault).asset();
+                vaultBalance = IERC20(underlyingAsset).balanceOf(vault);
+            }
         }
 
         // Get current total debt for the portfolio account
