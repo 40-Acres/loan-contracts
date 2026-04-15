@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Script} from "forge-std/Script.sol";
+import {console} from "forge-std/console.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
@@ -22,6 +23,9 @@ import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFac
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {BlackholeRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/BlackholeRewardsProcessingFacet.sol";
+import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
+import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
+import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {Loan} from "../../../src/Loan.sol";
 import {Loan as LoanV2} from "../../../src/LoanV2.sol";
 import {Vault} from "../../../src/VaultV2.sol";
@@ -48,43 +52,29 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
     }
 
     function _deploy() internal {
-        _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
-        require(address(_portfolioManager) == address(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9), "Unexpected PortfolioManager address");
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("supernova-usdc"))));
+        PortfolioManager _portfolioManager = PortfolioManager(PORTFOLIO_MANAGER_ADDRESS);
+        address portfolioFactory = _portfolioManager.factoryBySalt(keccak256(abi.encodePacked("supernova")));
+        require(portfolioFactory != address(0), "SuperNova factory not deployed");
+        FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
-        // Deploy config contracts
-        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
+        // Deploy config contracts (deployer as initial owner so we can configure, then transfer)
+        (PortfolioFactoryConfig portfolioFactoryConfig, VotingConfig votingConfig, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory), DEPLOYER_ADDRESS);
         SwapConfig swapConfig = _deploySwapConfig(DEPLOYER_ADDRESS);
 
         portfolioFactoryConfig.setVoteConfig(address(votingConfig));
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
-        _portfolioFactory = portfolioFactory;
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
 
-        // Deploy fresh Loan contract
-        Loan loanImplementation = new Loan();
-        ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
-        _loanContract = address(loanProxy);
-
-        // Create vault
-        Vault vaultImplementation = new Vault();
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
-        Vault vault = Vault(address(vaultProxy));
-
-        // Initialize vault
-        vault.initialize(address(USDC), address(_loanContract), "40eth-USDC-VAULT", "40eth-USDC-VAULT");
-
-        // Initialize loan
-        Loan(address(_loanContract)).initialize(address(vault), USDC);
-        LoanV2 loanV2 = new LoanV2();
-        LoanV2(address(_loanContract)).upgradeToAndCall(address(loanV2), new bytes(0));
-        Loan(address(_loanContract)).setPortfolioFactory(address(portfolioFactory));
-
-        portfolioFactoryConfig.setLoanContract(address(_loanContract));
-        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
+        console.log("Deployed SuperNova PortfolioFactory at:", portfolioFactory);
+        // setPortfolioFactoryConfig must be called by multisig (PM owner)
+        console.log("=== Multisig Action Required ===");
+        console.log("Call PortfolioFactory.setPortfolioFactoryConfig with:");
+        console.log("  PortfolioFactory:", portfolioFactory);
+        console.log("  PortfolioFactoryConfig:", address(portfolioFactoryConfig));
 
         // Deploy ClaimingFacet (single rewards distributor for SuperNova)
-        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        ClaimingFacet claimingFacet = new ClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(0));
         bytes4[] memory claimingSelectors = new bytes4[](3);
         claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -93,7 +83,7 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy CollateralFacet
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](10);
+        bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
@@ -104,26 +94,21 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
-        // Deploy LendingFacet
-        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
-        bytes4[] memory lendingSelectors = new bytes4[](5);
-        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
-        lendingSelectors[1] = BaseLendingFacet.pay.selector;
-        lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
-        lendingSelectors[3] = BaseLendingFacet.topUp.selector;
-        lendingSelectors[4] = BaseLendingFacet.borrowTo.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
         // Deploy VotingFacet
         VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
-        bytes4[] memory votingSelectors = new bytes4[](5);
+        bytes4[] memory votingSelectors = new bytes4[](8);
         votingSelectors[0] = VotingFacet.vote.selector;
         votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         votingSelectors[2] = VotingFacet.setVotingMode.selector;
         votingSelectors[3] = VotingFacet.isManualVoting.selector;
         votingSelectors[4] = VotingFacet.defaultVote.selector;
+        votingSelectors[5] = VotingFacet.batchVote.selector;
+        votingSelectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
+        votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
         // Deploy BlackholeVotingEscrowFacet (shared with Blackhole — handles increase_amount/create_lock_for)
@@ -136,14 +121,8 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         votingEscrowSelectors[4] = BlackholeVotingEscrowFacet.mergeInternal.selector;
         _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
-        // Deploy MigrationFacet
-        MigrationFacet migrationFacet = new MigrationFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory migrationSelectors = new bytes4[](1);
-        migrationSelectors[0] = IMigrationFacet.migrate.selector;
-        _registerFacet(facetRegistry, address(migrationFacet), migrationSelectors, "MigrationFacet");
-
         // Deploy BlackholeRewardsProcessingFacet (shared — handles increase_amount for lock increase)
-        RewardsProcessingFacet rewardsProcessingFacet = new BlackholeRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), SNOVA_TOKEN);
+        RewardsProcessingFacet rewardsProcessingFacet = new BlackholeRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC);
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
@@ -163,6 +142,26 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
         rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
+
+        // Deploy PortfolioMarketplace (veNOVA marketplace)
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(_portfolioManager), VOTING_ESCROW, 100, DEPLOYER_ADDRESS, DEPLOYER_ADDRESS);
+        MarketplaceFacet marketplaceFacet = MarketplaceFacet(address(VENOVA_MARKETPLACE));
+        bytes4[] memory marketplaceSelectors = new bytes4[](8);
+        marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        marketplaceSelectors[1] = BaseMarketplaceFacet.makeListing.selector;
+        marketplaceSelectors[2] = BaseMarketplaceFacet.cancelListing.selector;
+        marketplaceSelectors[3] = BaseMarketplaceFacet.marketplace.selector;
+        marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
+        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+
+        // transfer ownerships to multisig
+        votingConfig.transferOwnership(MULTISIG_ADDRESS);
+        swapConfig.transferOwnership(MULTISIG_ADDRESS);
+        portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
+        loanConfig.transferOwnership(MULTISIG_ADDRESS);
     }
 
 }

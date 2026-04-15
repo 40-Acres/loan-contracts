@@ -76,6 +76,8 @@ contract BlackholeVotingEscrowFacet is AccessControl, IERC721Receiver {
 
         uint256 beginningBalance = _getLockedAmount(toToken);
         _votingEscrow.transferFrom(msg.sender, address(this), fromToken);
+        _votingEscrow.merge(fromToken, toToken);
+
         uint256 endBalance = _getLockedAmount(toToken);
         uint256 weightIncrease = endBalance - beginningBalance;
 
@@ -99,7 +101,6 @@ contract BlackholeVotingEscrowFacet is AccessControl, IERC721Receiver {
         CollateralManager.addLockedCollateral(config, toToken, address(_votingEscrow));
 
         _voter.reset(fromToken);
-        _votingEscrow.unlockPermanent(fromToken);
 
         uint256 beginningBalance = _getLockedAmount(toToken);
         _votingEscrow.merge(fromToken, toToken);

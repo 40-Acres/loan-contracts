@@ -452,7 +452,7 @@ contract DynamicCollateralManagerSnapshotTest is Test {
 
         // ── 7. MarketplaceFacet (8 selectors) ──
         _portfolioMarketplace = new PortfolioMarketplace(
-            address(_portfolioManager), address(_ve), 100, FORTY_ACRES_DEPLOYER
+            address(_portfolioManager), address(_ve), 100, FORTY_ACRES_DEPLOYER, FORTY_ACRES_DEPLOYER
         );
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(
             address(_portfolioFactory),

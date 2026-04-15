@@ -27,12 +27,14 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
         address portfolioFactory,
         address swapConfig,
         address gauge,
-        address vault
+        address vault,
+        address defaultToken
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
         IYieldBasisGauge(gauge).asset(), // LP token as underlyingLockedAsset — blocks selling it
-        vault
+        vault,
+        defaultToken
     ) {
         require(gauge != address(0), "Invalid gauge");
         _gauge = gauge;

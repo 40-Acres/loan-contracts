@@ -129,6 +129,7 @@ contract DynamicMarketplaceFacetTest is Test {
             address(portfolioManager),
             VOTING_ESCROW,
             PROTOCOL_FEE_BPS,
+            feeRecipient,
             feeRecipient
         );
         portfolioMarketplace.setAllowedPaymentToken(USDC, true);

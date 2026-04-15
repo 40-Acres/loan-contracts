@@ -220,10 +220,11 @@ library CollateralManager {
         uint256 outstandingCapital = lendingPool.activeAssets();
 
         address vault = lendingPool.lendingVault();
-        IERC4626 vaultAsset = IERC4626(vault);
-        // Get the underlying asset balance in the vault
-        address underlyingAsset = vaultAsset.asset();
-        uint256 vaultBalance = IERC20(underlyingAsset).balanceOf(address(vault));
+        uint256 vaultBalance;
+        if (vault != address(0)) {
+            address underlyingAsset = IERC4626(vault).asset();
+            vaultBalance = IERC20(underlyingAsset).balanceOf(vault);
+        }
 
         // Get current total debt for the portfolio account
         uint256 currentLoanBalance = getTotalDebt();

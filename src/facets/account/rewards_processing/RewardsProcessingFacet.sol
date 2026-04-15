@@ -31,6 +31,7 @@ contract RewardsProcessingFacet is AccessControl {
     SwapConfig public immutable _swapConfig;
     address public immutable _underlyingLockedAsset;
     IERC4626 public immutable _vault;
+    address public immutable _defaultToken;
 
     event GasReclamationPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
     event ProtocolFeePaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
@@ -49,15 +50,15 @@ contract RewardsProcessingFacet is AccessControl {
     event InvestToVaultFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address asset, address indexed owner);
     event IncreaseCollateralFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed owner);
 
-    constructor(address portfolioFactory, address swapConfig, address underlyingLockedAsset, address vault) {
+    constructor(address portfolioFactory, address swapConfig, address underlyingLockedAsset, address vault, address defaultToken) {
         require(portfolioFactory != address(0));
         require(swapConfig != address(0));
         require(underlyingLockedAsset != address(0));
-        require(vault != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _swapConfig = SwapConfig(swapConfig);
         _underlyingLockedAsset = underlyingLockedAsset;
         _vault = IERC4626(vault);
+        _defaultToken = defaultToken;
     }
 
     /**
@@ -120,6 +121,10 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     function _depositRemainingToVault(uint256 amount, address asset) internal {
+        if (address(_vault) == address(0)) {
+            _sendToWalletAccount(asset, amount);
+            return;
+        }
         address vaultAddress = address(_vault);
         address recipient = _portfolioFactory.ownerOf(address(this));
         IERC20(asset).approve(vaultAddress, amount);
@@ -140,13 +145,18 @@ contract RewardsProcessingFacet is AccessControl {
         uint256 totalDebt = _getTotalDebt();
         address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
         require(loanContract != address(0));
-        address vaultAsset = _vault.asset();
 
-        if(totalDebt > 0) {
-            return vaultAsset;
+        if (address(_vault) != address(0)) {
+            address vaultAsset = _vault.asset();
+            if(totalDebt > 0) {
+                return vaultAsset;
+            }
+            address rewardsToken = UserRewardsConfig.getRewardsToken();
+            return rewardsToken != address(0) ? rewardsToken : vaultAsset;
         }
+
         address rewardsToken = UserRewardsConfig.getRewardsToken();
-        return rewardsToken != address(0) ? rewardsToken : vaultAsset;
+        return rewardsToken != address(0) ? rewardsToken : _defaultToken;
     }
 
     function _processActiveLoanRewards(uint256 tokenId, uint256 availableAmount, address asset) internal virtual returns (uint256 remaining) {

@@ -233,7 +233,8 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
             address(swapConfig),
             VE_YB,
             address(veYBAdapter),
-            address(mockVault)
+            address(mockVault),
+            address(0)
         );
         bytes4[] memory rewardsSelectors = new bytes4[](5);
         rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;

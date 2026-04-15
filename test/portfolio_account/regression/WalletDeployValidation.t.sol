@@ -85,7 +85,7 @@ contract WalletDeployValidation is Test {
 
         // Deploy marketplace
         portfolioMarketplace = new PortfolioMarketplace(
-            address(portfolioManager), VOTING_ESCROW, 100, DEPLOYER
+            address(portfolioManager), VOTING_ESCROW, 100, DEPLOYER, DEPLOYER
         );
 
         // Deploy and register facets (mirrors DeployWallet.s.sol)

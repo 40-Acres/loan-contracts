@@ -49,8 +49,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
     }
 
     function _deploy() internal {
-        _portfolioManager = new PortfolioManager{salt: SALT}(DEPLOYER_ADDRESS);
-        require(address(_portfolioManager) == address(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9), "Unexpected PortfolioManager address");
+        PortfolioManager _portfolioManager = PortfolioManager(PORTFOLIO_MANAGER_ADDRESS);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("blackhole-usdc"))));
 
         // Deploy config contracts
@@ -95,7 +94,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy CollateralFacet
         CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](10);
+        bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
@@ -106,6 +105,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy LendingFacet

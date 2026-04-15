@@ -75,16 +75,18 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(amount > 0, "Zero amount");
 
-        // Check — compute shares to burn and update collateral state first
+        // Always remove collateral for the full withdrawal amount
+        uint256 sharesToRemove = _gauge.previewWithdraw(amount);
+        ERC4626CollateralManager.removeCollateral(_config(), address(_gauge), address(_lpToken), sharesToRemove);
+
+        // Only unstake from gauge for the portion not already held as LP
         uint256 unstaked = _lpToken.balanceOf(address(this));
         uint256 toUnstake = unstaked < amount ? amount - unstaked : 0;
         if (toUnstake > 0) {
-            uint256 sharesToBurn = _gauge.previewWithdraw(toUnstake);
-            ERC4626CollateralManager.removeCollateral(_config(), address(_gauge), address(_lpToken), sharesToBurn);
             _gauge.withdraw(toUnstake, address(this), address(this));
         }
 
-        // Interaction — transfer LP tokens to owner
+        // Transfer LP tokens to owner
         address owner = _portfolioFactory.ownerOf(address(this));
         _lpToken.safeTransfer(owner, amount);
         emit Withdrawn(owner, amount);
@@ -147,5 +149,9 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
 
     function enforceCollateralRequirements() external view override returns (bool success) {
         return ERC4626CollateralManager.enforceCollateralRequirements(_config(), address(_gauge), address(_lpToken));
+    }
+
+    function getLTVRatio() external view override returns (uint256) {
+        return ERC4626CollateralManager.getLTVRatio(_config(), address(_gauge), address(_lpToken));
     }
 }

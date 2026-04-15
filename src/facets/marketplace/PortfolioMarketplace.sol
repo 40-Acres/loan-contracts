@@ -70,11 +70,13 @@ contract PortfolioMarketplace is Ownable, ReentrancyGuard {
         address _portfolioManager,
         address _votingEscrow,
         uint256 _protocolFeeBps,
-        address _feeRecipient
-    ) Ownable(msg.sender) {
+        address _feeRecipient,
+        address _owner
+    ) Ownable(_owner) {
         require(_portfolioManager != address(0), "Invalid portfolio manager");
         require(_votingEscrow != address(0), "Invalid voting escrow");
         require(_feeRecipient != address(0), "Invalid fee recipient");
+        require(_owner != address(0), "Invalid owner");
 
         portfolioManager = PortfolioManager(_portfolioManager);
         votingEscrow = IVotingEscrow(_votingEscrow);

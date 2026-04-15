@@ -193,7 +193,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
             address(_portfolioFactory),
             address(_swapConfig),
             address(_gauge),
-            address(_lendingVault)
+            address(_lendingVault),
+            address(0)
         );
         {
             bytes4[] memory selectors = new bytes4[](1);

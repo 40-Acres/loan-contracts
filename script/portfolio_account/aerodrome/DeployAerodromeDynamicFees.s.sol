@@ -123,6 +123,7 @@ contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy DynamicLendingFacet (uses DynamicCollateralManager for debt tracking)
@@ -173,7 +174,7 @@ contract AerodromeDynamicFeesRootDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
         // Deploy MarketplaceFacet
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS);
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(address(portfolioManager), address(VOTING_ESCROW), 100, DEPLOYER_ADDRESS, DEPLOYER_ADDRESS);
         DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, address(portfolioMarketplace));
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
@@ -268,7 +269,7 @@ contract AerodromeDynamicFeesRootUpgrade is PortfolioFactoryConfigDeploy {
 
         // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
         DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](10);
+        bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
@@ -279,6 +280,7 @@ contract AerodromeDynamicFeesRootUpgrade is PortfolioFactoryConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // // Deploy LendingFacet

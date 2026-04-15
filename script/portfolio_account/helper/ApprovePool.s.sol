@@ -145,6 +145,32 @@ contract ApprovePool is Script {
     }
 
     /**
+     * @dev Batch approve pools on NOVA Voting Config
+     *
+     * Usage:
+     * forge script script/portfolio_account/helper/ApprovePool.s.sol:ApprovePool --sig "batchApproveNova()" --rpc-url $ETH_RPC_URL --broadcast
+     */
+    function batchApproveNova() external {
+        VotingConfig novaVotingConfig = VotingConfig(0x8a66bC8F873C541043347fC9D712F8d4a0C6730E);
+
+        address[] memory pools = new address[](10);
+        pools[0] = 0xDE758DB54c1b4a87B06b34B30EF0a710Dc35388F;
+        pools[1] = 0xA65637601a767e247b6e24613AB40f78AD559E71;
+        pools[2] = 0x40Ab23e8f571bf19A85605b9638E50Cc25a256EC;
+        pools[3] = 0xe2CD94c812AEd174B2E09750fF146F45d845d668;
+        pools[4] = 0x55347B4AB701Ab54eE394f20020175Bb385CA725;
+        pools[5] = 0xE9930eA69Fcd58e73261BE38e1C5C13C290b391B;
+        pools[6] = 0xA429A6C5B5EF08391D96e5F1d386e2E2909B7604;
+        pools[7] = 0x8a02454CA2565d25f65531111B6dCaC1E5f1d671;
+        pools[8] = 0xEd1050E2fE96f7327dc659613C79e41458E9Cf05;
+        pools[9] = 0x059Ff12B18E628af46c5aB83e0318A6F22c6Ea4e;
+
+        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
+        novaVotingConfig.setApprovedPools(pools, true);
+        vm.stopBroadcast();
+    }
+
+    /**
      * @dev Alternative run function that reads parameters from environment variables
      * 
      * Environment variables:

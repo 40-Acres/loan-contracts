@@ -24,4 +24,8 @@ contract MockCollateralFacet is ICollateralFacet {
     function getTotalLockedCollateral() external pure override returns (uint256) {
         return 0;
     }
+
+    function getLTVRatio() external pure override returns (uint256) {
+        return 0;
+    }
 }

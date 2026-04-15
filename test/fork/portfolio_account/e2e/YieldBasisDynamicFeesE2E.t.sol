@@ -209,7 +209,8 @@ contract YieldBasisDynamicFeesE2E is Test {
             address(swapConfig),
             VE_YB,
             address(veYBAdapter),
-            address(vault)
+            address(vault),
+            address(0)
         );
         bytes4[] memory rewardsSelectors = new bytes4[](5);
         rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;

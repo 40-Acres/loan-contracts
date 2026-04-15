@@ -63,7 +63,7 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address portfolioMgr = address(PortfolioFactory(PORTFOLIO_FACTORY).portfolioManager());
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, VOTING_ESCROW, 100, DEPLOYER_ADDRESS);
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, VOTING_ESCROW, 100, DEPLOYER_ADDRESS, DEPLOYER_ADDRESS);
         MarketplaceFacet facet = new MarketplaceFacet(PORTFOLIO_FACTORY, VOTING_ESCROW, address(portfolioMarketplace));
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "MarketplaceFacet", false);
         vm.stopBroadcast();
@@ -71,7 +71,7 @@ contract DeployMarketplaceFacet is AccountFacetsDeploy {
 
     function deploy(address portfolioFactory, address votingEscrow) external {
         address portfolioMgr = address(PortfolioFactory(portfolioFactory).portfolioManager());
-        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, votingEscrow, 100, DEPLOYER_ADDRESS);
+        PortfolioMarketplace portfolioMarketplace = new PortfolioMarketplace(portfolioMgr, votingEscrow, 100, DEPLOYER_ADDRESS, DEPLOYER_ADDRESS);
         MarketplaceFacet newFacet = new MarketplaceFacet(portfolioFactory, votingEscrow, address(portfolioMarketplace));
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "MarketplaceFacet", true);
     }

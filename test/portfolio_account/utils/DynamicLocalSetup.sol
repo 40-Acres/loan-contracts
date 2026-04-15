@@ -306,7 +306,7 @@ contract DynamicLocalSetup is Test {
 
         // ── 7. DynamicMarketplaceFacet (6 selectors) ──
         _portfolioMarketplace = new PortfolioMarketplace(
-            address(_portfolioManager), address(_ve), 100, FORTY_ACRES_DEPLOYER
+            address(_portfolioManager), address(_ve), 100, FORTY_ACRES_DEPLOYER, FORTY_ACRES_DEPLOYER
         );
         DynamicMarketplaceFacet marketplaceFacet = new DynamicMarketplaceFacet(
             address(_portfolioFactory),

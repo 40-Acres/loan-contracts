@@ -27,12 +27,14 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         address swapConfig,
         address veYB,
         address veYBAdapter,
-        address vault
+        address vault,
+        address defaultToken
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
         veYieldBasisAdapter(veYBAdapter).token(), // Derive collateral token from adapter
-        vault
+        vault,
+        defaultToken
     ) {
         require(veYB != address(0), "Invalid veYB");
         require(veYBAdapter != address(0), "Invalid veYB adapter");

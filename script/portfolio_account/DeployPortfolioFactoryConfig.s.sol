@@ -16,12 +16,19 @@ contract PortfolioFactoryConfigDeploy is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
     address public constant MULTISIG_ADDRESS = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
     address public constant PORTFOLIO_MANAGER_ADDRESS = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
-    address public constant AERO_VOTING_CONFIG =0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C;
-    // SwapConfig is per-network: all deployments on the same chain share one SwapConfig
-    address public constant BASE_SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
-    address public constant OP_SWAP_CONFIG = 0x0000000000000000000000000000000000000000; // TODO: fill from Velodrome deployment records
     bytes32 public constant SALT = bytes32(uint256(0x0000000000000000000000000000000000000000000000000e000005c6c57005));
+
+
+    address public constant AERO_VOTING_CONFIG =0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C;
+    address public constant NOVA_VOTING_CONFIG = 0x8a66bC8F873C541043347fC9D712F8d4a0C6730E;
+
+    address public constant BASE_SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
+    address public constant OP_SWAP_CONFIG = 0x0000000000000000000000000000000000000000;
+    address public constant ETH_SWAP_CONFIG = 0xD504Da3Ae86Aa3233871dbc8ae3Eb38824138F7C;
+
     address public constant VEAERO_MARKETPLACE = 0xA62C351b3DEDAB4C3e0Cab59B1bc9E5e3097BdF6;
+    address public constant VENOVA_MARKETPLACE = 0xb71d66583A420cbc77641759c1a6E6F3FB68CeB2;
+    
     address public constant AERO_USDC_VAULT = 0xB99B6dF96d4d5448cC0a5B3e0ef7896df9507Cf5;
 
     function _createConfigImpl() internal virtual returns (PortfolioFactoryConfig) {

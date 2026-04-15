@@ -175,7 +175,7 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         // Deploy DynamicCollateralFacet (uses DynamicCollateralManager storage for DynamicFeesVault)
         // Note: getCollateralToken excluded because veYB uses TOKEN() not token()
         DynamicCollateralFacet collateralFacet = new DynamicCollateralFacet(PORTFOLIO_FACTORY, VE_YB);
-        bytes4[] memory collateralSelectors = new bytes4[](7);
+        bytes4[] memory collateralSelectors = new bytes4[](8);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
         collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
@@ -183,6 +183,7 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
         collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
         collateralSelectors[6] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getLTVRatio.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "DynamicCollateralFacet");
 
         // Deploy veYieldBasisFacet

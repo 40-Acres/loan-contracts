@@ -42,4 +42,8 @@ contract CollateralFacet is BaseCollateralFacet {
     function _enforceCollateralRequirements() internal view override returns (bool) {
         return CollateralManager.enforceCollateralRequirements();
     }
+
+    function _getLTVRatio() internal view override returns (uint256) {
+        return CollateralManager.getLTVRatio(address(_portfolioFactory.portfolioFactoryConfig()));
+    }
 }

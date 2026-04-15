@@ -6,8 +6,10 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
+import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {WalletFacet} from "../../../src/facets/account/wallet/WalletFacet.sol";
 import {MarketplaceFacet} from "../../../src/facets/account/marketplace/MarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
@@ -21,26 +23,61 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
 
-    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
+    PortfolioFactory public _portfolioFactory;
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        _deployWallet();
+        _deploy();
         vm.stopBroadcast();
     }
 
-    function _deployWallet() internal {
-        // Create a new factory for wallet accounts
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = PORTFOLIO_MANAGER.deployFactory(bytes32(keccak256(abi.encodePacked("wallet"))));
+    function _deploy() internal {
+        PortfolioManager _portfolioManager = PortfolioManager(PORTFOLIO_MANAGER_ADDRESS);
+        address portfolioFactory = _portfolioManager.factoryBySalt(keccak256(abi.encodePacked("wallet")));
+        require(portfolioFactory != address(0), "Wallet factory not deployed");
+        FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
-        console.log("Deployed wallet factory at:", address(portfolioFactory));
-        // Deploy configs
-        (PortfolioFactoryConfig portfolioFactoryConfig, ,) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
-        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
-        portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
+        // Use the Ethereum mainnet SwapConfig (shared with SuperNova deployment)
+        SwapConfig swapConfig = SwapConfig(ETH_SWAP_CONFIG);
+
+        // Deploy PortfolioFactoryConfig (deployer as initial owner so we can configure, then transfer)
+        PortfolioFactoryConfig configImpl = _createConfigImpl();
+        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(
+            address(new ERC1967Proxy(
+                address(configImpl),
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER_ADDRESS, portfolioFactory))
+            ))
+        );
+
+        // Deploy LoanConfig (no VotingConfig needed for wallet accounts)
+        LoanConfig loanConfigImpl = new LoanConfig();
+        LoanConfig loanConfig = LoanConfig(
+            address(new ERC1967Proxy(
+                address(loanConfigImpl),
+                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 20_00, 5_00, 1_00))
+            ))
+        );
+
+        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
+
+        console.log("Deployed Wallet configs for factory at:", portfolioFactory);
+        console.log("  PortfolioFactoryConfig:", address(portfolioFactoryConfig));
+        console.log("  LoanConfig:", address(loanConfig));
+        console.log("  SwapConfig:", address(swapConfig));
+        // setPortfolioFactoryConfig must be called by multisig (PM owner)
+        console.log("=== Multisig Action Required ===");
+        console.log("Call PortfolioFactory.setPortfolioFactoryConfig with:");
+        console.log("  PortfolioFactory:", portfolioFactory);
+        console.log("  PortfolioFactoryConfig:", address(portfolioFactoryConfig));
 
         // Deploy and register all facets
-        _deployFacets(facetRegistry, portfolioFactory, portfolioFactoryConfig, swapConfig);
+        _deployFacets(facetRegistry, PortfolioFactory(portfolioFactory), portfolioFactoryConfig, swapConfig);
+
+        // transfer ownerships to multisig
+        portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
+        loanConfig.transferOwnership(MULTISIG_ADDRESS);
     }
 
     function _deployFacets(
@@ -67,17 +104,17 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
         fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
         _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
 
-        // Deploy OpenXFacet
-        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory openXSelectors = new bytes4[](1);
-        openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
-        _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
+        // // Deploy OpenXFacet
+        // OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
+        // bytes4[] memory openXSelectors = new bytes4[](1);
+        // openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
+        // _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
-        // Deploy VexyFacet
-        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory vexySelectors = new bytes4[](1);
-        vexySelectors[0] = VexyFacet.buyVexyListing.selector;
-        _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
+        // // Deploy VexyFacet
+        // VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
+        // bytes4[] memory vexySelectors = new bytes4[](1);
+        // vexySelectors[0] = VexyFacet.buyVexyListing.selector;
+        // _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
     }
 
 }
@@ -134,5 +171,5 @@ contract WalletUpgrade is PortfolioFactoryConfigDeploy {
 
 }
 
-// forge script script/portfolio_account/aerodrome/DeployWallet.s.sol:WalletDeploy --sig "run()" --rpc-url $BASE_RPC_URL --broadcast
+// forge script script/portfolio_account/aerodrome/DeployWallet.s.sol:WalletDeploy --chain-id 1 --rpc-url $ETH_RPC_URL --broadcast --verify --via-ir
 // forge script script/portfolio_account/aerodrome/DeployWallet.s.sol:WalletUpgrade --sig "run()" --rpc-url $BASE_RPC_URL --broadcast

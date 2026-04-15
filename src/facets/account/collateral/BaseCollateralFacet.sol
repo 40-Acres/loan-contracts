@@ -41,6 +41,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
     function _getOriginTimestamp(uint256 tokenId) internal view virtual returns (uint256);
     function _getLockedCollateral(uint256 tokenId) internal view virtual returns (uint256);
     function _enforceCollateralRequirements() internal view virtual returns (bool);
+    function _getLTVRatio() internal view virtual returns (uint256);
 
     // ──────────────────────────────────────────────
     // Public functions
@@ -117,5 +118,9 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
 
     function enforceCollateralRequirements() public view returns (bool success) {
         return _enforceCollateralRequirements();
+    }
+
+    function getLTVRatio() public view returns (uint256) {
+        return _getLTVRatio();
     }
 }

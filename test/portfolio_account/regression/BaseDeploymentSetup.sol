@@ -279,7 +279,7 @@ abstract contract BaseDeploymentSetup is Test {
 
         // ── 7. MarketplaceFacet (6 selectors) ──
         portfolioMarketplace = new PortfolioMarketplace(
-            address(portfolioManager), VOTING_ESCROW, 100, DEPLOYER
+            address(portfolioManager), VOTING_ESCROW, 100, DEPLOYER, DEPLOYER
         );
         marketplaceFacet = new MarketplaceFacet(
             address(portfolioFactory),
