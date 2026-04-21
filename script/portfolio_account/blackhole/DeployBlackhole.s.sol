@@ -38,6 +38,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E; // Avalanche USDC
     address public constant VOTING_ESCROW = 0xEac562811cc6abDbB2c9EE88719eCA4eE79Ad763; // veBlack
     address public constant VOTER = 0xE30D0C8532721551a51a9FeC7FB233759964d9e3; // Blackhole Voter
+    address public constant GAUGE_MANAGER = 0x59aa177312Ff6Bdf39C8Af6F46dAe217bf76CBf6; // Blackhole GaugeManager (fee/bribe claims)
     address public constant REWARDS_DISTRIBUTOR = 0x88a49cFCee0Ed5B176073DDE12186C4c922A9cD0;
     address public constant AERO = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6; // BLACK token
 
@@ -88,7 +89,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy BlackholeClaimingFacet (dual rewards distributors)
         address SECONDARY_REWARDS_DISTRIBUTOR = 0x7c7BD86BaF240dB3DbCc3f7a22B35c5bAa83bA28;
-        BlackholeClaimingFacet claimingFacet = new BlackholeClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, REWARDS_DISTRIBUTOR, SECONDARY_REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
+        BlackholeClaimingFacet claimingFacet = new BlackholeClaimingFacet(address(portfolioFactory), VOTING_ESCROW, VOTER, GAUGE_MANAGER, REWARDS_DISTRIBUTOR, SECONDARY_REWARDS_DISTRIBUTOR, address(loanConfig), address(swapConfig), address(vault));
         bytes4[] memory claimingSelectors = new bytes4[](3);
         claimingSelectors[0] = ClaimingFacet.claimFees.selector;
         claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
@@ -171,5 +172,3 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
     }
 
 }
-
-// How 

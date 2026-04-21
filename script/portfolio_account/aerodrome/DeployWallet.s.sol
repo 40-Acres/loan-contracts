@@ -20,8 +20,7 @@ import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 import {console} from "forge-std/console.sol";
 
 contract WalletDeploy is PortfolioFactoryConfigDeploy {
-    address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-    address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
+    address public constant VOTING_ESCROW = 0x4C3e7640B3e3A39a2e5d030A0C1412d80FEE1D44;
 
     PortfolioFactory public _portfolioFactory;
 
@@ -49,22 +48,11 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
-        // Deploy LoanConfig (no VotingConfig needed for wallet accounts)
-        LoanConfig loanConfigImpl = new LoanConfig();
-        LoanConfig loanConfig = LoanConfig(
-            address(new ERC1967Proxy(
-                address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 20_00, 5_00, 1_00))
-            ))
-        );
-
-        portfolioFactoryConfig.setLoanConfig(address(loanConfig));
 
         _portfolioFactory = PortfolioFactory(portfolioFactory);
 
         console.log("Deployed Wallet configs for factory at:", portfolioFactory);
         console.log("  PortfolioFactoryConfig:", address(portfolioFactoryConfig));
-        console.log("  LoanConfig:", address(loanConfig));
         console.log("  SwapConfig:", address(swapConfig));
         // setPortfolioFactoryConfig must be called by multisig (PM owner)
         console.log("=== Multisig Action Required ===");
@@ -77,7 +65,6 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
 
         // transfer ownerships to multisig
         portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
-        loanConfig.transferOwnership(MULTISIG_ADDRESS);
     }
 
     function _deployFacets(
@@ -99,7 +86,7 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
 
 
         // Deploy FortyAcresMarketplaceFacet (buyer-side: buy from other 40 Acres portfolios)
-        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, VEAERO_MARKETPLACE);
+        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, VENOVA_MARKETPLACE);
         bytes4[] memory fortyAcresSelectors = new bytes4[](1);
         fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
         _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
@@ -115,58 +102,6 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
         // bytes4[] memory vexySelectors = new bytes4[](1);
         // vexySelectors[0] = VexyFacet.buyVexyListing.selector;
         // _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
-    }
-
-}
-
-contract WalletUpgrade is PortfolioFactoryConfigDeploy {
-    address public constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-    address public constant VOTING_ESCROW = 0xeBf418Fe2512e7E6bd9b87a8F0f294aCDC67e6B4;
-
-    PortfolioManager public constant PORTFOLIO_MANAGER = PortfolioManager(PORTFOLIO_MANAGER_ADDRESS);
-    bytes32 public constant WALLET_SALT = bytes32(keccak256(abi.encodePacked("wallet")));
-
-    function run() external {
-        address walletFactory = PORTFOLIO_MANAGER.factoryBySalt(WALLET_SALT);
-        require(walletFactory != address(0), "Wallet factory not deployed for salt");
-
-        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-
-        PortfolioFactory portfolioFactory = PortfolioFactory(walletFactory);
-        FacetRegistry facetRegistry = portfolioFactory.facetRegistry();
-        PortfolioFactoryConfig portfolioFactoryConfig = portfolioFactory.portfolioFactoryConfig();
-        SwapConfig swapConfig = SwapConfig(BASE_SWAP_CONFIG);
-
-        // Deploy WalletFacet
-        WalletFacet walletFacet = new WalletFacet(address(portfolioFactory), address(swapConfig));
-        bytes4[] memory walletSelectors = new bytes4[](6);
-        walletSelectors[0] = WalletFacet.transferERC20.selector;
-        walletSelectors[1] = WalletFacet.transferNFT.selector;
-        walletSelectors[2] = WalletFacet.receiveERC20.selector;
-        walletSelectors[3] = WalletFacet.swap.selector;
-        walletSelectors[4] = WalletFacet.onERC721Received.selector;
-        walletSelectors[5] = WalletFacet.enforceCollateralRequirements.selector;
-        _registerFacet(facetRegistry, address(walletFacet), walletSelectors, "WalletFacet");
-
-        // Deploy FortyAcresMarketplaceFacet (buyer-side)
-        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, VEAERO_MARKETPLACE);
-        bytes4[] memory fortyAcresSelectors = new bytes4[](1);
-        fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
-        _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
-
-        // Deploy OpenXFacet
-        OpenXFacet openXFacet = new OpenXFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory openXSelectors = new bytes4[](1);
-        openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
-        _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
-
-        // Deploy VexyFacet
-        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory vexySelectors = new bytes4[](1);
-        vexySelectors[0] = VexyFacet.buyVexyListing.selector;
-        _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
-
-        vm.stopBroadcast();
     }
 
 }

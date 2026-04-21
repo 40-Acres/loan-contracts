@@ -63,15 +63,6 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
      */
     function _prepareTokenForTransfer(uint256 tokenId) internal virtual {}
 
-    /**
-     * @dev Hook to check if a token has a current-epoch vote that would block transfer.
-     *      BlackholeMarketplaceFacet overrides this to return true when the token
-     *      was voted in the current epoch (voter.reset() would revert with "VOTED").
-     */
-    function _hasCurrentEpochVote(uint256 tokenId) internal view virtual returns (bool) {
-        return false;
-    }
-
     // ──────────────────────────────────────────────
     // Public view functions
     // ──────────────────────────────────────────────
@@ -98,7 +89,11 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
      * @return requiredPayment The debt payment needed to safely remove the collateral
      * @return netPayment The net payment seller receives (listing price minus protocol fee)
      */
-    function isListingPurchasable(uint256 tokenId) external view returns (bool purchasable, uint256 requiredPayment, uint256 netPayment) {
+    function isListingPurchasable(uint256 tokenId) external view virtual returns (bool purchasable, uint256 requiredPayment, uint256 netPayment) {
+        return _isListingPurchasable(tokenId);
+    }
+
+    function _isListingPurchasable(uint256 tokenId) internal view returns (bool purchasable, uint256 requiredPayment, uint256 netPayment) {
         // Check local sale authorization exists
         if (!UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             return (false, 0, 0);
@@ -121,11 +116,6 @@ abstract contract BaseMarketplaceFacet is AccessControl, IMarketplaceFacet {
         PortfolioFactoryConfig _portfolioFactoryConfig = _portfolioFactory.portfolioFactoryConfig();
         // Get current required payment (reflects current debt state, not listing-time state)
         requiredPayment = _getRequiredPaymentForCollateralRemoval(address(_portfolioFactoryConfig), tokenId);
-
-        // Check if token has a current-epoch vote that would block transfer
-        if (_hasCurrentEpochVote(tokenId)) {
-            return (false, requiredPayment, netPayment);
-        }
 
         if(requiredPayment > 0) {
             address debtToken = _portfolioFactoryConfig.getDebtToken();

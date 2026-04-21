@@ -40,7 +40,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
     uint256 public constant MAX_UTILIZATION_BPS = 8000; // 80%
     uint256 public constant ORIGINATION_FEE_BPS = 50;   // 0.5%
 
-    PortfolioManager public _portfolioManager = PortfolioManager(0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9);
+    PortfolioManager public _portfolioManager = PortfolioManager(0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec);
     PortfolioFactory public _portfolioFactory;
     address public _vault;
 
@@ -51,10 +51,15 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
     }
 
     function _deploy() internal {
-        require(GAUGE != address(0), "Set GAUGE address before deployment");
+        address gauge = vm.envAddress("YIELDBASIS_LP_GAUGE");
+        require(gauge != address(0), "Set YIELDBASIS_LP_GAUGE env variable");
+
+        string memory factorySalt = vm.envString("FACTORY_SALT");
+        require(bytes(factorySalt).length != 0, "Set FACTORY_SALT env variable");
+
 
         // Deploy factory under existing PortfolioManager
-        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("yieldbasis-lp"))));
+        (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked(factorySalt))));
 
         // Deploy configs
         (PortfolioFactoryConfig portfolioFactoryConfig,, LoanConfig loanConfig) = PortfolioFactoryConfigDeploy._deploy(false, address(portfolioFactory));
@@ -75,35 +80,6 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         // Point config to vault (vault IS the lending pool)
         portfolioFactoryConfig.setLoanContract(vaultProxy);
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
-
-        // ============ Deploy YieldBasisLpFacet ============
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(address(portfolioFactory), GAUGE, YB);
-        bytes4[] memory lpSelectors = new bytes4[](9);
-        lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
-        lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
-        lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
-        lpSelectors[3] = YieldBasisLpFacet.restake.selector;
-        lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
-        lpSelectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
-        lpSelectors[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSelectors[7] = ICollateralFacet.getMaxLoan.selector;
-        lpSelectors[8] = ICollateralFacet.enforceCollateralRequirements.selector;
-        _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
-
-        // ============ Deploy YieldBasisLpClaimingFacet ============
-        YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(address(portfolioFactory), GAUGE);
-        bytes4[] memory claimingSelectors = new bytes4[](2);
-        claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
-        claimingSelectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
-        _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "YieldBasisLpClaimingFacet");
-
-        // ============ Deploy ERC4626LendingFacet ============
-        // vault param = GAUGE (collateral vault for maxLoan calc), lendingToken = USDC
-        ERC4626LendingFacet lendingFacet = new ERC4626LendingFacet(address(portfolioFactory), USDC, GAUGE);
-        bytes4[] memory lendingSelectors = new bytes4[](2);
-        lendingSelectors[0] = ERC4626LendingFacet.borrow.selector;
-        lendingSelectors[1] = ERC4626LendingFacet.pay.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "ERC4626LendingFacet");
     }
 }
 
@@ -155,6 +131,9 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         lendingSelectors[0] = ERC4626LendingFacet.borrow.selector;
         lendingSelectors[1] = ERC4626LendingFacet.pay.selector;
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "ERC4626LendingFacet");
+
+        // Upgrade RewardsProcessingFacet and RewardsConfig
+
 
         vm.stopBroadcast();
     }

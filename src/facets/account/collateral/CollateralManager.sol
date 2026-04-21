@@ -213,6 +213,11 @@ library CollateralManager {
     function getMaxLoan(address portfolioFactoryConfig) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalLockedCollateral = getTotalLockedCollateral();
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
+
+        if (address(loanConfig) == address(0)) {
+            return (0, 0);
+        }
+
         uint256 rewardsRate = loanConfig.getRewardsRate();
         uint256 multiplier = loanConfig.getMultiplier();
 

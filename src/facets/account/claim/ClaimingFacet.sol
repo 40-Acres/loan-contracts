@@ -58,9 +58,13 @@ contract ClaimingFacet is AccessControl {
                 }
             }
         }
-        _voter.claimFees(fees, tokens, tokenId);
+        _claimFees(fees, tokens, tokenId);
 
         claimRebase(tokenId);
+    }
+
+    function _claimFees(address[] calldata fees, address[][] calldata tokens, uint256 tokenId) internal virtual {
+        _voter.claimFees(fees, tokens, tokenId);
     }
 
     function claimRebase(uint256 tokenId) public virtual {
@@ -97,7 +101,7 @@ contract ClaimingFacet is AccessControl {
 
         uint256 launchpadTokenBalanceBefore = launchpadToken.balanceOf(address(this));
         // claim fees for launchpad token
-        _voter.claimFees(fees, tokens, tokenId);
+        _claimFees(fees, tokens, tokenId);
 
         // ensure only launchpad token is being claimed
         for(uint256 i = 0; i < tokens.length; i++) {

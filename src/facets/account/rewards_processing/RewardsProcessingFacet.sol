@@ -143,19 +143,16 @@ contract RewardsProcessingFacet is AccessControl {
      */
     function getRewardsToken() public view returns (address) {
         uint256 totalDebt = _getTotalDebt();
-        address loanContract = _portfolioFactory.portfolioFactoryConfig().getLoanContract();
-        require(loanContract != address(0));
+        address rewardsToken = UserRewardsConfig.getRewardsToken();
 
         if (address(_vault) != address(0)) {
             address vaultAsset = _vault.asset();
             if(totalDebt > 0) {
                 return vaultAsset;
             }
-            address rewardsToken = UserRewardsConfig.getRewardsToken();
             return rewardsToken != address(0) ? rewardsToken : vaultAsset;
         }
 
-        address rewardsToken = UserRewardsConfig.getRewardsToken();
         return rewardsToken != address(0) ? rewardsToken : _defaultToken;
     }
 

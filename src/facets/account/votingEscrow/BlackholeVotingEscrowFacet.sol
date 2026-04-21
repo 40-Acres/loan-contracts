@@ -60,6 +60,18 @@ contract BlackholeVotingEscrowFacet is AccessControl, IERC721Receiver {
         emit LockCreated(tokenId, amount, from);
     }
 
+    /// @notice Reset the token's vote so it can be withdrawn. Reverts if called in the
+    ///         same epoch as the last vote (enforced by the underlying voter), or if
+    ///         removing this token's collateral would leave the account undercollateralized.
+    function reset(uint256 tokenId) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        require(
+            CollateralManager.getRequiredPaymentForCollateralRemoval(config, tokenId) == 0,
+            "not withdrawable"
+        );
+        _voter.reset(tokenId);
+    }
+
     function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
         if (msg.sender == address(_votingEscrow)) {
             CollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow));
