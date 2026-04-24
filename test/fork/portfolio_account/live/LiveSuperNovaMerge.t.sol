@@ -17,10 +17,10 @@ import {CollateralFacet} from "../../../../src/facets/account/collateral/Collate
 import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {VotingFacet} from "../../../../src/facets/account/vote/VotingFacet.sol";
-import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
+import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/blackhole/BlackholeVotingEscrowFacet.sol";
 import {RewardsProcessingFacet} from "../../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
-import {BlackholeRewardsProcessingFacet} from "../../../../src/facets/account/rewards_processing/BlackholeRewardsProcessingFacet.sol";
+import {BlackholeRewardsProcessingFacet} from "../../../../src/facets/account/blackhole/BlackholeRewardsProcessingFacet.sol";
 
 import {IVotingEscrow} from "../../../../src/interfaces/IVotingEscrow.sol";
 import {IVotingEscrow as IBlackholeVE} from "../../../../src/Blackhole/interfaces/IVotingEscrow.sol";
@@ -330,11 +330,15 @@ contract LiveSuperNovaMerge is Test {
         address externalOwner = IVotingEscrow(VOTING_ESCROW).ownerOf(externalToken);
         assertTrue(externalOwner == address(0) || externalOwner != user, "External token should be burned");
 
-        // Verify VE locked amount combined
+        // Verify VE locked amount combined. Account token is an sMNFT (createLock passes
+        // isSMNFT=true); external token is a regular 4yr lock. veNOVA applies the sMNFT
+        // bonus to the absorbed amount, so merged raw = rawAccount + rawExternal + bonus.
         IBlackholeVE.LockedBalance memory mergedLock = IBlackholeVE(VOTING_ESCROW).locked(accountToken);
         uint256 mergedRaw = uint256(uint128(mergedLock.amount));
+        uint256 smBonus = IBlackholeVE(VOTING_ESCROW).calculate_sm_nft_bonus(rawExternal);
         console.log("Merged locked:", mergedRaw);
-        assertEq(mergedRaw, rawAccount + rawExternal, "Merged token should have combined locked amount");
+        console.log("sMNFT bonus on external:", smBonus);
+        assertEq(mergedRaw, rawAccount + rawExternal + smBonus, "Merged token should have combined locked amount plus sMNFT bonus");
 
         // Verify collateral tracking updated
         uint256 collateralAfter = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();

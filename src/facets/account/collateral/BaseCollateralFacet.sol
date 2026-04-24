@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "./ICollateralFacet.sol";

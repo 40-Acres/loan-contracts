@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {ClaimingFacet} from "./ClaimingFacet.sol";
+import {ClaimingFacet} from "../claim/ClaimingFacet.sol";
 import {IRewardsDistributor} from "../../../interfaces/IRewardsDistributor.sol";
 import {IGaugeManager} from "../../../Blackhole/interfaces/IGaugeManager.sol";
 

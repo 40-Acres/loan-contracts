@@ -21,9 +21,10 @@ contract PortfolioFactoryConfigDeploy is Script {
 
     address public constant AERO_VOTING_CONFIG =0xdebEE5c3DFa953DBb1a48819dfF3cC9c12226E0C;
     address public constant NOVA_VOTING_CONFIG = 0x8a66bC8F873C541043347fC9D712F8d4a0C6730E;
+    address public constant VELO_VOTING_CONFIG = 0x65a6575636e4A1cEe330B5cEB281465823C88572;
 
     address public constant BASE_SWAP_CONFIG = 0x3646C436f18f0e2E38E10D1A147f901a96BD4390;
-    address public constant OP_SWAP_CONFIG = 0x0000000000000000000000000000000000000000;
+    address public constant OP_SWAP_CONFIG = 0x27e1FF4dA2da929f6ce4BCDa619094Bf258c2f57;
     address public constant ETH_SWAP_CONFIG = 0xD504Da3Ae86Aa3233871dbc8ae3Eb38824138F7C;
 
     address public constant VEAERO_MARKETPLACE = 0xA62C351b3DEDAB4C3e0Cab59B1bc9E5e3097BdF6;

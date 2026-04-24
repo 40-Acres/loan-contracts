@@ -65,7 +65,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
         PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
-                abi.encodeCall(PortfolioFactoryConfig.initialize, (deployer, address(portfolioFactory)))
+                abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER_ADDRESS, address(portfolioFactory)))
             ))
         );
 
@@ -73,7 +73,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
         LoanConfig loanConfig = LoanConfig(
             address(new ERC1967Proxy(
                 address(loanConfigImpl),
-                abi.encodeCall(LoanConfig.initialize, (deployer, 70_00, 5_00, 1_00))
+                abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 95_00, 5_00, 1_00))
             ))
         );
 
@@ -81,7 +81,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
         SwapConfig swapConfig = SwapConfig(
             address(new ERC1967Proxy(
                 address(swapConfigImpl),
-                abi.encodeCall(SwapConfig.initialize, (deployer))
+                abi.encodeCall(SwapConfig.initialize, (DEPLOYER_ADDRESS))
             ))
         );
 

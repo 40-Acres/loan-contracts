@@ -10,6 +10,7 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {CollateralManager} from "../collateral/CollateralManager.sol";
 import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
+
 /**
  * @title VotingEscrowFacet
  * @dev Facet that interfaces with voting escrow NFTs

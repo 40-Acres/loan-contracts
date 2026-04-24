@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFacet.sol";
-import {ERC4626CollateralManager} from "../erc4626/ERC4626CollateralManager.sol";
+import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 
 /**
@@ -22,13 +22,15 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
 
     address public immutable _gauge;
     address public immutable _lpToken;
+    address public immutable _underlying;
 
     constructor(
         address portfolioFactory,
         address swapConfig,
         address gauge,
         address vault,
-        address defaultToken
+        address defaultToken,
+        address underlying
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
@@ -37,28 +39,30 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
         defaultToken
     ) {
         require(gauge != address(0), "Invalid gauge");
+        require(underlying != address(0), "Invalid underlying");
         _gauge = gauge;
         _lpToken = IYieldBasisGauge(gauge).asset();
+        _underlying = underlying;
     }
 
     function _getTotalDebt() internal view override returns (uint256) {
-        return ERC4626CollateralManager.getTotalDebt();
+        return YieldBasisCollateralManager.getTotalDebt();
     }
 
     function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
-        return ERC4626CollateralManager.decreaseTotalDebt(
+        return YieldBasisCollateralManager.decreaseTotalDebt(
             address(_portfolioFactory.portfolioFactoryConfig()),
-            _gauge,
             _lpToken,
+            _underlying,
             amount
         );
     }
 
     function _getLTVRatio() internal view override returns (uint256) {
-        return ERC4626CollateralManager.getLTVRatio(
+        return YieldBasisCollateralManager.getLTVRatio(
             address(_portfolioFactory.portfolioFactoryConfig()),
-            _gauge,
-            _lpToken
+            _lpToken,
+            _underlying
         );
     }
 

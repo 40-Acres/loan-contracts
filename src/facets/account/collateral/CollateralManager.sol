@@ -59,7 +59,11 @@ library CollateralManager {
             return;
         }
 
-        
+        int128 lockedInt = IVotingEscrow(ve).locked(tokenId).amount;
+        require(lockedInt > 0, "Locked collateral amount must be greater than 0");
+        uint256 locked = uint256(uint128(lockedInt));
+        require(locked >= PortfolioFactoryConfig(portfolioFactoryConfig).getMinimumCollateral(), "Amount below minimum collateral");
+
         _addLockedCollateral(portfolioFactoryConfig, tokenId, ve);
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);

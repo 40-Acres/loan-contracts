@@ -56,7 +56,6 @@ contract Setup is Test {
     function setUp() public virtual {
         uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(38869188);
         vm.startPrank(FORTY_ACRES_DEPLOYER);
         _portfolioManager = new PortfolioManager(FORTY_ACRES_DEPLOYER);
         (PortfolioFactory portfolioFactory, FacetRegistry facetRegistry) = _portfolioManager.deployFactory(bytes32(keccak256(abi.encodePacked("aerodrome-usdc"))));

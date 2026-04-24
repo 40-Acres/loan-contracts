@@ -11,19 +11,19 @@ import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 
-import {BlackholeClaimingFacet} from "../../../src/facets/account/claim/BlackholeClaimingFacet.sol";
+import {BlackholeClaimingFacet} from "../../../src/facets/account/blackhole/BlackholeClaimingFacet.sol";
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
-import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
+import {BlackholeCollateralFacet} from "../../../src/facets/account/blackhole/BlackholeCollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
-import {BlackholeVotingEscrowFacet} from "../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
+import {BlackholeVotingEscrowFacet} from "../../../src/facets/account/blackhole/BlackholeVotingEscrowFacet.sol";
 import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
-import {BlackholeRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/BlackholeRewardsProcessingFacet.sol";
-import {BlackholeMarketplaceFacet} from "../../../src/facets/account/marketplace/BlackholeMarketplaceFacet.sol";
+import {BlackholeRewardsProcessingFacet} from "../../../src/facets/account/blackhole/BlackholeRewardsProcessingFacet.sol";
+import {BlackholeMarketplaceFacet} from "../../../src/facets/account/blackhole/BlackholeMarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {Loan} from "../../../src/Loan.sol";
@@ -96,8 +96,8 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
         claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
         _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
-        // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
+        // Deploy BlackholeCollateralFacet
+        BlackholeCollateralFacet collateralFacet = new BlackholeCollateralFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
         bytes4[] memory collateralSelectors = new bytes4[](11);
         collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
         collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;

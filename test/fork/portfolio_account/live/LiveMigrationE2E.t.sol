@@ -23,62 +23,52 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract LiveMigrationE2E is LiveDeploymentSetup {
     address public constant MIGRATE_BORROWER = address(uint160(uint256(keccak256("live-migration-borrower"))));
 
+    // Live legacy LoanV2 proxy on Base. Migration is tested against this real contract
+    // so the "debt originated on the old loan" part of the flow remains genuine.
+    address public constant LIVE_LEGACY_LOAN = 0x87f18b377e625b62c708D5f6EA96EC193558EFD0;
+    address public constant LIVE_LEGACY_VAULT = 0xB99B6dF96d4d5448cC0a5B3e0ef7896df9507Cf5;
+
     address public migratePortfolio;
     uint256 public migrateTokenSmall;
     uint256 public migrateTokenLarge;
 
-    /**
-     * @dev Override setUp to create fresh veNFTs with legacy debt.
-     *      Skips _ensureLoanConfigDefaults so rewardsRate/multiplier stay at 0
-     *      for the first test (unconfigured scenario).
-     */
     function setUp() public override {
-        // 1. Fork Base at latest block
-        vm.createSelectFork(vm.envString("BASE_RPC_URL"));
+        _freshDeploy();
 
-        // 2. Bind root contracts
-        portfolioManager = PortfolioManager(LIVE_PORTFOLIO_MANAGER);
+        // Repoint loanContract to the live legacy loan — migration-from-legacy
+        // only makes sense against a real mainnet loan with real debt plumbing.
+        loanContract = LIVE_LEGACY_LOAN;
 
-        // 3. Discover factory from PortfolioManager by salt
-        address factoryAddr = portfolioManager.factoryBySalt(AERODROME_USDC_SALT);
-        require(factoryAddr != address(0), "LiveSetup: aerodrome-usdc factory not deployed");
-        portfolioFactory = PortfolioFactory(factoryAddr);
+        // Deliberately skip _ensureLoanConfigDefaults so rewardsRate/multiplier
+        // stay at 0 for the first test (unconfigured scenario).
 
-        // 4. Simulate pending multisig txs (remove once confirmed on-chain)
-        _simulatePendingMultisigTx();
-
-        // 5. Discover config from factory
-        portfolioFactoryConfig = portfolioFactory.portfolioFactoryConfig();
-
-        // 6. Auto-discover from PortfolioFactoryConfig
-        loanContract = portfolioFactoryConfig.getLoanContract();
-        loanConfigAddr = address(portfolioFactoryConfig.getLoanConfig());
-        votingConfigAddr = portfolioFactoryConfig.getVoteConfig();
-        vault = portfolioFactoryConfig.getVault();
-
-        // NOTE: intentionally skipping _ensureLoanConfigDefaults()
-
-        // 7. Discover FacetRegistry and owner
-        facetRegistry = portfolioFactory.facetRegistry();
-        liveOwner = portfolioFactoryConfig.owner();
-
-        // 8. Validate
-        if (!portfolioManager.isRegisteredFactory(address(portfolioFactory))) {
-            vm.skip(true);
-        }
-        _validateDiscoveredGraph();
-
-        // 9. Create portfolio for the migration borrower
         migratePortfolio = portfolioFactory.portfolioOf(MIGRATE_BORROWER);
         if (migratePortfolio == address(0)) {
             migratePortfolio = portfolioFactory.createAccount(MIGRATE_BORROWER);
         }
 
-        // 10. Fund vault for any pay operations
-        _fundVault(50_000_000e6);
+        // Legacy loan draws from its own vault on Base — fund it so requestLoan's
+        // max-loan calc returns a non-zero amount.
+        if (IERC20(USDC).balanceOf(LIVE_LEGACY_VAULT) < 50_000_000e6) {
+            deal(USDC, LIVE_LEGACY_VAULT, 50_000_000e6);
+        }
 
-        // 11. Create fresh veNFTs and borrow against them on legacy LoanV2
+        // Borrow on the legacy loan while it still points at its on-chain
+        // factory/config — that's where the real max-loan rates live.
         _createLegacyLoans();
+
+        // Point the legacy loan at our fresh factory so migrateToPortfolio
+        // resolves the target portfolio to the fresh stack.
+        vm.prank(LoanV2(payable(loanContract)).owner());
+        LoanV2(payable(loanContract)).setPortfolioFactory(address(portfolioFactory));
+
+        // Re-wire the fresh config to treat the legacy loan as *the* loan for
+        // this test. MigrationFacet.onlyLoanContract + CollateralManager
+        // debt routing both key off config.getLoanContract() — matching them
+        // to the legacy loan makes migrate + pay both route into the real
+        // legacy debt system.
+        vm.prank(liveOwner);
+        portfolioFactoryConfig.setLoanContract(loanContract);
     }
 
     function _createLegacyLoans() internal {
@@ -123,9 +113,6 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
         // ── Pre-migration checks ────────────────────────────────────
         (uint256 legacyBalance,) = LoanV2(payable(loanContract)).getLoanDetails(migrateTokenSmall);
         assertGt(legacyBalance, 0, "Token should have legacy debt");
-
-        // Verify LoanConfig rates (may or may not be 0 on live chain)
-        ILoanConfig loanConfig = ILoanConfig(loanConfigAddr);
 
         // ── Step 1: Migrate ─────────────────────────────────────────
         vm.prank(MULTISIG);
@@ -208,12 +195,12 @@ contract LiveMigrationE2E is LiveDeploymentSetup {
 
         // ── Step 2: Configure rates so collateral enforcement is active ──
         //   setRewardsRate can't more than double — reset to 0 first
-        ILoanConfig loanConfig = ILoanConfig(loanConfigAddr);
-        vm.startPrank(MULTISIG);
-        loanConfig.setRewardsRate(0);
-        loanConfig.setRewardsRate(10000);
-        loanConfig.setMultiplier(0);
-        loanConfig.setMultiplier(100);
+        ILoanConfig _loanConfig = ILoanConfig(loanConfigAddr);
+        vm.startPrank(liveOwner);
+        _loanConfig.setRewardsRate(0);
+        _loanConfig.setRewardsRate(10000);
+        _loanConfig.setMultiplier(0);
+        _loanConfig.setMultiplier(100);
         vm.stopPrank();
 
         // Verify maxLoan is now > 0

@@ -124,6 +124,37 @@ contract DeployVeBlackMarketplace is DeployPortfolioMarketplace {
     }
 }
 
+/**
+ * @title DeployVeVeloMarketplace
+ * @dev Deploys PortfolioMarketplace for veVELO on Optimism.
+ *      Allows VELO, USDC, WETH, and WBTC as payment tokens.
+ *
+ * Usage:
+ *   forge script script/portfolio_account/DeployPortfolioMarketplace.s.sol:DeployVeVeloMarketplace \
+ *     --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
+ */
+contract DeployVeVeloMarketplace is DeployPortfolioMarketplace {
+    address public constant VEVELO = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veVELO
+    address public constant VELO   = 0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db;
+    address public constant USDC   = 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85; // OP USDC
+    address public constant WETH   = 0x4200000000000000000000000000000000000006; // OP WETH
+    address public constant WBTC   = 0x68f180fcCe6836688e9084f035309E29Bf0A2095; // OP WBTC
+
+    function run() external override {
+        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
+
+        PortfolioMarketplace marketplace = _deployMarketplace(VEVELO, 100, MULTISIG_ADDRESS);
+
+        vm.stopBroadcast();
+
+        console.log("=== veVELO Marketplace Deployed ===");
+        console.log("Address:", address(marketplace));
+        console.log("VotingEscrow (veVELO):", VEVELO);
+        console.log("Payment Tokens: VELO, USDC, WETH, WBTC");
+        console.log("Chain ID:", block.chainid);
+    }
+}
+
 // Generic (env-driven):
 // ASSET=<token> VOTING_ESCROW=<ve> forge script script/portfolio_account/DeployPortfolioMarketplace.s.sol:DeployPortfolioMarketplace \
 //   --chain-id <id> --rpc-url <url> --broadcast --verify --via-ir
@@ -133,3 +164,6 @@ contract DeployVeBlackMarketplace is DeployPortfolioMarketplace {
 //
 // veBLACK on Avalanche:
 // forge script script/portfolio_account/DeployPortfolioMarketplace.s.sol:DeployVeBlackMarketplace --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
+//
+// veVELO on Optimism:
+// forge script script/portfolio_account/DeployPortfolioMarketplace.s.sol:DeployVeVeloMarketplace --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir

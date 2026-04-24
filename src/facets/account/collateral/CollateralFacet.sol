@@ -15,7 +15,7 @@ contract CollateralFacet is BaseCollateralFacet {
         CollateralManager.addLockedCollateral(config, tokenId, ve);
     }
 
-    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal override {
+    function _removeLockedCollateral(uint256 tokenId, address config, address ve) internal virtual override {
         CollateralManager.removeLockedCollateral(tokenId, config, ve);
     }
 

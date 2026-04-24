@@ -6,7 +6,6 @@ import {Test, console} from "forge-std/Test.sol";
 // Facets under test
 import {YieldBasisLpFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
 import {YieldBasisLpClaimingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpClaimingFacet.sol";
-import {YieldBasisLpFeeClaimingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpFeeClaimingFacet.sol";
 import {YieldBasisLpLendingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpLendingFacet.sol";
 import {YieldBasisLpRewardsProcessingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
@@ -47,13 +46,12 @@ import {LendingVault} from "../../../src/facets/account/vault/LendingVault.sol";
  * 2. swapToRewardsToken blocks swapping the LP token (collateral token)
  * 3. Claiming YB emissions (staked mode) does not affect collateral
  * 4. Harvesting LP fees (unstaked mode) does not drop collateral below required
- * 5. Unstake/restake preserves collateral tracking
+ * 5. Unstake/stake preserves collateral tracking
  */
 contract YieldBasisLpCollateralEnforcementTest is Test {
     // Facets
     YieldBasisLpFacet public _ybBtcFacet;
     YieldBasisLpClaimingFacet public _ybBtcClaimingFacet;
-    YieldBasisLpFeeClaimingFacet public _ybBtcFeeClaimingFacet;
     YieldBasisLpLendingFacet public _ybBtcLendingFacet;
     YieldBasisLpRewardsProcessingFacet public _ybBtcRewardsProcessingFacet;
 
@@ -141,13 +139,13 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // --- Deploy and register YieldBasisLpFacet ---
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
         {
             bytes4[] memory selectors = new bytes4[](9);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
             selectors[1] = YieldBasisLpFacet.withdraw.selector;
             selectors[2] = YieldBasisLpFacet.unstake.selector;
-            selectors[3] = YieldBasisLpFacet.restake.selector;
+            selectors[3] = YieldBasisLpFacet.stake.selector;
             selectors[4] = YieldBasisLpFacet.getStakingState.selector;
             selectors[5] = ICollateralFacet.enforceCollateralRequirements.selector;
             selectors[6] = ICollateralFacet.getTotalLockedCollateral.selector;
@@ -156,30 +154,24 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
             _facetRegistry.registerFacet(address(_ybBtcFacet), selectors, "YieldBasisLpFacet");
         }
 
-        // --- Deploy and register YieldBasisLpClaimingFacet ---
-        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge));
+        // --- Deploy and register YieldBasisLpClaimingFacet (gauge rewards + LP fee harvest) ---
+        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_usdc));
         {
-            bytes4[] memory selectors = new bytes4[](2);
+            bytes4[] memory selectors = new bytes4[](5);
             selectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
             selectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
+            selectors[2] = YieldBasisLpClaimingFacet.harvestLpFees.selector;
+            selectors[3] = YieldBasisLpClaimingFacet.getAvailableLpFeeYield.selector;
+            selectors[4] = YieldBasisLpClaimingFacet.getDepositInfo.selector;
             _facetRegistry.registerFacet(address(_ybBtcClaimingFacet), selectors, "YieldBasisLpClaimingFacet");
-        }
-
-        // --- Deploy and register YieldBasisLpFeeClaimingFacet ---
-        _ybBtcFeeClaimingFacet = new YieldBasisLpFeeClaimingFacet(address(_portfolioFactory), address(_gauge));
-        {
-            bytes4[] memory selectors = new bytes4[](3);
-            selectors[0] = YieldBasisLpFeeClaimingFacet.harvestLpFees.selector;
-            selectors[1] = YieldBasisLpFeeClaimingFacet.getAvailableLpFeeYield.selector;
-            selectors[2] = YieldBasisLpFeeClaimingFacet.getDepositInfo.selector;
-            _facetRegistry.registerFacet(address(_ybBtcFeeClaimingFacet), selectors, "YieldBasisLpFeeClaimingFacet");
         }
 
         // --- Deploy and register YieldBasisLpLendingFacet ---
         _ybBtcLendingFacet = new YieldBasisLpLendingFacet(
             address(_portfolioFactory),
             address(_usdc),
-            address(_gauge)
+            address(_gauge),
+            address(_usdc)
         );
         {
             bytes4[] memory selectors = new bytes4[](2);
@@ -194,7 +186,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
             address(_swapConfig),
             address(_gauge),
             address(_lendingVault),
-            address(0)
+            address(0),
+            address(_usdc)
         );
         {
             bytes4[] memory selectors = new bytes4[](1);
@@ -230,12 +223,23 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _multicall(calldatas);
     }
 
-    /// @dev Deposit LP tokens into portfolio account and stake in gauge
+    /// @dev Deposit LP tokens into the portfolio account (held unstaked).
+    ///      Deposit no longer auto-stakes; callers that need gauge shares must call
+    ///      `_depositAndStakeLP` or invoke stake() explicitly.
     function _depositLP(uint256 amount) internal {
         vm.startPrank(_user);
-        _ybBtc.transfer(_portfolioAccount, amount);
+        _ybBtc.approve(_portfolioAccount, amount);
         _singleMulticall(abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, amount));
         vm.stopPrank();
+    }
+
+    /// @dev Deposit LP tokens and then stake them into the gauge (admin-only).
+    ///      harvestLpFees requires gauge shares to redeem, so scenarios that harvest
+    ///      must stake after deposit.
+    function _depositAndStakeLP(uint256 amount) internal {
+        _depositLP(amount);
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).stake(amount);
     }
 
     /// @dev Borrow USDC against collateral (via multicall since it requires onlyPortfolioManagerMulticall)
@@ -275,8 +279,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      * 5. Verify collateral still >= required after harvest
      */
     function test_harvestLpFees_succeedsWhenSurplusCoversCollateral() public {
-        // Step 1: Deposit
-        _depositLP(DEPOSIT_AMOUNT);
+        // Step 1: Deposit + stake (harvest redeems gauge shares, so LP must be staked)
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
 
         // Step 2: Borrow
         uint256 borrowAmount = 5e8;
@@ -289,13 +293,13 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _ybBtc.setPricePerShare(1.5e18);
 
         // Verify yield is available before harvest
-        (uint256 yieldUnderlying, uint256 yieldShares) = YieldBasisLpFeeClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
+        (uint256 yieldUnderlying, uint256 yieldShares) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
         assertGt(yieldUnderlying, 0, "Should have yield available");
         assertGt(yieldShares, 0, "Should have surplus shares");
 
         // Step 4: Harvest LP fees (authorized caller)
         vm.prank(_authorizedCaller);
-        uint256 underlyingReceived = YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
         assertGt(underlyingReceived, 0, "Should have received underlying from harvest");
 
         // Step 5: Verify collateral still enforced
@@ -309,7 +313,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // Verify collateral value is still >= deposited value
         // After harvest, remaining shares should still cover deposited value
         (uint256 shares, uint256 depositedValue, uint256 currentValue) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertGe(currentValue, depositedValue, "Current value should still cover deposited value after harvest");
     }
 
@@ -337,7 +341,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // because currentValue (5e8) < depositedValue (10e8)
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
     }
 
     /**
@@ -354,8 +358,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      * and enforceCollateralRequirements passes because remaining collateral >= deposited.
      */
     function test_harvestLpFees_cannotCauseUndercollateralizationByDesign() public {
-        // Deposit
-        _depositLP(DEPOSIT_AMOUNT);
+        // Deposit + stake so harvest has gauge shares to redeem
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
 
         // Borrow exactly at max loan (7e8 from 10e8 at 70% LTV)
         (uint256 maxLoan, ) = ICollateralFacet(_portfolioAccount).getMaxLoan();
@@ -365,19 +369,19 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(debt, maxLoan, "Should have borrowed the full max loan");
 
         // Record deposited value
-        (, uint256 depositedValueBefore, ) = YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+        (, uint256 depositedValueBefore, ) = YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         // Increase PPS — now there's yield to harvest
         _ybBtc.setPricePerShare(1.5e18);
 
         // Harvest LP fees
         vm.prank(_authorizedCaller);
-        uint256 received = YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
         assertGt(received, 0, "Should receive yield");
 
         // Key invariant: remaining collateral value >= deposited value
         (, uint256 depositedValueAfter, uint256 currentValueAfter) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertEq(depositedValueAfter, depositedValueBefore, "Deposited value unchanged by harvest");
         assertGe(currentValueAfter, depositedValueAfter, "Current value still covers deposited value");
 
@@ -410,7 +414,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // No yield to harvest
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
 
         // The position is now undercollateralized (not from harvest, from PPS drop)
         // collateral value = 10e8 * 0.8 = 8e8, maxLoan = 8e8 * 0.7 = 5.6e8
@@ -439,7 +443,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         uint256 collateralBefore = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         uint256 debtBefore = ICollateralFacet(_portfolioAccount).getTotalDebt();
         (uint256 sharesBefore, uint256 depositedValueBefore, ) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         // Set up YB emissions on gauge
         uint256 rewardAmount = 100e18; // 100 YB tokens
@@ -458,7 +462,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         uint256 collateralAfter = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         uint256 debtAfter = ICollateralFacet(_portfolioAccount).getTotalDebt();
         (uint256 sharesAfter, uint256 depositedValueAfter, ) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         assertEq(collateralAfter, collateralBefore, "Collateral value must not change after YB claim");
         assertEq(debtAfter, debtBefore, "Debt must not change after YB claim");
@@ -508,8 +512,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      * 3. Harvest → no collateral enforcement blocks it (debt=0 → maxLoan check trivially passes)
      */
     function test_harvestLpFees_succeedsAfterFullDebtRepayment() public {
-        // Deposit and borrow
-        _depositLP(DEPOSIT_AMOUNT);
+        // Deposit + stake + borrow (harvest redeems gauge shares)
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
         _borrow(5e8);
 
         // Repay all debt
@@ -520,13 +524,13 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _ybBtc.setPricePerShare(2e18); // 2x appreciation
 
         // Preview yield
-        (uint256 yieldUnderlying, uint256 yieldShares) = YieldBasisLpFeeClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
+        (uint256 yieldUnderlying, uint256 yieldShares) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
         assertGt(yieldUnderlying, 0, "Should have yield to harvest");
         assertGt(yieldShares, 0, "Should have surplus shares");
 
         // Harvest — should succeed since no debt
         vm.prank(_authorizedCaller);
-        uint256 received = YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
         assertGt(received, 0, "Should receive underlying from harvest");
 
         // Collateral requirements trivially pass with 0 debt
@@ -535,29 +539,29 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Verify deposited value is preserved (removeSharesForYield keeps it intact)
         (uint256 shares, uint256 depositedValue, uint256 currentValue) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertGe(currentValue, depositedValue, "Current value should cover deposited value");
     }
 
-    // ============ Test 6: Unstake/restake preserves collateral tracking ============
+    // ============ Test 6: Unstake/stake preserves collateral tracking ============
 
     /**
-     * @notice When switching yield modes (unstake from gauge, restake into gauge),
+     * @notice When switching yield modes (unstake from gauge, stake into gauge),
      *         collateral tracking must remain consistent.
      *
      * Flow:
      * 1. Deposit 10 ybBTC → staked in gauge, collateral = 10e8
      * 2. Borrow 4e8
      * 3. Unstake (removeCollateral) → LP tokens on account, collateral goes down
-     * 4. Restake (addCollateral) → LP tokens back in gauge, collateral goes back up
+     * 4. Stake (addCollateral) → LP tokens back in gauge, collateral goes back up
      * 5. enforceCollateralRequirements must pass throughout
      *
-     * Note: unstake + restake must happen in the same multicall (borrow guard)
+     * Note: unstake + stake must happen in the same multicall (borrow guard)
      * or collateral must be sufficient at each point.
      */
-    function test_unstakeRestake_preservesCollateralTracking() public {
-        // Deposit
-        _depositLP(DEPOSIT_AMOUNT);
+    function test_unstakeStake_preservesCollateralTracking() public {
+        // Deposit + stake so there are gauge shares to unstake
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
         uint256 collateralBefore = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralBefore, DEPOSIT_AMOUNT, "Initial collateral should match deposit");
 
@@ -569,15 +573,15 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // Get gauge shares to unstake
         (uint256 stakedBefore, ) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
 
-        // Unstake all and immediately restake in a single multicall
-        // This ensures collateral enforcement at the end of multicall sees restaked state
+        // Unstake all and immediately stake in a single multicall
+        // This ensures collateral enforcement at the end of multicall sees staked state
         vm.startPrank(_user);
         {
             bytes[] memory calldatas = new bytes[](2);
             calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.unstake.selector, stakedBefore);
-            calldatas[1] = abi.encodeWithSelector(YieldBasisLpFacet.restake.selector, DEPOSIT_AMOUNT);
+            calldatas[1] = abi.encodeWithSelector(YieldBasisLpFacet.stake.selector, DEPOSIT_AMOUNT);
             // unstake is onlyAuthorizedCaller, not onlyPortfolioManagerMulticall
-            // So we need to call unstake and restake individually
+            // So we need to call unstake and stake individually
         }
         vm.stopPrank();
 
@@ -594,26 +598,26 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         uint256 collateralAfterUnstake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterUnstake, collateralBefore, "Collateral preserved after unstake");
 
-        // Restake via authorized caller
+        // Stake via authorized caller
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).restake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
 
-        // After restake: LP tokens back in gauge, collateral re-tracked
-        (uint256 stakedAfterRestake, uint256 unstakedAfterRestake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(stakedAfterRestake, DEPOSIT_AMOUNT, "Should have all staked after restake");
-        assertEq(unstakedAfterRestake, 0, "Should have 0 unstaked after restake");
+        // After stake: LP tokens back in gauge, collateral re-tracked
+        (uint256 stakedAfterStake, uint256 unstakedAfterStake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(stakedAfterStake, DEPOSIT_AMOUNT, "Should have all staked after stake");
+        assertEq(unstakedAfterStake, 0, "Should have 0 unstaked after stake");
 
         // Collateral should be restored
-        uint256 collateralAfterRestake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateralAfterRestake, collateralBefore, "Collateral should be restored after restake");
+        uint256 collateralAfterStake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateralAfterStake, collateralBefore, "Collateral should be restored after stake");
 
         // enforceCollateralRequirements should pass
         bool success = ICollateralFacet(_portfolioAccount).enforceCollateralRequirements();
-        assertTrue(success, "Collateral requirements should pass after restake");
+        assertTrue(success, "Collateral requirements should pass after stake");
 
         // Debt unchanged throughout
         uint256 debtAfter = ICollateralFacet(_portfolioAccount).getTotalDebt();
-        assertEq(debtAfter, debt, "Debt should not change during unstake/restake");
+        assertEq(debtAfter, debt, "Debt should not change during unstake/stake");
     }
 
     /**
@@ -621,7 +625,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      *         enforceCollateralRequirements passes throughout since collateral is preserved.
      */
     function test_unstakeWhileIndebted_collateralPreserved() public {
-        _depositLP(DEPOSIT_AMOUNT);
+        // Deposit + stake into gauge so the unstake below actually redeems gauge shares
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
         _borrow(5e8);
 
         (uint256 staked, ) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -641,9 +646,9 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         bool success = ICollateralFacet(_portfolioAccount).enforceCollateralRequirements();
         assertTrue(success, "Collateral requirements pass - LP still in portfolio");
 
-        // Restake
+        // Stake
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).restake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
 
         // Still passes
         success = ICollateralFacet(_portfolioAccount).enforceCollateralRequirements();
@@ -659,7 +664,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // No deposit — try to harvest
         vm.prank(_authorizedCaller);
         vm.expectRevert("No shares deposited");
-        YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
     }
 
     /**
@@ -672,7 +677,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // currentValue == depositedValue → "No yield to harvest"
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
     }
 
     /**
@@ -680,18 +685,24 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      *         Ensures harvest only claims the yield, not principal.
      */
     function test_harvestLpFees_afterMultipleDepositsAtDifferentPPS() public {
-        // First deposit at PPS=1e18
+        // First deposit at PPS=1e18 (held unstaked on account)
         _depositLP(5e8);
 
         // Increase PPS
         _ybBtc.setPricePerShare(1.5e18);
 
-        // Second deposit at PPS=1.5e18
+        // Second deposit at PPS=1.5e18 — succeeds because the first deposit's LP
+        // still sits on the account, so the balance check (actualBalance >= shares + newShares)
+        // holds (both deposits' worth of LP is available).
         _depositLP(5e8);
+
+        // Stake all LP so harvestLpFees can redeem gauge shares
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).stake(10e8);
 
         // deposited value = 5e8 * 1.0 + 5e8 * 1.5 = 5e8 + 7.5e8 = 12.5e8
         (uint256 shares, uint256 depositedValue, uint256 currentValue) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         assertEq(shares, 10e8, "Should have 10e8 total shares");
         assertEq(depositedValue, 12.5e8, "Deposited value should be 12.5e8 (weighted by PPS at deposit time)");
@@ -699,17 +710,17 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(currentValue, 15e8, "Current value should be 15e8 at PPS=1.5");
 
         // Yield = 15e8 - 12.5e8 = 2.5e8
-        (uint256 yieldUnderlying, ) = YieldBasisLpFeeClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
+        (uint256 yieldUnderlying, ) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
         assertEq(yieldUnderlying, 2.5e8, "Yield should be 2.5e8");
 
         // Harvest should work and only take yield, not principal
         vm.prank(_authorizedCaller);
-        uint256 received = YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
         assertGt(received, 0, "Should receive yield");
 
         // After harvest, remaining value should still cover deposited value
         (, uint256 depositedValueAfter, uint256 currentValueAfter) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertGe(currentValueAfter, depositedValueAfter, "Remaining value must cover deposited value after harvest");
         assertEq(depositedValueAfter, depositedValue, "Deposited value should be unchanged (removeSharesForYield)");
     }
@@ -743,8 +754,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      *   (b) pay() with USDC decreases debt
      */
     function test_postHarvest_underlyingOnAccountThenRepayDebt() public {
-        // Deposit and borrow
-        _depositLP(DEPOSIT_AMOUNT);
+        // Deposit + stake so harvest can redeem gauge shares
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
         uint256 borrowAmount = 5e8;
         _borrow(borrowAmount);
 
@@ -759,7 +770,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Harvest LP fees — underlying (ybBTC in mock) lands on portfolio account
         vm.prank(_authorizedCaller);
-        uint256 underlyingReceived = YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
         assertGt(underlyingReceived, 0, "Should have received underlying from harvest");
 
         // (a) Verify underlying balance increased on portfolio account
@@ -795,8 +806,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      *         repay debt → withdraw LP
      */
     function test_fullLifecycle_depositBorrowHarvestRepayWithdraw() public {
-        // Step 1: Deposit LP
-        _depositLP(DEPOSIT_AMOUNT);
+        // Step 1: Deposit LP + stake into gauge (harvest needs gauge shares)
+        _depositAndStakeLP(DEPOSIT_AMOUNT);
         uint256 collateralAfterDeposit = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterDeposit, DEPOSIT_AMOUNT, "Collateral should match deposit");
 
@@ -811,7 +822,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Step 4: Harvest LP fees
         vm.prank(_authorizedCaller);
-        uint256 underlyingReceived = YieldBasisLpFeeClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
         assertGt(underlyingReceived, 0, "Should receive underlying from fee harvest");
 
         // Verify underlying is on the account
@@ -871,44 +882,70 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      * - Total collateral reflects both deposits
      * - getStakingState shows mixed state (some staked in gauge, some unstaked on account)
      */
+    /// @notice Mixed-state scenario: some LP staked in the gauge AND some LP unstaked on the account,
+    ///         across multiple deposits. Verifies collateral tracking aggregates correctly across the mix.
+    ///
+    ///   Flow (deposit no longer auto-stakes; stake is explicit admin action):
+    ///     1. Deposit firstDeposit → sits on account (collateral = firstDeposit)
+    ///     2. Stake firstDeposit  → gauge holds the LP (collateral preserved)
+    ///     3. Unstake firstDeposit → LP returns to account, gauge empty (collateral preserved)
+    ///     4. Deposit secondDeposit → adds to unstaked LP on account
+    ///     5. Stake firstDeposit only → firstDeposit in gauge, secondDeposit unstaked on account
+    ///        (true mixed state: gauge AND account both hold LP)
+    ///     6. Verify total collateral = firstDeposit + secondDeposit
     function test_depositNewLpWhileUnstaked_mixedState() public {
         uint256 firstDeposit = 5e8;
         uint256 secondDeposit = 3e8;
 
-        // Step 1: First deposit — goes to gauge
+        // Step 1: First deposit — LP sits on account (no auto-stake)
         _depositLP(firstDeposit);
 
         (uint256 staked1, uint256 unstaked1) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked1, firstDeposit, "First deposit should be fully staked");
-        assertEq(unstaked1, 0, "Nothing unstaked yet");
+        assertEq(staked1, 0, "Gauge empty right after deposit");
+        assertEq(unstaked1, firstDeposit, "First deposit held unstaked on account");
         uint256 collateral1 = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral1, firstDeposit, "Collateral should equal first deposit");
+        assertEq(collateral1, firstDeposit, "Collateral tracks first deposit");
 
-        // Step 2: Unstake all — LP moves to portfolio account, collateral preserved
+        // Step 2: Admin stakes the first deposit into the gauge
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).stake(firstDeposit);
+        (uint256 staked2, uint256 unstaked2) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(staked2, firstDeposit, "All first-deposit LP now in gauge");
+        assertEq(unstaked2, 0, "Nothing unstaked on account");
+        assertEq(
+            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
+            collateral1,
+            "Collateral preserved across stake"
+        );
+
+        // Step 3: Unstake so the first deposit's LP returns to the account
+        //         (required for the next deposit's balance-check to pass).
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).unstake(firstDeposit);
-
-        (uint256 staked2, uint256 unstaked2) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked2, 0, "All should be unstaked from gauge");
-        assertEq(unstaked2, firstDeposit, "LP should be on portfolio account");
-        uint256 collateral2 = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral2, collateral1, "Collateral preserved after unstake");
-
-        // Step 3: Deposit MORE LP — new LP goes to gauge
-        _depositLP(secondDeposit);
-
-        // Step 4: Verify mixed state
         (uint256 staked3, uint256 unstaked3) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked3, secondDeposit, "Only second deposit should be staked in gauge");
-        assertEq(unstaked3, firstDeposit, "First deposit LP still unstaked on account");
+        assertEq(staked3, 0, "Gauge drained");
+        assertEq(unstaked3, firstDeposit, "First deposit back on account");
 
-        // Step 5: Verify total collateral reflects both deposits
-        uint256 collateral3 = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral3, firstDeposit + secondDeposit, "Total collateral should be sum of both deposits");
+        // Step 4: Second deposit — account now holds firstDeposit + secondDeposit unstaked
+        _depositLP(secondDeposit);
+        (uint256 staked4, uint256 unstaked4) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(staked4, 0, "Gauge still empty");
+        assertEq(unstaked4, firstDeposit + secondDeposit, "Both deposits on account");
 
-        // Step 6: Verify deposit info
+        // Step 5: Stake only firstDeposit → mixed state (some in gauge, some on account)
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).stake(firstDeposit);
+        (uint256 staked5, uint256 unstaked5) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(staked5, firstDeposit, "First deposit in gauge");
+        assertEq(unstaked5, secondDeposit, "Second deposit unstaked on account");
+
+        // Step 6: Verify total collateral reflects both deposits
+        uint256 collateral5 = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateral5, firstDeposit + secondDeposit, "Total collateral aggregates staked + unstaked");
+
+        // Step 7: Verify deposit info
         (uint256 totalShares, uint256 depositedValue, uint256 currentValue) =
-            YieldBasisLpFeeClaimingFacet(_portfolioAccount).getDepositInfo();
+            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertEq(totalShares, firstDeposit + secondDeposit, "Total tracked shares should be both deposits");
         assertEq(depositedValue, firstDeposit + secondDeposit, "Deposited value at PPS=1 equals shares");
         assertEq(currentValue, firstDeposit + secondDeposit, "Current value at PPS=1 equals deposited value");

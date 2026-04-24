@@ -465,6 +465,15 @@ contract RewardsProcessingFacet is AccessControl {
         return amount;
     }
 
+
+    /**
+     * @dev Pays the lender premium from the rewards amount to the lending pool.
+     * @notice For Dynamic Fees the entirety of rewards are sent to vault and lender premium is decided by vault utilization
+     * @param tokenId The ID of the portfolio token.
+     * @param rewardsAmount The amount of rewards to pay the lender premium from.
+     * @param asset The asset in which the rewards are denominated.
+     * @return The amount of lender premium paid.
+     */
     function _payLenderPremium(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
         uint256 lenderPremium = (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;

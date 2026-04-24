@@ -6,7 +6,7 @@ import {Test, console} from "forge-std/Test.sol";
 // Facets under test
 import {YieldBasisLpFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
 import {YieldBasisLpClaimingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpClaimingFacet.sol";
-import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626LendingFacet.sol";
+import {YieldBasisLpLendingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpLendingFacet.sol";
 
 // Infrastructure
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
@@ -15,7 +15,6 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
-import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
 
@@ -49,7 +48,7 @@ contract YieldBasisBtcE2ETest is Test {
     // Facets
     YieldBasisLpFacet public _ybBtcFacet;
     YieldBasisLpClaimingFacet public _ybBtcClaimingFacet;
-    ERC4626LendingFacet public _erc4626LendingFacet;
+    YieldBasisLpLendingFacet public _lendingFacet;
 
     // Infrastructure
     PortfolioFactory public _portfolioFactory;
@@ -124,13 +123,13 @@ contract YieldBasisBtcE2ETest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // --- Deploy and register YieldBasisLpFacet with ALL selectors (including ICollateralFacet) ---
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
         {
             bytes4[] memory selectors = new bytes4[](9);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
             selectors[1] = YieldBasisLpFacet.withdraw.selector;
             selectors[2] = YieldBasisLpFacet.unstake.selector;
-            selectors[3] = YieldBasisLpFacet.restake.selector;
+            selectors[3] = YieldBasisLpFacet.stake.selector;
             selectors[4] = YieldBasisLpFacet.getStakingState.selector;
             // ICollateralFacet selectors — YieldBasisLpFacet implements ICollateralFacet
             selectors[5] = ICollateralFacet.enforceCollateralRequirements.selector;
@@ -141,7 +140,7 @@ contract YieldBasisBtcE2ETest is Test {
         }
 
         // --- Deploy and register YieldBasisLpClaimingFacet ---
-        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge));
+        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_usdc));
         {
             bytes4[] memory selectors = new bytes4[](2);
             selectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
@@ -149,13 +148,22 @@ contract YieldBasisBtcE2ETest is Test {
             _facetRegistry.registerFacet(address(_ybBtcClaimingFacet), selectors, "YieldBasisLpClaimingFacet");
         }
 
-        // --- Deploy and register ERC4626LendingFacet ---
-        DeployERC4626LendingFacet lendingDeployer = new DeployERC4626LendingFacet();
-        _erc4626LendingFacet = lendingDeployer.deploy(
+        // --- Deploy and register YieldBasisLpLendingFacet ---
+        // Must use YieldBasisLpLendingFacet (not the ERC4626 variant) because it
+        // writes debt into YieldBasisCollateralManager storage — the same slot that
+        // YieldBasisLpFacet reads from for ICollateralFacet.getTotalDebt().
+        _lendingFacet = new YieldBasisLpLendingFacet(
             address(_portfolioFactory),
-            address(_usdc),   // lending token
-            address(_gauge)   // vault = gauge
+            address(_usdc),    // lending token
+            address(_gauge),
+            address(_usdc)     // underlying (mock: reuse usdc)
         );
+        {
+            bytes4[] memory selectors = new bytes4[](2);
+            selectors[0] = YieldBasisLpLendingFacet.borrow.selector;
+            selectors[1] = YieldBasisLpLendingFacet.pay.selector;
+            _facetRegistry.registerFacet(address(_lendingFacet), selectors, "YieldBasisLpLendingFacet");
+        }
 
         // --- Set authorized caller ---
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
@@ -200,17 +208,32 @@ contract YieldBasisBtcE2ETest is Test {
      */
     function testE2E_FullLifecycle() public {
         // ================================================================
-        // STEP 1: User deposits ybBTC -> staked in gauge + collateral auto-tracked
+        // STEP 1: User deposits ybBTC + admin stakes it in the gauge.
+        // Deposit holds LP on the account; staking into the gauge is now a
+        // separate admin-only action. Both steps combine to give the old
+        // "deposit + auto-stake" behavior.
         // ================================================================
         vm.startPrank(_user);
-        _ybBtc.transfer(_portfolioAccount, DEPOSIT_AMOUNT);
+        _ybBtc.approve(_portfolioAccount, DEPOSIT_AMOUNT);
         _singleMulticall(abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, DEPOSIT_AMOUNT));
         vm.stopPrank();
+
+        // After deposit but BEFORE stake: LP sits unstaked on the account
+        {
+            (uint256 preStaked, uint256 preUnstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+            assertEq(preStaked, 0, "Step 1a: deposit does not auto-stake");
+            assertEq(preUnstaked, DEPOSIT_AMOUNT, "Step 1a: deposit held unstaked on account");
+        }
+
+        // Admin stakes the LP into the gauge (step 6 later asserts the gauge
+        // is the source of the withdrawn LP, so we must stake to exercise that path).
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
 
         // Verify: ybBTC is staked in gauge, portfolio account holds gauge shares
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT, "Step 1: staked amount should match deposit");
-        assertEq(unstaked, 0, "Step 1: no unstaked ybBTC should remain");
+        assertEq(unstaked, 0, "Step 1: no unstaked ybBTC should remain after explicit stake");
         assertEq(_gauge.balanceOf(_portfolioAccount), DEPOSIT_AMOUNT, "Step 1: gauge shares should match deposit (1:1)");
 
         // Verify: collateral is auto-tracked (no separate addCollateral step needed)
@@ -227,7 +250,7 @@ contract YieldBasisBtcE2ETest is Test {
         uint256 userUsdcBefore = _usdc.balanceOf(_user);
 
         vm.startPrank(_user);
-        _singleMulticall(abi.encodeWithSelector(ERC4626LendingFacet.borrow.selector, borrowAmount));
+        _singleMulticall(abi.encodeWithSelector(YieldBasisLpLendingFacet.borrow.selector, borrowAmount));
         vm.stopPrank();
 
         // Verify: user received USDC (minus origination fee), debt is tracked
@@ -286,7 +309,7 @@ contract YieldBasisBtcE2ETest is Test {
         // pay() can be called directly (not via multicall) — it pulls USDC from the caller
         vm.startPrank(_user);
         _usdc.approve(address(_portfolioAccount), totalDebt);
-        ERC4626LendingFacet(_portfolioAccount).pay(totalDebt);
+        YieldBasisLpLendingFacet(_portfolioAccount).pay(totalDebt);
         vm.stopPrank();
 
         // Verify: debt is fully repaid

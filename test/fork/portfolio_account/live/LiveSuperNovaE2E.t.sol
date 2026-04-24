@@ -17,10 +17,10 @@ import {CollateralFacet} from "../../../../src/facets/account/collateral/Collate
 import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {VotingFacet} from "../../../../src/facets/account/vote/VotingFacet.sol";
-import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
+import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/blackhole/BlackholeVotingEscrowFacet.sol";
 import {RewardsProcessingFacet} from "../../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
-import {BlackholeRewardsProcessingFacet} from "../../../../src/facets/account/rewards_processing/BlackholeRewardsProcessingFacet.sol";
+import {BlackholeRewardsProcessingFacet} from "../../../../src/facets/account/blackhole/BlackholeRewardsProcessingFacet.sol";
 
 import {IVotingEscrow} from "../../../../src/interfaces/IVotingEscrow.sol";
 import {IVotingEscrow as IBlackholeVE} from "../../../../src/Blackhole/interfaces/IVotingEscrow.sol";

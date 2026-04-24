@@ -48,14 +48,10 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veVELO
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
-    address public constant VELODROME_PM = 0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9;
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
 
-    function _createConfigImpl() internal override returns (PortfolioFactoryConfig) {
-        return new NFTPortfolioFactoryConfig();
-    }
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -64,7 +60,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
     }
 
     function _deploy() internal {
-        PortfolioManager portfolioManager = PortfolioManager(VELODROME_PM);
+        PortfolioManager portfolioManager = PortfolioManager(PORTFOLIO_MANAGER_ADDRESS);
         address portfolioFactory = portfolioManager.factoryBySalt(keccak256(abi.encodePacked("velodrome-usdc")));
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
@@ -85,18 +81,30 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
-        SwapConfig swapConfig = SwapConfig(OP_SWAP_CONFIG);
-        // Get existing voting config from factory
-        PortfolioFactoryConfig existingConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig();
-        address votingConfig = existingConfig.getVoteConfig();
+        SuperchainVotingConfig votingConfigImpl = new SuperchainVotingConfig();
+        SuperchainVotingConfig votingConfig = SuperchainVotingConfig(
+            address(new ERC1967Proxy(
+                address(votingConfigImpl),
+                abi.encodeCall(VotingConfig.initialize, (DEPLOYER_ADDRESS))
+            ))
+        );
 
-        // // Link configs on the new PortfolioFactoryConfig (deployer is owner of these)
-        portfolioFactoryConfig.setVoteConfig(votingConfig);
+        SwapConfig swapConfig = _deploySwapConfig(DEPLOYER_ADDRESS);
+
+        // Link configs on the new PortfolioFactoryConfig (deployer is owner of these)
+        portfolioFactoryConfig.setVoteConfig(address(votingConfig));
         portfolioFactoryConfig.setLoanConfig(address(loanConfig));
+
+        // Transfer ownership of every freshly-deployed config to the multisig
         loanConfig.transferOwnership(MULTISIG_ADDRESS);
+        votingConfig.transferOwnership(MULTISIG_ADDRESS);
+        swapConfig.transferOwnership(MULTISIG_ADDRESS);
         portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
+
         console.log("Deployed PortfolioFactoryConfig at:", address(portfolioFactoryConfig));
         console.log("Deployed LoanConfig at:", address(loanConfig));
+        console.log("Deployed SuperchainVotingConfig at:", address(votingConfig));
+        console.log("Deployed SwapConfig at:", address(swapConfig));
     }
 
 }
@@ -104,7 +112,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
 contract VelodromeLeafDeploy is PortfolioFactoryConfigDeploy {
     address public constant USDC = 0x2D270e6886d130D724215A266106e6832161EAEd; // INK USDC
     address public constant TOKEN_MESSENGER = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
-    address public constant VELODROME_PM = 0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9;
+    address public constant VELODROME_PM = PORTFOLIO_MANAGER_ADDRESS;
 
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
@@ -150,7 +158,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veVELO
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
-    address public constant VELODROME_PM = 0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9;
+    address public constant VELODROME_PM = PORTFOLIO_MANAGER_ADDRESS;
 
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
@@ -176,16 +184,59 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
         Vault vault = Vault(ILoan(portfolioFactoryConfig.getLoanContract())._vault());
 
+        // ============================================================
+        // Facet upgrades for: getLTVRatio, decreaseTotalDebt fix,
+        // mergeInternal toToken listing guard
+        // ============================================================
+
+        // 1. CollateralFacet - adds getLTVRatio, carries decreaseTotalDebt fix via CollateralManager library
+        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
+        bytes4[] memory collateralSelectors = new bytes4[](11);
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
+        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+
+        // 2. LendingFacet - carries decreaseTotalDebt fix via CollateralManager library
+        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
+        bytes4[] memory lendingSelectors = new bytes4[](4);
+        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        lendingSelectors[1] = BaseLendingFacet.pay.selector;
+        lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
+        lendingSelectors[3] = BaseLendingFacet.borrowTo.selector;
+        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
+
+        // 3. VotingEscrowFacet - mergeInternal toToken listing guard
+        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
+        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+
+        // ============================================================
+        // Unchanged facets (commented out):
+        // ============================================================
 
         // // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        // RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), IVotingEscrow(VOTING_ESCROW).token());
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
+        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
         // // Deploy RewardsConfigFacet
         // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
         // bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
@@ -259,22 +310,6 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
         // votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
-
-        // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](10);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
-
 
         // // // Upgrade Loan Contract
         // LoanV2 loanImplementation = new LoanV2();

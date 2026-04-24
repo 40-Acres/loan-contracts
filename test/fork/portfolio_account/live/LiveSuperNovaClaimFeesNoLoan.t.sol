@@ -13,12 +13,12 @@ import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {ClaimingFacet} from "../../../../src/facets/account/claim/ClaimingFacet.sol";
-import {BlackholeClaimingFacet} from "../../../../src/facets/account/claim/BlackholeClaimingFacet.sol";
+import {BlackholeClaimingFacet} from "../../../../src/facets/account/blackhole/BlackholeClaimingFacet.sol";
 import {CollateralFacet} from "../../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {VotingFacet} from "../../../../src/facets/account/vote/VotingFacet.sol";
-import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
+import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/blackhole/BlackholeVotingEscrowFacet.sol";
 
 import {IVotingEscrow} from "../../../../src/interfaces/IVotingEscrow.sol";
 import {IRewardsDistributor} from "../../../../src/interfaces/IRewardsDistributor.sol";

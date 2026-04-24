@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
-import {ERC4626CollateralManager} from "../erc4626/ERC4626CollateralManager.sol";
+import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
@@ -21,18 +21,21 @@ contract YieldBasisLpLendingFacet is AccessControl {
     IERC20 public immutable _lendingToken;
     address public immutable _gauge;
     address public immutable _lpToken;
+    address public immutable _underlying;
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
 
-    constructor(address portfolioFactory, address lendingToken, address gauge) {
+    constructor(address portfolioFactory, address lendingToken, address gauge, address underlying) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(lendingToken != address(0), "Invalid lending token");
         require(gauge != address(0), "Invalid gauge");
+        require(underlying != address(0), "Invalid underlying");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _lendingToken = IERC20(lendingToken);
         _gauge = gauge;
         _lpToken = IYieldBasisGauge(gauge).asset();
+        _underlying = underlying;
     }
 
     function _config() internal view returns (address) {
@@ -43,8 +46,8 @@ contract YieldBasisLpLendingFacet is AccessControl {
      * @dev Borrow against YB LP collateral (underlying-denominated)
      */
     function borrow(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        (uint256 amountAfterFees, uint256 originationFee) = ERC4626CollateralManager.increaseTotalDebt(
-            _config(), _gauge, _lpToken, amount
+        (uint256 amountAfterFees, uint256 originationFee) = YieldBasisCollateralManager.increaseTotalDebt(
+            _config(), _lpToken, _underlying, amount
         );
 
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
@@ -63,7 +66,7 @@ contract YieldBasisLpLendingFacet is AccessControl {
 
         _lendingToken.safeTransferFrom(from, address(this), amount);
 
-        uint256 excess = ERC4626CollateralManager.decreaseTotalDebt(_config(), _gauge, _lpToken, amount);
+        uint256 excess = YieldBasisCollateralManager.decreaseTotalDebt(_config(), _lpToken, _underlying, amount);
 
         emit Paid(amount - excess, from);
 
@@ -73,10 +76,10 @@ contract YieldBasisLpLendingFacet is AccessControl {
     }
 
     function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(_config(), _gauge, _lpToken);
+        return YieldBasisCollateralManager.getMaxLoan(_config(), _lpToken, _underlying);
     }
 
     function getTotalDebt() external view returns (uint256) {
-        return ERC4626CollateralManager.getTotalDebt();
+        return YieldBasisCollateralManager.getTotalDebt();
     }
 }

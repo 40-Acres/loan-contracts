@@ -63,10 +63,9 @@ contract AerodromeDynamicFeesE2E is Test {
     uint256 public constant VAULT_INITIAL_DEPOSIT = 100_000e6; // 100,000 USDC
 
     function setUp() public {
-        // Fork Base network at a specific block
+        // Fork Base network at latest block
         uint256 fork = vm.createFork(vm.envString("BASE_RPC_URL"));
         vm.selectFork(fork);
-        vm.rollFork(38869188); // Use same block as other tests
 
         // Don't warp far into the future - just advance slightly
         vm.warp(block.timestamp + 1);

@@ -53,6 +53,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address public constant WBTC_GAUGE = 0xbc56e3edB67b56d598aCE07668b138815F45d7aa;
     address public constant WBTC_LP = 0xfBF3C16676055776Ab9B286492D8f13e30e2E763;
+    address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
     address public constant DEPLOYER = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 
     address public user = address(0x40ac2e);
@@ -91,13 +92,14 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(
             address(portfolioFactory),
             WBTC_GAUGE,
-            YB
+            YB,
+            WBTC
         );
         bytes4[] memory lpSelectors = new bytes4[](9);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
         lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
-        lpSelectors[3] = YieldBasisLpFacet.restake.selector;
+        lpSelectors[3] = YieldBasisLpFacet.stake.selector;
         lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
         lpSelectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
         lpSelectors[6] = ICollateralFacet.getTotalDebt.selector;
@@ -141,36 +143,38 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         YieldBasisLpFacet(portfolioAccount).unstake(shares);
     }
 
+    /// @dev After the deposit refactor, deposit() no longer auto-stakes into the gauge —
+    ///      LP sits unstaked on the portfolio account. Tests that exercise gauge state
+    ///      must explicitly stake via the authorized-caller admin path.
+    function _stakeViaAuthorized(uint256 amount) internal {
+        vm.prank(authorizedCaller);
+        YieldBasisLpFacet(portfolioAccount).stake(amount);
+    }
+
     // ── Tests: Happy Path ──
 
-    /// @notice Withdraw after full unstake: collateral must be zeroed
+    /// @notice Withdraw when the position is fully unstaked (the default post-deposit state
+    ///         under the current facet): collateral must be zeroed.
     function testWithdrawFullyUnstaked_collateralCleared() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
 
         _depositViaMulticall(depositAmount);
 
-        // Verify staked
+        // Under current semantics, deposit() pulls LP onto the account without staking.
+        // Verify we're in the fully-unstaked default state (NOT the pre-refactor staked state).
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertGt(staked, 0, "Should have gauge shares after deposit");
-        assertEq(unstaked, 0, "No unstaked LP after deposit");
+        assertEq(staked, 0, "Deposit should not auto-stake into gauge");
+        assertEq(unstaked, depositAmount, "Full LP amount must sit unstaked on account");
 
         uint256 collateralBefore = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
         assertGt(collateralBefore, 0, "Should have collateral after deposit");
         console.log("Collateral after deposit:", collateralBefore);
 
-        // Unstake everything (admin action — doesn't touch collateral tracking)
-        _unstakeViaAuthorized(staked);
-
-        (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertEq(staked, 0, "Should have 0 gauge shares after unstake");
-        assertGt(unstaked, 0, "Should have unstaked LP after unstake");
-
-        // Collateral should still be tracked (unstake doesn't modify it)
-        uint256 collateralAfterUnstake = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateralAfterUnstake, collateralBefore, "Collateral unchanged after unstake");
-
-        // Now withdraw — this is the critical test
+        // Withdraw the entire unstaked LP amount — withdraw() should not touch the gauge
+        // because the full amount is already on the account.
         _withdrawViaMulticall(unstaked);
 
         // Collateral MUST be zero after full withdrawal
@@ -180,24 +184,29 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
         // LP should be with the user
         uint256 userLpBalance = lpToken.balanceOf(user);
-        assertGt(userLpBalance, 0, "User should have received LP tokens");
+        assertEq(userLpBalance, depositAmount, "User should receive exactly the deposited LP back");
+
+        // Gauge state must remain clean — no stray shares on the account
+        (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(staked, 0, "No gauge shares after fully-unstaked withdraw");
+        assertEq(unstaked, 0, "No residual LP on account after full withdraw");
     }
 
     /// @notice Partial withdraw from fully unstaked position — collateral should drop by ~50%
     function testWithdrawPartialFromUnstaked_collateralReduced() public {
         uint256 depositAmount = 2 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
 
         _depositViaMulticall(depositAmount);
 
-        (uint256 staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        // Post-deposit: position is fully unstaked (no gauge interaction on deposit).
+        (, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(unstaked, depositAmount, "Precondition: full LP sits unstaked on account");
         uint256 collateralFull = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
 
-        // Fully unstake
-        _unstakeViaAuthorized(staked);
-
-        // Withdraw half
-        (, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        // Withdraw half — should be serviced entirely from unstaked LP, no gauge interaction.
         uint256 halfAmount = unstaked / 2;
         _withdrawViaMulticall(halfAmount);
 
@@ -206,48 +215,70 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         // (within 1% tolerance to account for rounding in share-to-asset conversions)
         assertApproxEqRel(collateralAfter, collateralFull / 2, 0.01e18, "Collateral should be ~50% after half withdrawal");
         console.log("Collateral full:", collateralFull, "after half withdraw:", collateralAfter);
+
+        // Remaining LP on account must equal the other half (no gauge leakage).
+        (, uint256 unstakedAfter) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(unstakedAfter, unstaked - halfAmount, "Remaining unstaked LP must match");
     }
 
-    /// @notice Withdraw from mixed position (some staked, some unstaked)
+    /// @notice Withdraw from mixed position (some staked, some unstaked).
+    ///         Under current semantics we must explicitly stake half to create the mixed state.
     function testWithdrawFromMixed_collateralCleared() public {
         uint256 depositAmount = 2 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
 
         _depositViaMulticall(depositAmount);
 
-        (uint256 staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-
-        // Unstake half
-        uint256 halfShares = staked / 2;
-        _unstakeViaAuthorized(halfShares);
+        // Explicitly stake half of the deposited LP into the gauge so we have a
+        // genuine mixed-state position for the withdraw path to exercise.
+        uint256 halfDeposit = depositAmount / 2;
+        _stakeViaAuthorized(halfDeposit);
 
         (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertGt(stakedAfter, 0, "Should still have some staked");
-        assertGt(unstakedAfter, 0, "Should have some unstaked");
+        assertGt(stakedAfter, 0, "Should have gauge shares after stake");
+        assertEq(unstakedAfter, depositAmount - halfDeposit, "Half remains unstaked on account");
 
-        // Withdraw everything (unstaked + staked portions)
+        // Withdraw everything (unstaked + staked portions). withdraw() should drain the
+        // unstaked LP first, then redeem the shortfall from the gauge.
         uint256 totalLpAvailable = unstakedAfter + gauge.convertToAssets(stakedAfter);
         _withdrawViaMulticall(totalLpAvailable);
 
         uint256 collateralAfter = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
         assertLe(collateralAfter, 1, "Collateral must be zero (or dust) after full withdrawal");
+
+        // User received LP, account drained
+        assertGt(lpToken.balanceOf(user), 0, "User should receive LP");
+        (uint256 stakedFinal, uint256 unstakedFinal) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(stakedFinal, 0, "No gauge shares after full withdraw");
+        assertEq(unstakedFinal, 0, "No residual LP after full withdraw");
     }
 
-    /// @notice Withdraw from staked position (original behavior — regression check)
+    /// @notice Withdraw from a fully-staked position exercises the gauge-redeem branch of
+    ///         withdraw(). Under current semantics we must explicitly stake after deposit.
     function testWithdrawFromStaked_collateralCleared() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
 
         _depositViaMulticall(depositAmount);
+
+        // Move the full LP into the gauge so withdraw() has to redeem shares.
+        _stakeViaAuthorized(depositAmount);
+
+        (uint256 staked, uint256 unstakedAfterStake) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertGt(staked, 0, "Should have gauge shares after explicit stake");
+        assertEq(unstakedAfterStake, 0, "No unstaked LP after full stake");
 
         uint256 collateralBefore = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
         assertGt(collateralBefore, 0, "Should have collateral");
 
         // Get the actual LP amount the gauge will return for our shares
-        (uint256 staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         uint256 withdrawableLP = gauge.convertToAssets(staked);
 
-        // Withdraw directly from staked (no unstake first)
+        // Withdraw directly from staked (requires gauge.withdraw path inside withdraw())
         _withdrawViaMulticall(withdrawableLP);
 
         uint256 collateralAfter = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
@@ -255,6 +286,10 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
         uint256 userBalance = lpToken.balanceOf(user);
         assertGt(userBalance, 0, "User should have LP tokens");
+
+        (uint256 stakedFinal, uint256 unstakedFinal) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(stakedFinal, 0, "No gauge shares after fully draining");
+        assertEq(unstakedFinal, 0, "No residual LP on account");
     }
 
     // ── Tests: Revert / Error Cases ──
@@ -262,7 +297,9 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     /// @notice withdraw(0) must revert with "Zero amount"
     function testRevert_withdraw_zeroAmount() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
         // Attempting to withdraw 0 should revert
@@ -280,7 +317,9 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     /// @notice Withdrawing more LP than total available (staked + unstaked) must revert
     function testRevert_withdraw_exceedsAvailableBalance() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
         // Try to withdraw 10x more than deposited — this must revert
@@ -304,15 +343,15 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     ///         must revert due to onlyPortfolioManagerMulticall modifier
     function testRevert_withdraw_directCallNotViaMulticall() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
-        // Unstake so there is LP available for withdrawal
-        (uint256 staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        _unstakeViaAuthorized(staked);
-
+        // Post-deposit the LP is already unstaked on the account (deposit no longer
+        // auto-stakes), so we can proceed directly to the direct-call revert check.
         (, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertGt(unstaked, 0, "Should have unstaked LP");
+        assertEq(unstaked, depositAmount, "Deposit should leave LP unstaked on account");
 
         // Direct call as user — must revert (bare require, no message)
         vm.prank(user);
@@ -321,14 +360,21 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     }
 
     /// @notice Calling unstake() from a non-authorized caller must revert
-    ///         due to onlyAuthorizedCaller modifier
+    ///         due to onlyAuthorizedCaller modifier. We must first explicitly stake
+    ///         so that the attempted unstake hits the access-control check rather than
+    ///         the _gauge.redeem(0) path.
     function testRevert_unstake_unauthorizedCaller() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
+        // Explicitly stake so there are real gauge shares to attempt unstaking.
+        _stakeViaAuthorized(depositAmount);
+
         (uint256 staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertGt(staked, 0, "Should have gauge shares");
+        assertGt(staked, 0, "Precondition: gauge shares must exist");
 
         // Random address that is NOT the authorizedCaller
         address randomCaller = address(0xdead);
@@ -337,20 +383,28 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
             "randomCaller should not be authorized"
         );
 
-        // Direct call from unauthorized address — must revert (bare require, no message)
+        // Direct call from unauthorized address — must revert at onlyAuthorizedCaller
+        // (bare require, no message), BEFORE reaching any gauge logic.
         vm.prank(randomCaller);
         vm.expectRevert();
         YieldBasisLpFacet(portfolioAccount).unstake(staked);
     }
 
-    /// @notice Even the portfolio owner cannot call unstake() — only authorizedCaller can
+    /// @notice Even the portfolio owner cannot call unstake() — only authorizedCaller can.
+    ///         We must first explicitly stake to ensure the revert is from the access-control
+    ///         modifier and not a zero-shares redeem.
     function testRevert_unstake_ownerIsNotAuthorized() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
+        // Stake explicitly so gauge shares exist for the unstake call.
+        _stakeViaAuthorized(depositAmount);
+
         (uint256 staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertGt(staked, 0, "Should have gauge shares");
+        assertGt(staked, 0, "Precondition: gauge shares must exist");
 
         // The portfolio owner (user) is not the authorizedCaller
         assertFalse(
@@ -366,7 +420,9 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     /// @notice unstake(0) should revert with "Zero amount"
     function testRevert_unstake_zeroShares() public {
         uint256 depositAmount = 1 ether;
-        deal(WBTC_LP, portfolioAccount, depositAmount);
+        deal(WBTC_LP, user, depositAmount);
+        vm.prank(user);
+        lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
         // Even the authorizedCaller cannot unstake 0 shares

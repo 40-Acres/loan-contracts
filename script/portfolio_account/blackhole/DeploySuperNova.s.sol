@@ -13,18 +13,19 @@ import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {PortfolioFactoryConfigDeploy} from "../DeployPortfolioFactoryConfig.s.sol";
 
 import {ClaimingFacet} from "../../../src/facets/account/claim/ClaimingFacet.sol";
-import {BlackholeClaimingFacet} from "../../../src/facets/account/claim/BlackholeClaimingFacet.sol";
+import {BlackholeClaimingFacet} from "../../../src/facets/account/blackhole/BlackholeClaimingFacet.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
+import {BlackholeCollateralFacet} from "../../../src/facets/account/blackhole/BlackholeCollateralFacet.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
-import {BlackholeVotingEscrowFacet} from "../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
+import {BlackholeVotingEscrowFacet} from "../../../src/facets/account/blackhole/BlackholeVotingEscrowFacet.sol";
 import {MigrationFacet} from "../../../src/facets/account/migration/MigrationFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
-import {BlackholeRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/BlackholeRewardsProcessingFacet.sol";
-import {BlackholeMarketplaceFacet} from "../../../src/facets/account/marketplace/BlackholeMarketplaceFacet.sol";
+import {BlackholeRewardsProcessingFacet} from "../../../src/facets/account/blackhole/BlackholeRewardsProcessingFacet.sol";
+import {BlackholeMarketplaceFacet} from "../../../src/facets/account/blackhole/BlackholeMarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../src/facets/marketplace/PortfolioMarketplace.sol";
 import {Loan} from "../../../src/Loan.sol";
@@ -60,11 +61,6 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
         PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(PortfolioFactory(portfolioFactory).portfolioFactoryConfig());
 
-        // Read existing SwapConfig from the currently-live rewards facet so the
-        // redeployed BlackholeRewardsProcessingFacet stays wired to the same
-        // (multisig-configured) config contract.
-        address liveRewardsFacet = facetRegistry.getFacetForSelector(RewardsProcessingFacet.processRewards.selector);
-        require(liveRewardsFacet != address(0), "live RewardsProcessingFacet not registered");
         SwapConfig swapConfig = SwapConfig(address(0xD504Da3Ae86Aa3233871dbc8ae3Eb38824138F7C));
 
         address loanConfig = address(portfolioFactoryConfig.getLoanConfig());
@@ -86,22 +82,21 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         // claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
         // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
-        // Deploy CollateralFacet
-        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        // bytes4[] memory collateralSelectors = new bytes4[](11);
-        // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        // collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        // collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
-        // collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
-        // collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
-        // collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
-        // collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        // collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
-        // collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        // collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
-        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
-
+        // Deploy BlackholeCollateralFacet (auto-resets voter attachments in removeCollateral)
+        BlackholeCollateralFacet collateralFacet = new BlackholeCollateralFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
+        bytes4[] memory collateralSelectors = new bytes4[](11);
+        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        collateralSelectors[6] = BaseCollateralFacet.getCollateralToken.selector;
+        collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
+        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy VotingFacet
         // VotingFacet votingFacet = new VotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
@@ -128,14 +123,14 @@ contract SuperNovaRootDeploy is PortfolioFactoryConfigDeploy {
         // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Deploy BlackholeRewardsProcessingFacet (shared — handles increase_amount for lock increase)
-        RewardsProcessingFacet rewardsProcessingFacet = new BlackholeRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC);
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        // RewardsProcessingFacet rewardsProcessingFacet = new BlackholeRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC);
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
+        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // Deploy RewardsConfigFacet
         // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));

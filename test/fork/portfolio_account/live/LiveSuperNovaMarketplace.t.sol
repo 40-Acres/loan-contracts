@@ -16,8 +16,8 @@ import {CollateralFacet} from "../../../../src/facets/account/collateral/Collate
 import {BaseCollateralFacet} from "../../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {VotingFacet} from "../../../../src/facets/account/vote/VotingFacet.sol";
-import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/votingEscrow/BlackholeVotingEscrowFacet.sol";
-import {BlackholeMarketplaceFacet} from "../../../../src/facets/account/marketplace/BlackholeMarketplaceFacet.sol";
+import {BlackholeVotingEscrowFacet} from "../../../../src/facets/account/blackhole/BlackholeVotingEscrowFacet.sol";
+import {BlackholeMarketplaceFacet} from "../../../../src/facets/account/blackhole/BlackholeMarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
 import {PortfolioMarketplace} from "../../../../src/facets/marketplace/PortfolioMarketplace.sol";
 
