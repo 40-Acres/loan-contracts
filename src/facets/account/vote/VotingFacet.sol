@@ -74,7 +74,7 @@ contract VotingFacet is IVotingFacet, AccessControl {
         // if user is in manual voting mode, revert
         require(!UserVotingConfig.isManualVoting(tokenId));
 
-        // only default vote during voting timw window (2 hours prior to voting period end)
+        // only default vote during voting time window (2 hours prior to voting period end)
         require(block.timestamp >= ProtocolTimeLibrary.epochVoteEnd(block.timestamp) - 2 hours);
 
         _vote(tokenId, pools, weights);

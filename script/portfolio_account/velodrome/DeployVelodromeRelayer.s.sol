@@ -109,8 +109,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
     address public constant VELODROME_PM = 0x5f3736D7686edb3F74c0726D8fDF3f58252cC1F9;
-    // TODO: fill in real address of existing marketplace facet on OP
-    address public constant EXISTING_MARKETPLACE_FACET = address(0);
+    address public constant VEVELO_MARKETPLACE = 0x446c8aa6B9f66f49A6Ad9c7cd015d20081234937;
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -176,8 +175,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
         // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
-        // Re-register existing MarketplaceFacet with isListingPurchasable selector added
-        // Both calls require onlyOwner (multisig) — output Safe calldata
+        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, VOTING_ESCROW, VEVELO_MARKETPLACE);
         bytes4[] memory marketplaceSelectors = new bytes4[](8);
         marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
         marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
@@ -187,16 +185,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
         marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
         marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
-
-        console.log("=== Safe Transaction 1: removeFacet ===");
-        console.log("To (FacetRegistry):", address(facetRegistry));
-        console.log("Calldata:");
-        console.logBytes(abi.encodeWithSelector(FacetRegistry.removeFacet.selector, EXISTING_MARKETPLACE_FACET));
-
-        console.log("=== Safe Transaction 2: registerFacet ===");
-        console.log("To (FacetRegistry):", address(facetRegistry));
-        console.log("Calldata:");
-        console.logBytes(abi.encodeWithSelector(FacetRegistry.registerFacet.selector, EXISTING_MARKETPLACE_FACET, marketplaceSelectors, "MarketplaceFacet"));
+        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
 
         // Deploy SuperchainVotingFacet with missing selectors
         // SuperchainVotingConfig votingConfig = SuperchainVotingConfig(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getVoteConfig());
