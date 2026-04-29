@@ -246,14 +246,13 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         // Deploy RewardsConfigFacet
         RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
-        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
         // Set authorized caller
@@ -366,15 +365,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Set rewards option to IncreaseCollateral with 100%
         _setRewardsOption(UserRewardsConfig.RewardsOption.IncreaseCollateral, 100);
 
-        // Set YB as the rewards token (so no swap is needed)
-        vm.startPrank(user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, YB);
-        portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
-
         // Deal YB to portfolio account (simulating rewards)
         uint256 rewardsAmount = 100 ether;
         deal(YB, portfolioAccount, rewardsAmount);
@@ -419,15 +409,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Set rewards option to IncreaseCollateral with 25%
         _setRewardsOption(UserRewardsConfig.RewardsOption.IncreaseCollateral, 25);
 
-        // Set YB as the rewards token
-        vm.startPrank(user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, YB);
-        portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
-
         // Deal YB to portfolio account
         uint256 rewardsAmount = 100 ether;
         deal(YB, portfolioAccount, rewardsAmount);
@@ -468,15 +449,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         // Set rewards option to PayToRecipient with 50%
         _setRewardsOption(UserRewardsConfig.RewardsOption.PayToRecipient, 50);
 
-        // Set YB as the rewards token
-        vm.startPrank(user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, YB);
-        portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
-
         // Set recipient
         _setRecipient(recipient);
 
@@ -516,15 +488,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     function testGasReclamation() public {
         _createLockForUser();
 
-        // Set YB as the rewards token
-        vm.startPrank(user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, YB);
-        portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
-
         // Set recipient
         _setRecipient(recipient);
 
@@ -559,15 +522,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
     function testGasReclamationCappedAt5Percent() public {
         _createLockForUser();
-
-        // Set YB as the rewards token
-        vm.startPrank(user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, YB);
-        portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
 
         // Set recipient
         _setRecipient(recipient);
@@ -687,15 +641,6 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
 
         // Set rewards option to IncreaseCollateral
         _setRewardsOption(UserRewardsConfig.RewardsOption.IncreaseCollateral, 100);
-
-        // Set YB as the rewards token
-        vm.startPrank(user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, YB);
-        portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
 
         // Deal YB to portfolio account
         uint256 rewardsAmount = 100 ether;

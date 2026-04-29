@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
+import {RewardsTokenHelper} from "../utils/RewardsTokenHelper.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -87,7 +88,7 @@ contract MockVaultWithAssetV3 {
  *   Section 15: RewardsConfigFacet (Config Setters/Getters)
  * =============================================================================
  */
-contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
+contract RewardsProcessingMixedAndConfigTest is Test, RewardsTokenHelper {
     RewardsProcessingFacet public rewardsProcessingFacet;
     RewardsConfigFacet public rewardsConfigFacet;
     MockOdosRouterRL public mockRouter;
@@ -131,7 +132,6 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
     event TransferFailed(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed recipient, address asset, address indexed owner);
     event PaidToRecipient(uint256 epoch, uint256 indexed tokenId, uint256 amount, address indexed recipient, address asset, address indexed owner);
     event SwapExecuted(address indexed swapTarget, address indexed inputToken, uint256 inputAmount, address indexed outputToken, uint256 outputAmount);
-    event RewardsTokenSet(address rewardsToken, address indexed owner);
     event RecipientSet(address recipient, address indexed owner);
     event VaultForInvestingSet(address vault, address indexed owner);
     event ZeroBalanceDistributionSet(uint256 entryCount, address indexed owner);
@@ -173,14 +173,12 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
 
         // Set up UserRewardsConfig through PortfolioManager multicall
         vm.startPrank(_user);
-        address[] memory pf = new address[](3);
+        address[] memory pf = new address[](2);
         pf[0] = address(_portfolioFactory);
         pf[1] = address(_portfolioFactory);
-        pf[2] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](3);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken);
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
-        cd[2] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
+        bytes[] memory cd = new bytes[](2);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
+        cd[1] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
@@ -608,9 +606,7 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
 
     function test_blacklist_payBalance_sendsToWallet() public {
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC", "BLUSDC", 6);
-
-        // Set blacklistable token as rewards token
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken)));
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         address blacklistedTarget = address(0xB1AC1);
         blacklistToken.setBlacklisted(blacklistedTarget, true);
@@ -638,8 +634,7 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
 
     function test_blacklist_payToRecipient_sameToken_sendsToWallet() public {
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC2", "BLUSDC2", 6);
-
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken)));
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         address blacklistedTarget = address(0xB1AC2);
         blacklistToken.setBlacklisted(blacklistedTarget, true);
@@ -698,8 +693,7 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
 
     function test_blacklist_walletAccountAlsoBlacklisted() public {
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC3", "BLUSDC3", 6);
-
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken)));
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         address blacklistedTarget = address(0xB1AC4);
         blacklistToken.setBlacklisted(blacklistedTarget, true);
@@ -736,8 +730,8 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
     function test_blacklist_zeroBalanceRemainder_recipientBlacklisted() public {
         // Bug fix #3: remainder now uses trySafeTransfer with wallet fallback
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC4", "BLUSDC4", 6);
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken)));
         address blacklistedRecipient = address(0xB1AC5);
         _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, blacklistedRecipient));
         blacklistToken.setBlacklisted(blacklistedRecipient, true);
@@ -823,8 +817,10 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
 
     function test_mixed_ZB_increaseCollateral50_payBalance50() public {
         // 50% IncreaseCollateral, 50% PayBalance
-        // Need to set rewards token to AERO for IncreaseCollateral no-swap path
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset));
+        // Need to set rewards token to AERO for IncreaseCollateral no-swap path.
+        // setRewardsToken was removed; swap the facet's vault so getRewardsToken()
+        // resolves to AERO (lockedAsset).
+        _useTokenAsRewardsAsset(lockedAsset);
 
         address payBalTarget = address(0xBBB1);
 
@@ -1023,7 +1019,6 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
 
     function test_mixed_AB_increaseCollateral25_thenFullDebtRepay() public {
         // 25% IncreaseCollateral, then remaining > debt -> excess deposited to vault
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset));
 
         _setActiveBalanceDistribution(UserRewardsConfig.DistributionEntry({
             option: UserRewardsConfig.RewardsOption.IncreaseCollateral,
@@ -1031,11 +1026,6 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
             outputToken: address(0),
             target: address(0)
         }));
-
-        // Need to switch rewards token back to USDC for the debt path
-        // Actually, when hasDebt=true, getRewardsToken() returns vault asset (USDC), not custom token
-        // So we need to use USDC. Reset.
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken));
 
         // Create a small debt
         _createDebt(100e6);
@@ -1125,48 +1115,6 @@ contract RewardsProcessingMixedAndConfigTest is Test, LocalSetup {
     // ====================================================================
     // Section 15: RewardsConfigFacet (Config Setters/Getters)
     // ====================================================================
-
-    // ── 15.1 setRewardsToken ───────────────────────────────────────────
-
-    function test_config_setRewardsToken() public {
-        address newToken = address(0x1111);
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, newToken));
-
-        // Since getRewardsToken() requires loan contract and has debt logic,
-        // just verify via the zero-balance path: no debt, custom token returned
-        // We process rewards with the new token and verify it's used
-        // For now, verify by reading config via the facet's UserRewardsConfig storage
-        // Actually, getRewardsToken is on RewardsProcessingFacet, not ConfigFacet
-        // With no debt, getRewardsToken() returns custom token
-        address result = rewardsProcessingFacet.getRewardsToken();
-        assertEq(result, newToken, "Rewards token set correctly");
-    }
-
-    function test_config_setRewardsToken_zero() public {
-        // Set to address(0) -> falls back to vault asset
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(0)));
-
-        address result = rewardsProcessingFacet.getRewardsToken();
-        address vaultAsset = IERC4626(_vault).asset();
-        assertEq(result, vaultAsset, "Zero rewards token falls back to vault asset");
-    }
-
-    function test_config_setRewardsToken_onlyMulticall() public {
-        // Direct call (not through PM) should revert
-        vm.prank(_user);
-        vm.expectRevert();
-        RewardsConfigFacet(_portfolioAccount).setRewardsToken(address(0x9999));
-    }
-
-    function test_config_setRewardsToken_emitsEvent() public {
-        address newToken = address(0x2222);
-        address portfolioOwner = _portfolioFactory.ownerOf(_portfolioAccount);
-
-        vm.expectEmit(true, true, false, true);
-        emit RewardsTokenSet(newToken, portfolioOwner);
-
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, newToken));
-    }
 
     // ── 15.2 setRecipient ──────────────────────────────────────────────
 

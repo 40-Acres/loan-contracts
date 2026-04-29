@@ -198,14 +198,13 @@ contract LiveSuperNovaE2ENoLoan is Test {
 
     function _registerRewardsConfigFacet() internal {
         RewardsConfigFacet facet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory sel = new bytes4[](7);
-        sel[0] = RewardsConfigFacet.setRewardsToken.selector;
-        sel[1] = RewardsConfigFacet.setRecipient.selector;
-        sel[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        sel[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        sel[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        sel[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        sel[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory sel = new bytes4[](6);
+        sel[0] = RewardsConfigFacet.setRecipient.selector;
+        sel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        sel[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        sel[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        sel[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        sel[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(facet), sel, "RewardsConfigFacet");
     }
 
@@ -245,14 +244,6 @@ contract LiveSuperNovaE2ENoLoan is Test {
         assertEq(portfolioFactoryConfig.getLoanContract(), address(0), "precondition: no loan");
         address rewardsToken = RewardsProcessingFacet(portfolioAccount).getRewardsToken();
         assertEq(rewardsToken, USDC, "should fall back to defaultToken (USDC) with no vault & no debt");
-    }
-
-    /// @notice User can override rewards token via RewardsConfig and getRewardsToken picks it up.
-    function testGetRewardsToken_withCustomRewardsToken() public {
-        assertEq(portfolioFactoryConfig.getLoanContract(), address(0), "precondition: no loan");
-        _singleMulticall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, SNOVA_TOKEN));
-        address rewardsToken = RewardsProcessingFacet(portfolioAccount).getRewardsToken();
-        assertEq(rewardsToken, SNOVA_TOKEN, "custom rewards token should override default");
     }
 
     /// @notice Create lock and verify collateral tracking works with no loan contract.

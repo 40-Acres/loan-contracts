@@ -7,6 +7,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
@@ -38,6 +39,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event EscrowClaimed(address indexed borrower, uint256 amount);
     event Borrowed(address indexed borrower, uint256 amount);
     event Repaid(address indexed borrower, uint256 amount, uint256 remainingDebt);
+    event FeeAccrued(address indexed recipient, uint256 feeAssets, uint256 feeShares);
+    event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
+    event FeeBpsUpdated(uint256 oldBps, uint256 newBps);
 
     // ============ Errors ============
     error ContractPaused();
@@ -47,6 +51,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     error ZeroAmount();
     error ZeroAddress();
     error InvalidMaxUtilization();
+    error FeeBpsTooHigh();
+
+    // ============ Constants ============
+    uint256 public constant MAX_FEE_BPS = 5000;
 
     // ============ ERC-7201 Namespaced Storage ============
     /// @custom:storage-location erc7201:dynamicfeesvault.storage
@@ -93,6 +101,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         mapping(uint256 => uint256) epochEndBorrowerCreditPerRate; // borrowerCreditPerRate frozen at each epoch boundary
         mapping(address => uint256) escrowedExcess; // excess rewards escrowed when transfer fails (e.g. USDC blacklist)
         uint256 maxUtilizationBps; // e.g. 8000 = 80%
+
+        // Performance fee
+        address feeRecipient;          // recipient of accrued fee shares; if zero, fee is disabled
+        uint256 feeBps;                // basis points of realized interest minted as fee shares (cap MAX_FEE_BPS)
+        uint256 lastTotalAssetsForFee; // snapshot of totalAssets() at last fee accrual; deltas count as interest
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -116,11 +129,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         string memory _name,
         string memory _symbol,
         address _portfolioFactory,
-        uint256 _maxUtilizationBps
+        uint256 _maxUtilizationBps,
+        address _feeRecipient,
+        uint256 _feeBps
     ) public initializer {
         if (_asset == address(0)) revert ZeroAddress();
         if (_portfolioFactory == address(0)) revert ZeroAddress();
+        if (_feeRecipient == address(0)) revert ZeroAddress();
         if (_maxUtilizationBps == 0 || _maxUtilizationBps > 10000) revert InvalidMaxUtilization();
+        if (_feeBps > MAX_FEE_BPS) revert FeeBpsTooHigh();
 
         __ERC4626_init(ERC20(_asset));
         __ERC20_init(_name, _symbol);
@@ -132,10 +149,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.portfolioFactory = _portfolioFactory;
         $.sharesDecimalsOffset = ERC20(_asset).decimals();
         $.maxUtilizationBps = _maxUtilizationBps;
+        $.feeRecipient = _feeRecipient;
+        $.feeBps = _feeBps;
 
         // Deploy the default fee calculator
         FeeCalculator feeCalc = new FeeCalculator();
         $.feeCalculator = address(feeCalc);
+
+        // Snapshot baseline so first _accrueFee sees zero interest on an empty vault.
+        $.lastTotalAssetsForFee = totalAssets();
     }
 
     // ============ UUPS Authorization ============
@@ -155,6 +177,22 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _getStorage().maxUtilizationBps = _maxUtilizationBps;
     }
 
+    function setFeeRecipient(address _feeRecipient) external onlyOwner {
+        if (_feeRecipient == address(0)) revert ZeroAddress();
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        address old = $.feeRecipient;
+        $.feeRecipient = _feeRecipient;
+        emit FeeRecipientUpdated(old, _feeRecipient);
+    }
+
+    function setFeeBps(uint256 _feeBps) external onlyOwner {
+        if (_feeBps > MAX_FEE_BPS) revert FeeBpsTooHigh();
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 old = $.feeBps;
+        $.feeBps = _feeBps;
+        emit FeeBpsUpdated(old, _feeBps);
+    }
+
     // ============ View Functions ============
     function feeCalculator() public view returns (address) {
         return _getStorage().feeCalculator;
@@ -162,6 +200,23 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function maxUtilizationBps() external view returns (uint256) {
         return _getStorage().maxUtilizationBps;
+    }
+
+    function feeRecipient() external view returns (address) {
+        return _getStorage().feeRecipient;
+    }
+
+    function feeBps() external view returns (uint256) {
+        return _getStorage().feeBps;
+    }
+
+    function lastTotalAssetsForFee() external view returns (uint256) {
+        return _getStorage().lastTotalAssetsForFee;
+    }
+
+    /// @notice Returns the fee shares that would be minted if `_accrueFee` ran right now.
+    function pendingFeeShares() external view returns (uint256 shares) {
+        (, shares) = _accrueFeeView();
     }
 
     function totalLoanedAssets() public view returns (uint256) {
@@ -300,27 +355,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function lenderPremiumUnlockedThisEpoch() public view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 WEEK = ProtocolTimeLibrary.WEEK;
+        uint256 vestStart = $.vestingEpochStart;
+        if (vestStart == 0) return 0;
+
+        uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        // Past the vest epoch — premium fully realized into totalAssets, slot pending sweep
+        if (nowEpoch > vestStart) return 0;
 
         uint256 vestPremium = $.vestingEpochPremium;
-        uint256 vestStart = $.vestingEpochStart;
-        uint256 currentPremium = $.currentEpochPremium;
-        uint256 currentStart = $.currentEpochStart;
+        if (vestPremium == 0) return 0;
 
-        // Simulate roll
-        if (vestStart > 0 && epochStart > vestStart) {
-            vestPremium = 0; vestStart = 0;
-        }
-        if (currentStart > 0 && epochStart > currentStart) {
-            uint256 vestEpochStart = currentStart + WEEK;
-            if (epochStart <= vestEpochStart) {
-                vestPremium += currentPremium;
-                vestStart = vestEpochStart;
-            }
-        }
-
-        if (vestPremium == 0 || vestStart == 0) return 0;
+        uint256 WEEK = ProtocolTimeLibrary.WEEK;
         uint256 elapsed = block.timestamp - vestStart;
         if (elapsed >= WEEK) return vestPremium;
         return (vestPremium * elapsed) / WEEK;
@@ -330,12 +375,20 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function totalAssets() public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
-        uint256 outstandingDebt = $.totalLoanedAssets > totalReduction
-            ? $.totalLoanedAssets - totalReduction : 0;
-        uint256 unvested = _getUnvestedLenderPremium();
-        uint256 total = IERC20(asset()).balanceOf(address(this)) + outstandingDebt;
-        return total > (unvested + $.totalUnsettledRewards)
-            ? total - unvested - $.totalUnsettledRewards : 0;
+
+        uint256 outstandingDebt;
+        uint256 excessPendingOwedToBorrowers;
+        if ($.totalLoanedAssets >= totalReduction) {
+            outstandingDebt = $.totalLoanedAssets - totalReduction;
+        } else {
+            excessPendingOwedToBorrowers = totalReduction - $.totalLoanedAssets;
+        }
+
+        uint256 deductions = _getUnvestedLenderPremium()
+            + $.totalUnsettledRewards
+            + excessPendingOwedToBorrowers;
+        uint256 gross = IERC20(asset()).balanceOf(address(this)) + outstandingDebt;
+        return gross > deductions ? gross - deductions : 0;
     }
 
     // ============ Fee Calculator Functions ============
@@ -359,71 +412,23 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ Lender Premium Vesting ============
-    function _rollLenderPremium() internal {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-
-        // Step 1: If vesting epoch is in the past, its premium is fully vested — clear it
-        if ($.vestingEpochStart > 0 && epochStart > $.vestingEpochStart) {
-            $.vestingEpochPremium = 0;
-            $.vestingEpochStart = 0;
-        }
-
-        // Step 2: If current epoch premium is from a past epoch, promote to vesting
-        if ($.currentEpochStart > 0 && epochStart > $.currentEpochStart) {
-            uint256 vestEpochStart = $.currentEpochStart + ProtocolTimeLibrary.WEEK;
-            if (epochStart <= vestEpochStart) {
-                // We're in the immediate next epoch — move to vesting
-                $.vestingEpochPremium += $.currentEpochPremium;
-                $.vestingEpochStart = vestEpochStart;
-            }
-            // else: gap > 1 epoch — premium already fully vested, nothing to do
-            $.currentEpochPremium = 0;
-            $.currentEpochStart = epochStart;
-        }
-    }
-
+    // Premium vests in the current epoch from epochStart(now).
     function _getUnvestedLenderPremium() internal view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
-        uint256 WEEK = ProtocolTimeLibrary.WEEK;
-        uint256 unvested = 0;
-
-        // Simulate the roll to get current-state values
-        uint256 currentPremium = $.currentEpochPremium;
-        uint256 currentStart = $.currentEpochStart;
-        uint256 vestPremium = $.vestingEpochPremium;
         uint256 vestStart = $.vestingEpochStart;
+        if (vestStart == 0) return 0;
 
-        // Clear vesting if its epoch has passed
-        if (vestStart > 0 && epochStart > vestStart) {
-            vestPremium = 0;
-            vestStart = 0;
-        }
+        uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        // Vest epoch has passed → fully realized, awaiting next-call sweep
+        if (nowEpoch > vestStart) return 0;
 
-        // Promote current to vesting if epoch advanced
-        if (currentStart > 0 && epochStart > currentStart) {
-            uint256 vestEpochStart = currentStart + WEEK;
-            if (epochStart <= vestEpochStart) {
-                vestPremium += currentPremium;
-                vestStart = vestEpochStart;
-            }
-            currentPremium = 0;
-        }
+        uint256 vestPremium = $.vestingEpochPremium;
+        if (vestPremium == 0) return 0;
 
-        // Current epoch premium is completely unvested
-        unvested += currentPremium;
-
-        // Vesting premium: linearly releasing over its epoch
-        if (vestPremium > 0 && vestStart > 0) {
-            uint256 elapsed = block.timestamp - vestStart;
-            if (elapsed < WEEK) {
-                unvested += vestPremium - (vestPremium * elapsed) / WEEK;
-            }
-            // else: fully vested
-        }
-
-        return unvested;
+        uint256 WEEK = ProtocolTimeLibrary.WEEK;
+        uint256 elapsed = block.timestamp - vestStart;
+        if (elapsed >= WEEK) return 0;
+        return vestPremium - (vestPremium * elapsed) / WEEK;
     }
 
     // ============ Reward Streaming Functions ============
@@ -437,52 +442,114 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
 
         uint256 currentRate = $.activeEpochRate;
-        if (currentRate == 0) return;
+        // Stream math runs only when there's an active stream; fee accrual at the end
+        // ALWAYS runs so vestingEpochPremium decay during stream gaps still pays the
+        // recipient.
+        if (currentRate > 0) {
+            uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
+            if (currentTime > $.globalLastUpdateTime) {
+                uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
+                $.globalLastUpdateTime = currentTime;
 
-        uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
-        if (currentTime <= $.globalLastUpdateTime) return;
+                bool epochEnded = block.timestamp >= $.activeEpochEnd;
+                uint256 endingEpoch = $.activeEpochEnd;
 
-        uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
-        $.globalLastUpdateTime = currentTime;
+                // Cap globalVested at totalUnsettledRewards to prevent underflow from rounding
+                if (globalVested > $.totalUnsettledRewards) {
+                    globalVested = $.totalUnsettledRewards;
+                }
 
-        bool epochEnded = block.timestamp >= $.activeEpochEnd;
-        uint256 endingEpoch = $.activeEpochEnd;
+                // Compute fee split using current ratio
+                uint256 ratio = getCurrentVaultRatioBps();
+                uint256 lenderPremium = (globalVested * ratio) / 10000;
+                uint256 borrowerCredit = globalVested - lenderPremium;
 
-        // Cap globalVested at totalUnsettledRewards to prevent underflow from rounding
-        if (globalVested > $.totalUnsettledRewards) {
-            globalVested = $.totalUnsettledRewards;
-        }
+                // Lender premium vests in the CURRENT epoch from epochStart(now).
+                //
+                // ACCEPTED TRADE-OFF — RETROACTIVE SHARE-PRICE BOOST:
+                // A lender who deposits at time T inside an epoch where premium has already
+                // been extracted captures `(T - epochStart(now)) / WEEK` of the unvested
+                // premium they did not fund.
+                if (lenderPremium > 0) {
+                    uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+                    if ($.vestingEpochStart > 0 && nowEpoch > $.vestingEpochStart) {
+                        $.vestingEpochPremium = 0;
+                        $.vestingEpochStart = 0;
+                    }
+                    $.vestingEpochPremium += lenderPremium;
+                    if ($.vestingEpochStart < nowEpoch) {
+                        $.vestingEpochStart = nowEpoch;
+                    }
+                }
 
-        // Compute fee split using current ratio
-        uint256 ratio = getCurrentVaultRatioBps();
-        uint256 lenderPremium = (globalVested * ratio) / 10000;
-        uint256 borrowerCredit = globalVested - lenderPremium;
+                // Accumulate borrower credit per unit of stream rate (Synthetix-style)
+                if (borrowerCredit > 0) {
+                    $.borrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
+                }
 
-        // Track lender premium — deposit into current epoch, vests next epoch
-        if (lenderPremium > 0) {
-            _rollLenderPremium();
-            $.currentEpochPremium += lenderPremium;
-            if ($.currentEpochStart == 0) {
-                $.currentEpochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+                $.totalUnsettledRewards -= globalVested;
+                $.globalBorrowerPending += borrowerCredit;
+
+                // Freeze the accumulator at epoch boundary so expired streams can only
+                // claim credit up to the epoch they participated in
+                if (epochEnded) {
+                    $.epochEndBorrowerCreditPerRate[endingEpoch] = $.borrowerCreditPerRate;
+                    $.activeEpochRate = 0;
+                    $.activeEpochEnd = 0;
+                }
             }
         }
 
-        // Accumulate borrower credit per unit of stream rate (Synthetix-style)
-        // Use captured currentRate since activeEpochRate may be cleared below
-        if (borrowerCredit > 0 && currentRate > 0) {
-            $.borrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
+        // Accrue performance fee on realized interest delta. Runs even when no active
+        // stream so unvested-premium decay during stream gaps is not missed.
+        _accrueFee();
+    }
+
+    // ============ Performance Fee ============
+
+    /**
+     * @notice Mint fee shares to `feeRecipient` proportional to interest realized since last accrual.
+     * @dev "Interest" = increase in totalAssets() since `lastTotalAssetsForFee`. LP deposits and
+     *      withdraws explicitly bump the snapshot in _deposit/_withdraw so they don't count as
+     *      interest. Borrow/repay/depositRewards leave totalAssets() invariant by construction.
+     */
+    function _accrueFee() internal {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        (uint256 newTotalAssets, uint256 feeShares) = _accrueFeeView();
+        if (feeShares > 0) {
+            address recipient = $.feeRecipient;
+            uint256 feeBpsLocal = $.feeBps;
+            uint256 interest = newTotalAssets > $.lastTotalAssetsForFee
+                ? newTotalAssets - $.lastTotalAssetsForFee
+                : 0;
+            uint256 feeAssets = (interest * feeBpsLocal) / 10000;
+            _mint(recipient, feeShares);
+            emit FeeAccrued(recipient, feeAssets, feeShares);
+        }
+        $.lastTotalAssetsForFee = newTotalAssets;
+    }
+
+    /**
+     * @notice View-only mirror of _accrueFee. Returns (newTotalAssets, feeSharesIfAccruedNow).
+     */
+    function _accrueFeeView() internal view returns (uint256 newTotalAssets, uint256 feeShares) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        newTotalAssets = totalAssets();
+        uint256 last = $.lastTotalAssetsForFee;
+        uint256 feeBpsLocal = $.feeBps;
+        address recipient = $.feeRecipient;
+
+        if (newTotalAssets <= last || feeBpsLocal == 0 || recipient == address(0)) {
+            return (newTotalAssets, 0);
         }
 
-        $.totalUnsettledRewards -= globalVested;
-        $.globalBorrowerPending += borrowerCredit;
+        uint256 interest = newTotalAssets - last;
+        uint256 feeAssets = (interest * feeBpsLocal) / 10000;
+        if (feeAssets == 0) return (newTotalAssets, 0);
 
-        // Freeze the accumulator at epoch boundary so expired streams can only
-        // claim credit up to the epoch they participated in
-        if (epochEnded) {
-            $.epochEndBorrowerCreditPerRate[endingEpoch] = $.borrowerCreditPerRate;
-            $.activeEpochRate = 0;
-            $.activeEpochEnd = 0;
-        }
+        uint256 virtualShares = 10 ** _decimalsOffset();
+        uint256 newTotalAssetsWithoutFees = newTotalAssets - feeAssets;
+        feeShares = (feeAssets * (totalSupply() + virtualShares)) / (newTotalAssetsWithoutFees + 1);
     }
 
     /**
@@ -602,12 +669,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         if (amount == 0) revert ZeroAmount();
         require(_getStorage().debtBalance[msg.sender] > 0, "No debt to repay");
 
-        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
-
         DynamicFeesVaultStorage storage $ = _getStorage();
 
-        // Settle any existing vested rewards for this user
+        // Settle BEFORE the transfer so _accrueFee sees pre-deposit totalAssets and
+        // doesn't treat the inflow as interest. Mirrors repay / borrow / payFromPortfolio.
         _settleRewards(msg.sender);
+
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
 
         // Compute remaining unsettled from existing stream
         uint256 remaining = 0;
@@ -635,10 +703,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.globalLastUpdateTime = block.timestamp;
         }
 
-        // total = remaining + amount, so the net change is +amount.
-        // Avoid evaluating (totalUnsettledRewards - remaining) first because
-        // ceiling-rounded rates can make remaining slightly exceed the tracked
-        // unsettled balance, causing an intermediate underflow.
         $.totalUnsettledRewards += amount;
 
         // Snapshot accumulator for the new stream rate
@@ -717,7 +781,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function sync() public {
         _processGlobalVesting();
         DynamicFeesVaultStorage storage $ = _getStorage();
-        _rollLenderPremium();
+        // Inline stale-vesting-bucket sweep (was _rollLenderPremium): handles the
+        // no-fresh-premium case where _processGlobalVesting did not run the sweep.
+        uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        if ($.vestingEpochStart > 0 && nowEpoch > $.vestingEpochStart) {
+            $.vestingEpochPremium = 0;
+            $.vestingEpochStart = 0;
+        }
         emit Synced(
             ProtocolTimeLibrary.epochStart(block.timestamp),
             $.totalLoanedAssets,
@@ -770,17 +840,30 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return type(uint256).max;
     }
 
+    /// @dev All four preview functions fold in `pendingFeeShares` so quotes match what users
+    ///      actually receive after the next state-changing call accrues the fee.
+    function previewDeposit(uint256 assets) public view override returns (uint256) {
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        uint256 newTotalSupply = totalSupply() + pending;
+        return Math.mulDiv(assets, newTotalSupply + 10 ** _decimalsOffset(), newTotalAssets + 1, Math.Rounding.Floor);
+    }
+
+    function previewMint(uint256 shares) public view override returns (uint256) {
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        uint256 newTotalSupply = totalSupply() + pending;
+        return Math.mulDiv(shares, newTotalAssets + 1, newTotalSupply + 10 ** _decimalsOffset(), Math.Rounding.Ceil);
+    }
+
     function previewWithdraw(uint256 assets) public view override returns (uint256) {
-        uint256 liquid = IERC20(asset()).balanceOf(address(this));
-        require(assets <= liquid, "Insufficient liquidity");
-        return super.previewWithdraw(assets);
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        uint256 newTotalSupply = totalSupply() + pending;
+        return Math.mulDiv(assets, newTotalSupply + 10 ** _decimalsOffset(), newTotalAssets + 1, Math.Rounding.Ceil);
     }
 
     function previewRedeem(uint256 shares) public view override returns (uint256) {
-        uint256 assets = convertToAssets(shares);
-        uint256 liquid = IERC20(asset()).balanceOf(address(this));
-        require(assets <= liquid, "Insufficient liquidity");
-        return super.previewRedeem(shares);
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        uint256 newTotalSupply = totalSupply() + pending;
+        return Math.mulDiv(shares, newTotalAssets + 1, newTotalSupply + 10 ** _decimalsOffset(), Math.Rounding.Floor);
     }
 
     function maxWithdraw(address owner) public view override returns (uint256) {
@@ -811,6 +894,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.lastDepositBlock[receiver] = block.number;
 
         super._deposit(caller, receiver, assets, shares);
+
+        // totalAssets() rose by `assets`; not interest, so bump the snapshot.
+        $.lastTotalAssetsForFee += assets;
     }
 
     function _withdraw(
@@ -828,6 +914,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         require($.lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
 
         super._withdraw(caller, receiver, _owner, assets, shares);
+
+        // totalAssets() fell by `assets`; mirror in the snapshot with zero-floor guard.
+        uint256 last = $.lastTotalAssetsForFee;
+        $.lastTotalAssetsForFee = last > assets ? last - assets : 0;
     }
 
     // ============ ERC20 Override ============

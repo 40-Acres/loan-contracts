@@ -57,22 +57,17 @@ contract RewardsOptionCombinationsTest is Test, LocalSetup {
         rewardsToken = address(_usdc);
         lockedAsset = IVotingEscrow(_ve).token();
 
-        // Basic setup: set rewards token and recipient
+        // Basic setup: set recipient
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](3);
+        address[] memory portfolioFactories = new address[](2);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
-        portfolioFactories[2] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](3);
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            rewardsToken
-        );
-        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setRecipient.selector,
             recipient
         );
-        calldatas[2] = abi.encodeWithSelector(
+        calldatas[1] = abi.encodeWithSelector(
             BaseCollateralFacet.addCollateral.selector,
             _tokenId
         );

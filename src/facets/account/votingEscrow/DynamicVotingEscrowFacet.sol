@@ -107,8 +107,8 @@ contract DynamicVotingEscrowFacet is AccessControl, IERC721Receiver {
         require(weightIncrease >= 0, "Negative weight increase");
 
         // Update collateral: remove burned token, refresh survivor
-        DynamicCollateralManager.removeLockedCollateral(fromToken, config, address(_votingEscrow));
         DynamicCollateralManager.updateLockedCollateral(config, toToken, address(_votingEscrow));
+        DynamicCollateralManager.removeLockedCollateral(fromToken, config, address(_votingEscrow));
 
         emit LockMerged(fromToken, toToken, uint256(uint128(weightIncrease)), owner);
     }

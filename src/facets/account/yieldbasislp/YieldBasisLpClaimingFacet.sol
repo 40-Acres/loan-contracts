@@ -85,7 +85,7 @@ contract YieldBasisLpClaimingFacet is AccessControl {
 
         YieldBasisCollateralManager.removeSharesForYield(config, lpToken, underlying, surplusShares);
 
-        uint256 lpReceived = _gauge.redeem(surplusShares, address(this), address(this));
+        uint256 lpReceived = _gauge.withdraw(surplusShares, address(this), address(this));
 
         IERC20(lpToken).approve(lpToken, lpReceived);
         underlyingReceived = _lpToken.withdraw(lpReceived, minUnderlyingOut, address(this));

@@ -239,7 +239,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     function _depositAndStakeLP(uint256 amount) internal {
         _depositLP(amount);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(amount);
+        YieldBasisLpFacet(_portfolioAccount).stake();
     }
 
     /// @dev Borrow USDC against collateral (via multicall since it requires onlyPortfolioManagerMulticall)
@@ -573,21 +573,14 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // Get gauge shares to unstake
         (uint256 stakedBefore, ) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
 
-        // Unstake all and immediately stake in a single multicall
-        // This ensures collateral enforcement at the end of multicall sees staked state
-        vm.startPrank(_user);
-        {
-            bytes[] memory calldatas = new bytes[](2);
-            calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.unstake.selector, stakedBefore);
-            calldatas[1] = abi.encodeWithSelector(YieldBasisLpFacet.stake.selector, DEPOSIT_AMOUNT);
-            // unstake is onlyAuthorizedCaller, not onlyPortfolioManagerMulticall
-            // So we need to call unstake and stake individually
-        }
-        vm.stopPrank();
+        // unstake/stake are onlyAuthorizedCaller (not onlyPortfolioManagerMulticall),
+        // so we call them individually rather than via multicall.
+        // Suppress unused-variable warnings for the precondition we already asserted.
+        stakedBefore;
 
         // Unstake via authorized caller
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(stakedBefore);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         // After unstake: collateral removed, LP tokens on account
         (uint256 stakedAfterUnstake, uint256 unstakedAfterUnstake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -600,7 +593,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Stake via authorized caller
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
 
         // After stake: LP tokens back in gauge, collateral re-tracked
         (uint256 stakedAfterStake, uint256 unstakedAfterStake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -631,10 +624,13 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         (uint256 staked, ) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         uint256 collateralBefore = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        // Sanity: precondition only — `staked` is intentionally unused below
+        // because unstake() is now all-or-nothing.
+        staked;
 
         // Unstake all — collateral unchanged because LP stays in portfolio
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(staked);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         uint256 collateralAfter = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfter, collateralBefore, "Collateral preserved after unstake while indebted");
@@ -648,7 +644,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Stake
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
 
         // Still passes
         success = ICollateralFacet(_portfolioAccount).enforceCollateralRequirements();
@@ -698,7 +694,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Stake all LP so harvestLpFees can redeem gauge shares
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(10e8);
+        YieldBasisLpFacet(_portfolioAccount).stake();
 
         // deposited value = 5e8 * 1.0 + 5e8 * 1.5 = 5e8 + 7.5e8 = 12.5e8
         (uint256 shares, uint256 depositedValue, uint256 currentValue) =
@@ -839,32 +835,46 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // Step 6: Withdraw LP
         // After harvest, fewer gauge shares remain (surplus was redeemed).
         // NOTE: In the mock, underlying == LP token (ybBTC), so the harvested underlying
-        // appears as ybBTC balance on the account. The withdraw() function sees this as
-        // "already unstaked LP" and uses it first before pulling from gauge.
-        // In production, underlying (e.g. WBTC) != LP (ybBTC), so this artifact wouldn't occur.
+        // appears as ybBTC balance on the account. Under the new withdraw() implementation,
+        // withdraw caps to `trackedShares` (collateral shares) — the harvested LP sitting
+        // on the account is NOT swept by withdraw because it is not tracked as collateral.
+        // In production, underlying (e.g. WBTC) != LP (ybBTC), so this isn't an issue;
+        // the harvested asset would already be a different token from the collateral.
         (uint256 remainingStaked, uint256 lpOnAccount) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertGt(remainingStaked, 0, "Should have remaining staked shares after harvest");
         assertGt(lpOnAccount, 0, "Harvested underlying (ybBTC in mock) should be on account");
 
-        // Withdraw everything: both the staked gauge shares and LP on account.
-        // Total withdrawable = staked + LP balance on account
-        uint256 totalWithdrawable = remainingStaked + lpOnAccount;
+        // Withdraw the tracked collateral. withdraw() clamps to trackedShares — the
+        // harvested LP on the account is left in place (not collateral, not part of withdraw).
+        // NOTE: trackedShares is RAW gauge shares (data.shares), distinct from
+        // getTotalLockedCollateral() which returns the PPS-adjusted value.
+        uint256 trackedSharesBefore = remainingStaked; // gauge balance == data.shares post-harvest
         uint256 userLpBefore = _ybBtc.balanceOf(_user);
         vm.startPrank(_user);
-        _singleMulticall(abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, totalWithdrawable));
+        _singleMulticall(abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, type(uint256).max));
         vm.stopPrank();
 
-        // Verify user received all LP tokens
+        // Verify user received exactly the tracked collateral shares amount.
         uint256 userLpAfter = _ybBtc.balanceOf(_user);
-        assertEq(userLpAfter - userLpBefore, totalWithdrawable, "User should receive all withdrawn LP tokens");
+        assertEq(
+            userLpAfter - userLpBefore,
+            trackedSharesBefore,
+            "User receives exactly trackedShares (clamped); harvested LP stays on account"
+        );
 
-        // Verify gauge is fully drained
+        // Gauge fully drained (all tracked shares were redeemed). Harvested LP remains
+        // on the account because withdraw() does not sweep non-tracked LP.
         (uint256 finalStaked, uint256 finalUnstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(finalStaked, 0, "No shares should remain staked after full withdraw");
-        assertEq(finalUnstaked, 0, "No LP should remain on account after full withdraw");
+        assertEq(finalStaked, 0, "No shares should remain staked after withdraw");
+        assertEq(finalUnstaked, lpOnAccount, "Harvested LP still on account (not tracked, not swept)");
 
         // Verify zero debt and zero collateral tracked
         assertEq(ICollateralFacet(_portfolioAccount).getTotalDebt(), 0, "Final debt should be 0");
+        assertEq(
+            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
+            0,
+            "Final collateral should be 0 - all tracked LP withdrawn"
+        );
     }
 
     // ============ Test 9: Deposit new LP while partially unstaked (mixed state) ============
@@ -882,73 +892,54 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      * - Total collateral reflects both deposits
      * - getStakingState shows mixed state (some staked in gauge, some unstaked on account)
      */
-    /// @notice Mixed-state scenario: some LP staked in the gauge AND some LP unstaked on the account,
-    ///         across multiple deposits. Verifies collateral tracking aggregates correctly across the mix.
+    /// @notice deposit() while in staked-gauge mode auto-stakes the freshly deposited LP.
     ///
-    ///   Flow (deposit no longer auto-stakes; stake is explicit admin action):
-    ///     1. Deposit firstDeposit → sits on account (collateral = firstDeposit)
-    ///     2. Stake firstDeposit  → gauge holds the LP (collateral preserved)
-    ///     3. Unstake firstDeposit → LP returns to account, gauge empty (collateral preserved)
-    ///     4. Deposit secondDeposit → adds to unstaked LP on account
-    ///     5. Stake firstDeposit only → firstDeposit in gauge, secondDeposit unstaked on account
-    ///        (true mixed state: gauge AND account both hold LP)
-    ///     6. Verify total collateral = firstDeposit + secondDeposit
-    function test_depositNewLpWhileUnstaked_mixedState() public {
+    ///         YieldBasisCollateralManager.addCollateral now counts gauge shares as part
+    ///         of the account's LP-bearing balance, so the balance check
+    ///           (LP_on_account + gauge_shares) >= data.shares + newShares
+    ///         passes when prior collateral is staked. The deposit() auto-stake branch
+    ///         (`if (isStakedGaugeMode()) _stake(amount);`) then sweeps the new LP into
+    ///         the gauge, leaving zero LP on the account.
+    function test_depositWhileStaked_autoStakesNewLp() public {
         uint256 firstDeposit = 5e8;
         uint256 secondDeposit = 3e8;
 
-        // Step 1: First deposit — LP sits on account (no auto-stake)
         _depositLP(firstDeposit);
 
-        (uint256 staked1, uint256 unstaked1) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked1, 0, "Gauge empty right after deposit");
-        assertEq(unstaked1, firstDeposit, "First deposit held unstaked on account");
-        uint256 collateral1 = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral1, firstDeposit, "Collateral tracks first deposit");
-
-        // Step 2: Admin stakes the first deposit into the gauge
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(firstDeposit);
-        (uint256 staked2, uint256 unstaked2) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked2, firstDeposit, "All first-deposit LP now in gauge");
-        assertEq(unstaked2, 0, "Nothing unstaked on account");
+        YieldBasisLpFacet(_portfolioAccount).stake();
+        (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(stakedAfter, firstDeposit, "Precondition: first deposit fully in gauge");
+        assertEq(unstakedAfter, 0, "Precondition: account has zero LP balance");
+
+        uint256 gaugeBefore = _gauge.balanceOf(_portfolioAccount);
+
+        // Second deposit succeeds: addCollateral sees gauge shares + new LP, and the
+        // auto-stake branch sweeps the new LP into the gauge.
+        vm.startPrank(_user);
+        _ybBtc.approve(_portfolioAccount, secondDeposit);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, secondDeposit);
+        address[] memory factories = new address[](1);
+        factories[0] = address(_portfolioFactory);
+        _portfolioManager.multicall(calldatas, factories);
+        vm.stopPrank();
+
+        // Auto-stake fired: new LP went straight into the gauge, account holds no LP.
         assertEq(
-            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
-            collateral1,
-            "Collateral preserved across stake"
+            _gauge.balanceOf(_portfolioAccount) - gaugeBefore,
+            secondDeposit,
+            "Gauge balance increased by secondDeposit (auto-stake)"
         );
+        assertEq(_ybBtc.balanceOf(_portfolioAccount), 0, "Account holds no unstaked LP after auto-stake");
 
-        // Step 3: Unstake so the first deposit's LP returns to the account
-        //         (required for the next deposit's balance-check to pass).
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(firstDeposit);
-        (uint256 staked3, uint256 unstaked3) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked3, 0, "Gauge drained");
-        assertEq(unstaked3, firstDeposit, "First deposit back on account");
+        (uint256 stakedFinal, uint256 unstakedFinal) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(stakedFinal, firstDeposit + secondDeposit, "All collateral now staked in gauge");
+        assertEq(unstakedFinal, 0, "No unstaked LP on account");
 
-        // Step 4: Second deposit — account now holds firstDeposit + secondDeposit unstaked
-        _depositLP(secondDeposit);
-        (uint256 staked4, uint256 unstaked4) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked4, 0, "Gauge still empty");
-        assertEq(unstaked4, firstDeposit + secondDeposit, "Both deposits on account");
-
-        // Step 5: Stake only firstDeposit → mixed state (some in gauge, some on account)
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(firstDeposit);
-        (uint256 staked5, uint256 unstaked5) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked5, firstDeposit, "First deposit in gauge");
-        assertEq(unstaked5, secondDeposit, "Second deposit unstaked on account");
-
-        // Step 6: Verify total collateral reflects both deposits
-        uint256 collateral5 = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral5, firstDeposit + secondDeposit, "Total collateral aggregates staked + unstaked");
-
-        // Step 7: Verify deposit info
-        (uint256 totalShares, uint256 depositedValue, uint256 currentValue) =
-            YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
-        assertEq(totalShares, firstDeposit + secondDeposit, "Total tracked shares should be both deposits");
-        assertEq(depositedValue, firstDeposit + secondDeposit, "Deposited value at PPS=1 equals shares");
-        assertEq(currentValue, firstDeposit + secondDeposit, "Current value at PPS=1 equals deposited value");
+        // Tracked shares cover both deposits.
+        uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateral, firstDeposit + secondDeposit, "Collateral tracks both deposits");
     }
 
     // ============ Test 10: WBTC (underlying) is NOT the collateral token ============

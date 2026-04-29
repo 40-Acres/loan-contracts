@@ -391,6 +391,8 @@ library CollateralManager {
         uint256 nftCollateral = data.lockedCollaterals[tokenId];
         if (nftCollateral == 0) return 0;
 
+        // ensure the specified token is actually locked to this portfolio  
+        require(data.lockedCollaterals[tokenId] != 0, "CollateralManager: token not locked");
         uint256 newTotalCollateral = data.totalLockedCollateral - nftCollateral;
 
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();

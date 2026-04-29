@@ -52,6 +52,11 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         return address(_portfolioFactory.portfolioFactoryConfig());
     }
 
+    // ============ Staked Gauge Mode ============
+    function isStakedGaugeMode() public view returns (bool) {
+        return _gauge.balanceOf(address(this)) > 0;
+    }
+
     // ============ Deposit / Withdraw ============
 
     /**
@@ -64,9 +69,12 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         IERC20(address(_lpToken)).safeTransferFrom(owner, address(this), amount);
 
         // depositedAssetValue stored in underlying (e.g. WETH) units via LP pricePerShare()
-        YieldBasisCollateralManager.addCollateral(_config(), address(_lpToken), _underlying, amount);
+        YieldBasisCollateralManager.addCollateral(_config(), address(_lpToken), address(_gauge), _underlying, amount);
 
         emit Deposited(owner, amount);
+        if(isStakedGaugeMode()) {
+            _stake(amount);
+        }
     }
 
     /**
@@ -76,53 +84,49 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(amount > 0, "Zero amount");
 
-        // Collateral is tracked 1:1 with LP. Cap to tracked amount since
-        // harvestLpFees may have removed some LP via removeSharesForYield.
-        uint256 sharesToRemove = amount;
+        // Cap to tracked: harvestLpFees may have reduced shares via removeSharesForYield.
         uint256 trackedShares = YieldBasisCollateralManager.getCollateralShares();
-        if (sharesToRemove > trackedShares) {
-            sharesToRemove = trackedShares;
-        }
-        if (sharesToRemove > 0) {
-            YieldBasisCollateralManager.removeCollateral(_config(), address(_lpToken), _underlying, sharesToRemove);
+        uint256 toWithdraw = amount > trackedShares ? trackedShares : amount;
+        if (toWithdraw == 0) return;
+
+        YieldBasisCollateralManager.removeCollateral(_config(), address(_lpToken), _underlying, toWithdraw);
+
+        if (isStakedGaugeMode()) {
+            _gauge.withdraw(toWithdraw, address(this), address(this));
         }
 
-        // Only unstake from gauge for the portion not already held as LP
-        uint256 unstaked = _lpToken.balanceOf(address(this));
-        uint256 toUnstake = unstaked < amount ? amount - unstaked : 0;
-        if (toUnstake > 0) {
-            _gauge.withdraw(toUnstake, address(this), address(this));
-        }
-
-        // Transfer LP tokens to owner
         address owner = _portfolioFactory.ownerOf(address(this));
-        _lpToken.safeTransfer(owner, amount);
-        emit Withdrawn(owner, amount);
+        _lpToken.safeTransfer(owner, toWithdraw);
+        emit Withdrawn(owner, toWithdraw);
     }
 
     // ============ Admin: Yield Mode Switch ============
 
     /**
-     * @notice Unstake LP token from gauge to earn trading fees (forgoes YB emissions)
+     * @notice Unstake all LP from gauge to earn trading fees (forgoes YB emissions)
      * @dev Admin-only: protocol decides which yield mode is optimal.
      *      Does NOT modify collateral tracking — LP stays in portfolio account.
-     * @param shares Amount of gauge shares to redeem
+     *      All-or-nothing: redeems the full gauge balance.
      */
-    function unstake(uint256 shares) external onlyAuthorizedCaller(_portfolioFactory) {
-        require(shares > 0, "Zero amount");
+    function unstake() external onlyAuthorizedCaller(_portfolioFactory) {
+        uint256 shares = _gauge.balanceOf(address(this));
+        require(shares > 0, "Nothing staked");
         uint256 claimed = _gauge.claim(_rewardToken, address(this));
         uint256 assets = _gauge.redeem(shares, address(this), address(this));
         emit Unstaked(assets, shares, claimed);
     }
 
     /**
-     * @notice Stake LP token into gauge to earn YB emissions (forgoes trading fees)
+     * @notice Stake all unstaked LP into gauge to earn YB emissions (forgoes trading fees)
      * @dev Admin-only: protocol decides which yield mode is optimal.
      *      Does NOT modify collateral tracking — LP was already tracked from deposit.
-     * @param amount Amount of LP token to stake
+     *      All-or-nothing: stakes the full unstaked LP balance.
      */
-    function stake(uint256 amount) external onlyAuthorizedCaller(_portfolioFactory) {
-        require(amount > 0, "Zero amount");
+    function stake() external onlyAuthorizedCaller(_portfolioFactory) {
+        _stake(_lpToken.balanceOf(address(this)));
+    }
+
+    function _stake(uint256 amount) internal {
         _lpToken.approve(address(_gauge), amount);
         _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);

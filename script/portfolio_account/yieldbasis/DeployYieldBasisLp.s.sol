@@ -13,7 +13,7 @@ import {YieldBasisLpClaimingFacet} from "../../../src/facets/account/yieldbasisl
 import {YieldBasisLpRewardsProcessingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpRewardsProcessingFacet.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
-import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626LendingFacet.sol";
+import {YieldBasisLpLendingFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpLendingFacet.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {LendingVault} from "../../../src/facets/account/vault/LendingVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -28,7 +28,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
  * - LendingVault: ERC4626 vault that lends USDC directly to portfolio accounts (no Loan intermediary)
  * - YieldBasisLpFacet: deposit/withdraw LP tokens, stake/unstake in gauge, ICollateralFacet
  * - YieldBasisLpClaimingFacet: claim gauge rewards + harvest LP trading fee yield
- * - ERC4626LendingFacet: borrow/repay against gauge share collateral
+ * - YieldBasisLpLendingFacet: borrow/repay against gauge share collateral
  * - YieldBasisLpRewardsProcessingFacet: processes claimed rewards against debt/recipients
  * - RewardsConfigFacet: rewards distribution config
  *
@@ -164,60 +164,59 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         // YieldBasis is only deployed on Ethereum mainnet so the YB address is hardcoded.
         // Fourth arg is the underlying asset the LP represents (e.g. WETH for yb-WETH),
         // used by YieldBasisCollateralManager for value denomination.
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(portfolioFactory, gauge, YB, underlying);
-        bytes4[] memory lpSelectors = new bytes4[](10);
-        lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
-        lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
-        lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
-        lpSelectors[3] = YieldBasisLpFacet.stake.selector;
-        lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
-        lpSelectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
-        lpSelectors[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSelectors[7] = ICollateralFacet.getMaxLoan.selector;
-        lpSelectors[8] = ICollateralFacet.enforceCollateralRequirements.selector;
-        lpSelectors[9] = ICollateralFacet.getLTVRatio.selector;
-        _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
+        // YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(portfolioFactory, gauge, YB, underlying);
+        // bytes4[] memory lpSelectors = new bytes4[](10);
+        // lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
+        // lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
+        // lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
+        // lpSelectors[3] = YieldBasisLpFacet.stake.selector;
+        // lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
+        // lpSelectors[5] = YieldBasisLpFacet.getTotalLockedCollateral.selector;
+        // lpSelectors[6] = YieldBasisLpFacet.getTotalDebt.selector;
+        // lpSelectors[7] = YieldBasisLpFacet.getMaxLoan.selector;
+        // lpSelectors[8] = YieldBasisLpFacet.enforceCollateralRequirements.selector;
+        // lpSelectors[9] = YieldBasisLpFacet.getLTVRatio.selector;
+        // _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
-        // Deploy YieldBasisLpClaimingFacet (gauge rewards + LP fee harvesting)
-        YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(portfolioFactory, gauge, underlying);
-        bytes4[] memory claimingSelectors = new bytes4[](5);
-        claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
-        claimingSelectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
-        claimingSelectors[2] = YieldBasisLpClaimingFacet.harvestLpFees.selector;
-        claimingSelectors[3] = YieldBasisLpClaimingFacet.getAvailableLpFeeYield.selector;
-        claimingSelectors[4] = YieldBasisLpClaimingFacet.getDepositInfo.selector;
-        _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "YieldBasisLpClaimingFacet");
+        // // Deploy YieldBasisLpClaimingFacet (gauge rewards + LP fee harvesting)
+        // YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(portfolioFactory, gauge, underlying);
+        // bytes4[] memory claimingSelectors = new bytes4[](5);
+        // claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
+        // claimingSelectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
+        // claimingSelectors[2] = YieldBasisLpClaimingFacet.harvestLpFees.selector;
+        // claimingSelectors[3] = YieldBasisLpClaimingFacet.getAvailableLpFeeYield.selector;
+        // claimingSelectors[4] = YieldBasisLpClaimingFacet.getDepositInfo.selector;
+        // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "YieldBasisLpClaimingFacet");
 
-        // // Deploy ERC4626LendingFacet (borrow/pay against gauge share collateral)
-        ERC4626LendingFacet lendingFacet = new ERC4626LendingFacet(portfolioFactory, underlying, vault);
+        // // Deploy YieldBasisLpLendingFacet (borrow/pay against gauge share collateral)
+        YieldBasisLpLendingFacet lendingFacet = new YieldBasisLpLendingFacet(portfolioFactory, underlying, gauge, underlying);
         bytes4[] memory lendingSelectors = new bytes4[](2);
-        lendingSelectors[0] = ERC4626LendingFacet.borrow.selector;
-        lendingSelectors[1] = ERC4626LendingFacet.pay.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "ERC4626LendingFacet");
+        lendingSelectors[0] = YieldBasisLpLendingFacet.borrow.selector;
+        lendingSelectors[1] = YieldBasisLpLendingFacet.pay.selector;
+        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "YieldBasisLpLendingFacet");
 
-        // // Deploy YieldBasisLpRewardsProcessingFacet (YB default token, LP as locked asset via constructor)
-        YieldBasisLpRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisLpRewardsProcessingFacet(
-            portfolioFactory, swapConfig, gauge, vault, underlying, underlying
-        );
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisLpRewardsProcessingFacet");
+        // // // Deploy YieldBasisLpRewardsProcessingFacet (YB default token, LP as locked asset via constructor)
+        // YieldBasisLpRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisLpRewardsProcessingFacet(
+        //     portfolioFactory, swapConfig, gauge, vault, underlying, underlying
+        // );
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        // rewardsProcessingSelectors[0] = YieldBasisLpRewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[1] = YieldBasisLpRewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = YieldBasisLpRewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = YieldBasisLpRewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[4] = YieldBasisLpRewardsProcessingFacet.calculateRoutes.selector;
+        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisLpRewardsProcessingFacet");
 
-        // // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
-        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
+        // // // Deploy RewardsConfigFacet
+        // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
+        // bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
+        // rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        // rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 }
 

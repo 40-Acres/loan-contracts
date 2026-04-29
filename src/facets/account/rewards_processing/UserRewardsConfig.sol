@@ -18,12 +18,12 @@ library UserRewardsConfig {
     struct DistributionEntry {
         RewardsOption option;
         uint256 percentage;    // % of post-fees amount (0-100)
-        address outputToken;   // For PayToRecipient: desired token (address(0) = rewardsToken)
+        address outputToken;   // For PayToRecipient: desired token (address(0) = vaultAsset/defaultToken)
         address target;        // PayToRecipient: recipient. PayDebt: portfolioFactory. InvestToVault: vault. (address(0) = defaults)
     }
 
     struct UserRewardsConfigData {
-        address rewardsToken;
+        address _deprecated_rewardsToken; // No longer used, but left in storage to avoid shifting other variables
         address recipient;
         address vaultForInvesting;
         // Zero balance distribution
@@ -39,16 +39,6 @@ library UserRewardsConfig {
         assembly {
             data.slot := position
         }
-    }
-
-    function setRewardsToken(address rewardsToken) external {
-        UserRewardsConfigData storage data = _getUserRewardsConfigData();
-        data.rewardsToken = rewardsToken;
-    }
-
-    function getRewardsToken() external view returns (address) {
-        UserRewardsConfigData storage data = _getUserRewardsConfigData();
-        return data.rewardsToken;
     }
 
     function setRecipient(address recipient) external {

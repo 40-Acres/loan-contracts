@@ -152,12 +152,13 @@ contract YieldBasisLpFacetTest is Test {
     }
 
     /// @dev Deposit LP and then stake it into the gauge (admin action).
-    ///      Deposit no longer auto-stakes, so tests that exercise gauge behavior
-    ///      must explicitly stake after deposit.
+    ///      Deposit no longer auto-stakes (when gauge balance is zero), so tests that
+    ///      exercise gauge behavior must explicitly stake after the first deposit.
+    ///      `stake()` is now all-or-nothing: it stakes the full unstaked LP balance.
     function _depositAndStake(uint256 amount) internal {
         _depositViaMulticall(amount);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(amount);
+        YieldBasisLpFacet(_portfolioAccount).stake();
     }
 
     // ============ Deposit Tests ============
@@ -275,7 +276,7 @@ contract YieldBasisLpFacetTest is Test {
         // balance without any gauge interaction.
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         // Sanity: LP is fully unstaked on the account, gauge holds nothing for this account
         (uint256 stakedBefore, uint256 unstakedBefore) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -293,31 +294,6 @@ contract YieldBasisLpFacetTest is Test {
         (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(stakedAfter, 0);
         assertEq(unstakedAfter, 0);
-    }
-
-    function testWithdrawFromMixedStakedUnstaked() public {
-        // Deposit and stake in full, then unstake half — resulting in half staked and half unstaked
-        _depositAndStake(DEPOSIT_AMOUNT);
-
-        uint256 half = DEPOSIT_AMOUNT / 2;
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(half);
-
-        // Sanity: mixed state
-        (uint256 stakedBefore, uint256 unstakedBefore) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(stakedBefore, DEPOSIT_AMOUNT - half, "Half remains staked");
-        assertEq(unstakedBefore, half, "Half is unstaked");
-
-        // Withdraw full amount — should use unstaked first, then unstake the shortfall
-        uint256 userBalanceBefore = _ybBtc.balanceOf(_user);
-        _withdrawViaMulticall(DEPOSIT_AMOUNT);
-        uint256 userBalanceAfter = _ybBtc.balanceOf(_user);
-
-        assertEq(userBalanceAfter - userBalanceBefore, DEPOSIT_AMOUNT, "User receives full amount");
-
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, 0, "Gauge drained");
-        assertEq(unstaked, 0, "No LP left on account");
     }
 
     function testWithdrawRevertsZeroAmount() public {
@@ -347,23 +323,11 @@ contract YieldBasisLpFacetTest is Test {
         _depositAndStake(DEPOSIT_AMOUNT);
 
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, 0, "All gauge shares redeemed");
         assertEq(unstaked, DEPOSIT_AMOUNT, "All LP now unstaked on account");
-    }
-
-    function testUnstakePartial() public {
-        _depositAndStake(DEPOSIT_AMOUNT);
-
-        uint256 half = DEPOSIT_AMOUNT / 2;
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(half);
-
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, DEPOSIT_AMOUNT - half, "Half remains staked");
-        assertEq(unstaked, half, "Half moved to unstaked on account");
     }
 
     function testUnstakeRevertsUnauthorized() public {
@@ -371,14 +335,16 @@ contract YieldBasisLpFacetTest is Test {
 
         vm.startPrank(_user);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
         vm.stopPrank();
     }
 
-    function testUnstakeRevertsZeroAmount() public {
+    /// @notice unstake() reverts with "Nothing staked" when there are no gauge shares.
+    ///         The new all-or-nothing API enforces this guard explicitly.
+    function testUnstakeRevertsWhenNothingStaked() public {
         vm.prank(_authorizedCaller);
-        vm.expectRevert("Zero amount");
-        YieldBasisLpFacet(_portfolioAccount).unstake(0);
+        vm.expectRevert("Nothing staked");
+        YieldBasisLpFacet(_portfolioAccount).unstake();
     }
 
     // ============ Restake Tests (Admin Only) ============
@@ -388,48 +354,27 @@ contract YieldBasisLpFacetTest is Test {
 
         // Unstake first
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         // Restake
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT);
         assertEq(unstaked, 0);
     }
 
-    function testRestakePartial() public {
-        _depositAndStake(DEPOSIT_AMOUNT);
-
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
-
-        uint256 half = DEPOSIT_AMOUNT / 2;
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(half);
-
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, half);
-        assertEq(unstaked, DEPOSIT_AMOUNT - half);
-    }
-
     function testRestakeRevertsUnauthorized() public {
         _depositAndStake(DEPOSIT_AMOUNT);
 
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         vm.startPrank(_user);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
         vm.stopPrank();
-    }
-
-    function testRestakeRevertsZeroAmount() public {
-        vm.prank(_authorizedCaller);
-        vm.expectRevert("Zero amount");
-        YieldBasisLpFacet(_portfolioAccount).stake(0);
     }
 
     // ============ Claiming Tests ============
@@ -525,21 +470,21 @@ contract YieldBasisLpFacetTest is Test {
 
         // 2. Admin stakes — switch to YB emissions mode
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
         (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT, "Now fully staked");
         assertEq(unstaked, 0);
 
         // 3. Admin unstakes — switch to trading fees mode
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
         (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, 0);
         assertEq(unstaked, DEPOSIT_AMOUNT, "LP back on account");
 
         // 4. Admin restakes — back to YB emissions mode
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
         (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT);
         assertEq(unstaked, 0);
@@ -616,18 +561,18 @@ contract YieldBasisLpFacetTest is Test {
         vm.expectEmit(false, false, false, true, _portfolioAccount);
         emit YieldBasisLpFacet.Unstaked(DEPOSIT_AMOUNT, DEPOSIT_AMOUNT, 0);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
     }
 
     function testRestakeEmitsEvent() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         vm.expectEmit(false, false, false, true, _portfolioAccount);
         emit YieldBasisLpFacet.Staked(DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
     }
 
     function testClaimGaugeRewardsEmitsEvent() public {
@@ -644,39 +589,24 @@ contract YieldBasisLpFacetTest is Test {
 
     // ============ Boundary / Edge Case Tests ============
 
-    function testWithdrawRevertsInsufficientBalance() public {
+    /// @notice withdraw(amount > tracked) silently caps to the tracked amount under the new
+    ///         withdraw() implementation: `toWithdraw = amount > trackedShares ? trackedShares : amount`.
+    ///         Over-withdraw is no longer a revert — assert the clamp drains the position
+    ///         exactly to the tracked amount.
+    function testWithdrawOverAmount_clampsToTracked() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
 
-        // Try to withdraw more than deposited
-        vm.startPrank(_user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, DEPOSIT_AMOUNT + 1);
-        vm.expectRevert();
-        _portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
-    }
+        uint256 userBefore = _ybBtc.balanceOf(_user);
+        // Request 2x the deposit — withdraw must clamp to DEPOSIT_AMOUNT, not revert.
+        _withdrawViaMulticall(DEPOSIT_AMOUNT * 2);
+        uint256 userAfter = _ybBtc.balanceOf(_user);
 
-    function testUnstakeRevertsInsufficientStaked() public {
-        _depositViaMulticall(DEPOSIT_AMOUNT);
-
-        // Try to unstake more than staked
-        vm.prank(_authorizedCaller);
-        vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT + 1);
-    }
-
-    function testRestakeRevertsInsufficientUnstaked() public {
-        // Full lifecycle: deposit, stake, then unstake — leaves DEPOSIT_AMOUNT on the account.
-        // Staking MORE than is on the account must revert (ERC20 transferFrom underflow).
-        _depositAndStake(DEPOSIT_AMOUNT);
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
-
-        vm.prank(_authorizedCaller);
-        vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT + 1);
+        assertEq(userAfter - userBefore, DEPOSIT_AMOUNT, "Over-withdraw clamps to tracked amount");
+        assertEq(
+            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
+            0,
+            "Position fully drained after clamped withdraw"
+        );
     }
 
     function testClaimZeroRewards() public {
@@ -725,9 +655,9 @@ contract YieldBasisLpFacetTest is Test {
     function testRestakeApprovalsCleared() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
 
         // After stake, approval from portfolio account to gauge should be 0
         uint256 allowance = _ybBtc.allowance(_portfolioAccount, address(_gauge));
@@ -742,17 +672,17 @@ contract YieldBasisLpFacetTest is Test {
         // _owner is the PortfolioManager owner but NOT an authorized caller
         vm.prank(_owner);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
     }
 
     function testRestakeRevertsForOwner() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         vm.prank(_owner);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
     }
 
     function testClaimRevertsForOwner() public {
@@ -781,17 +711,17 @@ contract YieldBasisLpFacetTest is Test {
 
         vm.prank(address(0xbad));
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
     }
 
     function testRestakeRevertsRandomCaller() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         vm.prank(address(0xbad));
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
     }
 
     // ============ getStakingState Tests ============
@@ -808,18 +738,6 @@ contract YieldBasisLpFacetTest is Test {
         // Deposit holds LP on the account; nothing reaches the gauge
         assertEq(staked, 0);
         assertEq(unstaked, DEPOSIT_AMOUNT);
-    }
-
-    function testGetStakingStateMixed() public {
-        // Stake after deposit so there are gauge shares to partially unstake
-        _depositAndStake(DEPOSIT_AMOUNT);
-        uint256 half = DEPOSIT_AMOUNT / 2;
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(half);
-
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, DEPOSIT_AMOUNT - half);
-        assertEq(unstaked, half);
     }
 
     // ============ HARDENED TESTS: Deposit Edge Cases ============
@@ -877,7 +795,7 @@ contract YieldBasisLpFacetTest is Test {
         // Unstake so the first deposit's LP returns to the account (required for the
         // addCollateral balance check on the next deposit).
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         // Second deposit should succeed — account now holds DEPOSIT_AMOUNT from the
         // unstake, and the new deposit adds secondDeposit more, covering the
@@ -902,11 +820,15 @@ contract YieldBasisLpFacetTest is Test {
     }
 
     /// @notice Sibling to testDepositWorksAfterUnstakeRestake: while the first deposit is
-    ///         staked into the gauge (LP not on account), a second deposit must revert
-    ///         because the collateral-manager balance check fails.
-    ///         This is the flipside invariant: no silent collateral double-counting.
-    function testSecondDepositRevertsWhilePriorIsStaked() public {
+    ///         staked in the gauge, a second deposit succeeds and is auto-staked because
+    ///         addCollateral counts gauge shares toward the account's LP balance and
+    ///         deposit()'s `if (isStakedGaugeMode()) _stake(amount);` branch fires.
+    function testSecondDepositWhileStaked_autoStakes() public {
         _depositAndStake(DEPOSIT_AMOUNT);
+
+        uint256 gaugeBefore = _gauge.balanceOf(_portfolioAccount);
+        assertEq(gaugeBefore, DEPOSIT_AMOUNT, "Precondition: first deposit fully in gauge");
+        assertEq(_ybBtc.balanceOf(_portfolioAccount), 0, "Precondition: account holds no LP");
 
         uint256 secondDeposit = DEPOSIT_AMOUNT / 2;
         vm.startPrank(_user);
@@ -915,52 +837,91 @@ contract YieldBasisLpFacetTest is Test {
         factories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, secondDeposit);
-        vm.expectRevert(); // InsufficientShareBalance: account LP < data.shares + newShares
         _portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
+
+        // Auto-stake fired: gauge balance grew by exactly secondDeposit, account holds no LP.
+        assertEq(
+            _gauge.balanceOf(_portfolioAccount) - gaugeBefore,
+            secondDeposit,
+            "Gauge balance increased by secondDeposit"
+        );
+        assertEq(_ybBtc.balanceOf(_portfolioAccount), 0, "Account holds no LP after auto-stake");
+
+        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(staked, DEPOSIT_AMOUNT + secondDeposit, "All shares staked in gauge");
+        assertEq(unstaked, 0, "No unstaked LP on account");
+
+        uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
+        assertEq(collateral, DEPOSIT_AMOUNT + secondDeposit, "Tracked shares cover both deposits");
     }
 
     // ============ HARDENED TESTS: Withdraw Edge Cases ============
 
-    /// @notice Withdraw with no prior deposit should revert
-    function testWithdrawRevertsWithNoDeposit() public {
+    /// @notice Withdraw with no prior deposit silently no-ops under the new withdraw()
+    ///         implementation: `if (toWithdraw == 0) return;`. Verify the call does NOT
+    ///         revert and leaves all state untouched (no LP transferred, no balance change,
+    ///         no events that would imply a withdrawal).
+    function testWithdrawWithNoDeposit_isNoop() public {
+        uint256 userBefore = _ybBtc.balanceOf(_user);
+
+        // Should NOT revert — withdraw() returns early when trackedShares is 0.
         vm.startPrank(_user);
         address[] memory factories = new address[](1);
         factories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, DEPOSIT_AMOUNT);
-        vm.expectRevert();
         _portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
+
+        assertEq(_ybBtc.balanceOf(_user), userBefore, "User balance unchanged on no-op withdraw");
+        assertEq(
+            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
+            0,
+            "Collateral still zero after no-op withdraw"
+        );
     }
 
-    /// @notice Withdraw 1 wei more than deposited should revert
-    function testWithdrawRevertsOneWeiOver() public {
+    /// @notice Withdraw 1 wei more than deposited clamps to the tracked amount
+    ///         (no longer reverts). Variant of testWithdrawOverAmount_clampsToTracked
+    ///         pinning the boundary at exactly +1.
+    function testWithdrawOneWeiOver_clampsToTracked() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
-        vm.startPrank(_user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, DEPOSIT_AMOUNT + 1);
-        vm.expectRevert();
-        _portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
+        uint256 userBefore = _ybBtc.balanceOf(_user);
+
+        _withdrawViaMulticall(DEPOSIT_AMOUNT + 1);
+
+        assertEq(_ybBtc.balanceOf(_user) - userBefore, DEPOSIT_AMOUNT, "Withdraw clamps to deposited amount");
+        assertEq(
+            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
+            0,
+            "Collateral fully drained after clamped withdraw"
+        );
     }
 
-    /// @notice After full withdrawal, a second withdrawal of any amount should revert
-    function testDoubleWithdrawReverts() public {
+    /// @notice After full withdrawal, a second withdrawal is a no-op (toWithdraw == 0 → return).
+    ///         No revert, no balance change.
+    function testDoubleWithdraw_secondIsNoop() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
         _withdrawViaMulticall(DEPOSIT_AMOUNT);
 
-        // Second withdrawal should fail -- nothing left
+        uint256 userBefore = _ybBtc.balanceOf(_user);
+
+        // Second withdrawal should not revert — silently no-ops.
         vm.startPrank(_user);
         address[] memory factories = new address[](1);
         factories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, 1);
-        vm.expectRevert();
         _portfolioManager.multicall(calldatas, factories);
         vm.stopPrank();
+
+        assertEq(_ybBtc.balanceOf(_user), userBefore, "User balance unchanged on no-op double-withdraw");
+        assertEq(
+            ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(),
+            0,
+            "Collateral still zero after no-op double-withdraw"
+        );
     }
 
     /// @notice Multiple deposit/withdraw cycles should maintain correct accounting
@@ -1012,26 +973,30 @@ contract YieldBasisLpFacetTest is Test {
 
     // ============ HARDENED TESTS: Unstake/Restake Edge Cases ============
 
-    /// @notice Unstake with zero gauge balance (nothing deposited) should revert
-    function testUnstakeRevertsWithNoDeposit() public {
-        vm.prank(_authorizedCaller);
-        vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
-    }
-
     /// @notice Stake with zero unstaked ybBTC on the account should revert.
     ///         After deposit+stake the gauge holds all the LP; the account has zero LP
-    ///         balance, so stake(amount) cannot pull anything and must revert.
-    function testRestakeRevertsWithNoUnstakedBalance() public {
+    ///         balance, so stake() calls _gauge.deposit(0, ...) which has no useful
+    ///         effect — but more importantly, after staking, isStakedGaugeMode is true
+    ///         and a re-stake of zero would emit a misleading event. Today the gauge
+    ///         mock accepts a 0-deposit silently, so this test pins the externally
+    ///         observable state: gauge balance unchanged, no LP on account.
+    function testRestakeWithNoUnstakedBalance_isNoop() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         // Sanity: everything in gauge, nothing on account
         (uint256 stakedBefore, uint256 unstakedBefore) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(stakedBefore, DEPOSIT_AMOUNT, "All LP is in the gauge");
         assertEq(unstakedBefore, 0, "No LP on the account");
 
+        // Calling stake() again with no unstaked LP is a no-op against the mock gauge.
+        // The function does NOT revert in the all-or-nothing API; it simply attempts
+        // to stake the (zero) account balance. We assert the externally observable
+        // invariant: state is unchanged.
         vm.prank(_authorizedCaller);
-        vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
+
+        (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
+        assertEq(stakedAfter, stakedBefore, "Gauge balance unchanged after no-op stake");
+        assertEq(unstakedAfter, 0, "Still no LP on account");
     }
 
     /// @notice Multiple unstake/stake cycles should maintain correct balances
@@ -1040,13 +1005,13 @@ contract YieldBasisLpFacetTest is Test {
 
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(_authorizedCaller);
-            YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+            YieldBasisLpFacet(_portfolioAccount).unstake();
             (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
             assertEq(staked, 0, "Should be fully unstaked");
             assertEq(unstaked, DEPOSIT_AMOUNT, "Should have full unstaked balance");
 
             vm.prank(_authorizedCaller);
-            YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+            YieldBasisLpFacet(_portfolioAccount).stake();
             (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
             assertEq(staked, DEPOSIT_AMOUNT, "Should be fully staked");
             assertEq(unstaked, 0, "Should have no unstaked balance");
@@ -1055,30 +1020,6 @@ contract YieldBasisLpFacetTest is Test {
         // Collateral tracking should still be correct
         uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateral, DEPOSIT_AMOUNT, "Collateral should be unchanged after cycles");
-    }
-
-    /// @notice Unstake partial, stake partial, then withdraw everything
-    function testPartialUnstakeRestakeThenFullWithdraw() public {
-        _depositAndStake(DEPOSIT_AMOUNT);
-
-        uint256 quarter = DEPOSIT_AMOUNT / 4;
-
-        // Unstake half
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(quarter * 2);
-
-        // Restake a quarter
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(quarter);
-
-        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, DEPOSIT_AMOUNT - quarter, "3/4 should be staked");
-        assertEq(unstaked, quarter, "1/4 should be unstaked");
-
-        // Withdraw everything -- should pull from unstaked + gauge
-        uint256 userBefore = _ybBtc.balanceOf(_user);
-        _withdrawViaMulticall(DEPOSIT_AMOUNT);
-        assertEq(_ybBtc.balanceOf(_user) - userBefore, DEPOSIT_AMOUNT);
     }
 
     // ============ HARDENED TESTS: Collateral Invariants ============
@@ -1093,14 +1034,14 @@ contract YieldBasisLpFacetTest is Test {
 
         // Unstake does NOT remove collateral — LP stays in portfolio
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         uint256 collateralAfterUnstake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterUnstake, collateralBefore, "Collateral preserved after unstake");
 
         // Restake doesn't change collateral either
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake(DEPOSIT_AMOUNT);
+        YieldBasisLpFacet(_portfolioAccount).stake();
 
         uint256 collateralAfterRestake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterRestake, collateralBefore, "Collateral preserved after stake");
@@ -1177,18 +1118,21 @@ contract YieldBasisLpFacetTest is Test {
         assertEq(collateral, remaining, "Collateral tracks remaining LP");
     }
 
-    /// @notice Fuzz unstake: unstake amount <= staked should succeed
-    function testFuzzUnstake(uint256 unstakeAmt) public {
-        // Deposit+stake so there are gauge shares to unstake
-        _depositAndStake(DEPOSIT_AMOUNT);
-        unstakeAmt = bound(unstakeAmt, 1, DEPOSIT_AMOUNT);
+    /// @notice Fuzz: any deposit amount, when staked, can be fully unstaked back to the
+    ///         account by the all-or-nothing unstake() entrypoint. Replaces the prior
+    ///         partial-amount fuzz (no longer applicable under the new API).
+    function testFuzzUnstakeFullBalance(uint256 depositAmt) public {
+        uint256 maxBalance = _ybBtc.balanceOf(_user);
+        depositAmt = bound(depositAmt, 1, maxBalance);
+
+        _depositAndStake(depositAmt);
 
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).unstake(unstakeAmt);
+        YieldBasisLpFacet(_portfolioAccount).unstake();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(staked, DEPOSIT_AMOUNT - unstakeAmt);
-        assertEq(unstaked, unstakeAmt);
+        assertEq(staked, 0, "All gauge shares redeemed");
+        assertEq(unstaked, depositAmt, "All LP back on account");
     }
 
     // ============ HARDENED TESTS: Claiming Edge Cases ============
@@ -1317,33 +1261,10 @@ contract YieldBasisLpFacetTest is Test {
         assertEq(_ybBtc.balanceOf(_user) - userBefore, largeAmount);
     }
 
-    // ============ HARDENED TESTS: State After Failed Operations ============
-
-    /// @notice State should be unchanged after a failed withdraw (revert)
-    function testStateUnchangedAfterFailedWithdraw() public {
-        _depositViaMulticall(DEPOSIT_AMOUNT);
-
-        (uint256 stakedBefore, uint256 unstakedBefore) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        uint256 collateralBefore = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        uint256 userBalBefore = _ybBtc.balanceOf(_user);
-
-        // Attempt overwithdraw -- should revert
-        vm.startPrank(_user);
-        address[] memory factories = new address[](1);
-        factories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, DEPOSIT_AMOUNT + 1);
-        vm.expectRevert();
-        _portfolioManager.multicall(calldatas, factories);
-        vm.stopPrank();
-
-        // All state should be identical
-        (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(stakedAfter, stakedBefore, "Staked unchanged after failed withdraw");
-        assertEq(unstakedAfter, unstakedBefore, "Unstaked unchanged after failed withdraw");
-        assertEq(ICollateralFacet(_portfolioAccount).getTotalLockedCollateral(), collateralBefore, "Collateral unchanged");
-        assertEq(_ybBtc.balanceOf(_user), userBalBefore, "User balance unchanged");
-    }
+    // (DELETED) testStateUnchangedAfterFailedWithdraw: under the new withdraw()
+    // implementation, over-withdraw no longer reverts — it silently clamps to the
+    // tracked amount. The clamp behavior is covered by
+    // testWithdrawOverAmount_clampsToTracked and testWithdrawOneWeiOver_clampsToTracked.
 
     // ============ HARDENED TESTS: ICollateralFacet After Complex Flows ============
 

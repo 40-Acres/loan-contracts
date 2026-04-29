@@ -18,12 +18,14 @@ contract FeeCalculator is IFeeCalculator {
      */
     function getVaultRatioBps(uint256 utilizationBps) external pure override returns (uint256 rate) {
     require(utilizationBps <= 10000, "Utilization exceeds 100%");
-
+    
     if (utilizationBps <= U_TARGET) {
         return BASE_FEE + (SLOPE_1 * utilizationBps) / BPS;
     }
-    return BASE_FEE
+    uint256 rate = BASE_FEE
         + (SLOPE_1 * U_TARGET) / BPS
         + (SLOPE_2 * (utilizationBps - U_TARGET)) / BPS;
+
+    return rate > 10_000 ? 10_000 : rate; // Cap at 100% fee
     }
 }

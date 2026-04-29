@@ -169,14 +169,12 @@ contract RewardsProcessingGapCoverageTest is Test, LocalSetup {
 
         // Set up UserRewardsConfig via PM multicall
         vm.startPrank(_user);
-        address[] memory pf = new address[](3);
+        address[] memory pf = new address[](2);
         pf[0] = address(_portfolioFactory);
         pf[1] = address(_portfolioFactory);
-        pf[2] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](3);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken);
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
-        cd[2] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
+        bytes[] memory cd = new bytes[](2);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
+        cd[1] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 

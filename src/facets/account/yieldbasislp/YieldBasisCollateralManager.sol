@@ -31,8 +31,10 @@ interface IYieldBasisDebtBalanceReader {
  *   - shares stored in `data.shares` are LP token amounts
  *   - collateral value = shares * IYieldBasisLP(vault).pricePerShare() / 1e18
  *
- * Gauge interactions (stake/unstake) are out-of-band and live entirely in
- * YieldBasisLpFacet.stake/unstake — the gauge never enters this manager.
+ * Gauge interactions (stake/unstake) live in YieldBasisLpFacet.stake/unstake. The gauge
+ * address is passed into addCollateral so the balance check can count gauge shares (a
+ * separate ERC20 representing staked LP 1:1) toward the required balance — without it,
+ * deposits while in staked mode would revert because prior LP has left the account.
  *
  * Uses its own ERC-7201 storage slot, distinct from ERC4626CollateralManager, so this
  * manager and the ERC4626 one can be installed side-by-side on different diamonds.
@@ -78,14 +80,19 @@ library YieldBasisCollateralManager {
         return (shares * pps) / 1e18;
     }
 
-    function addCollateral(address portfolioFactoryConfig, address vault, address underlying, uint256 shares) public {
+    function addCollateral(address portfolioFactoryConfig, address vault, address gauge, address underlying, uint256 shares) public {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
         YieldBasisCollateralData storage data = _getStorage();
 
+        // Staked LP lives in the gauge as a separate ERC20 (1:1 with LP). Count both
+        // unstaked LP on the account and gauge shares as collateral-bearing balance.
         uint256 requiredBalance = data.shares + shares;
         uint256 actualBalance = IERC20(vault).balanceOf(address(this));
+        if (gauge != address(0)) {
+            actualBalance += IERC20(gauge).balanceOf(address(this));
+        }
         if (actualBalance < requiredBalance) {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
@@ -111,7 +118,7 @@ library YieldBasisCollateralManager {
         data.depositedAssetValue -= assetValueToRemove;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
-        require(data.debt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+        require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         emit YieldBasisCollateralRemoved(vault, shares, assetValueToRemove, address(this));
     }
@@ -161,9 +168,11 @@ library YieldBasisCollateralManager {
             data.overSuppliedVaultDebt += amount - maxLoan;
         }
 
-        data.debt += amount;
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
+
+        data.debt = IYieldBasisDebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+
         return (loanAmount, originationFee);
     }
 
@@ -269,11 +278,7 @@ library YieldBasisCollateralManager {
     }
 
     function snapshotShortfall(address portfolioFactoryConfig, address vault, address underlying) public {
-        YieldBasisCollateralData storage data = _getStorage();
-        if (data.snapshotBlockNumber != block.number) {
-            data.snapshotBlockNumber = block.number;
-            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, underlying);
-        }
+        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
     }
 
     function enforceCollateralRequirements(
@@ -299,7 +304,13 @@ library YieldBasisCollateralManager {
         return true;
     }
 
+    function _syncDebt(address portfolioFactoryConfig) internal {
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+        _getStorage().debt = IYieldBasisDebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+    }
+
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address underlying) internal {
+        _syncDebt(portfolioFactoryConfig);
         YieldBasisCollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber != block.number) {
             data.snapshotBlockNumber = block.number;
@@ -324,6 +335,6 @@ library YieldBasisCollateralManager {
         data.shares = remainingShares;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
-        require(data.debt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+        require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
     }
 }

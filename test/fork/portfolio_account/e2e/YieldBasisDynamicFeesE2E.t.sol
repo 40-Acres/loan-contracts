@@ -109,7 +109,9 @@ contract YieldBasisDynamicFeesE2E is Test {
             "40Acres YB USDC Vault",
             "40YB-USDC",
             address(portfolioFactory),
-            8000
+            8000,
+            DEPLOYER,
+            uint256(0)
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
         vault = DynamicFeesVault(address(vaultProxy));
@@ -222,14 +224,13 @@ contract YieldBasisDynamicFeesE2E is Test {
 
         // Deploy RewardsConfigFacet
         RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
-        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
         // Set authorized caller for rewards processing

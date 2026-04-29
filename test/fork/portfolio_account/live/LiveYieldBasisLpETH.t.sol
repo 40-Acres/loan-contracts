@@ -413,16 +413,15 @@ contract LiveYieldBasisLpETHTest is Test {
         vm.prank(registryOwner);
         facetRegistry.registerFacet(address(rpFacet), rpSel, "YieldBasisLpRewardsProcessingFacet");
 
-        // --- RewardsConfigFacet (7 selectors) ---
+        // --- RewardsConfigFacet (6 selectors) ---
         RewardsConfigFacet rcFacet = new RewardsConfigFacet(factory);
-        bytes4[] memory rcSel = new bytes4[](7);
-        rcSel[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rcSel[1] = RewardsConfigFacet.setRecipient.selector;
-        rcSel[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rcSel[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rcSel[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rcSel[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rcSel[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rcSel = new bytes4[](6);
+        rcSel[0] = RewardsConfigFacet.setRecipient.selector;
+        rcSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rcSel[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rcSel[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rcSel[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rcSel[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         vm.prank(registryOwner);
         facetRegistry.registerFacet(address(rcFacet), rcSel, "RewardsConfigFacet");
     }
@@ -528,7 +527,6 @@ contract LiveYieldBasisLpETHTest is Test {
 
         // Rewards
         _assertSelectorRegistered(RewardsProcessingFacet.processRewards.selector, "processRewards");
-        _assertSelectorRegistered(RewardsConfigFacet.setRewardsToken.selector, "setRewardsToken");
     }
 
     function _assertSelectorRegistered(bytes4 sel, string memory name) internal view {
@@ -563,7 +561,7 @@ contract LiveYieldBasisLpETHTest is Test {
 
         // Explicitly stake so the lifecycle exercises gauge rewards + gauge-redeem on unstake.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).stake(depositAmount);
+        YieldBasisLpFacet(portfolioAccount).stake();
 
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertGt(staked, 0, "no gauge shares after explicit stake");
@@ -697,7 +695,7 @@ contract LiveYieldBasisLpETHTest is Test {
 
         (staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).unstake(staked);
+        YieldBasisLpFacet(portfolioAccount).unstake();
         uint256 ybAfterUnstake = IERC20(YB).balanceOf(portfolioAccount);
         assertGt(ybAfterUnstake - ybBeforeUnstake, 0, "unstake did not claim YB (G6 regression: _rewardToken wrong?)");
         console.log("unstake auto-claimed YB:", ybAfterUnstake - ybBeforeUnstake);

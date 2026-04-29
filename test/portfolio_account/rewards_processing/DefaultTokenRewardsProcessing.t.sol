@@ -85,7 +85,6 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
 
         // Set up rewards config + collateral via multicall
         _multicallOnMain(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken),
             abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient),
             abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId)
         );
@@ -189,14 +188,13 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
 
         // 7. Register RewardsConfigFacet
         RewardsConfigFacet rcFacet = new RewardsConfigFacet(address(noVaultFactory));
-        bytes4[] memory rcSel = new bytes4[](7);
-        rcSel[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rcSel[1] = RewardsConfigFacet.setRecipient.selector;
-        rcSel[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rcSel[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rcSel[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rcSel[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rcSel[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rcSel = new bytes4[](6);
+        rcSel[0] = RewardsConfigFacet.setRecipient.selector;
+        rcSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rcSel[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rcSel[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rcSel[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rcSel[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         noVaultRegistry.registerFacet(address(rcFacet), rcSel, "RewardsConfigFacet");
 
         vm.stopPrank();
@@ -232,16 +230,14 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
     // Helpers
     // ═══════════════════════════════════════════════════════════════════════
 
-    function _multicallOnMain(bytes memory cd1, bytes memory cd2, bytes memory cd3) internal {
+    function _multicallOnMain(bytes memory cd1, bytes memory cd2) internal {
         vm.startPrank(_user);
-        address[] memory pf = new address[](3);
+        address[] memory pf = new address[](2);
         pf[0] = address(_portfolioFactory);
         pf[1] = address(_portfolioFactory);
-        pf[2] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](3);
+        bytes[] memory cd = new bytes[](2);
         cd[0] = cd1;
         cd[1] = cd2;
-        cd[2] = cd3;
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
     }
@@ -288,29 +284,10 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Test 2: getRewardsToken - vault=0, user rewards token IS configured
+    // Test: getRewardsToken - vault exists, has debt -> vault asset
     //
-    // When the user has configured a custom rewards token and there is no
-    // vault, the custom token takes precedence over _defaultToken.
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_getRewardsToken_noVault_userTokenSet_returnsUserToken() public {
-        // Set a custom rewards token on the no-vault diamond
-        _multicallOnNoVault(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(customToken))
-        );
-
-        address result = noVaultRewardsProcessing.getRewardsToken();
-        assertEq(result, address(customToken), "No vault + user token set: should return custom token");
-        assertTrue(result != address(_mockUsdc), "Should NOT return defaultToken when user token is set");
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Test 3: getRewardsToken - vault exists, has debt -> vault asset
-    //
-    // Existing behavior: when the diamond has a vault and the user has
-    // outstanding debt, getRewardsToken always returns the vault's asset
-    // (USDC) regardless of any custom rewards token setting.
+    // Existing behavior: when the diamond has a vault, getRewardsToken always
+    // returns the vault's asset (USDC).
     // ═══════════════════════════════════════════════════════════════════════
 
     function test_getRewardsToken_withVault_hasDebt_returnsVaultAsset() public {
@@ -324,72 +301,19 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
-        // Set a custom rewards token (should be ignored with debt)
-        _multicallOnMain(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(customToken))
-        );
-
         address result = rewardsProcessingFacet.getRewardsToken();
         address vaultAsset = IERC4626(_vault).asset();
         assertEq(result, vaultAsset, "With vault + debt: should return vault asset");
-        assertTrue(result != address(customToken), "Custom token should be ignored when debt exists");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Test 4: getRewardsToken - vault exists, no debt, no user token -> vault asset
-    //
-    // Existing behavior: when there is a vault but no debt and no custom
-    // rewards token, getRewardsToken falls back to the vault's asset.
+    // Test: getRewardsToken - vault exists, no debt -> vault asset
     // ═══════════════════════════════════════════════════════════════════════
 
-    function test_getRewardsToken_withVault_noDebt_noUserToken_returnsVaultAsset() public {
-        // Clear the rewards token to address(0) so fallback is used
-        _multicallOnMain(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(0))
-        );
-
+    function test_getRewardsToken_withVault_noDebt_returnsVaultAsset() public view {
         address result = rewardsProcessingFacet.getRewardsToken();
         address vaultAsset = IERC4626(_vault).asset();
-        assertEq(result, vaultAsset, "With vault + no debt + no user token: should return vault asset");
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Test 5: getRewardsToken - vault exists, no debt, user token set -> user token
-    //
-    // Existing behavior: when there is a vault, no debt, and the user has
-    // set a custom rewards token, the custom token is returned.
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_getRewardsToken_withVault_noDebt_userTokenSet_returnsUserToken() public {
-        _multicallOnMain(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(customToken))
-        );
-
-        address result = rewardsProcessingFacet.getRewardsToken();
-        assertEq(result, address(customToken), "With vault + no debt + user token: should return custom token");
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Test 6: getRewardsToken - vault=0, user sets token then clears it
-    //
-    // Verify that clearing the user rewards token (setting to address(0))
-    // causes the fallback to _defaultToken.
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_getRewardsToken_noVault_setThenClearUserToken_returnsDefaultToken() public {
-        // Set a custom token
-        _multicallOnNoVault(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(customToken))
-        );
-        assertEq(noVaultRewardsProcessing.getRewardsToken(), address(customToken), "Should be custom token");
-
-        // Clear it (set to address(0))
-        _multicallOnNoVault(
-            abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(0))
-        );
-
-        address result = noVaultRewardsProcessing.getRewardsToken();
-        assertEq(result, address(_mockUsdc), "After clearing user token: should return _defaultToken");
+        assertEq(result, vaultAsset, "With vault + no debt: should return vault asset");
     }
 
     // ═══════════════════════════════════════════════════════════════════════

@@ -20,7 +20,7 @@ import {SwapMod} from "../../../src/facets/account/swap/SwapMod.sol";
 import {console} from "forge-std/console.sol";
 
 contract WalletDeploy is PortfolioFactoryConfigDeploy {
-    address public constant VOTING_ESCROW = 0x4C3e7640B3e3A39a2e5d030A0C1412d80FEE1D44;
+    address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d;
 
     PortfolioFactory public _portfolioFactory;
 
@@ -85,8 +85,7 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(walletFacet), walletSelectors, "WalletFacet");
 
 
-        // Deploy FortyAcresMarketplaceFacet (buyer-side: buy from other 40 Acres portfolios)
-        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, VENOVA_MARKETPLACE);
+        FortyAcresMarketplaceFacet fortyAcresFacet = new FortyAcresMarketplaceFacet(address(portfolioFactory), VOTING_ESCROW, VEVELO_MARKETPLACE);
         bytes4[] memory fortyAcresSelectors = new bytes4[](1);
         fortyAcresSelectors[0] = FortyAcresMarketplaceFacet.buyFortyAcresListing.selector;
         _registerFacet(facetRegistry, address(fortyAcresFacet), fortyAcresSelectors, "FortyAcresMarketplaceFacet");
@@ -97,11 +96,11 @@ contract WalletDeploy is PortfolioFactoryConfigDeploy {
         // openXSelectors[0] = OpenXFacet.buyOpenXListing.selector;
         // _registerFacet(facetRegistry, address(openXFacet), openXSelectors, "OpenXFacet");
 
-        // // Deploy VexyFacet
-        // VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
-        // bytes4[] memory vexySelectors = new bytes4[](1);
-        // vexySelectors[0] = VexyFacet.buyVexyListing.selector;
-        // _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
+        // Deploy VexyFacet
+        VexyFacet vexyFacet = new VexyFacet(address(portfolioFactory), VOTING_ESCROW);
+        bytes4[] memory vexySelectors = new bytes4[](1);
+        vexySelectors[0] = VexyFacet.buyVexyListing.selector;
+        _registerFacet(facetRegistry, address(vexyFacet), vexySelectors, "VexyFacet");
     }
 
 }

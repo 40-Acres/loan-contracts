@@ -138,22 +138,14 @@ contract RewardsProcessingFacet is AccessControl {
 
     /**
         * @dev Returns the rewards token to use for the rewards processing.
-        * If there is debt, the vault asset is used.
-        * If there is no debt, the rewards token is used if set, otherwise the vault asset is used.
+        *      Priority: vault asset (if vault set) > default token
      */
     function getRewardsToken() public view returns (address) {
-        uint256 totalDebt = _getTotalDebt();
-        address rewardsToken = UserRewardsConfig.getRewardsToken();
-
         if (address(_vault) != address(0)) {
-            address vaultAsset = _vault.asset();
-            if(totalDebt > 0) {
-                return vaultAsset;
-            }
-            return rewardsToken != address(0) ? rewardsToken : vaultAsset;
+            return _vault.asset();
         }
 
-        return rewardsToken != address(0) ? rewardsToken : _defaultToken;
+        return _defaultToken;
     }
 
     function _processActiveLoanRewards(uint256 tokenId, uint256 availableAmount, address asset) internal virtual returns (uint256 remaining) {

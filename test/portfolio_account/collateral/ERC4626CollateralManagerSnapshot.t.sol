@@ -157,7 +157,9 @@ contract ERC4626SnapshotTest is Test {
             "ERC4626 Lending Vault",
             "lVAULT",
             address(_portfolioFactory),
-            8000
+            8000,
+            address(this),
+            uint256(0)
         );
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), initData);
         DynamicFeesVault dynamicVault = DynamicFeesVault(address(vaultProxy));

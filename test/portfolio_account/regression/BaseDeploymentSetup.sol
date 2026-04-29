@@ -309,16 +309,15 @@ abstract contract BaseDeploymentSetup is Test {
         rewardsSel[4] = RewardsProcessingFacet.calculateRoutes.selector;
         facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
 
-        // ── 9. RewardsConfigFacet (7 selectors) ──
+        // ── 9. RewardsConfigFacet (6 selectors) ──
         RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rewardsConfigSel = new bytes4[](7);
-        rewardsConfigSel[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSel[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSel[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSel[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSel[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSel[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSel[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rewardsConfigSel = new bytes4[](6);
+        rewardsConfigSel[0] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSel[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSel[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSel[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSel[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rewardsConfigFacet), rewardsConfigSel, "RewardsConfigFacet");
     }
 

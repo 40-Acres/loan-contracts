@@ -158,9 +158,8 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
 
     function testRewardsProcessingSelectorsRouteCorrectly() public view {
         assertEq(facetRegistry.getFacetForSelector(RewardsProcessingFacet.processRewards.selector), address(rewardsProcessingFacet));
-        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setRewardsToken.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRecipient.selector));
-        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setZeroBalanceDistribution.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRewardsToken.selector));
-        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setActiveBalanceDistribution.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRewardsToken.selector));
+        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setZeroBalanceDistribution.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRecipient.selector));
+        assertEq(facetRegistry.getFacetForSelector(RewardsConfigFacet.setActiveBalanceDistribution.selector), facetRegistry.getFacetForSelector(RewardsConfigFacet.setRecipient.selector));
     }
 
     // ─── Registry version ────────────────────────────────────────────

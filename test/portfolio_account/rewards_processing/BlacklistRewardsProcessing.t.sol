@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
+import {RewardsTokenHelper} from "../utils/RewardsTokenHelper.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {MockBlacklistableERC20} from "../../mocks/MockBlacklistableERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -23,7 +24,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
  * @dev Tests that PayBalance and PayToRecipient handle blacklisted recipients
  *      by sending tokens to the user's wallet account instead.
  */
-contract BlacklistRewardsProcessingTest is Test, LocalSetup {
+contract BlacklistRewardsProcessingTest is Test, RewardsTokenHelper {
     RewardsProcessingFacet public rewardsProcessingFacet;
     MockOdosRouterRL public mockRouter;
     MockBlacklistableERC20 public blacklistToken;
@@ -59,22 +60,17 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
         vm.stopPrank();
         walletAccount = walletFactory.createAccount(_user);
 
-        // Set rewards token and recipient via multicall
+        // Set recipient and add collateral via multicall
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](3);
+        address[] memory portfolioFactories = new address[](2);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
-        portfolioFactories[2] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](3);
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            address(blacklistToken)
-        );
-        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setRecipient.selector,
             blacklistedRecipient
         );
-        calldatas[2] = abi.encodeWithSelector(
+        calldatas[1] = abi.encodeWithSelector(
             BaseCollateralFacet.addCollateral.selector,
             _tokenId
         );
@@ -107,6 +103,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
     // ─── PayBalance: blacklisted recipient → tokens go to wallet account ───
 
     function testPayBalanceBlacklistedRecipientSendsToWallet() public {
+        _useTokenAsRewardsAsset(address(blacklistToken));
         _fundPortfolioWithBlacklistToken();
 
         // Set distribution: PayBalance 100% to blacklisted recipient
@@ -147,6 +144,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
     // ─── PayToRecipient (same token): blacklisted recipient → tokens go to wallet account ───
 
     function testPayToRecipientSameTokenBlacklistedRecipientSendsToWallet() public {
+        _useTokenAsRewardsAsset(address(blacklistToken));
         _fundPortfolioWithBlacklistToken();
 
         // Set distribution: PayToRecipient 100%, same token (outputToken = address(0))
@@ -188,16 +186,6 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
 
     function testPayToRecipientSwapBlacklistedRecipientSendsToWallet() public {
         // Use regular USDC as rewards token for this test (fees paid in USDC)
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            address(_usdc)
-        );
-        _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
 
         // Fund portfolio with USDC
         deal(address(_usdc), _portfolioAccount, rewardsAmount);
@@ -266,6 +254,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
     // ─── Verify non-blacklisted path still works normally ───
 
     function testPayBalanceNonBlacklistedRecipientWorksNormally() public {
+        _useTokenAsRewardsAsset(address(blacklistToken));
         _fundPortfolioWithBlacklistToken();
 
         // Set distribution: PayBalance 100% to non-blacklisted recipient
@@ -298,6 +287,7 @@ contract BlacklistRewardsProcessingTest is Test, LocalSetup {
     }
 
     function testPayToRecipientNonBlacklistedRecipientWorksNormally() public {
+        _useTokenAsRewardsAsset(address(blacklistToken));
         _fundPortfolioWithBlacklistToken();
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);

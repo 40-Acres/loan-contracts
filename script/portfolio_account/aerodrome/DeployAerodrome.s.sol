@@ -301,8 +301,8 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         config.getLoanConfig().getRewardsRate();
         config.getLoanConfig().getMultiplier();
     }
-
 }
+
 contract UpgradeMarketplaceFacet is Script {
     address public constant DEPLOYER_ADDRESS = 0x40FecA5f7156030b78200450852792ea93f7c6cd;
 

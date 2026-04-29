@@ -315,16 +315,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
      */
     function setPayDebtOption(address targetFactory, uint256 percentage) internal {
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](3);
+        address[] memory portfolioFactories = new address[](2);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
-        portfolioFactories[2] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](3);
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            rewardsToken
-        );
-        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setRecipient.selector,
             PortfolioFactory(targetFactory).portfolioOf(_user)
         );
@@ -336,7 +331,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             outputToken: address(0),
             target: targetFactory
         });
-        calldatas[2] = abi.encodeWithSelector(
+        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );
@@ -531,16 +526,11 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
         address nonPortfolioRecipient = address(0xDEAD);
 
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](3);
+        address[] memory portfolioFactories = new address[](2);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
-        portfolioFactories[2] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](3);
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            rewardsToken
-        );
-        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setRecipient.selector,
             nonPortfolioRecipient
         );
@@ -553,7 +543,7 @@ contract PayDebtRewardsProcessingTest is Test, LocalSetup {
             outputToken: address(0),
             target: address(0)
         });
-        calldatas[2] = abi.encodeWithSelector(
+        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setZeroBalanceDistribution.selector,
             entries
         );

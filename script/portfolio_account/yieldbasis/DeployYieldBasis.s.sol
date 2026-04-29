@@ -93,7 +93,7 @@ contract YieldBasisRootDeploy is PortfolioFactoryConfigDeploy {
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(
             address(vaultImpl),
-            abi.encodeCall(DynamicFeesVault.initialize, (USDC, "40eth-USDC-DYNAMIC-VAULT", "40eth-USDC-DV", address(portfolioFactory), 8000))
+            abi.encodeCall(DynamicFeesVault.initialize, (USDC, "40eth-USDC-DYNAMIC-VAULT", "40eth-USDC-DV", address(portfolioFactory), 8000, msg.sender, 2500))
         );
         _vault = DynamicFeesVault(address(vaultProxy));
 

@@ -161,8 +161,11 @@ contract veYieldBasisFacet is AccessControl, IERC721Receiver {
         // Transfer merges positions - incoming tokenId is burned
         _veYB.safeTransferFrom(from, address(this), tokenId);
 
+
         // Update collateral using the existing tokenId (incoming was burned)
         DynamicCollateralManager.updateLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), existingTokenId, address(_veYBAdapter));
+        // remove the incoming tokenId from collateral and update the existing tokenId with the new merged balance
+        DynamicCollateralManager.removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()), address(_veYBAdapter));
     }
 
     /**

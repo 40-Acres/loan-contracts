@@ -160,14 +160,13 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
 
         // Deploy RewardsConfigFacet
         RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
-        rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 

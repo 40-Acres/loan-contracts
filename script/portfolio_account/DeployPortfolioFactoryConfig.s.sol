@@ -29,6 +29,7 @@ contract PortfolioFactoryConfigDeploy is Script {
 
     address public constant VEAERO_MARKETPLACE = 0xA62C351b3DEDAB4C3e0Cab59B1bc9E5e3097BdF6;
     address public constant VENOVA_MARKETPLACE = 0xb71d66583A420cbc77641759c1a6E6F3FB68CeB2;
+    address public constant VEVELO_MARKETPLACE = 0x446c8aa6B9f66f49A6Ad9c7cd015d20081234937;
     
     address public constant AERO_USDC_VAULT = 0xB99B6dF96d4d5448cC0a5B3e0ef7896df9507Cf5;
 

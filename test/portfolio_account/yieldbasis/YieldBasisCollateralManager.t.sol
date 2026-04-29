@@ -69,8 +69,8 @@ contract YBCMHarness {
 
     // ---------------- library passthroughs ----------------
 
-    function addCollateral(address cfg, address vault, address underlying, uint256 shares) external {
-        YieldBasisCollateralManager.addCollateral(cfg, vault, underlying, shares);
+    function addCollateral(address cfg, address vault, address gauge, address underlying, uint256 shares) external {
+        YieldBasisCollateralManager.addCollateral(cfg, vault, gauge, underlying, shares);
     }
 
     function removeCollateral(address cfg, address vault, address underlying, uint256 shares) external {
@@ -181,6 +181,8 @@ contract MockLendingPoolSync {
     address internal _portfolioFactory;
     uint256 public _actualPaidToReport;
     uint256 public _debtBalanceToReport;
+    uint256 public _debtBalanceAfterPay; // optional override: what getDebtBalance reports AFTER payFromPortfolio runs
+    bool public _useDebtBalanceAfterPay;
     uint256 public _activeAssetsToReport;
 
     constructor(address asset_, address portfolioFactory_) {
@@ -192,6 +194,15 @@ contract MockLendingPoolSync {
     function setOutcome(uint256 actualPaid, uint256 debtBalance) external {
         _actualPaidToReport = actualPaid;
         _debtBalanceToReport = debtBalance;
+    }
+
+    /// @notice Set a different debt balance to be reported AFTER payFromPortfolio runs.
+    /// Lets a test stage a "pre-pay" debt and a different "post-pay" debt so
+    /// decreaseTotalDebt's pre-call sync sees the pre-pay value (used for the
+    /// balancePayment math) and the post-call sync sees the post-pay value.
+    function setDebtBalanceAfterPay(uint256 v) external {
+        _debtBalanceAfterPay = v;
+        _useDebtBalanceAfterPay = true;
     }
 
     function setActiveAssets(uint256 v) external { _activeAssetsToReport = v; }
@@ -220,8 +231,15 @@ contract MockLendingPoolSync {
         if (actualPaid > 0) {
             IERC20(_asset).transferFrom(msg.sender, address(this), actualPaid);
         }
+        // After this point, switch the debt balance reported to the post-pay
+        // value if the test staged one. Lets a single MockLendingPoolSync
+        // simulate a pool whose getDebtBalance reflects payment.
+        if (_useDebtBalanceAfterPay) {
+            _debtBalanceToReport = _debtBalanceAfterPay;
+        }
     }
 
+    // view — must match interface in YieldBasisCollateralManager (STATICCALL).
     function getDebtBalance(address) external view returns (uint256) {
         return _debtBalanceToReport;
     }
@@ -337,7 +355,7 @@ contract YieldBasisCollateralManagerTest is Test {
         ybLp.setPricePerShare(1.5e18);
         ybLp.mint(address(h), 2e18);
 
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 2e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 2e18);
 
         assertEq(h.getTotalCollateralValue(address(ybLp), address(underlying)), 3e18, "pricing: 2e18 * 1.5 = 3e18");
 
@@ -361,12 +379,12 @@ contract YieldBasisCollateralManagerTest is Test {
 
     function test_addCollateral_revertsOnZeroVault() public {
         vm.expectRevert(bytes("Invalid vault address"));
-        h.addCollateral(address(cfg), address(0), address(underlying), 1e18);
+        h.addCollateral(address(cfg), address(0), address(0), address(underlying), 1e18);
     }
 
     function test_addCollateral_revertsOnZeroShares() public {
         vm.expectRevert(bytes("Shares must be > 0"));
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 0);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 0);
     }
 
     function test_addCollateral_revertsOnInsufficientBalance() public {
@@ -380,7 +398,7 @@ contract YieldBasisCollateralManagerTest is Test {
                 uint256(0.5e18) // actual balance
             )
         );
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 1e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1e18);
     }
 
     // -----------------------------------------------------------------------
@@ -396,7 +414,7 @@ contract YieldBasisCollateralManagerTest is Test {
     function test_removeCollateral_proportionalValueReduction() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
         // Move the price — proves removeCollateral's proportional math uses
         // depositedAssetValue, not current pps.
@@ -421,7 +439,7 @@ contract YieldBasisCollateralManagerTest is Test {
 
     function test_removeCollateral_revertsOnInsufficientShares() public {
         ybLp.mint(address(h), 1e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 1e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1e18);
 
         vm.expectRevert(bytes("Insufficient collateral shares"));
         h.removeCollateral(address(cfg), address(ybLp), address(underlying), 2e18);
@@ -429,13 +447,23 @@ contract YieldBasisCollateralManagerTest is Test {
 
     function test_removeCollateral_revertsWhenRemovalBreaksLTV() public {
         // Deposit 10e18 @ pps=1 → value=10e18 → LTV 70% → maxLoan=7e18.
-        // Force a debt of 6e18 directly (harness helper). Then try to remove
-        // 5e18 of shares: remaining value 5e18 → new maxLoanIgnoreSupply 3.5e18
-        // < debt 6e18 → must revert.
+        // Stage pool to report 6e18 of debt. Then try to remove 5e18 of shares:
+        // remaining value 5e18 → new maxLoanIgnoreSupply 3.5e18 < debt 6e18
+        // → must revert.
+        //
+        // POST-SYNC-REFACTOR: __setDebt alone no longer survives — _snapshotIfNeeded
+        // syncs from the pool at entry. We must point the config at a mock pool
+        // whose getDebtBalance reports the staged debt.
+        MockLendingPoolSync pool = new MockLendingPoolSync(address(usdc), address(factory));
+        vm.prank(OWNER);
+        cfg.setLoanContract(address(pool));
+        // Seed pool USDC so getMaxLoan vault-supply path doesn't zero out maxLoan.
+        usdc.mint(address(pool), 100e18);
+        pool.setOutcome(0, 6e18);
+
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
-        h.__setDebt(6e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
         vm.expectRevert(bytes("Debt exceeds max loan"));
         h.removeCollateral(address(cfg), address(ybLp), address(underlying), 5e18);
@@ -451,7 +479,7 @@ contract YieldBasisCollateralManagerTest is Test {
 
     function test_increaseTotalDebt_revertsFromRandomEOA() public {
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
         vm.prank(RANDOM_EOA);
         vm.expectRevert(abi.encodeWithSelector(YieldBasisCollateralManager.NotPortfolioManager.selector));
@@ -462,17 +490,26 @@ contract YieldBasisCollateralManagerTest is Test {
         // LendingVault's onlyPortfolio modifier would block us here, so we
         // use a mock lending pool. We still prove the manager-check path is
         // the one that gates msg.sender.
+        //
+        // NOTE (post-sync-refactor): increaseTotalDebt now resyncs data.debt
+        // from the lending pool's getDebtBalance AFTER borrowFromPortfolio.
+        // The mock's borrowFromPortfolio is a no-op, so we must explicitly
+        // stage what getDebtBalance should report. Pre-seed `_debtBalanceToReport`
+        // to the borrow amount; the sync then writes that value into data.debt.
         MockLendingPoolSync pool = new MockLendingPoolSync(address(usdc), address(factory));
         vm.prank(OWNER);
         cfg.setLoanContract(address(pool));
 
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
+
+        // Stage the post-borrow pool-truth — sync writes this to data.debt.
+        pool.setOutcome(0, 1e18);
 
         vm.prank(address(pm)); // PortfolioManager itself
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 1e18);
 
-        assertEq(h.getTotalDebt(), 1e18, "debt incremented when called as PM");
+        assertEq(h.getTotalDebt(), 1e18, "debt synced from pool when called as PM");
     }
 
     function test_increaseTotalDebt_succeedsFromAuthorizedCaller() public {
@@ -481,12 +518,15 @@ contract YieldBasisCollateralManagerTest is Test {
         cfg.setLoanContract(address(pool));
 
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
+
+        // Stage the post-borrow pool-truth — sync writes this to data.debt.
+        pool.setOutcome(0, 2e18);
 
         vm.prank(AUTH_CALLER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 2e18);
 
-        assertEq(h.getTotalDebt(), 2e18, "debt incremented when called as authorized caller");
+        assertEq(h.getTotalDebt(), 2e18, "debt synced from pool when called as authorized caller");
     }
 
     // -----------------------------------------------------------------------
@@ -499,23 +539,32 @@ contract YieldBasisCollateralManagerTest is Test {
     // replaced the sync with `data.debt -= balancePayment`, this test fails.
 
     function test_decreaseTotalDebt_syncBeatsLocalArithmetic() public {
+        // POST-SYNC-REFACTOR: data.debt is now strictly a write-through cache of
+        // pool.getDebtBalance. _snapshotIfNeeded resyncs at entry, so seeding
+        // h.__setDebt(100e6) alone won't survive — the sync would zero it back
+        // to whatever the mock reports. We instead seed the mock to report
+        // 100e6 pre-pay (so the entry sync writes 100e6 into data.debt and the
+        // balancePayment math sees 100e6 of debt) and 7e6 post-pay (so the
+        // explicit post-pay sync writes 7e6 into data.debt).
         MockLendingPoolSync pool = new MockLendingPoolSync(address(usdc), address(factory));
         vm.prank(OWNER);
         cfg.setLoanContract(address(pool));
 
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
-        h.__setDebt(100e6); // 100 USDC of debt
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
-        // Harness pays 40 USDC; pool reports only 37 was "actualPaid" and
-        // that the new balance is 7 USDC (naive arithmetic would expect 60).
+        // Harness pays 40 USDC; pool reports only 37 was "actualPaid".
+        // Pre-pay debt 100e6, post-pay debt 7e6 (naive arithmetic would
+        // expect 100 - 37 = 63, NOT 7 — we want to prove the post-pay sync
+        // wins over any local arithmetic).
         usdc.mint(address(h), 40e6);
-        pool.setOutcome(37e6, 7e6);
+        pool.setOutcome(37e6, 100e6); // initial _debtBalanceToReport = 100e6
+        pool.setDebtBalanceAfterPay(7e6); // post-payFromPortfolio reports 7e6
 
         uint256 excess = h.decreaseTotalDebt(address(cfg), address(ybLp), address(underlying), 40e6);
 
         assertEq(excess, 3e6, "excess = amount - actualPaid");
-        assertEq(h.getTotalDebt(), 7e6, "data.debt overwritten by reader, not computed locally");
+        assertEq(h.getTotalDebt(), 7e6, "data.debt overwritten by reader post-pay, not computed locally");
     }
 
     // -----------------------------------------------------------------------
@@ -541,7 +590,7 @@ contract YieldBasisCollateralManagerTest is Test {
         // Collateral value 10e18 @ 70% LTV → maxLoan 7e18.
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
         // Borrow 9e18 → 2e18 goes into overSuppliedVaultDebt.
         vm.prank(AUTH_CALLER);
@@ -573,7 +622,7 @@ contract YieldBasisCollateralManagerTest is Test {
     function test_shortfall_intraBlockGrowthReverts() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
         // addCollateral took the snapshot at block.number with start=0 shortfall
         // (debt is 0). Now push debt just under max.
         h.__setDebt(7e18); // exactly at max; shortfall still 0
@@ -593,7 +642,7 @@ contract YieldBasisCollateralManagerTest is Test {
     function test_shortfall_crossBlockNoSnapshotIsClean() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
         h.__setDebt(7e18);
 
         // Roll forward — snapshot is stale, so start==end and shortfall growth
@@ -613,7 +662,7 @@ contract YieldBasisCollateralManagerTest is Test {
     function test_removeSharesForYield_revertsOnInsufficientShares() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 1e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 1e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1e18);
 
         vm.expectRevert(bytes("Insufficient shares"));
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 2e18);
@@ -625,7 +674,7 @@ contract YieldBasisCollateralManagerTest is Test {
         // deposited → "Would remove principal".
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
         vm.expectRevert(bytes("Would remove principal"));
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 1e18);
@@ -639,12 +688,19 @@ contract YieldBasisCollateralManagerTest is Test {
         //
         // After remove: remaining shares 6e18 @ pps=2 → value 12e18 → LTV 70%
         //   → newMaxLoanIgnoreSupply = 8.4e18.
-        // Seed debt = 9e18 so it stays ≤ OLD max (14e18) but > NEW max (8.4e18).
+        // Stage debt = 9e18 so it stays ≤ OLD max (14e18) but > NEW max (8.4e18).
+        //
+        // POST-SYNC-REFACTOR: must seed pool getDebtBalance to 9e18 (was __setDebt).
+        MockLendingPoolSync pool = new MockLendingPoolSync(address(usdc), address(factory));
+        vm.prank(OWNER);
+        cfg.setLoanContract(address(pool));
+        usdc.mint(address(pool), 100e18);
+        pool.setOutcome(0, 9e18);
+
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
         ybLp.setPricePerShare(2e18);
-        h.__setDebt(9e18);
 
         vm.expectRevert(bytes("Debt exceeds max loan"));
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 4e18);
@@ -656,7 +712,7 @@ contract YieldBasisCollateralManagerTest is Test {
 
     function test_getLTVRatio_zeroDebtReturnsZero() public {
         ybLp.mint(address(h), 1e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 1e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1e18);
         assertEq(h.getLTVRatio(address(cfg), address(ybLp), address(underlying)), 0, "0 debt -> 0");
     }
 
@@ -717,7 +773,7 @@ contract YieldBasisCollateralManagerTest is Test {
         // The test asserts only that the CLAMP path is active.
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 1000e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 1000e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1000e18);
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) =
             h.getMaxLoan(address(cfg), address(ybLp), address(underlying));
@@ -741,7 +797,7 @@ contract YieldBasisCollateralManagerTest is Test {
     function test_storageIsolation_ybAndErc4626SlotsDoNotCollide() public {
         // Seed YB slot via the library (through the harness).
         ybLp.mint(address(h), 5e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 5e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 5e18);
 
         YBCMHarness.YBData memory before = h.__readYB();
         assertEq(before.shares, 5e18, "YB shares set");
@@ -781,13 +837,13 @@ contract YieldBasisCollateralManagerTest is Test {
         emit YieldBasisCollateralManager.YieldBasisCollateralAdded(
             address(ybLp), 2e18, 3e18 /* 2e18*1.5 */, address(h)
         );
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 2e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 2e18);
     }
 
     function test_removeCollateral_emitsEventWithProportionalValue() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
         // Remove 4/10 → deposited value to remove = 10e18 * 4/10 = 4e18.
         vm.expectEmit(true, false, false, true, address(h));

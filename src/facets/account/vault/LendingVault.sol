@@ -108,7 +108,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         emit Borrowed(msg.sender, amount, originationFee);
     }
 
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused returns (uint256 actualPaid) {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external onlyPortfolio returns (uint256 actualPaid) {
         LendingVaultStorage storage $ = _getStorage();
 
         // Cap fees at total payment

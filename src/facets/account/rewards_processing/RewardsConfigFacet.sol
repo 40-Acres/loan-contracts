@@ -15,7 +15,6 @@ import {IPortfolioManager} from "../../../accounts/IPortfolioManager.sol";
 contract RewardsConfigFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
 
-    event RewardsTokenSet(address rewardsToken, address indexed owner);
     event RecipientSet(address recipient, address indexed owner);
     event VaultForInvestingSet(address vault, address indexed owner);
     event ZeroBalanceDistributionSet(uint256 entryCount, address indexed owner);
@@ -26,12 +25,6 @@ contract RewardsConfigFacet is AccessControl {
     constructor(address portfolioFactory) {
         require(portfolioFactory != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-    }
-
-    function setRewardsToken(address rewardsToken) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        UserRewardsConfig.setRewardsToken(rewardsToken);
-        address owner = _portfolioFactory.ownerOf(address(this));
-        emit RewardsTokenSet(rewardsToken, owner);
     }
 
     function setRecipient(address recipient) external onlyPortfolioManagerMulticall(_portfolioFactory) {

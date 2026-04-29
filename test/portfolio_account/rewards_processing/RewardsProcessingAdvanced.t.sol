@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
+import {RewardsTokenHelper} from "../utils/RewardsTokenHelper.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -101,7 +102,7 @@ contract MockFailingRouter {
  *       DynamicFeesVault and veBlack infrastructure respectively.
  * =============================================================================
  */
-contract RewardsProcessingAdvancedTest is Test, LocalSetup {
+contract RewardsProcessingAdvancedTest is Test, RewardsTokenHelper {
     RewardsProcessingFacet public rewardsProcessingFacet;
     RewardsConfigFacet public rewardsConfigFacet;
     MockOdosRouterRL public mockRouter;
@@ -185,14 +186,12 @@ contract RewardsProcessingAdvancedTest is Test, LocalSetup {
 
         // Set up UserRewardsConfig via PM multicall
         vm.startPrank(_user);
-        address[] memory pf = new address[](3);
+        address[] memory pf = new address[](2);
         pf[0] = address(_portfolioFactory);
         pf[1] = address(_portfolioFactory);
-        pf[2] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](3);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken);
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
-        cd[2] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
+        bytes[] memory cd = new bytes[](2);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
+        cd[1] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
@@ -1145,46 +1144,6 @@ contract RewardsProcessingAdvancedTest is Test, LocalSetup {
     }
 
     // ====================================================================
-    // Section 19: getRewardsToken Logic
-    // ====================================================================
-
-    function test_getRewardsToken_hasDebt_alwaysVaultAsset() public {
-        // Even with custom rewards token set, debt forces vault asset
-        _createDebt(500e6);
-
-        // Custom rewards token was already set to rewardsToken (USDC) which is vault asset
-        // Set a different custom token
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(outputToken)));
-
-        address result = rewardsProcessingFacet.getRewardsToken();
-        address vaultAsset = IERC4626(_vault).asset();
-
-        assertEq(result, vaultAsset, "With debt: always returns vault asset");
-        assertTrue(result != address(outputToken), "Custom token ignored when debt exists");
-    }
-
-    function test_getRewardsToken_noDebt_customToken() public {
-        // No debt, custom token set -> returns custom token
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(outputToken)));
-
-        address result = rewardsProcessingFacet.getRewardsToken();
-        assertEq(result, address(outputToken), "No debt: returns custom token");
-    }
-
-    function test_getRewardsToken_noDebt_noCustomToken() public {
-        // No debt, rewardsToken = address(0) -> returns vault asset
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(0)));
-
-        address result = rewardsProcessingFacet.getRewardsToken();
-        address vaultAsset = IERC4626(_vault).asset();
-        assertEq(result, vaultAsset, "No debt + no custom: vault asset");
-    }
-
-    // NOTE: test_getRewardsToken_loanContractZero is skipped because
-    // loanContract is set globally in setUp and removing it would break other tests.
-    // The require(loanContract != address(0)) in getRewardsToken prevents use without loan contract.
-
-    // ====================================================================
     // Section 21: Edge Cases and Boundary Conditions
     // ====================================================================
 
@@ -1632,7 +1591,10 @@ contract RewardsProcessingAdvancedTest is Test, LocalSetup {
     function test_events_transferFailed() public {
         // PayBalance to blacklisted address -> TransferFailed event
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC", "BLUSDC", 6);
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken)));
+
+        // setRewardsToken was removed; swap the facet's vault so getRewardsToken()
+        // resolves to the blacklist token.
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         address blacklistedTarget = address(0xB1AC1);
         blacklistToken.setBlacklisted(blacklistedTarget, true);
@@ -1791,12 +1753,10 @@ contract RewardsProcessingAdvancedTest is Test, LocalSetup {
 
     function test_events_collateralIncreased() public {
         // IncreaseCollateral success with VE variant
-        // Need rewardsToken == lockedAsset for direct lock (no swap)
-        // Or swap to lockedAsset
-        // lockedAsset = AERO. Let's fund portfolio with AERO and set it as rewards token.
-        // But getRewardsToken requires debt context. No debt -> custom token = AERO.
-
-        _multicall(abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset));
+        // Need rewardsToken == lockedAsset for direct lock (no swap).
+        // setRewardsToken was removed; swap the facet's vault so getRewardsToken()
+        // resolves to AERO (lockedAsset).
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({

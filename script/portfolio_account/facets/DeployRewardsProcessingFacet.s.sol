@@ -50,14 +50,13 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForConfigFacet() internal pure returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](7);
-        selectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        selectors[1] = RewardsConfigFacet.setRecipient.selector;
-        selectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        selectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        selectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        selectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        selectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = RewardsConfigFacet.setRecipient.selector;
+        selectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        selectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        selectors[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        selectors[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        selectors[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         return selectors;
     }
 }

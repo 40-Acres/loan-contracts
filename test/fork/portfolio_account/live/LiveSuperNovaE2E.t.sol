@@ -191,14 +191,13 @@ contract LiveSuperNovaE2E is Test {
 
         // Deploy RewardsConfigFacet
         RewardsConfigFacet rcFacet = new RewardsConfigFacet(address(portfolioFactory));
-        bytes4[] memory rcSel = new bytes4[](7);
-        rcSel[0] = RewardsConfigFacet.setRewardsToken.selector;
-        rcSel[1] = RewardsConfigFacet.setRecipient.selector;
-        rcSel[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rcSel[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rcSel[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rcSel[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rcSel[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        bytes4[] memory rcSel = new bytes4[](6);
+        rcSel[0] = RewardsConfigFacet.setRecipient.selector;
+        rcSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rcSel[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rcSel[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rcSel[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rcSel[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
         facetRegistry.registerFacet(address(rcFacet), rcSel, "RewardsConfigFacet");
 
         portfolioManager.setAuthorizedCaller(authorizedCaller, true);

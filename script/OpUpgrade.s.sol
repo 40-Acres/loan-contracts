@@ -20,7 +20,7 @@ contract OpUpgrade is Script {
     function upgradeLoan(address _proxy) public {
         Loan loan = new Loan();
         Loan proxy = Loan(payable(_proxy));
-        proxy.upgradeToAndCall(address(loan), new bytes(0));
+        // proxy.upgradeToAndCall(address(loan), new bytes(0));
     }
 }
 
@@ -39,4 +39,4 @@ contract OpUpgradeNative is Script {
     }
 }
 
-// forge script script/OpUpgrade.s.sol:OpUpgradeNative  --chain-id 8453 --rpc-url $OP_RPC_URL --etherscan-api-key $OPSCAN_API_KEY --broadcast --verify --via-ir
+// forge script script/OpUpgrade.s.sol:OpUpgrade  --chain-id 8453 --rpc-url $OP_RPC_URL --etherscan-api-key $OPSCAN_API_KEY --broadcast --verify --via-ir

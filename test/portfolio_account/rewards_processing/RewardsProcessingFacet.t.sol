@@ -47,20 +47,15 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         
         // Set up UserRewardsConfig through PortfolioManager multicall
         vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](3);
+        address[] memory portfolioFactories = new address[](2);
         portfolioFactories[0] = address(_portfolioFactory);
         portfolioFactories[1] = address(_portfolioFactory);
-        portfolioFactories[2] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](3);
+        bytes[] memory calldatas = new bytes[](2);
         calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            rewardsToken
-        );
-        calldatas[1] = abi.encodeWithSelector(
             RewardsConfigFacet.setRecipient.selector,
             recipient
         );
-        calldatas[2] = abi.encodeWithSelector(
+        calldatas[1] = abi.encodeWithSelector(
             BaseCollateralFacet.addCollateral.selector,
             _tokenId
         );
@@ -689,33 +684,6 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
         vm.startPrank(_authorizedCaller);
         SwapMod.RouteParams[4] memory noSwap;
         vm.expectRevert();
-        rewardsProcessingFacet.processRewards(
-            _tokenId,
-            rewardsAmount,
-            noSwap,
-            0 // gas reclamation
-        );
-        vm.stopPrank();
-    }
-
-    function testProcessRewardsShouldFallbackToVaultAssetIfNoRewardsTokenSet() public {
-        setupRewards();
-        
-        // Set rewards token to zero using the facet's setter through multicall
-        vm.startPrank(_user);
-        address[] memory portfolioFactories = new address[](1);
-        portfolioFactories[0] = address(_portfolioFactory);
-        bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(
-            RewardsConfigFacet.setRewardsToken.selector,
-            address(0)
-        );
-        _portfolioManager.multicall(calldatas, portfolioFactories);
-        vm.stopPrank();
-        
-        // Process rewards should fallback to vault asset if no rewards token set
-        vm.startPrank(_authorizedCaller);
-        SwapMod.RouteParams[4] memory noSwap;
         rewardsProcessingFacet.processRewards(
             _tokenId,
             rewardsAmount,

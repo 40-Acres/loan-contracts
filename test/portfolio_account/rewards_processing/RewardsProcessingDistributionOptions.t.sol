@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {LocalSetup} from "../utils/LocalSetup.sol";
+import {RewardsTokenHelper} from "../utils/RewardsTokenHelper.sol";
 import {MockOdosRouterRL} from "../../mocks/MockOdosRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -117,7 +118,7 @@ contract MockLendingTarget {
  *   Section 10: PayDebt
  * =============================================================================
  */
-contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
+contract RewardsProcessingDistributionOptionsTest is Test, RewardsTokenHelper {
     RewardsProcessingFacet public rewardsProcessingFacet;
     MockOdosRouterRL public mockRouter;
 
@@ -192,14 +193,12 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
         // Set up UserRewardsConfig through PortfolioManager multicall
         vm.startPrank(_user);
-        address[] memory pf = new address[](3);
+        address[] memory pf = new address[](2);
         pf[0] = address(_portfolioFactory);
         pf[1] = address(_portfolioFactory);
-        pf[2] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](3);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken);
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
-        cd[2] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
+        bytes[] memory cd = new bytes[](2);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
+        cd[1] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
@@ -367,19 +366,9 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
         // Blacklisted recipient -> trySafeTransfer fails -> sends to wallet
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC", "BLUSDC", 6);
 
-        // Set rewards token to the blacklistable token
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken));
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
-
-        // For zero balance path, rewardsToken can be custom. But getRewardsToken() requires debt == 0.
-        // We have no debt, so it uses the custom rewards token.
-        // However, getRewardsToken also requires loanContract != address(0), which is set.
-        // And it requires vault.asset(), which is USDC. Since debt==0, it returns the custom token.
+        // setRewardsToken was removed; swap the facet's vault so getRewardsToken()
+        // resolves to the blacklist token.
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         address blacklistedRecipient = address(0xB1AC1);
         blacklistToken.setBlacklisted(blacklistedRecipient, true);
@@ -1178,13 +1167,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
     function test_increaseCollateral_sameToken_success() public {
         // Set rewards token to AERO (same as collateral) for no-swap path
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1213,13 +1196,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
     function test_increaseCollateral_sameToken_lockFails_returns0() public {
         // Set rewards token to AERO and use tokenId=0 so _increaseCollateral returns 0
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1245,13 +1222,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
     function test_increaseCollateral_sameToken_updatesLockedCollateral() public {
         // After successful increaseAmount, CollateralManager.updateLockedCollateral is called
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1451,13 +1422,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
     function test_increaseCollateral_lockFails_noSwap_returns0() public {
         // Same token, lock fails -> returns 0
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1514,13 +1479,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
     function test_increaseCollateral_lockFails_approvalReset() public {
         // After lock failure, VE allowance should be reset
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1549,13 +1508,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
 
     function test_veIncreaseLock_tokenId0_returns0() public {
         // tokenId == 0 -> _increaseLock returns 0 immediately
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1579,13 +1532,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
     }
 
     function test_veIncreaseLock_success_updatesCollateral() public {
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1608,13 +1555,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, LocalSetup {
     }
 
     function test_veIncreaseLock_success_emitsCollateralIncreased() public {
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({

@@ -146,7 +146,7 @@ library ERC4626CollateralManager {
         data.depositedAssetValue -= assetValueToRemove;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-        require(data.debt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+        require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         emit ERC4626CollateralRemoved(vault, shares, assetValueToRemove, address(this));
     }
@@ -235,9 +235,11 @@ library ERC4626CollateralManager {
             data.overSuppliedVaultDebt += amount - maxLoan;
         }
 
-        data.debt += amount;
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
+
+        data.debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+
         return (loanAmount, originationFee);
     }
 
@@ -375,11 +377,7 @@ library ERC4626CollateralManager {
     }
 
     function snapshotShortfall(address portfolioFactoryConfig, address vault, address lpToken) public {
-        ERC4626CollateralData storage data = _getStorage();
-        if (data.snapshotBlockNumber != block.number) {
-            data.snapshotBlockNumber = block.number;
-            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, lpToken);
-        }
+        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
     }
 
     /**
@@ -411,7 +409,13 @@ library ERC4626CollateralManager {
         return true;
     }
 
+    function _syncDebt(address portfolioFactoryConfig) internal {
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+        _getStorage().debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+    }
+
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address lpToken) internal {
+        _syncDebt(portfolioFactoryConfig);
         ERC4626CollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber != block.number) {
             data.snapshotBlockNumber = block.number;
@@ -438,6 +442,6 @@ library ERC4626CollateralManager {
         data.shares = remainingShares;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
-        require(data.debt <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+        require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
     }
 }

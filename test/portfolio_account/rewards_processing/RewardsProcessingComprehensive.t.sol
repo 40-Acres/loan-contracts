@@ -23,6 +23,7 @@ import {MockBlacklistableERC20} from "../../mocks/MockBlacklistableERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Vault} from "../../../src/VaultV2.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
+import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 
 // ======================== Mock Contracts ========================
 
@@ -156,14 +157,12 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
         // Set up UserRewardsConfig through PortfolioManager multicall
         vm.startPrank(_user);
-        address[] memory pf = new address[](3);
+        address[] memory pf = new address[](2);
         pf[0] = address(_portfolioFactory);
         pf[1] = address(_portfolioFactory);
-        pf[2] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](3);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, rewardsToken);
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
-        cd[2] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
+        bytes[] memory cd = new bytes[](2);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, recipient);
+        cd[1] = abi.encodeWithSelector(BaseCollateralFacet.addCollateral.selector, _tokenId);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
@@ -225,6 +224,41 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
     function _getOwner() internal view returns (address) {
         return _portfolioFactoryConfig.owner();
+    }
+
+    /**
+     * @dev Replace the registered RewardsProcessingFacet with a fresh one whose
+     *      vault.asset() returns `token`. This makes `getRewardsToken()` return
+     *      `token` so that processRewards uses it as the rewards asset.
+     *
+     *      Used by the bugfix tests that need the blacklistable mock token to
+     *      flow through processRewards. The mock vault is just an `asset()`
+     *      shim — these tests run the zero-balance path so vault.deposit is
+     *      never invoked.
+     */
+    function _useTokenAsRewardsAsset(address token) internal {
+        // Find the currently registered RewardsProcessingFacet by its selector
+        address oldFacet = _facetRegistry.getFacetForSelector(RewardsProcessingFacet.processRewards.selector);
+
+        // Mock vault that simply reports `token` as its underlying asset
+        MockPausableVault mockVault = new MockPausableVault(token);
+
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        VotingEscrowRewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(
+            address(_portfolioFactory),
+            address(_swapConfig),
+            address(_ve),
+            address(mockVault),
+            IVotingEscrow(_ve).token()
+        );
+        bytes4[] memory selectors = new bytes4[](5);
+        selectors[0] = RewardsProcessingFacet.processRewards.selector;
+        selectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        selectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        selectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        selectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
+        _facetRegistry.replaceFacet(oldFacet, address(newFacet), selectors, "RewardsProcessingFacet");
+        vm.stopPrank();
     }
 
     function _currentEpochStart() internal view returns (uint256) {
@@ -1608,16 +1642,9 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
     function test_increaseCollateral_graceful_noSwap_tokensStay() public {
         // When collateral token == rewards token and lock fails, returns 0 -> tokens stay
-        // This requires rewardsToken == lockedAsset. Since lockedAsset is AERO and rewardsToken is USDC,
-        // we need to use the zero-debt path where user can set custom rewards token to AERO.
-        // Set rewards token to AERO (same as lockedAsset)
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, lockedAsset);
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        // This requires rewardsToken == lockedAsset. Since lockedAsset is AERO and the
+        // default vault asset is USDC, we swap the facet's vault to one that reports AERO.
+        _useTokenAsRewardsAsset(lockedAsset);
 
         UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
         entries[0] = UserRewardsConfig.DistributionEntry({
@@ -1825,25 +1852,6 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
         }));
     }
 
-    function test_access_configSetters_onlyMulticall() public {
-        // Direct call to setRewardsToken (not through PM) should revert
-        vm.prank(_user);
-        vm.expectRevert();
-        RewardsConfigFacet(_portfolioAccount).setRewardsToken(address(0x1234));
-    }
-
-    function test_access_configSetters_throughPortfolioManager() public {
-        // Through PM multicall should succeed
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(0x5678));
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
-        // No revert = success
-    }
-
     // ====================================================================
     // Bug Fix Verification Tests
     // ====================================================================
@@ -1883,14 +1891,7 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
         // Deploy blacklistable token as rewards token
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC", "BLUSDC", 6);
-
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken));
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         // Blacklist both the PayBalance target AND the wallet account
         address blacklistedTarget = address(0xB1AC1);
@@ -1933,14 +1934,7 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
         // Deploy blacklistable token as rewards token
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC2", "BLUSDC2", 6);
-
-        vm.startPrank(_user);
-        address[] memory pf = new address[](1);
-        pf[0] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](1);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken));
-        _portfolioManager.multicall(cd, pf);
-        vm.stopPrank();
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
         // Blacklist both the PayToRecipient target AND the wallet account
         address blacklistedTarget = address(0xB1AC2);
@@ -1985,17 +1979,16 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
         // Deploy blacklistable token as rewards token
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC3", "BLUSDC3", 6);
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
-        // Set blacklistable token as rewards token AND set recipient to blacklisted address
+        // Set recipient to blacklisted address
         address blacklistedRecipient = address(0xB1AC3);
 
         vm.startPrank(_user);
-        address[] memory pf = new address[](2);
+        address[] memory pf = new address[](1);
         pf[0] = address(_portfolioFactory);
-        pf[1] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](2);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken));
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, blacklistedRecipient);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, blacklistedRecipient);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
@@ -2037,17 +2030,16 @@ contract RewardsProcessingComprehensiveTest is Test, LocalSetup {
 
         // Deploy blacklistable token as rewards token
         MockBlacklistableERC20 blacklistToken = new MockBlacklistableERC20("BLUSDC4", "BLUSDC4", 6);
+        _useTokenAsRewardsAsset(address(blacklistToken));
 
-        // Set blacklistable token as rewards token AND set recipient to blacklisted address
+        // Set recipient to blacklisted address
         address blacklistedRecipient = address(0xB1AC4);
 
         vm.startPrank(_user);
-        address[] memory pf = new address[](2);
+        address[] memory pf = new address[](1);
         pf[0] = address(_portfolioFactory);
-        pf[1] = address(_portfolioFactory);
-        bytes[] memory cd = new bytes[](2);
-        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRewardsToken.selector, address(blacklistToken));
-        cd[1] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, blacklistedRecipient);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setRecipient.selector, blacklistedRecipient);
         _portfolioManager.multicall(cd, pf);
         vm.stopPrank();
 
