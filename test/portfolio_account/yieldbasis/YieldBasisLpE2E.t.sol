@@ -228,7 +228,7 @@ contract YieldBasisBtcE2ETest is Test {
         // Admin stakes the LP into the gauge (step 6 later asserts the gauge
         // is the source of the withdrawn LP, so we must stake to exercise that path).
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // Verify: ybBTC is staked in gauge, portfolio account holds gauge shares
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();

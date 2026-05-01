@@ -174,8 +174,13 @@ contract YieldBasisLpHarvestFuzzTest is Test, HarvestFloor85 {
 
     function _depositAndStake(uint256 amount) internal {
         _deposit(amount);
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+        // Reset directive so subsequent _deposit calls don't auto-stake.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
     }
 
     function _floor85() internal view returns (uint256) {

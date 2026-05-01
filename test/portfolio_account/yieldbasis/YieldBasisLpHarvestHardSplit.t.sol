@@ -162,8 +162,16 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
 
     function _depositAndStake(uint256 amount) internal {
         _deposit(amount);
+        _setStakedMode(true);
+    }
+
+    /// @dev Toggle the protocol-wide directive then sweep this account into it.
+    ///      `setStakedMode` reads the directive — no bool param.
+    function _setStakedMode(bool desired) internal {
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(desired);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     function _withdrawUser(uint256 amount) internal {
@@ -327,8 +335,10 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
     function test_Mixed_DirectAndStaked_PostReconcileTruth() public {
         // 40 staked, 60 unstaked. New deposits don't auto-stake (config flag false).
         _deposit(40e18);
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        _setStakedMode(true);
+        // Flip the factory flag back so the next deposit doesn't auto-stake too.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
         _deposit(60e18);
 
         // 1% gauge skim → staked piece tracked at 39.6 post-reconcile.

@@ -131,6 +131,14 @@ contract YieldBasisLpFacetTest is Test {
 
     // ============ Helpers ============
 
+    /// @dev Set the protocol-wide directive then sweep this account into it.
+    function _syncAndSetStake(bool mode) internal {
+        vm.prank(_owner);
+        _portfolioFactoryConfig.setStakedGaugeMode(mode);
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+    }
+
     function _depositViaMulticall(uint256 amount) internal {
         // Approve portfolio account to pull LP from user, then deposit via multicall
         vm.startPrank(_user);
@@ -160,8 +168,7 @@ contract YieldBasisLpFacetTest is Test {
     ///      `stake()` is now all-or-nothing: it stakes the full unstaked LP balance.
     function _depositAndStake(uint256 amount) internal {
         _depositViaMulticall(amount);
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        _syncAndSetStake(true);
     }
 
     // ============ Deposit Tests ============
@@ -278,8 +285,7 @@ contract YieldBasisLpFacetTest is Test {
         // branch of the lifecycle — verifies withdraw pulls directly from the account's LP
         // balance without any gauge interaction.
         _depositAndStake(DEPOSIT_AMOUNT);
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        _syncAndSetStake(false);
 
         // Sanity: LP is fully unstaked on the account, gauge holds nothing for this account
         (uint256 stakedBefore, uint256 unstakedBefore) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -325,8 +331,8 @@ contract YieldBasisLpFacetTest is Test {
         // Deposit+stake so there are gauge shares to unstake
         _depositAndStake(DEPOSIT_AMOUNT);
 
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        // Flip directive to false → setStakedMode unstakes.
+        _syncAndSetStake(false);
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, 0, "All gauge shares redeemed");
@@ -338,7 +344,7 @@ contract YieldBasisLpFacetTest is Test {
 
         vm.startPrank(_user);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         vm.stopPrank();
     }
 
@@ -347,7 +353,7 @@ contract YieldBasisLpFacetTest is Test {
     function testUnstakeRevertsWhenNothingStaked() public {
         vm.prank(_authorizedCaller);
         vm.expectRevert("Nothing staked");
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     // ============ Restake Tests (Admin Only) ============
@@ -355,13 +361,11 @@ contract YieldBasisLpFacetTest is Test {
     function testRestake() public {
         _depositAndStake(DEPOSIT_AMOUNT);
 
-        // Unstake first
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        // Unstake first.
+        _syncAndSetStake(false);
 
-        // Restake
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        // Restake.
+        _syncAndSetStake(true);
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT);
@@ -371,12 +375,15 @@ contract YieldBasisLpFacetTest is Test {
     function testRestakeRevertsUnauthorized() public {
         _depositAndStake(DEPOSIT_AMOUNT);
 
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        // Unstake first.
+        _syncAndSetStake(false);
 
+        // Flip directive back to true and try to restake from an unauthorized caller.
+        vm.prank(_owner);
+        _portfolioFactoryConfig.setStakedGaugeMode(true);
         vm.startPrank(_user);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         vm.stopPrank();
     }
 
@@ -473,21 +480,21 @@ contract YieldBasisLpFacetTest is Test {
 
         // 2. Admin stakes — switch to YB emissions mode
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT, "Now fully staked");
         assertEq(unstaked, 0);
 
         // 3. Admin unstakes — switch to trading fees mode
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, 0);
         assertEq(unstaked, DEPOSIT_AMOUNT, "LP back on account");
 
         // 4. Admin restakes — back to YB emissions mode
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT);
         assertEq(unstaked, 0);
@@ -564,18 +571,18 @@ contract YieldBasisLpFacetTest is Test {
         vm.expectEmit(false, false, false, true, _portfolioAccount);
         emit YieldBasisLpFacet.Unstaked(DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     function testRestakeEmitsEvent() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         vm.expectEmit(false, false, false, true, _portfolioAccount);
         emit YieldBasisLpFacet.Staked(DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     function testClaimGaugeRewardsEmitsEvent() public {
@@ -658,9 +665,9 @@ contract YieldBasisLpFacetTest is Test {
     function testRestakeApprovalsCleared() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // After stake, approval from portfolio account to gauge should be 0
         uint256 allowance = _ybBtc.allowance(_portfolioAccount, address(_gauge));
@@ -675,17 +682,17 @@ contract YieldBasisLpFacetTest is Test {
         // _owner is the PortfolioManager owner but NOT an authorized caller
         vm.prank(_owner);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     function testRestakeRevertsForOwner() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         vm.prank(_owner);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     function testClaimRevertsForOwner() public {
@@ -714,17 +721,17 @@ contract YieldBasisLpFacetTest is Test {
 
         vm.prank(address(0xbad));
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     function testRestakeRevertsRandomCaller() public {
         _depositAndStake(DEPOSIT_AMOUNT);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         vm.prank(address(0xbad));
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     // ============ getStakingState Tests ============
@@ -798,7 +805,7 @@ contract YieldBasisLpFacetTest is Test {
         // Unstake so the first deposit's LP returns to the account (required for the
         // addCollateral balance check on the next deposit).
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // Second deposit should succeed — account now holds DEPOSIT_AMOUNT from the
         // unstake, and the new deposit adds secondDeposit more, covering the
@@ -982,7 +989,7 @@ contract YieldBasisLpFacetTest is Test {
 
     // ============ HARDENED TESTS: Unstake/Restake Edge Cases ============
 
-    /// @notice setStakedMode(true) reverts with "Nothing to stake" when the account
+    /// @notice setStakedMode() reverts with "Nothing to stake" when the account
     ///         holds zero unstaked LP. After deposit+stake the gauge holds all the LP;
     ///         the account has zero LP balance, so a second stake call must revert
     ///         rather than emit a misleading 0-share Staked event.
@@ -993,11 +1000,11 @@ contract YieldBasisLpFacetTest is Test {
         assertEq(stakedBefore, DEPOSIT_AMOUNT, "All LP is in the gauge");
         assertEq(unstakedBefore, 0, "No LP on the account");
 
-        // Calling setStakedMode(true) again with no unstaked LP must revert under
+        // Calling setStakedMode() again with no unstaked LP must revert under
         // the all-or-nothing API: the new contract guards with require(lpBalance > 0).
         vm.prank(_authorizedCaller);
         vm.expectRevert("Nothing to stake");
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // State must be untouched after the revert.
         (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -1011,13 +1018,13 @@ contract YieldBasisLpFacetTest is Test {
 
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(_authorizedCaller);
-            YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+            YieldBasisLpFacet(_portfolioAccount).setStakedMode();
             (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
             assertEq(staked, 0, "Should be fully unstaked");
             assertEq(unstaked, DEPOSIT_AMOUNT, "Should have full unstaked balance");
 
             vm.prank(_authorizedCaller);
-            YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+            YieldBasisLpFacet(_portfolioAccount).setStakedMode();
             (staked, unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
             assertEq(staked, DEPOSIT_AMOUNT, "Should be fully staked");
             assertEq(unstaked, 0, "Should have no unstaked balance");
@@ -1040,14 +1047,14 @@ contract YieldBasisLpFacetTest is Test {
 
         // Unstake does NOT remove collateral — LP stays in portfolio
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         uint256 collateralAfterUnstake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterUnstake, collateralBefore, "Collateral preserved after unstake");
 
         // Restake doesn't change collateral either
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         uint256 collateralAfterRestake = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterRestake, collateralBefore, "Collateral preserved after stake");
@@ -1134,7 +1141,7 @@ contract YieldBasisLpFacetTest is Test {
         _depositAndStake(depositAmt);
 
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, 0, "All gauge shares redeemed");

@@ -15,7 +15,7 @@ pragma solidity ^0.8.30;
  *     * onlyOwner setter, persists, emits StakedGaugeModeUpdated(old, new)
  *   - getStakedMode() on the facet returns the factory flag verbatim
  *   - deposit() branches on the factory flag, NOT gauge balance
- *   - setStakedMode(true)/(false) preconditions and access control
+ *   - setStakedMode()/(false) preconditions and access control
  *   - withdraw() resilience: pulls from direct LP first, redeems shortfall
  *     from the gauge, tolerates dust gauge balances and mixed states
  *
@@ -106,7 +106,7 @@ contract YieldBasisStakedGaugeModeTest is Test {
         _config.setLoanContract(address(_vault));
         _portfolioFactory.setPortfolioFactoryConfig(address(_config));
 
-        _facet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
+        _facet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_vault));
         bytes4[] memory facetSelectors = new bytes4[](9);
         facetSelectors[0] = YieldBasisLpFacet.deposit.selector;
         facetSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -119,7 +119,7 @@ contract YieldBasisStakedGaugeModeTest is Test {
         facetSelectors[8] = ICollateralFacet.getMaxLoan.selector;
         _facetRegistry.registerFacet(address(_facet), facetSelectors, "YieldBasisLpFacet");
 
-        _claimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_usdc));
+        _claimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_vault));
         bytes4[] memory cl = new bytes4[](2);
         cl[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
         cl[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
@@ -154,6 +154,16 @@ contract YieldBasisStakedGaugeModeTest is Test {
         cd[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, amount);
         _portfolioManager.multicall(cd, factories);
         vm.stopPrank();
+    }
+
+    /// @dev Set the protocol-wide directive then sweep this account into it.
+    ///      `setStakedMode` reads `getStakedGaugeMode()`; this helper keeps
+    ///      tests terse while making the directive flip explicit.
+    function _syncAndSetStake(bool mode) internal {
+        vm.prank(_owner);
+        _config.setStakedGaugeMode(mode);
+        vm.prank(_authorizedCaller);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     // ============ Config: setStakedGaugeMode ============
@@ -237,14 +247,16 @@ contract YieldBasisStakedGaugeModeTest is Test {
     /// @notice The facet does NOT use gauge balance to derive the mode anymore.
     ///         Even with non-zero gauge balance, getStakedMode() returns the flag.
     function test_facetGetStakedMode_ignoresGaugeBalance() public {
-        // Deposit + stake so this account has a gauge balance, but leave the flag false.
+        // Deposit + stake (via _syncAndSetStake which sets the directive too).
         _depositViaMulticall(DEPOSIT_AMOUNT);
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        _syncAndSetStake(true);
         assertEq(_gauge.balanceOf(_portfolioAccount), DEPOSIT_AMOUNT, "precondition: gauge has shares");
 
-        // Flag is still default-false, so facet must report false.
-        assertEq(YieldBasisLpFacet(_portfolioAccount).getStakedMode(), false, "ignores gauge balance");
+        // Now flip the directive back to false and confirm the facet reports
+        // the directive — NOT the lingering gauge balance.
+        vm.prank(_owner);
+        _config.setStakedGaugeMode(false);
+        assertEq(YieldBasisLpFacet(_portfolioAccount).getStakedMode(), false, "facet reads directive, ignores gauge balance");
     }
 
     // ============ deposit() branches on the factory flag ============
@@ -295,73 +307,76 @@ contract YieldBasisStakedGaugeModeTest is Test {
 
     // ============ setStakedMode preconditions ============
 
-    /// @notice setStakedMode(true) reverts with "Nothing to stake" when the account
+    /// @notice setStakedMode() reverts with "Nothing to stake" when the account
     ///         has zero unstaked LP. Guards against emitting a misleading 0-share
     ///         Staked event.
     function test_setStakedMode_true_revertsOnZeroLp() public {
+        vm.prank(_owner);
+        _config.setStakedGaugeMode(true);
         vm.prank(_authorizedCaller);
         vm.expectRevert("Nothing to stake");
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
-    /// @notice setStakedMode(true) succeeds when there's unstaked LP — moves all of
+    /// @notice setStakedMode() succeeds when there's unstaked LP — moves all of
     ///         it into the gauge. All-or-nothing: the function does not take an amount.
     function test_setStakedMode_true_stakesEntireLpBalance() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
-        // Sanity: all LP is unstaked.
+        // Sanity: all LP is unstaked (deposited with directive=false default).
         assertEq(_lp.balanceOf(_portfolioAccount), DEPOSIT_AMOUNT, "precondition: LP on account");
 
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        // Flip directive then sweep — setStakedMode reads the directive.
+        _syncAndSetStake(true);
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, DEPOSIT_AMOUNT, "full balance now in gauge");
         assertEq(unstaked, 0, "no LP left on account");
     }
 
-    /// @notice setStakedMode(false) reverts with "Nothing staked" when the account
+    /// @notice setStakedMode() reverts with "Nothing staked" when the account
     ///         has zero gauge shares.
     function test_setStakedMode_false_revertsOnZeroGauge() public {
         // No deposit, so nothing in the gauge.
         vm.prank(_authorizedCaller);
         vm.expectRevert("Nothing staked");
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
-    /// @notice setStakedMode(false) succeeds when there's a gauge balance — redeems
+    /// @notice setStakedMode() succeeds when there's a gauge balance — redeems
     ///         all gauge shares, reconciles tracked shares, and emits Unstaked.
     function test_setStakedMode_false_redeemsEntireGaugeBalance() public {
         _depositViaMulticall(DEPOSIT_AMOUNT);
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        // First sweep: directive=true → stake LP into gauge.
+        _syncAndSetStake(true);
         assertEq(_gauge.balanceOf(_portfolioAccount), DEPOSIT_AMOUNT, "precondition: gauge has shares");
 
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        // Second sweep: directive=false → redeem all gauge shares.
+        _syncAndSetStake(false);
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(staked, 0, "gauge fully redeemed");
         assertEq(unstaked, DEPOSIT_AMOUNT, "all LP returned to account");
     }
 
-    /// @notice setStakedMode does NOT modify the factory-level stakedGaugeMode flag.
-    ///         It's a per-account sweep, distinct from the protocol-wide directive.
-    function test_setStakedMode_doesNotTouchFactoryFlag() public {
-        // Flip factory flag to true so we can prove the flag survives a sweep
-        // in the OPPOSITE direction (sweep to unstaked while flag is staked).
+    /// @notice setStakedMode READS the factory flag but does NOT WRITE it.
+    ///         The function is a per-account sweep that aligns to the
+    ///         protocol-wide directive — it must not silently flip the flag.
+    function test_setStakedMode_doesNotWriteFactoryFlag() public {
+        // Flip factory flag to true and deposit (auto-stakes via deposit hook).
         vm.prank(_owner);
         _config.setStakedGaugeMode(true);
-
-        // Deposit auto-stakes (flag true).
         _depositViaMulticall(DEPOSIT_AMOUNT);
 
-        // Sweep this account back to unstaked.
+        // Flip directive to false and sweep — setStakedMode unstakes.
+        vm.prank(_owner);
+        _config.setStakedGaugeMode(false);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
-        // Factory flag is unchanged.
-        assertTrue(_config.getStakedGaugeMode(), "factory flag survives a per-account sweep");
-        assertTrue(YieldBasisLpFacet(_portfolioAccount).getStakedMode(), "facet still reads true");
+        // The factory flag stays at whatever the OWNER last set — the sweep
+        // didn't write it back to true.
+        assertFalse(_config.getStakedGaugeMode(), "factory flag still false after sweep");
+        assertFalse(YieldBasisLpFacet(_portfolioAccount).getStakedMode(), "facet reads the post-set value");
     }
 
     // ============ setStakedMode access control ============
@@ -372,11 +387,11 @@ contract YieldBasisStakedGaugeModeTest is Test {
 
         vm.prank(_stranger);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         vm.prank(_stranger);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     /// @notice The portfolio owner (user) is NOT an authorized caller — also blocked.
@@ -385,7 +400,7 @@ contract YieldBasisStakedGaugeModeTest is Test {
 
         vm.prank(_user);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     /// @notice Even the deployer/owner of PortfolioManager is NOT an authorized caller —
@@ -395,7 +410,7 @@ contract YieldBasisStakedGaugeModeTest is Test {
 
         vm.prank(_owner);
         vm.expectRevert();
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     // ============ withdraw() resilience: dust + mixed states ============
@@ -437,8 +452,10 @@ contract YieldBasisStakedGaugeModeTest is Test {
         // To get into "mixed" state cleanly: deposit twice the amount, stake first,
         // then deposit again with flag false → first half in gauge, second half on account.
         _depositViaMulticall(DEPOSIT_AMOUNT); // unstaked
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true); // half (first deposit) in gauge
+        _syncAndSetStake(true); // half (first deposit) in gauge — directive flipped to true
+        // Reset directive so the next deposit doesn't auto-stake.
+        vm.prank(_owner);
+        _config.setStakedGaugeMode(false);
 
         // Second deposit lands on account (flag false).
         _depositViaMulticall(DEPOSIT_AMOUNT);

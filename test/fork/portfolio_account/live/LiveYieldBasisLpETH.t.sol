@@ -558,7 +558,7 @@ contract LiveYieldBasisLpETHTest is Test {
 
         // Explicitly stake so the lifecycle exercises gauge rewards + gauge-redeem on unstake.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertGt(staked, 0, "no gauge shares after explicit stake");
@@ -692,7 +692,7 @@ contract LiveYieldBasisLpETHTest is Test {
 
         (staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
         uint256 ybAfterUnstake = IERC20(YB).balanceOf(portfolioAccount);
         assertGt(ybAfterUnstake - ybBeforeUnstake, 0, "unstake did not claim YB (G6 regression: _rewardToken wrong?)");
         console.log("unstake auto-claimed YB:", ybAfterUnstake - ybBeforeUnstake);

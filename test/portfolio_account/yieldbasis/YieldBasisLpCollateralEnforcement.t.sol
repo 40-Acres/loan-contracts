@@ -239,7 +239,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     function _depositAndStakeLP(uint256 amount) internal {
         _depositLP(amount);
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
     /// @dev Borrow USDC against collateral (via multicall since it requires onlyPortfolioManagerMulticall)
@@ -580,7 +580,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Unstake via authorized caller
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // After unstake: collateral removed, LP tokens on account
         (uint256 stakedAfterUnstake, uint256 unstakedAfterUnstake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -593,7 +593,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Stake via authorized caller
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // After stake: LP tokens back in gauge, collateral re-tracked
         (uint256 stakedAfterStake, uint256 unstakedAfterStake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -630,7 +630,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Unstake all — collateral unchanged because LP stays in portfolio
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         uint256 collateralAfter = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfter, collateralBefore, "Collateral preserved after unstake while indebted");
@@ -644,7 +644,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Stake
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // Still passes
         success = ICollateralFacet(_portfolioAccount).enforceCollateralRequirements();
@@ -694,7 +694,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Stake all LP so harvestLpFees can redeem gauge shares
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 
         // deposited value = 5e8 * 1.0 + 5e8 * 1.5 = 5e8 + 7.5e8 = 12.5e8
         (uint256 shares, uint256 depositedValue, uint256 currentValue) =
@@ -916,7 +916,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _depositLP(firstDeposit);
 
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
         (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(stakedAfter, firstDeposit, "Precondition: first deposit fully in gauge");
         assertEq(unstakedAfter, 0, "Precondition: account has zero LP balance");

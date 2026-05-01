@@ -84,8 +84,13 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
     uint256 internal constant VAULT_LIQ = 10_000_000e18;
     uint256 internal constant LTV_BPS = 7000;
     uint256 internal constant GRACE = 1 hours;
+    // Absolute timestamps to dodge via-ir block.timestamp caching and underflow when
+    // computing `block.timestamp - GRACE - 1` from Foundry's default of 1.
+    uint256 internal constant SETUP_TS = 1_700_000_000;
+    uint256 internal constant STARTED_AT_UP = SETUP_TS - GRACE - 1;
 
     function setUp() public {
+        vm.warp(SETUP_TS);
         vm.startPrank(owner_);
 
         portfolioManager = new PortfolioManager(owner_);
@@ -200,7 +205,7 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
 
         // ── Guard, attached only to factory 1 config ────────────────────
         feed = new MockChainlinkSequencerUptimeFeed();
-        feed.setStatus(0, block.timestamp - GRACE - 1);
+        feed.setStatus(0, STARTED_AT_UP);
         guard = new SequencerLivenessCheck(owner_, address(feed), GRACE, 150);
 
         portfolioFactoryConfig.setSequencerLivenessCheck(address(guard));
@@ -258,7 +263,7 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
     }
 
     function _markDown() internal {
-        feed.setStatus(1, block.timestamp - GRACE - 1);
+        feed.setStatus(1, STARTED_AT_UP);
     }
 
     function _floor85Local() internal view returns (uint256) {
@@ -336,9 +341,10 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
         _markDown();
 
         uint256 underlyingBefore = underlying.balanceOf(portfolioAccount);
+        uint256 floor = _floor85Local();
 
         vm.prank(authorizedCaller);
-        uint256 received = YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(_floor85Local());
+        uint256 received = YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(floor);
 
         assertGt(received, 0, "harvest must deliver yield even while sequencer is down");
         assertEq(

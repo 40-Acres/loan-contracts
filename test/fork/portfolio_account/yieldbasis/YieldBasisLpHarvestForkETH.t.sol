@@ -52,9 +52,14 @@ contract YieldBasisLpHarvestForkETHTest is Test {
     // ============ Block Pins ============
     // Calm block: fee accrual present, Curve pool reasonably balanced.
     uint256 internal constant BLOCK_CALM = 25_000_400;
-    // Volatile block: large transient haircut on Curve burn (used to demonstrate
-    // tight-slippage rejection).
+    // Volatile block: large transient haircut (~26%) on Curve burn — used to
+    // demonstrate the 85% pre-flight floor rejection.
     uint256 internal constant BLOCK_VOLATILE = 24_500_000;
+    // Milder volatile block: ~10.5% haircut, sweep-confirmed. Sits inside the
+    // 85% floor band so harvest goes through end-to-end and we can compare
+    // realized rates to the calm block numerically. Alternates: 24_650_000
+    // (~12%), 24_790_000 (~12%) — swap if archive node throttles this pin.
+    uint256 internal constant BLOCK_VOLATILE_MILD = 24_720_000;
 
     // ============ Test Actors ============
     address internal user = address(0x40ac2e);
@@ -522,5 +527,58 @@ contract YieldBasisLpHarvestForkETHTest is Test {
                 return (delivered, lpBurn);
             }
         }
+    }
+
+    /**
+     * @notice Mild-volatile fork pin: realize a numerical haircut delta where
+     *         the volatile block sits inside the 85% floor band (so harvest
+     *         goes through) but is meaningfully worse than the calm block.
+     *
+     * Asserts:
+     *   - Both blocks deliver a positive rate (no skip).
+     *   - mild-volatile rate < calm rate (directional).
+     *   - mild-volatile rate / calm rate is between 80% and 99% (numeric band).
+     *   - Implied haircut delta is at least 100 bps.
+     */
+    function test_HaircutComparison_MildVolatile() public {
+        if (!forkActive) { vm.skip(true); return; }
+
+        // Phase 1: calm block (already forked in setUp).
+        (uint256 calmReceived, uint256 calmLpBurn) = _harvestOneLpProbe();
+        if (calmLpBurn == 0) { vm.skip(true); return; }
+        uint256 calmRate = (calmReceived * 1e18) / calmLpBurn;
+        console.log("Calm:        received       ", calmReceived);
+        console.log("Calm:        lpBurn         ", calmLpBurn);
+        console.log("Calm:        rate (1e18)    ", calmRate);
+
+        // Phase 2: re-fork at the milder volatile block.
+        _refork(BLOCK_VOLATILE_MILD);
+        (uint256 mildReceived, uint256 mildLpBurn) = _harvestOneLpProbe();
+        if (mildLpBurn == 0) {
+            // The milder block was sweep-confirmed at ~10.5% haircut, well
+            // inside the 85% floor band — but if the archive node returns a
+            // different state, we tolerate skip rather than fail.
+            console.log("MildVolatile: harvest blocked (haircut > 15%) - block drifted from sweep");
+            vm.skip(true);
+            return;
+        }
+        uint256 mildRate = (mildReceived * 1e18) / mildLpBurn;
+        console.log("MildVolatile: received       ", mildReceived);
+        console.log("MildVolatile: lpBurn         ", mildLpBurn);
+        console.log("MildVolatile: rate (1e18)    ", mildRate);
+
+        // Directional: realized per-LP rate at mild-volatile is strictly worse.
+        assertLt(mildRate, calmRate, "mild-volatile rate < calm rate");
+
+        // Numeric band: ratio between 80% and 99% of calm.
+        uint256 ratioBps = (mildRate * 10_000) / calmRate;
+        console.log("Ratio (bps of calm)          ", ratioBps);
+        assertGe(ratioBps, 8_000, "mild-volatile rate >= 80% of calm");
+        assertLe(ratioBps, 9_900, "mild-volatile rate <= 99% of calm (haircut present)");
+
+        // Haircut delta: at least 100 bps worse than calm.
+        uint256 haircutDeltaBps = 10_000 - ratioBps;
+        console.log("Haircut delta (bps)          ", haircutDeltaBps);
+        assertGe(haircutDeltaBps, 100, "haircut delta >= 100 bps");
     }
 }

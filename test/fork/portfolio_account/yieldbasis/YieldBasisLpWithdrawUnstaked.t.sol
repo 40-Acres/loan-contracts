@@ -139,7 +139,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
     function _unstakeViaAuthorized() internal {
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     /// @dev After the deposit refactor, deposit() no longer auto-stakes into the gauge
@@ -149,7 +149,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     ///      unstaked LP balance held by the portfolio account.
     function _stakeViaAuthorized() internal {
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     // ── Tests: Happy Path ──
@@ -360,7 +360,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         // (bare require, no message), BEFORE reaching any gauge logic.
         vm.prank(randomCaller);
         vm.expectRevert();
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     /// @notice Even the portfolio owner cannot call unstake() — only authorizedCaller can.
@@ -387,7 +387,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
         vm.prank(user);
         vm.expectRevert();
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     /// @notice unstake() reverts with "Nothing staked" when there are no gauge shares.
@@ -407,6 +407,6 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
         vm.prank(authorizedCaller);
         vm.expectRevert("Nothing staked");
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 }

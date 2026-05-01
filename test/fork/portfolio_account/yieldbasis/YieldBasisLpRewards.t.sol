@@ -243,7 +243,7 @@ contract YieldBasisLpRewardsTest is Test {
 
         // 2. Explicitly stake the full amount — required for rewards to accrue in gauge
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertGt(staked, 0, "Should have gauge shares after explicit stake");
@@ -294,7 +294,7 @@ contract YieldBasisLpRewardsTest is Test {
 
         // Explicitly stake into gauge so the "unstake back to LP" path is meaningful.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         uint256 gaugeSharesBefore = gauge.balanceOf(portfolioAccount);
         assertGt(gaugeSharesBefore, 0, "Precondition: must hold gauge shares before unstake");
@@ -306,7 +306,7 @@ contract YieldBasisLpRewardsTest is Test {
         // Unstake to switch to trading fee yield mode. unstake() takes gauge shares
         // (redeem internally) and leaves LP on the account.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0, "Should have 0 gauge shares after unstake");
@@ -342,7 +342,7 @@ contract YieldBasisLpRewardsTest is Test {
 
         // 1a. Explicitly stake into gauge so rewards accrue
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (uint256 stakedAfterStake,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertGt(stakedAfterStake, 0, "Gauge shares must exist after explicit stake");
@@ -359,7 +359,7 @@ contract YieldBasisLpRewardsTest is Test {
         // 3. Unstake — pass gauge shares directly (unstake uses redeem)
         uint256 gaugeShares = gauge.balanceOf(portfolioAccount);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0);
@@ -375,7 +375,7 @@ contract YieldBasisLpRewardsTest is Test {
 
         // 5. Restake all unstaked LP
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertGt(staked, 0, "Should be staked again");
@@ -397,7 +397,7 @@ contract YieldBasisLpRewardsTest is Test {
         // unstake() redeems gauge shares, leaving LP on the portfolio account
         gaugeShares = gauge.balanceOf(portfolioAccount);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         // Now withdraw the unstaked LP — withdraw() sees LP on the account and skips gauge
         uint256 lpOnAccount = lpToken.balanceOf(portfolioAccount);
@@ -453,7 +453,7 @@ contract YieldBasisLpRewardsTest is Test {
 
         // Explicitly stake so rewards accrue in the gauge
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         vm.warp(block.timestamp + 7 days);
         vm.roll(block.number + 50400);

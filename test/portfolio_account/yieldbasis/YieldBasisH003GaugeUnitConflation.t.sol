@@ -609,7 +609,7 @@ contract YBFacetH003Test is Test {
     function _depositAndStake(uint256 amount) internal {
         _deposit(amount);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     function _withdraw(uint256 amount) internal {
@@ -645,7 +645,7 @@ contract YBFacetH003Test is Test {
 
         // unstake() must NOT revert — pre-fix it would have here.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         // Post-state: account holds DEPOSIT - 1 LP; gauge is empty for this account.
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
@@ -679,7 +679,7 @@ contract YBFacetH003Test is Test {
         vm.expectEmit(false, false, false, true, portfolioAccount);
         emit YieldBasisLpFacet.Unstaked(DEPOSIT - 1, DEPOSIT);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
 
     /// @notice Larger drift than 1 wei — ratio at 99%: `redeem(shares)` returns
@@ -692,7 +692,7 @@ contract YBFacetH003Test is Test {
         gauge.setConvertRatioBps(9_900);
 
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0, "gauge fully redeemed");
@@ -720,7 +720,7 @@ contract YBFacetH003Test is Test {
         vm.expectEmit(false, false, false, true, portfolioAccount);
         emit YieldBasisLpFacet.Staked(DEPOSIT, expectedShares);
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         // Gauge received full 1e18 LP, minted 0.99e18 shares.
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
@@ -827,7 +827,7 @@ contract YBFacetH003Test is Test {
 
         // Unstake — at 1:1 with no rounding, gauge returns LP equal to shares.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0, "gauge fully drained at 1:1");
         // After harvest, removeSharesForYield reduced data.shares but
@@ -845,9 +845,9 @@ contract YBFacetH003Test is Test {
 
         // Restake → unstake → withdraw remaining
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
 
         uint256 userBefore = ybLp.balanceOf(user);
         _withdraw(type(uint128).max); // clamp-style — drain everything tracked

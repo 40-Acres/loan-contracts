@@ -122,15 +122,15 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     // ============ Admin: Per-Account Yield Mode Sweep ============
 
     /**
-     * @notice Sweep this account into the requested gauge state.
-     * @dev Admin-only one-off override. Does NOT write the factory-level
-     *      stakedGaugeMode flag — that's set on YieldBasisPortfolioFactoryConfig
-     *      and governs the default behavior for new deposits across all accounts.
-     *      Used to reconcile an individual account whose gauge state has drifted
-     *      from the protocol intent.
-     * @param staked True: stake all unstaked LP. False: redeem all gauge shares.
+     * @notice Reconcile this account to the protocol-wide gauge directive.
+     * @dev Reads the factory-level stakedGaugeMode flag (single source of truth)
+     *      and brings this account's gauge state in line. Authorized callers
+     *      cannot override the directive on a per-account basis — to flip an
+     *      individual account, the admin flips the factory flag, runs this
+     *      on affected accounts, and (if needed) flips the flag back.
      */
-    function setStakedMode(bool staked) external onlyAuthorizedCaller(_portfolioFactory) {
+    function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) {
+        bool staked = getStakedMode();
         if (staked) {
             uint256 lpBalance = _lpToken.balanceOf(address(this));
             require(lpBalance > 0, "Nothing to stake");

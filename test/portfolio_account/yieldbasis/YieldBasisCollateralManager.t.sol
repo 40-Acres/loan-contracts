@@ -321,6 +321,12 @@ contract YieldBasisCollateralManagerTest is Test {
         // Fresh harness per test — fresh ERC-7201 slot.
         h = new YBCMHarness();
 
+        // Authorize the harness so library functions gated by isAuthorizedCaller
+        // (e.g. removeSharesForYield, increaseTotalDebt) accept its calls. Inside
+        // the library, msg.sender is the harness (delegatecall preserves caller).
+        vm.prank(OWNER);
+        pm.setAuthorizedCaller(address(h), true);
+
         // Register the harness as a "portfolio" so LendingVault's onlyPortfolio
         // modifier accepts its borrow/pay calls. We do this by pranking the
         // factory and writing directly into PortfolioFactory.owners via a
@@ -664,20 +670,40 @@ contract YieldBasisCollateralManagerTest is Test {
         ybLp.mint(address(h), 1e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1e18);
 
+        vm.prank(AUTH_CALLER);
         vm.expectRevert(bytes("Insufficient shares"));
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 2e18);
     }
 
-    function test_removeSharesForYield_revertsWouldRemovePrincipal() public {
-        // deposit 10e18 @ pps=1 → depositedAssetValue=10e18.
-        // pps stays at 1. Try to pull 1e18 shares → remaining 9e18 < 10e18
-        // deposited → "Would remove principal".
+    /// @notice Option-(ii) replacement for the deprecated "Would remove
+    ///         principal" check: under proportional basis deduction, calling
+    ///         removeSharesForYield with no pps growth doesn't revert — it
+    ///         burns shares and basis pro-rata, preserving D/S. Value is
+    ///         conserved (caller is liquidating, not extracting fictional
+    ///         yield). The harvest layer is responsible for refusing to call
+    ///         when no yield exists; the library itself doesn't enforce that.
+    function test_removeSharesForYield_proportionalDeductionPreservesPerShareBasis() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
-        vm.expectRevert(bytes("Would remove principal"));
+        // Pre-state.
+        (uint256 sharesPre, uint256 depPre,) =
+            h.getCollateral(address(ybLp), address(underlying));
+
+        // Burn 1e18 shares — no revert (option-(ii) doesn't gate this).
+        vm.prank(AUTH_CALLER);
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 1e18);
+
+        (uint256 sharesPost, uint256 depPost,) =
+            h.getCollateral(address(ybLp), address(underlying));
+
+        // Per-share basis preserved (D/S unchanged within rounding).
+        uint256 basisPerSharePre = (depPre * 1e18) / sharesPre;
+        uint256 basisPerSharePost = (depPost * 1e18) / sharesPost;
+        assertApproxEqAbs(basisPerSharePost, basisPerSharePre, 1, "D/S preserved across removeSharesForYield");
+        // Shares strictly decreased.
+        assertEq(sharesPost, sharesPre - 1e18, "shares decremented exactly");
     }
 
     function test_removeSharesForYield_revertsDebtExceedsMaxLoan() public {
@@ -702,6 +728,7 @@ contract YieldBasisCollateralManagerTest is Test {
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
         ybLp.setPricePerShare(2e18);
 
+        vm.prank(AUTH_CALLER);
         vm.expectRevert(bytes("Debt exceeds max loan"));
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 4e18);
     }
