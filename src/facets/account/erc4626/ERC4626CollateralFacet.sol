@@ -8,6 +8,7 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
+import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
  * @title ERC4626CollateralFacet
@@ -60,7 +61,9 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @param shares The amount of shares to remove
      */
     function removeCollateral(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault), shares);
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
+        ERC4626CollateralManager.removeCollateral(config, address(_vault), shares);
     }
 
     /**
@@ -68,10 +71,11 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
      * @param shares The amount of shares to remove and transfer
      */
     function removeCollateralTo(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        // Remove from collateral tracking
-        ERC4626CollateralManager.removeCollateral(address(_portfolioFactory.portfolioFactoryConfig()), address(_vault), shares);
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
 
-        // Transfer shares to owner
+        ERC4626CollateralManager.removeCollateral(config, address(_vault), shares);
+
         address owner = _portfolioFactory.ownerOf(address(this));
         IERC20(address(_vault)).safeTransfer(owner, shares);
     }

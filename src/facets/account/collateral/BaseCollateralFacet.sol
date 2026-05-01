@@ -7,6 +7,7 @@ import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "./ICollateralFacet.sol";
+import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
  * @title BaseCollateralFacet
@@ -71,8 +72,10 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
         if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             revert ListingActive(tokenId);
         }
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
-        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()), address(_votingEscrow));
+        _removeLockedCollateral(tokenId, config, address(_votingEscrow));
         IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), portfolioOwner, tokenId);
     }
 
@@ -80,6 +83,8 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
         if (UserMarketplaceModule.hasSaleAuthorization(tokenId)) {
             revert ListingActive(tokenId);
         }
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
 
         // Validate target factory is registered in the same PortfolioManager
         PortfolioManager portfolioManager = _portfolioFactory.portfolioManager();
@@ -95,7 +100,7 @@ abstract contract BaseCollateralFacet is AccessControl, ICollateralFacet {
             toPortfolio = targetFactory.createAccount(portfolioOwner);
         }
 
-        _removeLockedCollateral(tokenId, address(_portfolioFactory.portfolioFactoryConfig()), address(_votingEscrow));
+        _removeLockedCollateral(tokenId, config, address(_votingEscrow));
         IVotingEscrow(address(_votingEscrow)).safeTransferFrom(address(this), toPortfolio, tokenId);
     }
 

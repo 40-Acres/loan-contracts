@@ -4,7 +4,9 @@ pragma solidity ^0.8.28;
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
+import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
@@ -25,18 +27,41 @@ contract YieldBasisLpClaimingFacet is AccessControl {
     IYieldBasisGauge public immutable _gauge;
     IYieldBasisLP public immutable _lpToken;
     address public immutable _underlying;
+    uint8 public immutable _underlyingDecimals;
+
+    error ReentrantCall();
+
+    // Reuse the lending facet's reentrancy slot — harvest is debt-aware (it
+    // mutates collateral tracking that lending depends on) and must not
+    // interleave with borrow/repay flows on the same diamond.
+    bytes32 private constant _LENDING_REENTRANCY_SLOT = keccak256("fortyacres.lending.reentrancy");
+
+    modifier nonReentrant() {
+        bytes32 slot = _LENDING_REENTRANCY_SLOT;
+        uint256 status;
+        assembly { status := sload(slot) }
+        if (status == 2) revert ReentrantCall();
+        assembly { sstore(slot, 2) }
+        _;
+        assembly { sstore(slot, 1) }
+    }
 
     event GaugeRewardsClaimed(address indexed reward, uint256 amount);
     event LpFeesHarvested(uint256 gaugeSharesRedeemed, uint256 lpTokensBurned, uint256 underlyingReceived, address indexed owner);
 
-    constructor(address portfolioFactory, address gauge, address underlying) {
+    /// @dev `_underlying` is derived from `lendingPool.lendingAsset()` so collateral
+    ///      pricing (LP pricePerShare) and debt comparisons share denomination by
+    ///      construction. The operator cannot pass a mismatched `underlying` arg.
+    constructor(address portfolioFactory, address gauge, address lendingPool) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(gauge != address(0), "Invalid gauge");
-        require(underlying != address(0), "Invalid underlying");
+        require(lendingPool != address(0), "Invalid lending pool");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _gauge = IYieldBasisGauge(gauge);
         _lpToken = IYieldBasisLP(IYieldBasisGauge(gauge).asset());
-        _underlying = underlying;
+        address asset = ILendingPool(lendingPool).lendingAsset();
+        _underlying = asset;
+        _underlyingDecimals = IERC20Metadata(asset).decimals();
     }
 
     // ============ Gauge Reward Claiming ============
@@ -63,17 +88,79 @@ contract YieldBasisLpClaimingFacet is AccessControl {
     // ============ LP Trading-Fee Harvesting ============
 
     /**
-     * @notice Harvest LP trading fee yield (pricePerShare appreciation)
-     * @dev Redeems surplus gauge shares, withdraws LP tokens for underlying asset.
-     *      Underlying asset stays on the portfolio account for RewardsProcessingFacet.
-     * @param minUnderlyingOut Minimum underlying asset to receive (slippage protection)
-     * @return underlyingReceived Amount of underlying asset harvested
+     * @notice Harvest LP trading-fee yield (pricePerShare appreciation) by burning
+     *         surplus LP for underlying. Underlying is left on the portfolio account
+     *         for downstream RewardsProcessingFacet routing.
+     *
+     * @dev Flow:
+     *      1. Reconcile tracked shares to actual recoverable LP. Gauge skim and
+     *         ERC4626 rounding can only reduce the recoverable amount; reconcile
+     *         is one-way (never extends). This is the safety invariant — without
+     *         it the surplus calc would treat skim-eroded shares as if they still
+     *         held their original principal, leaking principal as "yield."
+     *      2. surplusShares = trackedShares × (currentValue − depositedValue) /
+     *         currentValue. Per-share basis is preserved across the burn so
+     *         depositedAssetValue stays invariant in real terms.
+     *      3a. Deduct from collateral tracking via removeSharesForYield —
+     *          proportional basis deduction + absolute LTV check.
+     *      3b. Source surplus LP physically — prefer direct LP balance (no gauge
+     *          fee), fall back to _gauge.withdraw for the shortfall. Measure
+     *          delivered LP via balance delta; never trust ERC4626 return values.
+     *      4. Burn LP for underlying via _lpToken.withdraw with the slippage floor.
+     *      5. enforceCollateralRequirements as defense-in-depth. The absolute LTV
+     *         check inside removeSharesForYield already covers this exact path
+     *         (LP burn doesn't mutate collateral or debt tracking), but the
+     *         delta-shortfall guard is kept to catch future maintainers adding
+     *         a state-mutating call between the burn and function exit.
+     *
+     * @dev Oracle posture: trusts IYieldBasisLP.pricePerShare() to be the YB
+     *      protocol's stated "non-manipulatable fair price" oracle. If a future
+     *      YB pool exposes a spot-derived pricePerShare, the surplus computation
+     *      and basis preservation are only as honest as that price feed.
+     *
+     * @param minUnderlyingPerShare Minimum underlying-native wei delivered per
+     *        1.0 LP burned (per 1e18 LP wei). Caller pre-scales to the
+     *        underlying's own decimals. Examples:
+     *          - WETH (18d): pass 0.99e18 → require ≥ 0.99 WETH per LP.
+     *          - cbBTC (8d): pass 0.99e8  → require ≥ 0.99 cbBTC per LP.
+     *        Enforced as: minUnderlyingOut = (lpToBurn × minUnderlyingPerShare) / 1e18.
+     *
+     * @dev WARNING — Curve-burn haircut: _lpToken.withdraw routes through the
+     *      underlying Curve pool and incurs an imbalance fee + pool-state
+     *      slippage strictly worse than the pricePerShare-implied rate
+     *      (mainnet: up to ~26% during volatile blocks). Callers MUST size
+     *      minUnderlyingPerShare from a fresh IYieldBasisLP.preview_withdraw
+     *      quote, NOT from pricePerShare × tolerance. The contract enforces an
+     *      85% floor against pricePerShare to reject obviously-broken callers,
+     *      but a tighter caller-side floor sized to current Curve depth is
+     *      required for real protection.
+     *
+     * @return underlyingReceived Underlying delivered to the account (post-haircut).
      */
-    function harvestLpFees(uint256 minUnderlyingOut) external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 underlyingReceived) {
+    function harvestLpFees(uint256 minUnderlyingPerShare)
+        external
+        nonReentrant
+        onlyAuthorizedCaller(_portfolioFactory)
+        returns (uint256 underlyingReceived)
+    {
+        require(minUnderlyingPerShare > 0, "Zero slippage floor");
+
+        // 85% floor against pricePerShare. Rejects callers that would silently
+        // accept >15% Curve haircut. Tighter caller-side floors must come from
+        // the off-chain preview_withdraw quote.
+        uint256 ppsInUnderlying =
+            (IYieldBasisLP(address(_lpToken)).pricePerShare() * (10 ** _underlyingDecimals)) / 1e18;
+        require(minUnderlyingPerShare * 100 >= ppsInUnderlying * 85, "Slippage floor < 85%");
+
         address config = address(_portfolioFactory.portfolioFactoryConfig());
         address lpToken = address(_lpToken);
         address underlying = _underlying;
+        address gauge = address(_gauge);
 
+        // Step 1: reconcile-first — accounting truth boundary.
+        YieldBasisCollateralManager.reconcileSharesToBalance(config, lpToken, underlying, gauge);
+
+        // Step 2: read post-reconcile state and validate yield exists.
         (uint256 trackedShares, uint256 depositedValue, uint256 currentValue) =
             YieldBasisCollateralManager.getCollateral(lpToken, underlying);
 
@@ -83,44 +170,79 @@ contract YieldBasisLpClaimingFacet is AccessControl {
         uint256 surplusShares = (trackedShares * (currentValue - depositedValue)) / currentValue;
         require(surplusShares > 0, "Yield too small to harvest");
 
+        // Step 3a: deduct from collateral tracking with proportional basis preservation.
+        // Internal absolute LTV check fires here — harvest cannot push debt past max-loan.
         YieldBasisCollateralManager.removeSharesForYield(config, lpToken, underlying, surplusShares);
 
-        // Measure actual LP delivered by the gauge, don't trust the input amount.
-        // ERC4626 spec says withdraw(assets,…) MUST deliver `assets`, but a
-        // 1-wei-rounded implementation would cause _lpToken.withdraw(surplusShares)
-        // to revert. Deltabased read makes us correct under any conformant gauge.
-        uint256 lpBefore = IERC20(lpToken).balanceOf(address(this));
-        uint256 gaugeSharesBurned = _gauge.withdraw(surplusShares, address(this), address(this));
-        uint256 lpReceived = IERC20(lpToken).balanceOf(address(this)) - lpBefore;
-
-        IERC20(lpToken).approve(lpToken, lpReceived);
-        underlyingReceived = _lpToken.withdraw(lpReceived, minUnderlyingOut, address(this));
-        IERC20(lpToken).approve(lpToken, 0);
-
-        YieldBasisCollateralManager.enforceCollateralRequirements(config, lpToken, underlying);
-
-        emit LpFeesHarvested(gaugeSharesBurned, lpReceived, underlyingReceived, _portfolioFactory.ownerOf(address(this)));
-    }
-
-    /**
-     * @notice Preview available LP fee yield
-     * @return yieldUnderlying Yield in underlying asset units (18 decimals)
-     * @return yieldGaugeShares Gauge shares that would be redeemed
-     */
-    function getAvailableLpFeeYield() external view returns (uint256 yieldUnderlying, uint256 yieldGaugeShares) {
-        (uint256 trackedShares, uint256 depositedValue, uint256 currentValue) =
-            YieldBasisCollateralManager.getCollateral(address(_lpToken), _underlying);
-
-        if (trackedShares == 0 || currentValue <= depositedValue) {
-            return (0, 0);
+        // Step 3b: source surplus LP — prefer direct balance, fall back to gauge.
+        uint256 directLp = IERC20(lpToken).balanceOf(address(this));
+        uint256 lpToBurn;
+        uint256 gaugeSharesBurned = 0;
+        if (directLp >= surplusShares) {
+            lpToBurn = surplusShares;
+        } else {
+            uint256 shortfall = surplusShares - directLp;
+            gaugeSharesBurned = _gauge.withdraw(shortfall, address(this), address(this));
+            uint256 delivered = IERC20(lpToken).balanceOf(address(this)) - directLp;
+            // If the gauge under-delivers due to ERC4626 rounding, data.shares ends
+            // up at most 1 wei above actual recoverable LP. Next harvest's
+            // reconcile-first absorbs the discrepancy.
+            lpToBurn = directLp + delivered;
         }
 
-        yieldUnderlying = currentValue - depositedValue;
-        yieldGaugeShares = (trackedShares * yieldUnderlying) / currentValue;
+        // Step 4: burn LP for underlying with slippage floor.
+        uint256 minUnderlyingOut = (lpToBurn * minUnderlyingPerShare) / 1e18;
+        IERC20(lpToken).approve(lpToken, lpToBurn);
+        underlyingReceived = _lpToken.withdraw(lpToBurn, minUnderlyingOut, address(this));
+        IERC20(lpToken).approve(lpToken, 0);
+
+        // Step 5: defense-in-depth delta-shortfall guard.
+        YieldBasisCollateralManager.enforceCollateralRequirements(config, lpToken, underlying);
+
+        emit LpFeesHarvested(gaugeSharesBurned, lpToBurn, underlyingReceived, _portfolioFactory.ownerOf(address(this)));
     }
 
     /**
-     * @notice Get deposit info with underlying value
+     * @notice Preview LP fee yield that harvestLpFees would deliver right now.
+     * @dev Mirrors the action by simulating reconcileSharesToBalance: collapses
+     *      tracked shares to actual recoverable LP and proportionally scales
+     *      depositedValue. Returned yield is fair-value (pricePerShare-priced);
+     *      realized underlying after the Curve burn will be lower by the
+     *      imbalance haircut. Off-chain consumers should call
+     *      IYieldBasisLP.preview_withdraw(yieldGaugeShares) for an executable
+     *      estimate.
+     * @return yieldUnderlying Fair-value yield in underlying-native units.
+     * @return yieldGaugeShares LP units that harvest would burn.
+     */
+    function getAvailableLpFeeYield() external view returns (uint256 yieldUnderlying, uint256 yieldGaugeShares) {
+        address lpToken = address(_lpToken);
+        (uint256 trackedShares, uint256 depositedValue,) =
+            YieldBasisCollateralManager.getCollateral(lpToken, _underlying);
+
+        uint256 actualLp = IERC20(lpToken).balanceOf(address(this));
+        uint256 gaugeShares = IERC20(address(_gauge)).balanceOf(address(this));
+        if (gaugeShares > 0) {
+            actualLp += _gauge.convertToAssets(gaugeShares);
+        }
+
+        uint256 effectiveShares = trackedShares > actualLp ? actualLp : trackedShares;
+        if (effectiveShares == 0) return (0, 0);
+
+        uint256 effectiveDepositedValue = trackedShares > 0
+            ? (depositedValue * effectiveShares) / trackedShares
+            : 0;
+
+        uint256 effectiveCurrentValue =
+            (effectiveShares * IYieldBasisLP(lpToken).pricePerShare()) / 1e18;
+
+        if (effectiveCurrentValue <= effectiveDepositedValue) return (0, 0);
+
+        yieldUnderlying = effectiveCurrentValue - effectiveDepositedValue;
+        yieldGaugeShares = (effectiveShares * yieldUnderlying) / effectiveCurrentValue;
+    }
+
+    /**
+     * @notice Get deposit info with underlying value (raw storage read; no reconcile simulation)
      */
     function getDepositInfo() external view returns (
         uint256 shares,

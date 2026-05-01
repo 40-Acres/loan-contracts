@@ -162,11 +162,10 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         address swapConfig
     ) internal {
         // Deploy YieldBasisLpFacet (collateral + LP/gauge ops, implements ICollateralFacet)
-        // NOTE: third arg is the gauge reward token (YB), NOT the vault underlying.
-        // YieldBasis is only deployed on Ethereum mainnet so the YB address is hardcoded.
-        // Fourth arg is the underlying asset the LP represents (e.g. WETH for yb-WETH),
-        // used by YieldBasisCollateralManager for value denomination.
-        // YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(portfolioFactory, gauge, YB, underlying);
+        // NOTE: third arg is the gauge reward token (YB). Fourth arg is the lending pool
+        // (LendingVault) — the facet derives `_underlying = lendingPool.lendingAsset()` so
+        // collateral pricing and debt comparisons share denomination by construction.
+        // YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(portfolioFactory, gauge, YB, vault);
         // bytes4[] memory lpSelectors = new bytes4[](9);
         // lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         // lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -179,18 +178,18 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         // lpSelectors[8] = YieldBasisLpFacet.getLTVRatio.selector;
         // _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
-        // // Deploy YieldBasisLpClaimingFacet (gauge rewards + LP fee harvesting)
-        // YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(portfolioFactory, gauge, underlying);
-        // bytes4[] memory claimingSelectors = new bytes4[](5);
-        // claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
-        // claimingSelectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
-        // claimingSelectors[2] = YieldBasisLpClaimingFacet.harvestLpFees.selector;
-        // claimingSelectors[3] = YieldBasisLpClaimingFacet.getAvailableLpFeeYield.selector;
-        // claimingSelectors[4] = YieldBasisLpClaimingFacet.getDepositInfo.selector;
-        // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "YieldBasisLpClaimingFacet");
+        // Deploy YieldBasisLpClaimingFacet (gauge rewards + LP fee harvesting)
+        YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(portfolioFactory, gauge, vault);
+        bytes4[] memory claimingSelectors = new bytes4[](5);
+        claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
+        claimingSelectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
+        claimingSelectors[2] = YieldBasisLpClaimingFacet.harvestLpFees.selector;
+        claimingSelectors[3] = YieldBasisLpClaimingFacet.getAvailableLpFeeYield.selector;
+        claimingSelectors[4] = YieldBasisLpClaimingFacet.getDepositInfo.selector;
+        _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "YieldBasisLpClaimingFacet");
 
         // // Deploy YieldBasisLpLendingFacet (borrow/pay against gauge share collateral)
-        YieldBasisLpLendingFacet lendingFacet = new YieldBasisLpLendingFacet(portfolioFactory, underlying, gauge, underlying);
+        YieldBasisLpLendingFacet lendingFacet = new YieldBasisLpLendingFacet(portfolioFactory, vault, gauge);
         bytes4[] memory lendingSelectors = new bytes4[](2);
         lendingSelectors[0] = YieldBasisLpLendingFacet.borrow.selector;
         lendingSelectors[1] = YieldBasisLpLendingFacet.pay.selector;

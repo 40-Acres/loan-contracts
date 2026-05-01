@@ -12,11 +12,6 @@ import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
  * Collateral is gauge shares (ERC4626). Emissions (YB tokens) are claimed
  * separately via YieldBasisLpClaimingFacet, swapped to USDC, then processed
  * here to repay debt or distribute to the user.
- *
- * Key difference from veNFT variants:
- * - Debt tracked via ERC4626CollateralManager (not CollateralManager/DynamicCollateralManager)
- * - _underlyingLockedAsset set to LP token to prevent selling collateral
- * - _increaseLock is a no-op (base default) — no veNFT lock to compound into
  */
 contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
 

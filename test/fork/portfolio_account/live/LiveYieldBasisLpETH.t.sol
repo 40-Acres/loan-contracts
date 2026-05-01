@@ -354,7 +354,7 @@ contract LiveYieldBasisLpETHTest is Test {
         // token. The deploy script should be fixed to pass YB here.
         // We pass YB to validate the happy-path lifecycle assuming the
         // production deploy is corrected.
-        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(factory, gaugeAddr, YB, underlying);
+        YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(factory, gaugeAddr, YB, LIVE_VAULT);
         bytes4[] memory lpSel = new bytes4[](9);
         lpSel[0] = YieldBasisLpFacet.deposit.selector;
         lpSel[1] = YieldBasisLpFacet.withdraw.selector;
@@ -369,7 +369,7 @@ contract LiveYieldBasisLpETHTest is Test {
         facetRegistry.registerFacet(address(lpFacet), lpSel, "YieldBasisLpFacet");
 
         // --- YieldBasisLpClaimingFacet (5 selectors) ---
-        YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(factory, gaugeAddr, underlying);
+        YieldBasisLpClaimingFacet claimingFacet = new YieldBasisLpClaimingFacet(factory, gaugeAddr, LIVE_VAULT);
         bytes4[] memory cSel = new bytes4[](5);
         cSel[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
         cSel[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
@@ -391,7 +391,7 @@ contract LiveYieldBasisLpETHTest is Test {
         // through YieldBasisCollateralManager). This test registers the correct facet
         // to exercise the end-to-end borrow/pay flow; the deploy script must be fixed.
         YieldBasisLpLendingFacet lendingFacet = new YieldBasisLpLendingFacet(
-            factory, underlying, gaugeAddr, underlying
+            factory, LIVE_VAULT, gaugeAddr
         );
         bytes4[] memory lendSel = new bytes4[](2);
         lendSel[0] = YieldBasisLpLendingFacet.borrow.selector;
@@ -433,7 +433,7 @@ contract LiveYieldBasisLpETHTest is Test {
     ///      collateral manager for YB LP collateral.
     function _replaceYieldBasisLpFacet() internal {
         address oldFacet = facetRegistry.getFacetForSelector(YieldBasisLpFacet.deposit.selector);
-        YieldBasisLpFacet newFacet = new YieldBasisLpFacet(address(portfolioFactory), address(gauge), YB, WETH);
+        YieldBasisLpFacet newFacet = new YieldBasisLpFacet(address(portfolioFactory), address(gauge), YB, LIVE_VAULT);
         bytes4[] memory lpSel = new bytes4[](9);
         lpSel[0] = YieldBasisLpFacet.deposit.selector;
         lpSel[1] = YieldBasisLpFacet.withdraw.selector;
@@ -452,7 +452,7 @@ contract LiveYieldBasisLpETHTest is Test {
         address oldLendingFacet = facetRegistry.getFacetForSelector(YieldBasisLpLendingFacet.borrow.selector);
         if (oldLendingFacet != address(0)) {
             YieldBasisLpLendingFacet newLendingFacet = new YieldBasisLpLendingFacet(
-                address(portfolioFactory), WETH, address(gauge), WETH
+                address(portfolioFactory), LIVE_VAULT, address(gauge)
             );
             bytes4[] memory lendSel = new bytes4[](2);
             lendSel[0] = YieldBasisLpLendingFacet.borrow.selector;

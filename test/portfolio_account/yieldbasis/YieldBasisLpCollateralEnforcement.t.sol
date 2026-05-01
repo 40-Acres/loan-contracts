@@ -141,7 +141,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // --- Deploy and register YieldBasisLpFacet ---
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_lendingVault));
         {
             bytes4[] memory selectors = new bytes4[](8);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
@@ -156,7 +156,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         }
 
         // --- Deploy and register YieldBasisLpClaimingFacet (gauge rewards + LP fee harvest) ---
-        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_usdc));
+        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_lendingVault));
         {
             bytes4[] memory selectors = new bytes4[](5);
             selectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
@@ -170,9 +170,8 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // --- Deploy and register YieldBasisLpLendingFacet ---
         _ybBtcLendingFacet = new YieldBasisLpLendingFacet(
             address(_portfolioFactory),
-            address(_usdc),
-            address(_gauge),
-            address(_usdc)
+            address(_lendingVault),
+            address(_gauge)
         );
         {
             bytes4[] memory selectors = new bytes4[](2);

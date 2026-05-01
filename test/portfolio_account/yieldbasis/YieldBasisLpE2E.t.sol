@@ -125,7 +125,7 @@ contract YieldBasisBtcE2ETest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // --- Deploy and register YieldBasisLpFacet with ALL selectors (including ICollateralFacet) ---
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_lendingVault));
         {
             bytes4[] memory selectors = new bytes4[](8);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
@@ -141,7 +141,7 @@ contract YieldBasisBtcE2ETest is Test {
         }
 
         // --- Deploy and register YieldBasisLpClaimingFacet ---
-        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_usdc));
+        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_lendingVault));
         {
             bytes4[] memory selectors = new bytes4[](2);
             selectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
@@ -155,9 +155,8 @@ contract YieldBasisBtcE2ETest is Test {
         // YieldBasisLpFacet reads from for ICollateralFacet.getTotalDebt().
         _lendingFacet = new YieldBasisLpLendingFacet(
             address(_portfolioFactory),
-            address(_usdc),    // lending token
-            address(_gauge),
-            address(_usdc)     // underlying (mock: reuse usdc)
+            address(_lendingVault),
+            address(_gauge)
         );
         {
             bytes4[] memory selectors = new bytes4[](2);

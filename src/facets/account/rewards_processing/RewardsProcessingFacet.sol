@@ -510,17 +510,17 @@ contract RewardsProcessingFacet is AccessControl {
         address lockedAsset = _underlyingLockedAsset;
         bool hasDebt = _getTotalDebt() > 0;
 
-        // 1. Compute fees
-        PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
         uint256 remaining = rewardsAmount;
-        if(hasDebt) {
-            remaining -= (rewardsAmount * config.getLoanConfig().getTreasuryFee()) / 10000;
-            remaining -= (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;
-        } else {
-            remaining -= (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
+        {
+            PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
+            if(hasDebt) {
+                remaining -= (rewardsAmount * config.getLoanConfig().getTreasuryFee()) / 10000;
+                remaining -= (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;
+            } else {
+                remaining -= (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
+            }
         }
 
-        // 2. Gas reclamation
         if(gasReclamation > 0) {
             uint256 gasReclamationCap = rewardsAmount * 5 / 100;
             if(gasReclamation > gasReclamationCap) {
@@ -530,24 +530,44 @@ contract RewardsProcessingFacet is AccessControl {
         }
 
         if (hasDebt) {
-            if (_getLTVRatio() <= 100 && UserRewardsConfig.hasActiveBalanceDistribution()) {
-                UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
-                uint256 entryAmount = rewardsAmount * entry.percentage / 100;
-                if (entryAmount > remaining) entryAmount = remaining;
-                routes[0] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
-            }
+            routes[0] = _buildActiveBalanceRoute(rewardsAmount, remaining, asset, lockedAsset, tokenId);
         } else {
-            uint8 count = UserRewardsConfig.getZeroBalanceDistributionCount();
             uint256 distributable = remaining;
+            uint8 count = UserRewardsConfig.getZeroBalanceDistributionCount();
             for (uint8 i = 0; i < count; i++) {
                 if (remaining == 0) break;
-                UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getZeroBalanceDistributionEntry(i);
-                uint256 entryAmount = distributable * entry.percentage / 100;
-                if (entryAmount > remaining) entryAmount = remaining;
-                routes[i] = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
-                remaining -= entryAmount;
+                (routes[i], remaining) = _buildZeroBalanceRoute(i, distributable, remaining, asset, lockedAsset, tokenId);
             }
         }
+    }
+
+    function _buildActiveBalanceRoute(
+        uint256 rewardsAmount,
+        uint256 remaining,
+        address asset,
+        address lockedAsset,
+        uint256 tokenId
+    ) internal view returns (SwapRoute memory route) {
+        if (_getLTVRatio() > 100 || !UserRewardsConfig.hasActiveBalanceDistribution()) return route;
+        UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
+        uint256 entryAmount = rewardsAmount * entry.percentage / 100;
+        if (entryAmount > remaining) entryAmount = remaining;
+        return _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
+    }
+
+    function _buildZeroBalanceRoute(
+        uint8 i,
+        uint256 distributable,
+        uint256 remaining,
+        address asset,
+        address lockedAsset,
+        uint256 tokenId
+    ) internal view returns (SwapRoute memory route, uint256 newRemaining) {
+        UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getZeroBalanceDistributionEntry(i);
+        uint256 entryAmount = distributable * entry.percentage / 100;
+        if (entryAmount > remaining) entryAmount = remaining;
+        route = _routeForDistributionEntry(entry, entryAmount, asset, lockedAsset, tokenId);
+        newRemaining = remaining - entryAmount;
     }
 
     function _routeForDistributionEntry(

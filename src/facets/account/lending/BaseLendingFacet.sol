@@ -10,6 +10,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AccessControl} from "../utils/AccessControl.sol";
 import {UserLendingConfig} from "./UserLendingConfig.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
+import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
  * @title BaseLendingFacet
@@ -63,12 +64,14 @@ abstract contract BaseLendingFacet is AccessControl {
     // ──────────────────────────────────────────────
 
     function borrow(uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         uint256 minimumCollateral = _portfolioFactory.portfolioFactoryConfig().getMinimumCollateral();
         if(minimumCollateral > 0) {
             require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
         }
-        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
+        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(config, amount);
         _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
         emit Borrowed(amount, amountAfterFees, originationFee, portfolioOwner);
     }
@@ -79,6 +82,8 @@ abstract contract BaseLendingFacet is AccessControl {
      * @param amount The amount of funds to borrow
      */
     function borrowTo(IPortfolioFactory toFactory, uint256 amount) public onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
         PortfolioManager manager = PortfolioManager(address(_portfolioFactory.portfolioManager()));
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         address toPortfolio = toFactory.portfolioOf(portfolioOwner);
@@ -90,7 +95,7 @@ abstract contract BaseLendingFacet is AccessControl {
             require(ICollateralFacet(address(this)).getTotalLockedCollateral() >= minimumCollateral, "Minimum collateral not met");
         }
 
-        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
+        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(config, amount);
         _lendingToken.safeTransfer(toPortfolio, amountAfterFees);
         emit BorrowedTo(amount, amountAfterFees, originationFee, portfolioOwner, toPortfolio);
     }
@@ -128,11 +133,13 @@ abstract contract BaseLendingFacet is AccessControl {
         if(!topUpEnabled) {
             return;
         }
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
         (uint256 maxLoan, ) = ICollateralFacet(address(this)).getMaxLoan();
         if(maxLoan == 0) {
             return;
         }
-        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), maxLoan);
+        (uint256 amountAfterFees, uint256 originationFee) = _increaseTotalDebt(config, maxLoan);
         // send to portfolio owner
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));
         _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);

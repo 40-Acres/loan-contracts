@@ -3,12 +3,14 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
+import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 import {YieldBasisPortfolioFactoryConfig} from "../config/YieldBasisPortfolioFactoryConfig.sol";
+import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
  * @title YieldBasisLpFacet
@@ -37,16 +39,20 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     event Unstaked(uint256 assets, uint256 sharesBurned);
     event Staked(uint256 assets, uint256 sharesMinted);
 
-    constructor(address portfolioFactory, address gauge, address rewardToken, address underlying) {
+    /// @dev `_underlying` is derived from `lendingPool.lendingAsset()` so that
+    ///      collateral pricing (via LP pricePerShare) and debt comparisons
+    ///      (via lendingPool) share the same denomination by construction —
+    ///      no operator-passed `underlying` arg can cause unit mismatch.
+    constructor(address portfolioFactory, address gauge, address rewardToken, address lendingPool) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
         require(gauge != address(0), "Invalid gauge");
         require(rewardToken != address(0), "Invalid reward token");
-        require(underlying != address(0), "Invalid underlying");
+        require(lendingPool != address(0), "Invalid lending pool");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _gauge = IYieldBasisGauge(gauge);
         _lpToken = IERC20(IYieldBasisGauge(gauge).asset());
         _rewardToken = rewardToken;
-        _underlying = underlying;
+        _underlying = ILendingPool(lendingPool).lendingAsset();
     }
 
     function _config() internal view returns (address) {
@@ -92,13 +98,15 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
      */
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         require(amount > 0, "Zero amount");
+        address config = _config();
+        SequencerLivenessLib.assertUp(config);
 
         // Cap to tracked: harvestLpFees may have reduced shares via removeSharesForYield.
         uint256 trackedShares = YieldBasisCollateralManager.getCollateralShares();
         uint256 toWithdraw = amount > trackedShares ? trackedShares : amount;
         if (toWithdraw == 0) return;
 
-        YieldBasisCollateralManager.removeCollateral(_config(), address(_lpToken), _underlying, toWithdraw);
+        YieldBasisCollateralManager.removeCollateral(config, address(_lpToken), _underlying, toWithdraw);
 
         uint256 directLp = _lpToken.balanceOf(address(this));
         if (toWithdraw > directLp) {

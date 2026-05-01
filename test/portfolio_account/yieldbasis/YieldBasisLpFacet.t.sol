@@ -97,7 +97,7 @@ contract YieldBasisLpFacetTest is Test {
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         // Deploy and register YieldBasisLpFacet with ALL selectors including ICollateralFacet
-        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
+        _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_lendingVault));
         bytes4[] memory facetSelectors = new bytes4[](8);
         facetSelectors[0] = YieldBasisLpFacet.deposit.selector;
         facetSelectors[1] = YieldBasisLpFacet.withdraw.selector;
@@ -111,7 +111,7 @@ contract YieldBasisLpFacetTest is Test {
         _facetRegistry.registerFacet(address(_ybBtcFacet), facetSelectors, "YieldBasisLpFacet");
 
         // Deploy and register YieldBasisLpClaimingFacet
-        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_usdc));
+        _ybBtcClaimingFacet = new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(_lendingVault));
         bytes4[] memory claimingSelectors = new bytes4[](2);
         claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
         claimingSelectors[1] = YieldBasisLpClaimingFacet.previewGaugeRewards.selector;
@@ -1209,24 +1209,42 @@ contract YieldBasisLpFacetTest is Test {
     /// @notice Constructor should revert with zero address for portfolioFactory
     function testConstructorRevertsZeroFactory() public {
         vm.expectRevert("Invalid portfolio factory");
-        new YieldBasisLpFacet(address(0), address(_gauge), address(_ybToken), address(_usdc));
+        new YieldBasisLpFacet(address(0), address(_gauge), address(_ybToken), address(_lendingVault));
     }
 
     /// @notice Constructor should revert with zero address for gauge
     function testConstructorRevertsZeroGauge() public {
         vm.expectRevert("Invalid gauge");
-        new YieldBasisLpFacet(address(_portfolioFactory), address(0), address(_ybToken), address(_usdc));
+        new YieldBasisLpFacet(address(_portfolioFactory), address(0), address(_ybToken), address(_lendingVault));
+    }
+
+    /// @notice Constructor should revert with zero address for rewardToken
+    function testConstructorRevertsZeroRewardToken() public {
+        vm.expectRevert("Invalid reward token");
+        new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(0), address(_lendingVault));
+    }
+
+    /// @notice Constructor should revert with zero address for lendingPool. The
+    ///         explicit require fires BEFORE any external call into lendingPool.
+    function testConstructorRevertsZeroLendingPool() public {
+        vm.expectRevert("Invalid lending pool");
+        new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(0));
     }
 
     /// @notice ClaimingFacet constructor should revert with zero address
     function testClaimingConstructorRevertsZeroFactory() public {
         vm.expectRevert("Invalid portfolio factory");
-        new YieldBasisLpClaimingFacet(address(0), address(_gauge), address(_usdc));
+        new YieldBasisLpClaimingFacet(address(0), address(_gauge), address(_lendingVault));
     }
 
     function testClaimingConstructorRevertsZeroGauge() public {
         vm.expectRevert("Invalid gauge");
-        new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(0), address(_usdc));
+        new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(0), address(_lendingVault));
+    }
+
+    function testClaimingConstructorRevertsZeroLendingPool() public {
+        vm.expectRevert("Invalid lending pool");
+        new YieldBasisLpClaimingFacet(address(_portfolioFactory), address(_gauge), address(0));
     }
 
     // ============ HARDENED TESTS: Minimum Amount (1 wei) ============

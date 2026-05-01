@@ -3,10 +3,12 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
+import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
+import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
  * @title YieldBasisLpLendingFacet
@@ -26,16 +28,20 @@ contract YieldBasisLpLendingFacet is AccessControl {
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
 
-    constructor(address portfolioFactory, address lendingToken, address gauge, address underlying) {
+    /// @dev `_lendingToken` and `_underlying` are both derived from
+    ///      `lendingPool.lendingAsset()` so they are equal by construction —
+    ///      eliminating the operator-error surface where a deploy could pass
+    ///      mismatched values.
+    constructor(address portfolioFactory, address lendingPool, address gauge) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
-        require(lendingToken != address(0), "Invalid lending token");
+        require(lendingPool != address(0), "Invalid lending pool");
         require(gauge != address(0), "Invalid gauge");
-        require(underlying != address(0), "Invalid underlying");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
-        _lendingToken = IERC20(lendingToken);
+        address asset = ILendingPool(lendingPool).lendingAsset();
+        _lendingToken = IERC20(asset);
         _gauge = gauge;
         _lpToken = IYieldBasisGauge(gauge).asset();
-        _underlying = underlying;
+        _underlying = asset;
     }
 
     function _config() internal view returns (address) {
@@ -46,8 +52,10 @@ contract YieldBasisLpLendingFacet is AccessControl {
      * @dev Borrow against YB LP collateral (underlying-denominated)
      */
     function borrow(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address config = _config();
+        SequencerLivenessLib.assertUp(config);
         (uint256 amountAfterFees, uint256 originationFee) = YieldBasisCollateralManager.increaseTotalDebt(
-            _config(), _lpToken, _underlying, amount
+            config, _lpToken, _underlying, amount
         );
 
         address portfolioOwner = _portfolioFactory.ownerOf(address(this));

@@ -38,6 +38,7 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
         ILoanConfig loanConfig;
         uint256 minimumCollateral;
         address portfolioFactory;
+        address sequencerLivenessCheck;
     }
 
     // Named storage slot for account data
@@ -106,6 +107,14 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
     function getMinimumCollateral() public view returns (uint256) {
         PortfolioFactoryConfigData storage collateralStorage = _getPortfolioFactoryConfig();
         return collateralStorage.minimumCollateral;
+    }
+
+    function setSequencerLivenessCheck(address addr) public onlyOwner {
+        _getPortfolioFactoryConfig().sequencerLivenessCheck = addr;
+    }
+
+    function getSequencerLivenessCheck() public view returns (address) {
+        return _getPortfolioFactoryConfig().sequencerLivenessCheck;
     }
 
     function onCollateralAdded(address asset, uint256 id) external virtual {}

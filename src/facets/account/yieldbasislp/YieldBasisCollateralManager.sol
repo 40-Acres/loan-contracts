@@ -71,9 +71,7 @@ library YieldBasisCollateralManager {
     }
 
     /**
-     * @dev shares × vault.pricePerShare() / 1e18. `underlying` is unused in the math —
-     * it is the denomination the returned value is conceptually in (e.g. WETH for yb-WETH)
-     * and is kept on the signature for call-site clarity.
+     * @dev shares × vault.pricePerShare() / 1e18.
      */
     function _resolveCollateralValue(address vault, address /*underlying*/, uint256 shares) internal view returns (uint256 value) {
         if (shares == 0 || vault == address(0)) return 0;
@@ -356,6 +354,18 @@ library YieldBasisCollateralManager {
         }
     }
 
+    /**
+     * @dev Burn `shares` of tracked LP and deduct basis proportionally so per-share
+     *      basis D/S is preserved across the burn. Caller must validate the yield
+     *      precondition S·p > D before calling — given that, S'·p ≥ D' follows
+     *      automatically and no post-burn invariant check is needed here.
+     *
+     *      Gated by isAuthorizedCaller (mirrors AccessControl.onlyAuthorizedCaller).
+     *      The PortfolioManager is intentionally NOT bypassed — it does not call this
+     *      path. The yield-precondition above is enforced by the caller, so an
+     *      unauthorized caller could otherwise zero out depositedAssetValue without
+     *      burning real LP and unlock fictitious borrow capacity.
+     */
     function removeSharesForYield(
         address portfolioFactoryConfig,
         address vault,
@@ -364,13 +374,18 @@ library YieldBasisCollateralManager {
     ) public {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
         YieldBasisCollateralData storage data = _getStorage();
+
+        address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
+        require(
+            PortfolioFactory(factory).portfolioManager().isAuthorizedCaller(msg.sender),
+            "Unauthorized"
+        );
+
         require(data.shares >= shares, "Insufficient shares");
 
-        uint256 remainingShares = data.shares - shares;
-        uint256 remainingValue = _resolveCollateralValue(vault, underlying, remainingShares);
-        require(remainingValue >= data.depositedAssetValue, "Would remove principal");
-
-        data.shares = remainingShares;
+        uint256 valueToRemove = (data.depositedAssetValue * shares) / data.shares;
+        data.shares -= shares;
+        data.depositedAssetValue -= valueToRemove;
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
         require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");

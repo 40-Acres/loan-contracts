@@ -6,6 +6,7 @@ import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
+import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
  * @title ERC4626LendingFacet
@@ -36,8 +37,10 @@ contract ERC4626LendingFacet is AccessControl {
      * @param amount The amount to borrow
      */
     function borrow(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
         (uint256 amountAfterFees, uint256 originationFee) = ERC4626CollateralManager.increaseTotalDebt(
-            address(_portfolioFactory.portfolioFactoryConfig()),
+            config,
             _vault,
             amount
         );
