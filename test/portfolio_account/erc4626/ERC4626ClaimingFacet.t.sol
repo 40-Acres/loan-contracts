@@ -177,7 +177,7 @@ contract ERC4626ClaimingFacetTest is Test {
 
         // Claim yield as authorized caller
         vm.startPrank(_authorizedCaller);
-        uint256 claimedAssets = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        uint256 claimedAssets = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
         vm.stopPrank();
 
         // Verify yield was claimed
@@ -193,7 +193,7 @@ contract ERC4626ClaimingFacetTest is Test {
     function testClaimVaultYieldRevertsWithNoCollateral() public {
         vm.startPrank(_authorizedCaller);
         vm.expectRevert("No shares deposited");
-        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
         vm.stopPrank();
     }
 
@@ -205,7 +205,7 @@ contract ERC4626ClaimingFacetTest is Test {
 
         vm.startPrank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
         vm.stopPrank();
     }
 
@@ -221,7 +221,7 @@ contract ERC4626ClaimingFacetTest is Test {
         // Try to claim as unauthorized caller
         vm.startPrank(_user);
         vm.expectRevert();
-        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
         vm.stopPrank();
     }
 
@@ -318,7 +318,7 @@ contract ERC4626ClaimingFacetTest is Test {
         simulateYield(YIELD_AMOUNT);
 
         vm.startPrank(_authorizedCaller);
-        uint256 firstClaim = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        uint256 firstClaim = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
         vm.stopPrank();
 
         assertGt(firstClaim, 0);
@@ -327,7 +327,7 @@ contract ERC4626ClaimingFacetTest is Test {
         simulateYield(YIELD_AMOUNT / 2);
 
         vm.startPrank(_authorizedCaller);
-        uint256 secondClaim = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        uint256 secondClaim = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
         vm.stopPrank();
 
         assertGt(secondClaim, 0);

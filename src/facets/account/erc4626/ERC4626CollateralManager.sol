@@ -424,7 +424,11 @@ library ERC4626CollateralManager {
     }
 
     /**
-     * @dev Remove shares for yield claiming without affecting depositedAssetValue
+     * @dev Remove shares for yield claiming without affecting depositedAssetValue.
+     *      Gated by isAuthorizedCaller. The PortfolioManager is intentionally NOT
+     *      bypassed — it does not call this path. An unauthorized caller could
+     *      otherwise burn share tracking without burning real shares and unlock
+     *      fictitious borrow capacity.
      */
     function removeSharesForYield(address portfolioFactoryConfig, address vault, uint256 shares) external {
         removeSharesForYield(portfolioFactoryConfig, vault, address(0), shares);
@@ -432,6 +436,13 @@ library ERC4626CollateralManager {
 
     function removeSharesForYield(address portfolioFactoryConfig, address vault, address lpToken, uint256 shares) public {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+
+        address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
+        require(
+            PortfolioFactory(factory).portfolioManager().isAuthorizedCaller(msg.sender),
+            "Unauthorized"
+        );
+
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient shares");
 

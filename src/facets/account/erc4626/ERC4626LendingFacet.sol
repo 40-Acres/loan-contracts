@@ -6,6 +6,7 @@ import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
+import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
 
 /**
@@ -19,6 +20,20 @@ contract ERC4626LendingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     IERC20 public immutable _lendingToken;
     address public immutable _vault;
+
+    error ReentrantCall();
+
+    bytes32 private constant _LENDING_REENTRANCY_SLOT = keccak256("fortyacres.lending.reentrancy");
+
+    modifier nonReentrant() {
+        bytes32 slot = _LENDING_REENTRANCY_SLOT;
+        uint256 status;
+        assembly { status := sload(slot) }
+        if (status == 2) revert ReentrantCall();
+        assembly { sstore(slot, 2) }
+        _;
+        assembly { sstore(slot, 1) }
+    }
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
@@ -55,21 +70,26 @@ contract ERC4626LendingFacet is AccessControl {
      * @dev Pay back debt
      * @param amount The amount to pay
      */
-    function pay(uint256 amount) external {
+    function pay(uint256 amount) external nonReentrant {
         // If caller is portfolio manager, use portfolio owner as from address
         address from = msg.sender == address(_portfolioFactory.portfolioManager())
             ? _portfolioFactory.ownerOf(address(this))
             : msg.sender;
 
-        // Transfer funds from the from address to this contract
+        // Cap to total debt before pulling funds. Excess-refund logic below
+        // remains as defense-in-depth for race conditions where the vault
+        // implicitly reduces debt during payFromPortfolio.
+        uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
+        if (amount > totalDebt) {
+            amount = totalDebt;
+        }
+
         _lendingToken.safeTransferFrom(from, address(this), amount);
 
-        // Pay down debt
         uint256 excess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _vault, amount);
 
         emit Paid(amount - excess, from);
 
-        // Refund excess to the from address
         if (excess > 0) {
             _lendingToken.safeTransfer(from, excess);
         }

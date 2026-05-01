@@ -227,6 +227,9 @@ contract YieldBasisBtcE2ETest is Test {
 
         // Admin stakes the LP into the gauge (step 6 later asserts the gauge
         // is the source of the withdrawn LP, so we must stake to exercise that path).
+        // Flip the directive then sweep — setStakedMode reads the directive.
+        vm.prank(_owner);
+        _portfolioFactoryConfig.setStakedGaugeMode(true);
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).setStakedMode();
 

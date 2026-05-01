@@ -238,8 +238,22 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     ///      must stake after deposit.
     function _depositAndStakeLP(uint256 amount) internal {
         _depositLP(amount);
+        _syncAndSetStake(true);
+    }
+
+    /// @dev Set the protocol-wide directive then sweep this account into it.
+    function _syncAndSetStake(bool mode) internal {
+        vm.prank(_owner);
+        _portfolioFactoryConfig.setStakedGaugeMode(mode);
         vm.prank(_authorizedCaller);
         YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+    }
+
+    /// @dev 85% slippage floor against the LP's current pricePerShare,
+    ///      rescaled into 8-dec USDC underlying terms (pps is 1e18-scaled,
+    ///      underlying is 1e8-scaled, so divide by 1e10).
+    function _harvestFloor() internal view returns (uint256) {
+        return (_ybBtc.pricePerShare() * 85) / 100 / 1e10;
     }
 
     /// @dev Borrow USDC against collateral (via multicall since it requires onlyPortfolioManagerMulticall)
@@ -297,9 +311,11 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertGt(yieldUnderlying, 0, "Should have yield available");
         assertGt(yieldShares, 0, "Should have surplus shares");
 
-        // Step 4: Harvest LP fees (authorized caller)
+        // Step 4: Harvest LP fees (authorized caller). Pre-compute the floor
+        // so the staticcall to pricePerShare() doesn't consume vm.prank.
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
-        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(underlyingReceived, 0, "Should have received underlying from harvest");
 
         // Step 5: Verify collateral still enforced
@@ -339,9 +355,10 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Attempt harvest should revert with "No yield to harvest"
         // because currentValue (5e8) < depositedValue (10e8)
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
     }
 
     /**
@@ -375,14 +392,22 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _ybBtc.setPricePerShare(1.5e18);
 
         // Harvest LP fees
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
-        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(received, 0, "Should receive yield");
 
-        // Key invariant: remaining collateral value >= deposited value
-        (, uint256 depositedValueAfter, uint256 currentValueAfter) =
+        // Under option-(ii) proportional deduction, depositedValue can shrink
+        // proportionally with the burn. Per-share basis D/S is preserved; the
+        // remaining collateral value still covers the (smaller) deposited basis.
+        (uint256 sharesAfter, uint256 depositedValueAfter, uint256 currentValueAfter) =
             YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
-        assertEq(depositedValueAfter, depositedValueBefore, "Deposited value unchanged by harvest");
+        assertLe(depositedValueAfter, depositedValueBefore, "Deposited value can only shrink");
+        if (sharesAfter > 0) {
+            uint256 basisPerShareBefore = (depositedValueBefore * 1e18) / DEPOSIT_AMOUNT;
+            uint256 basisPerShareAfter = (depositedValueAfter * 1e18) / sharesAfter;
+            assertApproxEqAbs(basisPerShareAfter, basisPerShareBefore, 1, "Per-share basis preserved");
+        }
         assertGe(currentValueAfter, depositedValueAfter, "Current value still covers deposited value");
 
         // maxLoan after harvest >= original maxLoan → debt is still covered
@@ -412,9 +437,10 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _ybBtc.setPricePerShare(0.8e18);
 
         // No yield to harvest
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
 
         // The position is now undercollateralized (not from harvest, from PPS drop)
         // collateral value = 10e8 * 0.8 = 8e8, maxLoan = 8e8 * 0.7 = 5.6e8
@@ -529,8 +555,9 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertGt(yieldShares, 0, "Should have surplus shares");
 
         // Harvest — should succeed since no debt
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
-        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(received, 0, "Should receive underlying from harvest");
 
         // Collateral requirements trivially pass with 0 debt
@@ -579,8 +606,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         stakedBefore;
 
         // Unstake via authorized caller
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+        _syncAndSetStake(false);
 
         // After unstake: collateral removed, LP tokens on account
         (uint256 stakedAfterUnstake, uint256 unstakedAfterUnstake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -592,8 +618,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(collateralAfterUnstake, collateralBefore, "Collateral preserved after unstake");
 
         // Stake via authorized caller
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+        _syncAndSetStake(true);
 
         // After stake: LP tokens back in gauge, collateral re-tracked
         (uint256 stakedAfterStake, uint256 unstakedAfterStake) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
@@ -629,8 +654,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         staked;
 
         // Unstake all — collateral unchanged because LP stays in portfolio
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+        _syncAndSetStake(false);
 
         uint256 collateralAfter = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfter, collateralBefore, "Collateral preserved after unstake while indebted");
@@ -643,8 +667,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertTrue(success, "Collateral requirements pass - LP still in portfolio");
 
         // Stake
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+        _syncAndSetStake(true);
 
         // Still passes
         success = ICollateralFacet(_portfolioAccount).enforceCollateralRequirements();
@@ -658,9 +681,10 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
      */
     function test_harvestLpFees_revertsWithNoShares() public {
         // No deposit — try to harvest
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
         vm.expectRevert("No shares deposited");
-        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
     }
 
     /**
@@ -671,9 +695,10 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // PPS is still 1e18 (default) — same as deposit time
         // currentValue == depositedValue → "No yield to harvest"
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
     }
 
     /**
@@ -693,8 +718,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _depositLP(5e8);
 
         // Stake all LP so harvestLpFees can redeem gauge shares
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+        _syncAndSetStake(true);
 
         // deposited value = 5e8 * 1.0 + 5e8 * 1.5 = 5e8 + 7.5e8 = 12.5e8
         (uint256 shares, uint256 depositedValue, uint256 currentValue) =
@@ -710,15 +734,17 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(yieldUnderlying, 2.5e8, "Yield should be 2.5e8");
 
         // Harvest should work and only take yield, not principal
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
-        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(received, 0, "Should receive yield");
 
-        // After harvest, remaining value should still cover deposited value
+        // Under option-(ii): D shrinks proportionally with the burn so per-share
+        // basis D/S is preserved. Remaining value still covers (smaller) basis.
         (, uint256 depositedValueAfter, uint256 currentValueAfter) =
             YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertGe(currentValueAfter, depositedValueAfter, "Remaining value must cover deposited value after harvest");
-        assertEq(depositedValueAfter, depositedValue, "Deposited value should be unchanged (removeSharesForYield)");
+        assertLe(depositedValueAfter, depositedValue, "Deposited value can only shrink across harvest");
     }
 
     /**
@@ -765,8 +791,9 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         uint256 ybBtcBalanceBefore = _ybBtc.balanceOf(_portfolioAccount);
 
         // Harvest LP fees — underlying (ybBTC in mock) lands on portfolio account
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
-        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(underlyingReceived, 0, "Should have received underlying from harvest");
 
         // (a) Verify underlying balance increased on portfolio account
@@ -817,8 +844,9 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _ybBtc.setPricePerShare(1.3e18);
 
         // Step 4: Harvest LP fees
+        uint256 floor = _harvestFloor();
         vm.prank(_authorizedCaller);
-        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(0);
+        uint256 underlyingReceived = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(underlyingReceived, 0, "Should receive underlying from fee harvest");
 
         // Verify underlying is on the account
@@ -915,15 +943,12 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         _depositLP(firstDeposit);
 
-        vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).setStakedMode();
+        // Sync directive=true and stake the first deposit; leaves the directive
+        // at true so subsequent deposits auto-stake.
+        _syncAndSetStake(true);
         (uint256 stakedAfter, uint256 unstakedAfter) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
         assertEq(stakedAfter, firstDeposit, "Precondition: first deposit fully in gauge");
         assertEq(unstakedAfter, 0, "Precondition: account has zero LP balance");
-
-        // Flip the factory flag so subsequent deposits auto-stake.
-        vm.prank(_owner);
-        _portfolioFactoryConfig.setStakedGaugeMode(true);
 
         uint256 gaugeBefore = _gauge.balanceOf(_portfolioAccount);
 

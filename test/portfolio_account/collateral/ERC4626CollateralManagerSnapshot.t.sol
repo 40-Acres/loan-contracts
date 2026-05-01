@@ -600,7 +600,7 @@ contract ERC4626SnapshotTest is Test {
 
         // Call claimVaultYield as authorized caller
         vm.prank(_authorizedCaller);
-        uint256 yieldClaimed = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        uint256 yieldClaimed = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
 
         // Verify yield was claimed (should be ~200 USDC worth minus rounding)
         assertGt(yieldClaimed, 0, "Should have claimed some yield");
@@ -1161,7 +1161,7 @@ contract ERC4626SnapshotTest is Test {
         // No yield — claimVaultYield should revert because currentAssets == depositedAssets
         vm.prank(_authorizedCaller);
         vm.expectRevert("No yield to harvest");
-        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield();
+        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(1);
     }
 
     /**

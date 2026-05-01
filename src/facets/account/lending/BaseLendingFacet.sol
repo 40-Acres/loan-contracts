@@ -104,22 +104,28 @@ abstract contract BaseLendingFacet is AccessControl {
         // if the caller is the portfolio manager, use the portfolio owner as the from address, otherwise use the caller
         address from = msg.sender == address(_portfolioFactory.portfolioManager()) ? _portfolioFactory.ownerOf(address(this)) : msg.sender;
 
-        // cap payment to total debt
+        // cap payment to total debt — never pull more than is owed from the caller
+        uint256 requestedAmount = amount;
         uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
         if(amount > totalDebt) {
             amount = totalDebt;
         }
-        
+
         // transfer the funds from the from address to the portfolio account then pay the loan
         _lendingToken.safeTransferFrom(from, address(this), amount);
         uint256 excess = _decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
 
-        emit Paid(amount-excess, from);
-        // refund excess to the from address
+        uint256 actuallyPaid = amount - excess;
+        emit Paid(actuallyPaid, from);
+        // refund any portion the manager couldn't apply to debt
         if(excess > 0) {
             _lendingToken.safeTransfer(from, excess);
         }
-        return excess;
+        // Reported excess is the full unspent portion of the caller's request,
+        // including the part that was capped before the transfer. Callers
+        // (e.g. rewards-processing fan-out) rely on `requestedAmount - excess`
+        // to derive how much actually went toward debt.
+        return requestedAmount - actuallyPaid;
     }
 
     function setTopUp(bool topUpEnabled) public onlyPortfolioManagerMulticall(_portfolioFactory) {

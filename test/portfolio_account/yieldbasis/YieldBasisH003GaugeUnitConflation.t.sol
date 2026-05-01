@@ -558,7 +558,7 @@ contract YBFacetH003Test is Test {
             address(portfolioFactory),
             address(gauge),
             address(ybToken),
-            address(usdc)
+            address(lendingVault)
         );
         bytes4[] memory facetSelectors = new bytes4[](8);
         facetSelectors[0] = YieldBasisLpFacet.deposit.selector;
@@ -574,7 +574,7 @@ contract YBFacetH003Test is Test {
         claimingFacet = new YieldBasisLpClaimingFacet(
             address(portfolioFactory),
             address(gauge),
-            address(usdc)
+            address(lendingVault)
         );
         bytes4[] memory claimingSelectors = new bytes4[](5);
         claimingSelectors[0] = YieldBasisLpClaimingFacet.claimGaugeRewards.selector;
@@ -608,6 +608,13 @@ contract YBFacetH003Test is Test {
 
     function _depositAndStake(uint256 amount) internal {
         _deposit(amount);
+        _syncAndSetStake(true);
+    }
+
+    /// @dev Set the protocol-wide directive then sweep this account into it.
+    function _syncAndSetStake(bool mode) internal {
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(mode);
         vm.prank(authorizedCaller);
         YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
@@ -644,8 +651,7 @@ contract YBFacetH003Test is Test {
         assertEq(collateralBefore, DEPOSIT, "tracked at full deposit pre-unstake");
 
         // unstake() must NOT revert — pre-fix it would have here.
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+        _syncAndSetStake(false);
 
         // Post-state: account holds DEPOSIT - 1 LP; gauge is empty for this account.
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
@@ -676,6 +682,8 @@ contract YBFacetH003Test is Test {
         _depositAndStake(DEPOSIT);
         gauge.setRedeemShortfallWei(1);
 
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
         vm.expectEmit(false, false, false, true, portfolioAccount);
         emit YieldBasisLpFacet.Unstaked(DEPOSIT - 1, DEPOSIT);
         vm.prank(authorizedCaller);
@@ -691,8 +699,7 @@ contract YBFacetH003Test is Test {
         // 99% ratio — redeem(1e18 shares) delivers 0.99e18 LP.
         gauge.setConvertRatioBps(9_900);
 
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+        _syncAndSetStake(false);
 
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0, "gauge fully redeemed");
@@ -717,6 +724,8 @@ contract YBFacetH003Test is Test {
         _deposit(DEPOSIT);
 
         uint256 expectedShares = (DEPOSIT * 9_900) / 10_000;
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
         vm.expectEmit(false, false, false, true, portfolioAccount);
         emit YieldBasisLpFacet.Staked(DEPOSIT, expectedShares);
         vm.prank(authorizedCaller);
@@ -756,8 +765,9 @@ contract YBFacetH003Test is Test {
         // surplusShares but only surplusShares-1 LP was on the account, and
         // burning surplusShares from a balance of surplusShares-1 underflows.
         // Post-fix: harvest reads the actual LP delta and passes that.
+        uint256 floor = (ybLp.pricePerShare() * 85) / 100;
         vm.prank(authorizedCaller);
-        uint256 received = YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(floor);
         assertGt(received, 0, "underlying received from rounded-withdraw harvest");
     }
 
@@ -783,9 +793,10 @@ contract YBFacetH003Test is Test {
         // the LP burn step too — accept any non-zero value via expectEmit
         // checkData=false on that field. Foundry doesn't allow per-field
         // ignore — so capture and assert manually instead.
+        uint256 floor2 = (ybLp.pricePerShare() * 85) / 100;
         vm.recordLogs();
         vm.prank(authorizedCaller);
-        YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(0);
+        YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(floor2);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         // Find the LpFeesHarvested log on the portfolio account.
@@ -821,13 +832,13 @@ contract YBFacetH003Test is Test {
 
         // Generate yield and harvest
         ybLp.setPricePerShare(1.5e18);
+        uint256 hpFloor = (ybLp.pricePerShare() * 85) / 100;
         vm.prank(authorizedCaller);
-        uint256 received = YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(0);
+        uint256 received = YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(hpFloor);
         assertGt(received, 0, "happy-path harvest delivers underlying");
 
         // Unstake — at 1:1 with no rounding, gauge returns LP equal to shares.
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+        _syncAndSetStake(false);
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0, "gauge fully drained at 1:1");
         // After harvest, removeSharesForYield reduced data.shares but
@@ -844,10 +855,8 @@ contract YBFacetH003Test is Test {
         assertLt(sharesPostHarvest, DEPOSIT, "tracked shares reduced by surplus");
 
         // Restake → unstake → withdraw remaining
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+        _syncAndSetStake(true);
+        _syncAndSetStake(false);
 
         uint256 userBefore = ybLp.balanceOf(user);
         _withdraw(type(uint128).max); // clamp-style — drain everything tracked

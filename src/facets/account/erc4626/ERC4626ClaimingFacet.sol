@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
@@ -28,6 +29,24 @@ contract ERC4626ClaimingFacet is AccessControl {
 
     PortfolioFactory public immutable _portfolioFactory;
     IERC4626 public immutable _vault;
+    uint8 public immutable _assetDecimals;
+
+    error ReentrantCall();
+
+    // Reuse the lending facet's reentrancy slot — yield claim is debt-aware
+    // (mutates collateral tracking that lending depends on) and must not
+    // interleave with borrow/repay flows on the same diamond.
+    bytes32 private constant _LENDING_REENTRANCY_SLOT = keccak256("fortyacres.lending.reentrancy");
+
+    modifier nonReentrant() {
+        bytes32 slot = _LENDING_REENTRANCY_SLOT;
+        uint256 status;
+        assembly { status := sload(slot) }
+        if (status == 2) revert ReentrantCall();
+        assembly { sstore(slot, 2) }
+        _;
+        assembly { sstore(slot, 1) }
+    }
 
     // Events
     event VaultYieldClaimed(address indexed vault, uint256 yieldAssets, uint256 sharesRedeemed, address asset, address indexed owner);
@@ -37,42 +56,66 @@ contract ERC4626ClaimingFacet is AccessControl {
         require(vault != address(0), "Invalid vault");
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _vault = IERC4626(vault);
+        _assetDecimals = IERC20Metadata(IERC4626(vault).asset()).decimals();
     }
 
     // ============ Yield Claiming ============
 
     /**
-     * @dev Claim vault yield - redeems shares representing accumulated yield
-     * Returns the underlying assets to this contract for further processing
+     * @dev Claim vault yield - redeems shares representing accumulated yield.
+     *      Returns the underlying assets to this contract for further processing.
+     *
+     * @param minAssetsPerShare Minimum asset-native wei delivered per 1.0 share
+     *        burned (per 1e18 share wei). Caller pre-scales to the asset's own
+     *        decimals. Examples:
+     *          - WETH (18d) vault: pass 0.99e18 → require ≥ 0.99 WETH per share.
+     *          - USDC (6d) vault: pass 0.99e6  → require ≥ 0.99 USDC per share.
+     *        Enforced as: minAssetsOut = (sharesToRedeem * minAssetsPerShare) / 1e18.
+     *        Must be > 0; callers cannot opt out of slippage protection.
+     *
+     * @dev Defense-in-depth: an 85%-of-previewRedeem absolute floor rejects
+     *      callers that would silently accept >15% deviation from the vault's
+     *      own quote. Caller-side `minAssetsPerShare` is the primary defense
+     *      (a malicious vault returning 0 from previewRedeem defeats the
+     *      absolute floor but is still caught by the caller floor).
+     *
      * @return yieldAssets The amount of yield claimed (in underlying assets)
      */
-    function claimVaultYield() external onlyAuthorizedCaller(_portfolioFactory) returns (uint256 yieldAssets) {
+    function claimVaultYield(uint256 minAssetsPerShare)
+        external
+        nonReentrant
+        onlyAuthorizedCaller(_portfolioFactory)
+        returns (uint256 yieldAssets)
+    {
+        require(minAssetsPerShare > 0, "Zero slippage floor");
+
         address vault = address(_vault);
 
-        // Get collateral info from ERC4626CollateralManager
         (uint256 trackedShares, uint256 depositedAssets, uint256 currentAssets) =
             ERC4626CollateralManager.getCollateral(vault);
 
         require(trackedShares > 0, "No shares deposited");
-
-        // Calculate yield (current value - original deposit value)
         require(currentAssets > depositedAssets, "No yield to harvest");
 
-        // Use previewWithdraw (rounds up shares) to ensure we keep enough to cover principal
+        // previewWithdraw rounds up shares — ensures we keep enough to cover principal
         uint256 sharesNeededForDeposit = IERC4626(vault).previewWithdraw(depositedAssets);
         uint256 sharesToRedeem = trackedShares - sharesNeededForDeposit;
         require(sharesToRedeem > 0, "Yield too small to harvest");
 
-        // Redeem shares for underlying assets
         address vaultAsset = IERC4626(vault).asset();
+        uint256 previewedAssets = IERC4626(vault).previewRedeem(sharesToRedeem);
         uint256 assetsReceived = IERC4626(vault).redeem(sharesToRedeem, address(this), address(this));
 
-        // Update collateral tracking - remove redeemed shares
-        // Note: This reduces shares but keeps depositedAssets the same (we're only removing yield)
+        // Caller-side floor (primary defense)
+        uint256 minAssetsOut = (sharesToRedeem * minAssetsPerShare) / 1e18;
+        require(assetsReceived >= minAssetsOut, "Slippage");
+
+        // Absolute floor: 85% of previewRedeem — rejects vaults under-delivering vs their own quote
+        require(assetsReceived * 100 >= previewedAssets * 85, "Slippage floor < 85%");
+
         address config = address(_portfolioFactory.portfolioFactoryConfig());
         ERC4626CollateralManager.removeSharesForYield(config, vault, sharesToRedeem);
 
-        // Enforce collateral requirements after yield removal (runs outside multicall)
         ERC4626CollateralManager.enforceCollateralRequirements(config, vault);
 
         emit VaultYieldClaimed(vault, assetsReceived, sharesToRedeem, vaultAsset, _portfolioFactory.ownerOf(address(this)));
