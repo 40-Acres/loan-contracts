@@ -8,6 +8,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AccessControl} from "../utils/AccessControl.sol";
 import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
+import {YieldBasisPortfolioFactoryConfig} from "../config/YieldBasisPortfolioFactoryConfig.sol";
 
 /**
  * @title YieldBasisLpFacet
@@ -33,7 +34,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
 
     event Deposited(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
-    event Unstaked(uint256 assets, uint256 sharesBurned, uint256 rewardsClaimed);
+    event Unstaked(uint256 assets, uint256 sharesBurned);
     event Staked(uint256 assets, uint256 sharesMinted);
 
     constructor(address portfolioFactory, address gauge, address rewardToken, address underlying) {
@@ -53,8 +54,14 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
     }
 
     // ============ Staked Gauge Mode ============
-    function isStakedGaugeMode() public view returns (bool) {
-        return _gauge.balanceOf(address(this)) > 0;
+
+    /**
+     * @notice Returns the protocol-wide directive that auto-stakes new LP deposits into the gauge.
+     * @dev Per-account gauge state may diverge from this flag until the next
+     *      deposit/withdraw or an admin sweep via setStakedMode.
+     */
+    function getStakedMode() public view returns (bool) {
+        return YieldBasisPortfolioFactoryConfig(_config()).getStakedGaugeMode();
     }
 
     // ============ Deposit / Withdraw ============
@@ -72,13 +79,15 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         YieldBasisCollateralManager.addCollateral(_config(), address(_lpToken), address(_gauge), _underlying, amount);
 
         emit Deposited(owner, amount);
-        if(isStakedGaugeMode()) {
+        if (getStakedMode()) {
             _stake(amount);
         }
     }
 
     /**
-     * @notice Withdraw LP token: remove collateral, unstake from gauge, send to owner
+     * @notice Withdraw LP token: remove collateral, source from direct balance and gauge as needed, send to owner
+     * @dev Branches on this account's actual balances, not the factory mode flag, so it
+     *      tolerates mixed states from prior flag flips, partial fee harvests, and dust.
      * @param amount Amount of LP token to withdraw
      */
     function withdraw(uint256 amount) external onlyPortfolioManagerMulticall(_portfolioFactory) {
@@ -91,8 +100,10 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
 
         YieldBasisCollateralManager.removeCollateral(_config(), address(_lpToken), _underlying, toWithdraw);
 
-        if (isStakedGaugeMode()) {
-            _gauge.withdraw(toWithdraw, address(this), address(this));
+        uint256 directLp = _lpToken.balanceOf(address(this));
+        if (toWithdraw > directLp) {
+            uint256 shortfall = toWithdraw - directLp;
+            _gauge.withdraw(shortfall, address(this), address(this));
         }
 
         address owner = _portfolioFactory.ownerOf(address(this));
@@ -100,37 +111,51 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         emit Withdrawn(owner, toWithdraw);
     }
 
-    // ============ Admin: Yield Mode Switch ============
+    // ============ Admin: Per-Account Yield Mode Sweep ============
 
     /**
-     * @notice Unstake all LP from gauge to earn trading fees (forgoes YB emissions)
-     * @dev Admin-only: protocol decides which yield mode is optimal.
-     *      Does NOT modify collateral tracking — LP stays in portfolio account.
-     *      All-or-nothing: redeems the full gauge balance.
+     * @notice Sweep this account into the requested gauge state.
+     * @dev Admin-only one-off override. Does NOT write the factory-level
+     *      stakedGaugeMode flag — that's set on YieldBasisPortfolioFactoryConfig
+     *      and governs the default behavior for new deposits across all accounts.
+     *      Used to reconcile an individual account whose gauge state has drifted
+     *      from the protocol intent.
+     * @param staked True: stake all unstaked LP. False: redeem all gauge shares.
      */
-    function unstake() external onlyAuthorizedCaller(_portfolioFactory) {
-        uint256 shares = _gauge.balanceOf(address(this));
-        require(shares > 0, "Nothing staked");
-        uint256 claimed = _gauge.claim(_rewardToken, address(this));
-        uint256 assets = _gauge.redeem(shares, address(this), address(this));
-        emit Unstaked(assets, shares, claimed);
-    }
+    function setStakedMode(bool staked) external onlyAuthorizedCaller(_portfolioFactory) {
+        if (staked) {
+            uint256 lpBalance = _lpToken.balanceOf(address(this));
+            require(lpBalance > 0, "Nothing to stake");
+            _stake(lpBalance);
+        } else {
+            uint256 shares = _gauge.balanceOf(address(this));
+            require(shares > 0, "Nothing staked");
 
-    /**
-     * @notice Stake all unstaked LP into gauge to earn YB emissions (forgoes trading fees)
-     * @dev Admin-only: protocol decides which yield mode is optimal.
-     *      Does NOT modify collateral tracking — LP was already tracked from deposit.
-     *      All-or-nothing: stakes the full unstaked LP balance.
-     */
-    function stake() external onlyAuthorizedCaller(_portfolioFactory) {
-        _stake(_lpToken.balanceOf(address(this)));
+            uint256 lpBefore = _lpToken.balanceOf(address(this));
+            _gauge.redeem(shares, address(this), address(this));
+            uint256 lpReceived = _lpToken.balanceOf(address(this)) - lpBefore;
+
+            // Trusted boundary: reconcile tracked shares down to actual LP available.
+            // Absorbs ERC4626 1-wei rounding or any future YB gauge fee/rebase as
+            // accounting truth instead of locking users out of subsequent withdraw.
+            YieldBasisCollateralManager.reconcileSharesToBalance(
+                _config(),
+                address(_lpToken),
+                _underlying,
+                address(_gauge)
+            );
+
+            emit Unstaked(lpReceived, shares);
+        }
     }
 
     function _stake(uint256 amount) internal {
+        uint256 lpBefore = _lpToken.balanceOf(address(this));
         _lpToken.approve(address(_gauge), amount);
-        _gauge.deposit(amount, address(this));
+        uint256 sharesMinted = _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
-        emit Staked(amount, amount);
+        uint256 lpSent = lpBefore - _lpToken.balanceOf(address(this));
+        emit Staked(lpSent, sharesMinted);
     }
 
     // ============ View Functions ============

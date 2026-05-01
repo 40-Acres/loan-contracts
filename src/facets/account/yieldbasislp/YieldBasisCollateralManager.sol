@@ -10,6 +10,7 @@ import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
+import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 
 interface IYieldBasisDebtBalanceReader {
     function getDebtBalance(address borrower) external view returns (uint256);
@@ -86,12 +87,16 @@ library YieldBasisCollateralManager {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
         YieldBasisCollateralData storage data = _getStorage();
 
-        // Staked LP lives in the gauge as a separate ERC20 (1:1 with LP). Count both
-        // unstaked LP on the account and gauge shares as collateral-bearing balance.
+        // data.shares is canonical LP units. Gauge balance is in gauge-share units —
+        // convert to LP via convertToAssets so the sum stays in one unit even if the
+        // gauge ever drifts off 1:1.
         uint256 requiredBalance = data.shares + shares;
         uint256 actualBalance = IERC20(vault).balanceOf(address(this));
         if (gauge != address(0)) {
-            actualBalance += IERC20(gauge).balanceOf(address(this));
+            uint256 gaugeShares = IERC20(gauge).balanceOf(address(this));
+            if (gaugeShares > 0) {
+                actualBalance += IYieldBasisGauge(gauge).convertToAssets(gaugeShares);
+            }
         }
         if (actualBalance < requiredBalance) {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
@@ -279,6 +284,39 @@ library YieldBasisCollateralManager {
 
     function snapshotShortfall(address portfolioFactoryConfig, address vault, address underlying) public {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+    }
+
+    /**
+     * @dev Reconcile data.shares down to actual LP available on the account
+     * (LP balance + gauge balance converted via convertToAssets). Only reduces —
+     * never increases. Used at trusted boundaries (admin unstake) to absorb gauge
+     * rounding/fees as accounting truth without breaking subsequent user-facing
+     * operations on a future-withdraw safeTransfer revert.
+     *
+     * Surplus LP from gauge appreciation is NOT auto-credited — it must be
+     * brought into tracking via explicit addCollateral.
+     */
+    function reconcileSharesToBalance(
+        address portfolioFactoryConfig,
+        address vault,
+        address underlying,
+        address gauge
+    ) public {
+        YieldBasisCollateralData storage data = _getStorage();
+        uint256 actualLp = IERC20(vault).balanceOf(address(this));
+        if (gauge != address(0)) {
+            uint256 gaugeShares = IERC20(gauge).balanceOf(address(this));
+            if (gaugeShares > 0) {
+                actualLp += IYieldBasisGauge(gauge).convertToAssets(gaugeShares);
+            }
+        }
+        if (data.shares > actualLp) {
+            if (data.shares > 0) {
+                data.depositedAssetValue = (data.depositedAssetValue * actualLp) / data.shares;
+            }
+            data.shares = actualLp;
+            _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+        }
     }
 
     function enforceCollateralRequirements(

@@ -17,9 +17,7 @@ import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
 import {MockERC20} from "../../mocks/MockERC20.sol";
-import {Loan as LoanV2} from "../../../src/LoanV2.sol";
-import {Loan} from "../../../src/Loan.sol";
-import {Vault} from "../../../src/VaultV2.sol";
+import {LendingVault} from "../../../src/facets/account/vault/LendingVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract ERC4626ClaimingFacetTest is Test {
@@ -39,7 +37,6 @@ contract ERC4626ClaimingFacetTest is Test {
     MockERC4626 public _mockVault;
 
     // Lending infrastructure
-    address public _loanContract;
     address public _lendingVault;
 
     address public _user = address(0x40ac2e);
@@ -86,7 +83,7 @@ contract ERC4626ClaimingFacetTest is Test {
         _loanConfig.setLenderPremium(2000);
         _loanConfig.setTreasuryFee(500);
         _loanConfig.setZeroBalanceFee(100);
-        _portfolioFactoryConfig.setLoanContract(_loanContract);
+        _portfolioFactoryConfig.setLoanContract(_lendingVault);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
@@ -106,25 +103,23 @@ contract ERC4626ClaimingFacetTest is Test {
     }
 
     function _setupLendingInfrastructure() internal {
-        // Deploy Loan contract
-        Loan loanImplementation = new Loan();
-        ERC1967Proxy loanProxy = new ERC1967Proxy(address(loanImplementation), "");
-        _loanContract = address(loanProxy);
+        // Deploy LendingVault as UUPS proxy. LendingVault implements
+        // getDebtBalance(address) which ERC4626CollateralManager._syncDebt
+        // requires; legacy Loan/LoanV2/VaultV2 do not.
+        LendingVault lendingVaultImpl = new LendingVault();
+        ERC1967Proxy lendingVaultProxy = new ERC1967Proxy(address(lendingVaultImpl), "");
+        LendingVault lendingVault = LendingVault(address(lendingVaultProxy));
+        _lendingVault = address(lendingVault);
 
-        // Deploy Vault
-        Vault vaultImplementation = new Vault();
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
-        Vault vault = Vault(address(vaultProxy));
-        _lendingVault = address(vault);
-
-        // Initialize vault and loan
-        vault.initialize(address(_underlyingAsset), _loanContract, "Lending Vault", "lVAULT");
-        Loan(_loanContract).initialize(address(vault), address(_underlyingAsset));
-
-        // Upgrade to LoanV2
-        LoanV2 loanV2Impl = new LoanV2();
-        LoanV2(_loanContract).upgradeToAndCall(address(loanV2Impl), new bytes(0));
-        LoanV2(_loanContract).setPortfolioFactory(address(_portfolioFactory));
+        lendingVault.initialize(
+            address(_underlyingAsset),
+            address(_portfolioFactory),
+            _owner,
+            "Lending Vault",
+            "lVAULT",
+            9000, // maxUtilizationBps_
+            0     // originationFeeBps_
+        );
     }
 
     // ============ Helper Functions ============

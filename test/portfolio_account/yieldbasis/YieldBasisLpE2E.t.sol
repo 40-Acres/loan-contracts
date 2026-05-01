@@ -15,6 +15,8 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {YbConfigDeployer} from "./helpers/YbConfigDeployer.sol";
+import {YieldBasisPortfolioFactoryConfig} from "../../../src/facets/account/config/YieldBasisPortfolioFactoryConfig.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
 
@@ -54,7 +56,7 @@ contract YieldBasisBtcE2ETest is Test {
     PortfolioFactory public _portfolioFactory;
     PortfolioManager public _portfolioManager;
     FacetRegistry public _facetRegistry;
-    PortfolioFactoryConfig public _portfolioFactoryConfig;
+    YieldBasisPortfolioFactoryConfig public _portfolioFactoryConfig;
     LoanConfig public _loanConfig;
 
     // Mock contracts
@@ -87,9 +89,9 @@ contract YieldBasisBtcE2ETest is Test {
         _portfolioFactory = portfolioFactory;
         _facetRegistry = facetRegistry;
 
-        // --- Deploy config contracts ---
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deploy(address(_portfolioFactory), _owner);
+        // --- Deploy config contracts (YB-specific so getStakedMode() works) ---
+        YbConfigDeployer configDeployer = new YbConfigDeployer();
+        (_portfolioFactoryConfig, , _loanConfig, ) = configDeployer.deployYb(address(_portfolioFactory), _owner);
 
         // --- Deploy mock tokens ---
         _ybBtc = new MockYieldBasisLP("ybBTC", "ybBTC", 8);
@@ -125,17 +127,16 @@ contract YieldBasisBtcE2ETest is Test {
         // --- Deploy and register YieldBasisLpFacet with ALL selectors (including ICollateralFacet) ---
         _ybBtcFacet = new YieldBasisLpFacet(address(_portfolioFactory), address(_gauge), address(_ybToken), address(_usdc));
         {
-            bytes4[] memory selectors = new bytes4[](9);
+            bytes4[] memory selectors = new bytes4[](8);
             selectors[0] = YieldBasisLpFacet.deposit.selector;
             selectors[1] = YieldBasisLpFacet.withdraw.selector;
-            selectors[2] = YieldBasisLpFacet.unstake.selector;
-            selectors[3] = YieldBasisLpFacet.stake.selector;
-            selectors[4] = YieldBasisLpFacet.getStakingState.selector;
+            selectors[2] = YieldBasisLpFacet.setStakedMode.selector;
+            selectors[3] = YieldBasisLpFacet.getStakingState.selector;
             // ICollateralFacet selectors — YieldBasisLpFacet implements ICollateralFacet
-            selectors[5] = ICollateralFacet.enforceCollateralRequirements.selector;
-            selectors[6] = ICollateralFacet.getTotalLockedCollateral.selector;
-            selectors[7] = ICollateralFacet.getTotalDebt.selector;
-            selectors[8] = ICollateralFacet.getMaxLoan.selector;
+            selectors[4] = ICollateralFacet.enforceCollateralRequirements.selector;
+            selectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
+            selectors[6] = ICollateralFacet.getTotalDebt.selector;
+            selectors[7] = ICollateralFacet.getMaxLoan.selector;
             _facetRegistry.registerFacet(address(_ybBtcFacet), selectors, "YieldBasisLpFacet");
         }
 
@@ -228,7 +229,7 @@ contract YieldBasisBtcE2ETest is Test {
         // Admin stakes the LP into the gauge (step 6 later asserts the gauge
         // is the source of the withdrawn LP, so we must stake to exercise that path).
         vm.prank(_authorizedCaller);
-        YieldBasisLpFacet(_portfolioAccount).stake();
+        YieldBasisLpFacet(_portfolioAccount).setStakedMode(true);
 
         // Verify: ybBTC is staked in gauge, portfolio account holds gauge shares
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();

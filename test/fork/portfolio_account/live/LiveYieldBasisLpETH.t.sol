@@ -355,17 +355,16 @@ contract LiveYieldBasisLpETHTest is Test {
         // We pass YB to validate the happy-path lifecycle assuming the
         // production deploy is corrected.
         YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(factory, gaugeAddr, YB, underlying);
-        bytes4[] memory lpSel = new bytes4[](10);
+        bytes4[] memory lpSel = new bytes4[](9);
         lpSel[0] = YieldBasisLpFacet.deposit.selector;
         lpSel[1] = YieldBasisLpFacet.withdraw.selector;
-        lpSel[2] = YieldBasisLpFacet.unstake.selector;
-        lpSel[3] = YieldBasisLpFacet.stake.selector;
-        lpSel[4] = YieldBasisLpFacet.getStakingState.selector;
-        lpSel[5] = ICollateralFacet.getTotalLockedCollateral.selector;
-        lpSel[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSel[7] = ICollateralFacet.getMaxLoan.selector;
-        lpSel[8] = ICollateralFacet.enforceCollateralRequirements.selector;
-        lpSel[9] = ICollateralFacet.getLTVRatio.selector;
+        lpSel[2] = YieldBasisLpFacet.setStakedMode.selector;
+        lpSel[3] = YieldBasisLpFacet.getStakingState.selector;
+        lpSel[4] = ICollateralFacet.getTotalLockedCollateral.selector;
+        lpSel[5] = ICollateralFacet.getTotalDebt.selector;
+        lpSel[6] = ICollateralFacet.getMaxLoan.selector;
+        lpSel[7] = ICollateralFacet.enforceCollateralRequirements.selector;
+        lpSel[8] = ICollateralFacet.getLTVRatio.selector;
         vm.prank(registryOwner);
         facetRegistry.registerFacet(address(lpFacet), lpSel, "YieldBasisLpFacet");
 
@@ -435,17 +434,16 @@ contract LiveYieldBasisLpETHTest is Test {
     function _replaceYieldBasisLpFacet() internal {
         address oldFacet = facetRegistry.getFacetForSelector(YieldBasisLpFacet.deposit.selector);
         YieldBasisLpFacet newFacet = new YieldBasisLpFacet(address(portfolioFactory), address(gauge), YB, WETH);
-        bytes4[] memory lpSel = new bytes4[](10);
+        bytes4[] memory lpSel = new bytes4[](9);
         lpSel[0] = YieldBasisLpFacet.deposit.selector;
         lpSel[1] = YieldBasisLpFacet.withdraw.selector;
-        lpSel[2] = YieldBasisLpFacet.unstake.selector;
-        lpSel[3] = YieldBasisLpFacet.stake.selector;
-        lpSel[4] = YieldBasisLpFacet.getStakingState.selector;
-        lpSel[5] = ICollateralFacet.getTotalLockedCollateral.selector;
-        lpSel[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSel[7] = ICollateralFacet.getMaxLoan.selector;
-        lpSel[8] = ICollateralFacet.enforceCollateralRequirements.selector;
-        lpSel[9] = ICollateralFacet.getLTVRatio.selector;
+        lpSel[2] = YieldBasisLpFacet.setStakedMode.selector;
+        lpSel[3] = YieldBasisLpFacet.getStakingState.selector;
+        lpSel[4] = ICollateralFacet.getTotalLockedCollateral.selector;
+        lpSel[5] = ICollateralFacet.getTotalDebt.selector;
+        lpSel[6] = ICollateralFacet.getMaxLoan.selector;
+        lpSel[7] = ICollateralFacet.enforceCollateralRequirements.selector;
+        lpSel[8] = ICollateralFacet.getLTVRatio.selector;
         vm.prank(facetRegistry.owner());
         facetRegistry.replaceFacet(oldFacet, address(newFacet), lpSel, "YieldBasisLpFacet");
 
@@ -510,8 +508,7 @@ contract LiveYieldBasisLpETHTest is Test {
         // YieldBasisLpFacet
         _assertSelectorRegistered(YieldBasisLpFacet.deposit.selector, "deposit");
         _assertSelectorRegistered(YieldBasisLpFacet.withdraw.selector, "withdraw");
-        _assertSelectorRegistered(YieldBasisLpFacet.unstake.selector, "unstake");
-        _assertSelectorRegistered(YieldBasisLpFacet.stake.selector, "stake");
+        _assertSelectorRegistered(YieldBasisLpFacet.setStakedMode.selector, "setStakedMode");
         _assertSelectorRegistered(YieldBasisLpFacet.getStakingState.selector, "getStakingState");
         _assertSelectorRegistered(ICollateralFacet.getTotalLockedCollateral.selector, "getTotalLockedCollateral");
         _assertSelectorRegistered(ICollateralFacet.getMaxLoan.selector, "getMaxLoan");
@@ -561,7 +558,7 @@ contract LiveYieldBasisLpETHTest is Test {
 
         // Explicitly stake so the lifecycle exercises gauge rewards + gauge-redeem on unstake.
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).stake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
 
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertGt(staked, 0, "no gauge shares after explicit stake");
@@ -695,7 +692,7 @@ contract LiveYieldBasisLpETHTest is Test {
 
         (staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).unstake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
         uint256 ybAfterUnstake = IERC20(YB).balanceOf(portfolioAccount);
         assertGt(ybAfterUnstake - ybBeforeUnstake, 0, "unstake did not claim YB (G6 regression: _rewardToken wrong?)");
         console.log("unstake auto-claimed YB:", ybAfterUnstake - ybBeforeUnstake);

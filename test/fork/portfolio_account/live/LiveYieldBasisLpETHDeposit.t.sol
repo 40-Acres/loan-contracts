@@ -197,17 +197,16 @@ contract LiveYieldBasisLpETHDepositTest is Test {
     }
 
     function _lpFacetSelectors() internal pure returns (bytes4[] memory sel) {
-        sel = new bytes4[](10);
+        sel = new bytes4[](9);
         sel[0] = YieldBasisLpFacet.deposit.selector;
         sel[1] = YieldBasisLpFacet.withdraw.selector;
-        sel[2] = YieldBasisLpFacet.unstake.selector;
-        sel[3] = YieldBasisLpFacet.stake.selector;
-        sel[4] = YieldBasisLpFacet.getStakingState.selector;
-        sel[5] = ICollateralFacet.getTotalLockedCollateral.selector;
-        sel[6] = ICollateralFacet.getTotalDebt.selector;
-        sel[7] = ICollateralFacet.getMaxLoan.selector;
-        sel[8] = ICollateralFacet.enforceCollateralRequirements.selector;
-        sel[9] = ICollateralFacet.getLTVRatio.selector;
+        sel[2] = YieldBasisLpFacet.setStakedMode.selector;
+        sel[3] = YieldBasisLpFacet.getStakingState.selector;
+        sel[4] = ICollateralFacet.getTotalLockedCollateral.selector;
+        sel[5] = ICollateralFacet.getTotalDebt.selector;
+        sel[6] = ICollateralFacet.getMaxLoan.selector;
+        sel[7] = ICollateralFacet.enforceCollateralRequirements.selector;
+        sel[8] = ICollateralFacet.getLTVRatio.selector;
     }
 
     function _registerYieldBasisLpFacet() internal {

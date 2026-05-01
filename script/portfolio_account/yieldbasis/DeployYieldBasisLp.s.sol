@@ -6,6 +6,7 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
+import {YieldBasisPortfolioFactoryConfig} from "../../../src/facets/account/config/YieldBasisPortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {YieldBasisLpFacet} from "../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
@@ -89,9 +90,10 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         _vault = vaultProxy;
 
 
-        // Deploy fresh PortfolioFactoryConfig and LoanConfig (no rewards rate/multiplier)
-        PortfolioFactoryConfig configImpl = new PortfolioFactoryConfig();
-        PortfolioFactoryConfig portfolioFactoryConfig = PortfolioFactoryConfig(
+        // Deploy fresh YieldBasisPortfolioFactoryConfig and LoanConfig (no rewards rate/multiplier).
+        // YB-specific config holds the protocol-wide stakedGaugeMode flag in its own ERC-7201 slot.
+        YieldBasisPortfolioFactoryConfig configImpl = new YieldBasisPortfolioFactoryConfig();
+        YieldBasisPortfolioFactoryConfig portfolioFactoryConfig = YieldBasisPortfolioFactoryConfig(
             address(new ERC1967Proxy(
                 address(configImpl),
                 abi.encodeCall(PortfolioFactoryConfig.initialize, (DEPLOYER_ADDRESS, address(_portfolioFactory)))
@@ -165,17 +167,16 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         // Fourth arg is the underlying asset the LP represents (e.g. WETH for yb-WETH),
         // used by YieldBasisCollateralManager for value denomination.
         // YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(portfolioFactory, gauge, YB, underlying);
-        // bytes4[] memory lpSelectors = new bytes4[](10);
+        // bytes4[] memory lpSelectors = new bytes4[](9);
         // lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         // lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
-        // lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
-        // lpSelectors[3] = YieldBasisLpFacet.stake.selector;
-        // lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
-        // lpSelectors[5] = YieldBasisLpFacet.getTotalLockedCollateral.selector;
-        // lpSelectors[6] = YieldBasisLpFacet.getTotalDebt.selector;
-        // lpSelectors[7] = YieldBasisLpFacet.getMaxLoan.selector;
-        // lpSelectors[8] = YieldBasisLpFacet.enforceCollateralRequirements.selector;
-        // lpSelectors[9] = YieldBasisLpFacet.getLTVRatio.selector;
+        // lpSelectors[2] = YieldBasisLpFacet.setStakedMode.selector;
+        // lpSelectors[3] = YieldBasisLpFacet.getStakingState.selector;
+        // lpSelectors[4] = YieldBasisLpFacet.getTotalLockedCollateral.selector;
+        // lpSelectors[5] = YieldBasisLpFacet.getTotalDebt.selector;
+        // lpSelectors[6] = YieldBasisLpFacet.getMaxLoan.selector;
+        // lpSelectors[7] = YieldBasisLpFacet.enforceCollateralRequirements.selector;
+        // lpSelectors[8] = YieldBasisLpFacet.getLTVRatio.selector;
         // _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
         // // Deploy YieldBasisLpClaimingFacet (gauge rewards + LP fee harvesting)

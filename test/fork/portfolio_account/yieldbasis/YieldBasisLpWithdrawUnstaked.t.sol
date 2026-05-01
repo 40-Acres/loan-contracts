@@ -95,16 +95,15 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
             YB,
             WBTC
         );
-        bytes4[] memory lpSelectors = new bytes4[](9);
+        bytes4[] memory lpSelectors = new bytes4[](8);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
-        lpSelectors[2] = YieldBasisLpFacet.unstake.selector;
-        lpSelectors[3] = YieldBasisLpFacet.stake.selector;
-        lpSelectors[4] = YieldBasisLpFacet.getStakingState.selector;
-        lpSelectors[5] = ICollateralFacet.getTotalLockedCollateral.selector;
-        lpSelectors[6] = ICollateralFacet.getTotalDebt.selector;
-        lpSelectors[7] = ICollateralFacet.getMaxLoan.selector;
-        lpSelectors[8] = ICollateralFacet.enforceCollateralRequirements.selector;
+        lpSelectors[2] = YieldBasisLpFacet.setStakedMode.selector;
+        lpSelectors[3] = YieldBasisLpFacet.getStakingState.selector;
+        lpSelectors[4] = ICollateralFacet.getTotalLockedCollateral.selector;
+        lpSelectors[5] = ICollateralFacet.getTotalDebt.selector;
+        lpSelectors[6] = ICollateralFacet.getMaxLoan.selector;
+        lpSelectors[7] = ICollateralFacet.enforceCollateralRequirements.selector;
         FacetRegistry facetRegistry = portfolioFactory.facetRegistry();
         facetRegistry.registerFacet(address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
@@ -140,7 +139,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
     function _unstakeViaAuthorized() internal {
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).unstake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
     }
 
     /// @dev After the deposit refactor, deposit() no longer auto-stakes into the gauge
@@ -150,7 +149,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     ///      unstaked LP balance held by the portfolio account.
     function _stakeViaAuthorized() internal {
         vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).stake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(true);
     }
 
     // ── Tests: Happy Path ──
@@ -361,7 +360,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         // (bare require, no message), BEFORE reaching any gauge logic.
         vm.prank(randomCaller);
         vm.expectRevert();
-        YieldBasisLpFacet(portfolioAccount).unstake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
     }
 
     /// @notice Even the portfolio owner cannot call unstake() — only authorizedCaller can.
@@ -388,7 +387,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
         vm.prank(user);
         vm.expectRevert();
-        YieldBasisLpFacet(portfolioAccount).unstake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
     }
 
     /// @notice unstake() reverts with "Nothing staked" when there are no gauge shares.
@@ -408,6 +407,6 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
         vm.prank(authorizedCaller);
         vm.expectRevert("Nothing staked");
-        YieldBasisLpFacet(portfolioAccount).unstake();
+        YieldBasisLpFacet(portfolioAccount).setStakedMode(false);
     }
 }

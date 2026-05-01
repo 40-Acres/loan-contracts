@@ -11,7 +11,7 @@ contract BaseUpgrade is Script {
     address[] pool = [address(0xb2cc224c1c9feE385f8ad6a55b4d94E92359DC59)];
 
     function run() external {
-        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         address proxy = address(0x87f18b377e625b62c708D5f6EA96EC193558EFD0);
         upgradeLoan(proxy);
         vm.stopBroadcast();
@@ -39,4 +39,4 @@ contract BaseUpgradeNative is Script {
     }
 }
 
-// forge script script/BaseUpgrade.s.sol:BaseUpgradeNative  --chain-id 8453 --rpc-url $BASE_RPC_URL --etherscan-api-key $BASESCAN_API_KEY --broadcast --verify --via-ir
+// forge script script/BaseUpgrade.s.sol:BaseUpgrade  --chain-id 8453 --rpc-url $BASE_RPC_URL --etherscan-api-key $BASESCAN_API_KEY --broadcast --verify --via-ir

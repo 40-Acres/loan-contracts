@@ -85,7 +85,13 @@ contract YieldBasisLpClaimingFacet is AccessControl {
 
         YieldBasisCollateralManager.removeSharesForYield(config, lpToken, underlying, surplusShares);
 
-        uint256 lpReceived = _gauge.withdraw(surplusShares, address(this), address(this));
+        // Measure actual LP delivered by the gauge, don't trust the input amount.
+        // ERC4626 spec says withdraw(assets,…) MUST deliver `assets`, but a
+        // 1-wei-rounded implementation would cause _lpToken.withdraw(surplusShares)
+        // to revert. Deltabased read makes us correct under any conformant gauge.
+        uint256 lpBefore = IERC20(lpToken).balanceOf(address(this));
+        uint256 gaugeSharesBurned = _gauge.withdraw(surplusShares, address(this), address(this));
+        uint256 lpReceived = IERC20(lpToken).balanceOf(address(this)) - lpBefore;
 
         IERC20(lpToken).approve(lpToken, lpReceived);
         underlyingReceived = _lpToken.withdraw(lpReceived, minUnderlyingOut, address(this));
@@ -93,7 +99,7 @@ contract YieldBasisLpClaimingFacet is AccessControl {
 
         YieldBasisCollateralManager.enforceCollateralRequirements(config, lpToken, underlying);
 
-        emit LpFeesHarvested(surplusShares, lpReceived, underlyingReceived, _portfolioFactory.ownerOf(address(this)));
+        emit LpFeesHarvested(gaugeSharesBurned, lpReceived, underlyingReceived, _portfolioFactory.ownerOf(address(this)));
     }
 
     /**
