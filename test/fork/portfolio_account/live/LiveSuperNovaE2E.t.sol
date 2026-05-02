@@ -164,7 +164,7 @@ contract LiveSuperNovaE2E is Test {
         colSel[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         colSel[8] = BaseCollateralFacet.getLockedCollateral.selector;
         colSel[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        colSel[10] = BaseCollateralFacet.getLTVRatio.selector;
+        colSel[10] = BaseCollateralFacet.getLoanUtilization.selector;
         facetRegistry.registerFacet(address(collateralFacet), colSel, "CollateralFacet");
 
         // Deploy VotingEscrowFacet

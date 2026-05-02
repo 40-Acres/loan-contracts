@@ -33,7 +33,7 @@ contract DeployCollateralFacet is AccountFacetsDeploy {
         selectors[7] = BaseCollateralFacet.getCollateralToken.selector;
         selectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         selectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        selectors[10] = BaseCollateralFacet.getLTVRatio.selector;
+        selectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
         return selectors;
     }
 }

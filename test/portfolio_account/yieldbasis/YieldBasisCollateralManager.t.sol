@@ -119,8 +119,8 @@ contract YBCMHarness {
         return YieldBasisCollateralManager.getMaxLoan(cfg, vault, underlying);
     }
 
-    function getLTVRatio(address cfg, address vault, address underlying) external view returns (uint256) {
-        return YieldBasisCollateralManager.getLTVRatio(cfg, vault, underlying);
+    function getLoanUtilization(address cfg, address vault, address underlying) external view returns (uint256) {
+        return YieldBasisCollateralManager.getLoanUtilization(cfg, vault, underlying);
     }
 
     function snapshotShortfall(address cfg, address vault, address underlying) external {
@@ -734,22 +734,22 @@ contract YieldBasisCollateralManagerTest is Test {
     }
 
     // -----------------------------------------------------------------------
-    // 10. getLTVRatio edges
+    // 10. getLoanUtilization edges
     // -----------------------------------------------------------------------
 
-    function test_getLTVRatio_zeroDebtReturnsZero() public {
+    function test_getLoanUtilization_zeroDebtReturnsZero() public {
         ybLp.mint(address(h), 1e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 1e18);
-        assertEq(h.getLTVRatio(address(cfg), address(ybLp), address(underlying)), 0, "0 debt -> 0");
+        assertEq(h.getLoanUtilization(address(cfg), address(ybLp), address(underlying)), 0, "0 debt -> 0");
     }
 
-    function test_getLTVRatio_zeroCollateralWithDebtReturnsMax() public {
+    function test_getLoanUtilization_zeroCollateralWithDebtReturnsMax() public {
         // No collateral but nonzero debt → maxLoanIgnoreSupply = 0, debt > 0
         // → must return type(uint256).max. This is the "infinitely unsafe"
         // signal that liquidation/enforcement paths key off of.
         h.__setDebt(1);
         assertEq(
-            h.getLTVRatio(address(cfg), address(ybLp), address(underlying)),
+            h.getLoanUtilization(address(cfg), address(ybLp), address(underlying)),
             type(uint256).max,
             "debt>0 with 0 collateral -> MAX"
         );

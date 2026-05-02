@@ -666,16 +666,16 @@ contract ERC4626SnapshotTest is Test {
     }
 
     /**
-     * @dev Test 14: getLTVRatio returns correct values at various states.
+     * @dev Test 14: getLoanUtilization returns correct values at various states.
      * Tests: 0% (no debt), ~71% (near max), and the formula correctness.
      *
-     * NOTE: getLTVRatio is a library function not exposed on the facet. We test
+     * NOTE: getLoanUtilization is a library function not exposed on the facet. We test
      * through the underlying math: ratio = (totalDebt * 100) / maxLoanIgnoreSupply.
      * With 70% LTV config:
      *   - 0 debt: ratio = 0
      *   - 500 debt / 700 maxLoan: ratio = (500*100)/700 = 71
      */
-    function testERC4626GetLTVRatio() public {
+    function testERC4626GetLoanUtilization() public {
         // Case 1: No debt — ratio should be 0
         uint256 shares = _prepareUserWithVaultShares(INITIAL_DEPOSIT);
         _transferSharesToPortfolio(shares);

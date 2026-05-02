@@ -365,7 +365,7 @@ contract LiveYieldBasisLpETHTest is Test {
         lpSel[5] = ICollateralFacet.getTotalDebt.selector;
         lpSel[6] = ICollateralFacet.getMaxLoan.selector;
         lpSel[7] = ICollateralFacet.enforceCollateralRequirements.selector;
-        lpSel[8] = ICollateralFacet.getLTVRatio.selector;
+        lpSel[8] = ICollateralFacet.getLoanUtilization.selector;
         vm.prank(registryOwner);
         facetRegistry.registerFacet(address(lpFacet), lpSel, "YieldBasisLpFacet");
 
@@ -444,7 +444,7 @@ contract LiveYieldBasisLpETHTest is Test {
         lpSel[5] = ICollateralFacet.getTotalDebt.selector;
         lpSel[6] = ICollateralFacet.getMaxLoan.selector;
         lpSel[7] = ICollateralFacet.enforceCollateralRequirements.selector;
-        lpSel[8] = ICollateralFacet.getLTVRatio.selector;
+        lpSel[8] = ICollateralFacet.getLoanUtilization.selector;
         vm.prank(facetRegistry.owner());
         facetRegistry.replaceFacet(oldFacet, address(newFacet), lpSel, "YieldBasisLpFacet");
 

@@ -144,7 +144,7 @@ contract LiveSuperNovaVoteWithdrawNoLoan is Test {
         sel[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         sel[8] = BaseCollateralFacet.getLockedCollateral.selector;
         sel[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        sel[10] = BaseCollateralFacet.getLTVRatio.selector;
+        sel[10] = BaseCollateralFacet.getLoanUtilization.selector;
         facetRegistry.registerFacet(address(facet), sel, "CollateralFacet");
     }
 

@@ -92,9 +92,9 @@ contract RewardsProcessingFacet is AccessControl {
 
         // 3. Branch based on debt status
         if (hasDebt) {
-            // Only allow active balance distribution if LTV <= 100 (debt <= maxLoanIgnoreSupply).
-            // Underwater accounts (LTV > 100) send 100% of post-fees rewards to debt repayment.
-            if (_getLTVRatio() <= 100 && UserRewardsConfig.hasActiveBalanceDistribution()) {
+            // Only allow active balance distribution if utilization <= 100 (debt <= maxLoanIgnoreSupply).
+            // Underwater accounts (utilization > 100) send 100% of post-fees rewards to debt repayment.
+            if (_getLoanUtilization() <= 100 && UserRewardsConfig.hasActiveBalanceDistribution()) {
                 remaining = _processActiveBalanceDistribution(tokenId, rewardsAmount, remaining, asset, swapParams[0]);
             }
             remaining = _processActiveLoanRewards(tokenId, remaining, asset);
@@ -164,12 +164,12 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     /**
-     * @dev Returns the LTV ratio: 0 = no debt, 100 = at capacity, >100 = underwater.
+     * @dev Returns loan utilization: 0 = no debt, 100 = at capacity, >100 = underwater.
      *      Used to gate active balance distribution (disabled when > 100) and
      *      can be used for liquidation thresholds (e.g. 150).
      */
-    function _getLTVRatio() internal view virtual returns (uint256) {
-        return CollateralManager.getLTVRatio(address(_portfolioFactory.portfolioFactoryConfig()));
+    function _getLoanUtilization() internal view virtual returns (uint256) {
+        return CollateralManager.getLoanUtilization(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _decreaseTotalDebt(uint256 amount) internal virtual returns (uint256 excess) {
@@ -548,7 +548,7 @@ contract RewardsProcessingFacet is AccessControl {
         address lockedAsset,
         uint256 tokenId
     ) internal view returns (SwapRoute memory route) {
-        if (_getLTVRatio() > 100 || !UserRewardsConfig.hasActiveBalanceDistribution()) return route;
+        if (_getLoanUtilization() > 100 || !UserRewardsConfig.hasActiveBalanceDistribution()) return route;
         UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
         uint256 entryAmount = rewardsAmount * entry.percentage / 100;
         if (entryAmount > remaining) entryAmount = remaining;

@@ -25,7 +25,11 @@ contract MockCollateralFacet is ICollateralFacet {
         return 0;
     }
 
-    function getLTVRatio() external pure override returns (uint256) {
+    function getLoanUtilization() external pure override returns (uint256) {
         return 0;
+    }
+
+    function getCollateralToken() external pure override returns (address) {
+        return address(0);
     }
 }

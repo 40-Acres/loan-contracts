@@ -801,14 +801,14 @@ contract CollateralManagerSnapshotTest is Test, LocalSetup {
     }
 
     /**
-     * @notice getLTVRatio returns correct values. We verify by computing expected
+     * @notice getLoanUtilization returns correct values. We verify by computing expected
      *         values from known parameters.
      *
-     *         NOTE: getLTVRatio is a library view function. Calling it directly from
+     *         NOTE: getLoanUtilization is a library view function. Calling it directly from
      *         the test uses test contract storage. We verify the formula by computing
      *         expected results from the portfolio account state we set up.
      */
-    function test_getLTVRatio() public {
+    function test_getLoanUtilization() public {
         addCollateralViaMulticall(_tokenId);
         vm.roll(BLOCK_START + 1);
 

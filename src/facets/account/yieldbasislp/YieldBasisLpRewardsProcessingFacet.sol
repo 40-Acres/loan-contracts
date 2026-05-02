@@ -53,8 +53,8 @@ contract YieldBasisLpRewardsProcessingFacet is RewardsProcessingFacet {
         );
     }
 
-    function _getLTVRatio() internal view override returns (uint256) {
-        return YieldBasisCollateralManager.getLTVRatio(
+    function _getLoanUtilization() internal view override returns (uint256) {
+        return YieldBasisCollateralManager.getLoanUtilization(
             address(_portfolioFactory.portfolioFactoryConfig()),
             _lpToken,
             _underlying

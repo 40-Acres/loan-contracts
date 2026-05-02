@@ -158,7 +158,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
         collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, VOTING_ESCROW, VEVELO_MARKETPLACE);

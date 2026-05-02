@@ -50,8 +50,8 @@ contract veYieldBasisRewardsProcessingFacet is RewardsProcessingFacet {
         return DynamicCollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), amount);
     }
 
-    function _getLTVRatio() internal view override returns (uint256) {
-        return DynamicCollateralManager.getLTVRatio(address(_portfolioFactory.portfolioFactoryConfig()));
+    function _getLoanUtilization() internal view override returns (uint256) {
+        return DynamicCollateralManager.getLoanUtilization(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override returns (uint256 usedAmount) {

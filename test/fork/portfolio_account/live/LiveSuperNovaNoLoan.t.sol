@@ -101,7 +101,7 @@ contract LiveSuperNovaNoLoan is Test {
         sel[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         sel[8] = BaseCollateralFacet.getLockedCollateral.selector;
         sel[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        sel[10] = BaseCollateralFacet.getLTVRatio.selector;
+        sel[10] = BaseCollateralFacet.getLoanUtilization.selector;
         facetRegistry.registerFacet(address(facet), sel, "CollateralFacet");
     }
 
@@ -169,7 +169,7 @@ contract LiveSuperNovaNoLoan is Test {
         assertTrue(success, "Collateral requirements should pass with no debt");
 
         // Verify LTV is 0 (no debt)
-        uint256 ltv = ICollateralFacet(portfolioAccount).getLTVRatio();
+        uint256 ltv = ICollateralFacet(portfolioAccount).getLoanUtilization();
         assertEq(ltv, 0, "LTV should be 0 with no debt");
     }
 

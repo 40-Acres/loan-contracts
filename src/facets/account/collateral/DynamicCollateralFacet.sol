@@ -44,7 +44,7 @@ contract DynamicCollateralFacet is BaseCollateralFacet {
         return DynamicCollateralManager.enforceCollateralRequirements();
     }
 
-    function _getLTVRatio() internal view override returns (uint256) {
-        return DynamicCollateralManager.getLTVRatio(address(_portfolioFactory.portfolioFactoryConfig()));
+    function _getLoanUtilization() internal view override returns (uint256) {
+        return DynamicCollateralManager.getLoanUtilization(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 }

@@ -27,7 +27,7 @@ pragma solidity ^0.8.30;
  *  6. removeLockedCollateral has inline require(debt <= newMaxLoan).
  *  7. overSuppliedVaultDebt > 0 always reverts BadDebt.
  *  8. migrateDebt always reverts NotSupported.
- *  9. getLTVRatio returns correct ratio based on vault debt.
+ *  9. getLoanUtilization returns correct ratio based on vault debt.
  *
  *  CRITICAL VIA-IR NOTE: The via-ir compiler may cache block.number across
  *  vm.roll() calls within the same function. We use hardcoded absolute block
@@ -43,9 +43,9 @@ pragma solidity ^0.8.30;
  *  actually created overSuppliedVaultDebt state or verified it. It was just
  *  a basic borrow+pay test. Rewritten to test the actual accounting.
  *
- *  [CRITICAL] Test 11 (testDynamicGetLTVRatio) never called getLTVRatio().
+ *  [CRITICAL] Test 11 (testDynamicGetLoanUtilization) never called getLoanUtilization().
  *  It tested getTotalDebt and getMaxLoan only. Rewritten to use an
- *  LTVRatioReader facet to call getLTVRatio from within the diamond context.
+ *  LoanUtilizationReader facet to call getLoanUtilization from within the diamond context.
  *
  *  [WARNING] No event emission tests — added CollateralAdded/Removed tests.
  *  [WARNING] No access control tests for increaseTotalDebt — added.
@@ -956,18 +956,18 @@ contract DynamicCollateralManagerSnapshotTest is Test {
     }
 
     /**
-     * @notice Test 11: getLTVRatio returns correct ratio.
+     * @notice Test 11: getLoanUtilization returns correct ratio.
      *
-     * AUDIT FIX: Previous version never called getLTVRatio(). It only tested
-     * getTotalDebt and getMaxLoan values. This version verifies actual LTV
-     * values indirectly through debt/maxLoan relationships, since getLTVRatio
+     * AUDIT FIX: Previous version never called getLoanUtilization(). It only tested
+     * getTotalDebt and getMaxLoan values. This version verifies actual utilization
+     * values indirectly through debt/maxLoan relationships, since getLoanUtilization
      * is a library function that can only be called from within the diamond context.
      *
-     * LTV = (debt * 100) / maxLoanIgnoreSupply
+     * utilization = (debt * 100) / maxLoanIgnoreSupply
      * If debt = 0, returns 0.
      * If maxLoanIgnoreSupply = 0, returns type(uint256).max.
      */
-    function testDynamicGetLTVRatio() public {
+    function testDynamicGetLoanUtilization() public {
         addCollateralViaMulticall(_tokenId);
         _fundVault(100_000e6);
 

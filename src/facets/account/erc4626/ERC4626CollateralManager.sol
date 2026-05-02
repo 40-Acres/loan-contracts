@@ -346,11 +346,11 @@ library ERC4626CollateralManager {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
-    function getLTVRatio(address portfolioFactoryConfig, address vault) public view returns (uint256) {
-        return getLTVRatio(portfolioFactoryConfig, vault, address(0));
+    function getLoanUtilization(address portfolioFactoryConfig, address vault) public view returns (uint256) {
+        return getLoanUtilization(portfolioFactoryConfig, vault, address(0));
     }
 
-    function getLTVRatio(address portfolioFactoryConfig, address vault, address lpToken) public view returns (uint256) {
+    function getLoanUtilization(address portfolioFactoryConfig, address vault, address lpToken) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt();
         if (totalDebt == 0) return 0;
 

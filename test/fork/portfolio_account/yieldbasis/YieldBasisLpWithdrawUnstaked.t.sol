@@ -10,6 +10,8 @@ import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {YbConfigDeployer} from "../../../portfolio_account/yieldbasis/helpers/YbConfigDeployer.sol";
+import {YieldBasisPortfolioFactoryConfig} from "../../../../src/facets/account/config/YieldBasisPortfolioFactoryConfig.sol";
 import {IYieldBasisGauge} from "../../../../src/interfaces/IYieldBasisGauge.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ILendingPool} from "../../../../src/interfaces/ILendingPool.sol";
@@ -61,7 +63,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
 
     PortfolioManager public portfolioManager;
     PortfolioFactory public portfolioFactory;
-    PortfolioFactoryConfig public portfolioFactoryConfig;
+    YieldBasisPortfolioFactoryConfig public portfolioFactoryConfig;
     address public portfolioAccount;
 
     IYieldBasisGauge public gauge = IYieldBasisGauge(WBTC_GAUGE);
@@ -79,8 +81,8 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
             bytes32(keccak256(abi.encodePacked("yb-lp-withdraw-test")))
         );
 
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
-        (portfolioFactoryConfig,,,) = configDeployer.deploy(address(portfolioFactory), DEPLOYER);
+        YbConfigDeployer configDeployer = new YbConfigDeployer();
+        (portfolioFactoryConfig,,,) = configDeployer.deployYb(address(portfolioFactory), DEPLOYER);
 
         MockVault mockVault = new MockVault(USDC);
         MockLendingPool mockLendingPool = new MockLendingPool(USDC, address(mockVault));
@@ -93,7 +95,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
             address(portfolioFactory),
             WBTC_GAUGE,
             YB,
-            WBTC
+            address(mockLendingPool)
         );
         bytes4[] memory lpSelectors = new bytes4[](8);
         lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
@@ -138,6 +140,8 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     }
 
     function _unstakeViaAuthorized() internal {
+        vm.prank(DEPLOYER);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
         vm.prank(authorizedCaller);
         YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
@@ -145,9 +149,11 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
     /// @dev After the deposit refactor, deposit() no longer auto-stakes into the gauge
     ///      from a cold start (gauge balance == 0) — LP sits unstaked on the portfolio
     ///      account. Tests that exercise gauge state must explicitly stake via the
-    ///      authorized-caller admin path. stake() is all-or-nothing: it stakes the full
-    ///      unstaked LP balance held by the portfolio account.
+    ///      authorized-caller admin path. setStakedMode() reads the factory-level
+    ///      directive, so flip the flag first then sweep this account into the new mode.
     function _stakeViaAuthorized() internal {
+        vm.prank(DEPLOYER);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
         vm.prank(authorizedCaller);
         YieldBasisLpFacet(portfolioAccount).setStakedMode();
     }
@@ -287,7 +293,9 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         portfolioManager.multicall(calldatas, factories);
     }
 
-    /// @notice Withdrawing more LP than total available (staked + unstaked) must revert
+    /// @notice Withdrawing more LP than total available clamps to the tracked balance
+    ///         rather than reverting — the facet caps `amount` to `getCollateralShares()`
+    ///         to tolerate prior fee harvests that may have reduced shares.
     function testRevert_withdraw_exceedsAvailableBalance() public {
         uint256 depositAmount = 1 ether;
         deal(WBTC_LP, user, depositAmount);
@@ -295,9 +303,7 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         lpToken.approve(portfolioAccount, depositAmount);
         _depositViaMulticall(depositAmount);
 
-        // Try to withdraw 10x more than deposited — this must revert
-        // The removeCollateral call will fail with "Insufficient collateral shares"
-        // because the gauge doesn't have that many shares to preview
+        uint256 userLpBefore = lpToken.balanceOf(user);
         uint256 excessAmount = depositAmount * 10;
 
         address[] memory factories = new address[](1);
@@ -305,9 +311,19 @@ contract YieldBasisLpWithdrawUnstakedTest is Test {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = abi.encodeWithSelector(YieldBasisLpFacet.withdraw.selector, excessAmount);
 
+        // Does NOT revert — clamps to tracked shares.
         vm.prank(user);
-        vm.expectRevert(); // Reverts in gauge.previewWithdraw or removeCollateral
         portfolioManager.multicall(calldatas, factories);
+
+        // User receives exactly what they deposited; collateral is fully released.
+        assertEq(
+            lpToken.balanceOf(user) - userLpBefore,
+            depositAmount,
+            "withdraw must clamp to tracked shares (not pull excess)"
+        );
+        (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(staked, 0, "no gauge shares should remain");
+        assertEq(unstaked, 0, "no LP should remain on portfolio");
     }
 
     // ── Tests: Access Control ──

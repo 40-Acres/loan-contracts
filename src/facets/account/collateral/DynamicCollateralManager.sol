@@ -260,7 +260,7 @@ library DynamicCollateralManager {
         return collateralManagerData.lockedCollaterals[tokenId];
     }
 
-    function getLTVRatio(address portfolioFactoryConfig) public view returns (uint256) {
+    function getLoanUtilization(address portfolioFactoryConfig) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt(portfolioFactoryConfig);
         if (totalDebt == 0) return 0;
 

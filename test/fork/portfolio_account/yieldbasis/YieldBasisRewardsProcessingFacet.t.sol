@@ -228,13 +228,17 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
         facetRegistry.registerFacet(address(erc721ReceiverFacet), erc721ReceiverSelectors, "ERC721ReceiverFacet");
 
         // Deploy veYieldBasisRewardsProcessingFacet
+        // Rewards arrive as YB: pass address(0) for the rewards-token vault and YB
+        // as the defaultToken so getRewardsToken() returns YB. Otherwise the rewards
+        // token would be the lending vault's USDC, which doesn't match the deal(YB)
+        // funding pattern these tests use.
         rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(
             address(portfolioFactory),
             address(swapConfig),
             VE_YB,
             address(veYBAdapter),
-            address(mockVault),
-            address(0)
+            address(0),
+            YB
         );
         bytes4[] memory rewardsSelectors = new bytes4[](5);
         rewardsSelectors[0] = RewardsProcessingFacet.processRewards.selector;
@@ -330,9 +334,10 @@ contract YieldBasisRewardsProcessingFacetTest is Test {
     function testGetRewardsToken() public {
         _createLockForUser();
 
-        // Should return USDC (vault asset) when there's no custom rewards token set
+        // With vault=address(0), the rewards token falls back to the configured
+        // defaultToken (YB) — matching how YB gauge rewards are denominated.
         address rewardsToken = RewardsProcessingFacet(portfolioAccount).getRewardsToken();
-        assertEq(rewardsToken, USDC, "Rewards token should be USDC");
+        assertEq(rewardsToken, YB, "Rewards token should be YB");
     }
 
     function testSetZeroBalanceDistribution() public {

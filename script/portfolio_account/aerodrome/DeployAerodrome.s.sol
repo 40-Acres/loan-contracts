@@ -158,11 +158,11 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         FacetRegistry facetRegistry = PortfolioFactory(portfolioFactory).facetRegistry();
 
         // ============================================================
-        // Facet upgrades for: getLTVRatio, decreaseTotalDebt fix,
+        // Facet upgrades for: getLoanUtilization, decreaseTotalDebt fix,
         // mergeInternal toToken listing guard
         // ============================================================
 
-        // 1. CollateralFacet - adds getLTVRatio, carries decreaseTotalDebt fix via CollateralManager library
+        // 1. CollateralFacet - adds getLoanUtilization, carries decreaseTotalDebt fix via CollateralManager library
         // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
         // bytes4[] memory collateralSelectors = new bytes4[](11);
         // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
@@ -175,7 +175,7 @@ contract AerodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
         // collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         // collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        // collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
+        // collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
         // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // 2. LendingFacet - carries decreaseTotalDebt fix via CollateralManager library

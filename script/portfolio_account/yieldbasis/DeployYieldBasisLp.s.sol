@@ -166,7 +166,7 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         // (LendingVault) — the facet derives `_underlying = lendingPool.lendingAsset()` so
         // collateral pricing and debt comparisons share denomination by construction.
         // YieldBasisLpFacet lpFacet = new YieldBasisLpFacet(portfolioFactory, gauge, YB, vault);
-        // bytes4[] memory lpSelectors = new bytes4[](9);
+        // bytes4[] memory lpSelectors = new bytes4[](10);
         // lpSelectors[0] = YieldBasisLpFacet.deposit.selector;
         // lpSelectors[1] = YieldBasisLpFacet.withdraw.selector;
         // lpSelectors[2] = YieldBasisLpFacet.setStakedMode.selector;
@@ -175,7 +175,8 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         // lpSelectors[5] = YieldBasisLpFacet.getTotalDebt.selector;
         // lpSelectors[6] = YieldBasisLpFacet.getMaxLoan.selector;
         // lpSelectors[7] = YieldBasisLpFacet.enforceCollateralRequirements.selector;
-        // lpSelectors[8] = YieldBasisLpFacet.getLTVRatio.selector;
+        // lpSelectors[8] = YieldBasisLpFacet.getLoanUtilization.selector;
+        // lpSelectors[9] = YieldBasisLpFacet.getCollateralToken.selector;
         // _registerFacet(facetRegistry, address(lpFacet), lpSelectors, "YieldBasisLpFacet");
 
         // Deploy YieldBasisLpClaimingFacet (gauge rewards + LP fee harvesting)

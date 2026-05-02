@@ -260,7 +260,7 @@ library YieldBasisCollateralManager {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
-    function getLTVRatio(address portfolioFactoryConfig, address vault, address underlying) public view returns (uint256) {
+    function getLoanUtilization(address portfolioFactoryConfig, address vault, address underlying) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt();
         if (totalDebt == 0) return 0;
 

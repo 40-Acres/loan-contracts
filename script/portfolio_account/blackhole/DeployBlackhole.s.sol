@@ -109,7 +109,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
         collateralSelectors[7] = BaseCollateralFacet.enforceCollateralRequirements.selector;
         collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
         collateralSelectors[9] = BaseCollateralFacet.removeCollateralTo.selector;
-        collateralSelectors[10] = BaseCollateralFacet.getLTVRatio.selector;
+        collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
         _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // Deploy LendingFacet

@@ -141,10 +141,14 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
         return ERC4626CollateralManager.getCollateralShares();
     }
 
-    function getLTVRatio() external view override returns (uint256) {
-        return ERC4626CollateralManager.getLTVRatio(
+    function getLoanUtilization() external view override returns (uint256) {
+        return ERC4626CollateralManager.getLoanUtilization(
             address(_portfolioFactory.portfolioFactoryConfig()),
             address(_vault)
         );
+    }
+
+    function getCollateralToken() external view override returns (address) {
+        return address(_vault);
     }
 }

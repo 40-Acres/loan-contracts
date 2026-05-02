@@ -196,7 +196,11 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
         return YieldBasisCollateralManager.enforceCollateralRequirements(_config(), address(_lpToken), _underlying);
     }
 
-    function getLTVRatio() external view override returns (uint256) {
-        return YieldBasisCollateralManager.getLTVRatio(_config(), address(_lpToken), _underlying);
+    function getLoanUtilization() external view override returns (uint256) {
+        return YieldBasisCollateralManager.getLoanUtilization(_config(), address(_lpToken), _underlying);
+    }
+
+    function getCollateralToken() external view override returns (address) {
+        return address(_lpToken);
     }
 }
