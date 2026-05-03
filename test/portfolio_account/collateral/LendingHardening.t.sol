@@ -14,6 +14,7 @@ import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {CollateralFacet} from "../../../src/facets/account/collateral/CollateralFacet.sol";
 import {BaseCollateralFacet} from "../../../src/facets/account/collateral/BaseCollateralFacet.sol";
 import {CollateralManager} from "../../../src/facets/account/collateral/CollateralManager.sol";
+import {AccessControl} from "../../../src/facets/account/utils/AccessControl.sol";
 import {LendingFacet} from "../../../src/facets/account/lending/LendingFacet.sol";
 import {BaseLendingFacet} from "../../../src/facets/account/lending/BaseLendingFacet.sol";
 import {VotingFacet} from "../../../src/facets/account/vote/VotingFacet.sol";
@@ -447,7 +448,7 @@ contract LendingHardeningTest is Test, LocalSetup {
         _fundVault(MAX_LOAN_IGNORE_SUPPLY * 2);
 
         vm.prank(address(0xA77AC4));
-        vm.expectRevert(abi.encodeWithSelector(CollateralManager.NotPortfolioManager.selector));
+        vm.expectRevert(abi.encodeWithSelector(AccessControl.NotAuthorizedCaller.selector));
         LendingFacet(_portfolioAccount).topUp();
 
         assertEq(CollateralFacet(_portfolioAccount).getTotalDebt(), 0);

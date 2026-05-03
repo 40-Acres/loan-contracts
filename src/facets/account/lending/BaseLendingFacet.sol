@@ -134,7 +134,7 @@ abstract contract BaseLendingFacet is AccessControl {
         emit TopUpSet(topUpEnabled, owner);
     }
 
-    function topUp() public {
+    function topUp() public onlyAuthorizedCaller(_portfolioFactory) {
         bool topUpEnabled = UserLendingConfig.getTopUp();
         if(!topUpEnabled) {
             return;

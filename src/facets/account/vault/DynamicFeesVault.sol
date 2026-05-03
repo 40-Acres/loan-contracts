@@ -80,8 +80,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 totalDebtBalance;
 
         // Epoch-based lender premium vesting
-        uint256 currentEpochPremium;     // Premium deposited in current epoch (not vesting yet)
-        uint256 currentEpochStart;       // Epoch start time for currentEpochPremium
+        uint256 currentEpochPremium;     // DEPRECATED — retained for ERC-7201 layout stability (deployed proxy)
+        uint256 currentEpochStart;       // DEPRECATED — retained for ERC-7201 layout stability (deployed proxy)
         uint256 vestingEpochPremium;     // Premium from previous epoch (currently vesting linearly)
         uint256 vestingEpochStart;       // Epoch start time for vestingEpochPremium
 
@@ -183,17 +183,33 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         if (_feeRecipient == address(0)) revert ZeroAddress();
+        // Crystallize pending fee at the old recipient before swapping.
+        _processGlobalVesting();
         DynamicFeesVaultStorage storage $ = _getStorage();
         address old = $.feeRecipient;
         $.feeRecipient = _feeRecipient;
+        // If transitioning out of an off-state (recipient was zero), reset the
+        // snapshot so totalAssets growth from the off-window is not retroactively
+        // charged to LPs on the next accrual.
+        if (old == address(0)) {
+            $.lastTotalAssetsForFee = totalAssets();
+        }
         emit FeeRecipientUpdated(old, _feeRecipient);
     }
 
     function setFeeBps(uint256 _feeBps) external onlyOwner {
         if (_feeBps > MAX_FEE_BPS) revert FeeBpsTooHigh();
+        // Crystallize pending fee at the old rate before changing it.
+        _processGlobalVesting();
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 old = $.feeBps;
         $.feeBps = _feeBps;
+        // If transitioning out of an off-state (feeBps was zero), reset the
+        // snapshot so totalAssets growth from the off-window is not retroactively
+        // charged to LPs on the next accrual.
+        if (old == 0 && _feeBps > 0) {
+            $.lastTotalAssetsForFee = totalAssets();
+        }
         emit FeeBpsUpdated(old, _feeBps);
     }
 
@@ -521,24 +537,27 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     // ============ Performance Fee ============
 
     /**
-     * @notice Mint fee shares to `feeRecipient` proportional to interest realized since last accrual.
-     * @dev "Interest" = increase in totalAssets() since `lastTotalAssetsForFee`. LP deposits and
+     * @notice Mint fee shares to `feeRecipient` proportional to totalAssets growth since last accrual.
+     * @dev Growth = increase in totalAssets() since `lastTotalAssetsForFee`. LP deposits and
      *      withdraws explicitly bump the snapshot in _deposit/_withdraw so they don't count as
-     *      interest. Borrow/repay/depositRewards leave totalAssets() invariant by construction.
+     *      growth. Borrow/repay/depositRewards leave totalAssets() invariant by construction.
      */
     function _accrueFee() internal {
         DynamicFeesVaultStorage storage $ = _getStorage();
         (uint256 newTotalAssets, uint256 feeShares) = _accrueFeeView();
-        if (feeShares > 0) {
-            address recipient = $.feeRecipient;
-            uint256 feeBpsLocal = $.feeBps;
-            uint256 interest = newTotalAssets > $.lastTotalAssetsForFee
-                ? newTotalAssets - $.lastTotalAssetsForFee
-                : 0;
-            uint256 feeAssets = (interest * feeBpsLocal) / 10000;
-            _mint(recipient, feeShares);
-            emit FeeAccrued(recipient, feeAssets, feeShares);
-        }
+        if (feeShares == 0) return;
+
+        address recipient = $.feeRecipient;
+        uint256 feeBpsLocal = $.feeBps;
+        uint256 growth = newTotalAssets > $.lastTotalAssetsForFee
+            ? newTotalAssets - $.lastTotalAssetsForFee
+            : 0;
+        uint256 feeAssets = (growth * feeBpsLocal) / 10000;
+        _mint(recipient, feeShares);
+        emit FeeAccrued(recipient, feeAssets, feeShares);
+        // Snapshot freezes when feeShares == 0 so sub-mintable totalAssets growth
+        // accumulates across calls instead of leaking to LPs. Snapshot may briefly
+        // exceed totalAssets() between premium extraction and recovery — intentional.
         $.lastTotalAssetsForFee = newTotalAssets;
     }
 
@@ -556,8 +575,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             return (newTotalAssets, 0);
         }
 
-        uint256 interest = newTotalAssets - last;
-        uint256 feeAssets = (interest * feeBpsLocal) / 10000;
+        uint256 growth = newTotalAssets - last;
+        uint256 feeAssets = (growth * feeBpsLocal) / 10000;
         if (feeAssets == 0) return (newTotalAssets, 0);
 
         uint256 virtualShares = 10 ** _decimalsOffset();

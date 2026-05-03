@@ -793,37 +793,54 @@ contract DynamicFeesVaultTreasuryTest is Test {
     // K. Edge: feeAssets == 0 from rounding
     // =========================================================================
 
-    function test_tinyInterest_roundsToZeroFeeShares() public {
-        // We need _accrueFee to actually run. _processGlobalVesting only calls it when
-        // there's an active stream, so we set one up first. Then donate tiny extra USDC
-        // and trigger a state-changing path that goes through _accrueFee.
+    function test_tinyDonation_roundsToZeroFeeShares() public {
+        // We need _accrueFee to actually run. _processGlobalVesting calls it
+        // unconditionally at the end of each invocation. We exercise the dust
+        // path: a small donation creates totalAssets growth that, at 25% bps,
+        // rounds to zero fee assets — exactly the leak case the fix addresses.
 
         _setFlatRatio(2000);
         _borrow(borrower, 3000e6);
         _depositRewards(borrower, 100e6);
 
-        // No fee accrued yet (interest realization comes 2 epochs later).
+        // Snapshot the state BEFORE the dust donation. The borrow + depositRewards
+        // paths are invariant for totalAssets (each deduction term offsets the
+        // balance change), so under the post-fix early-return, the snapshot has
+        // remained pinned to the setUp-deposit value (SEED).
         uint256 lastBefore = vault.lastTotalAssetsForFee();
         uint256 sharesBefore = vault.balanceOf(feeRecipient);
 
         vm.warp(EPOCH_3);
 
-        // Donate 3 wei before triggering settle.
+        // Donate 3 wei. (3 * 2500) / 10000 == 0 → feeShares = 0 path in
+        // _accrueFeeView.
         usdc.mint(address(vault), 3);
+
+        // Pre-sync sanity: a 3-wei delta is well below the 4-wei threshold for
+        // a single fee asset at 25% bps. This is the exact rounding-to-zero
+        // scenario the production fix protects against.
+        assertEq((3 * uint256(2500)) / 10000, 0, "math sanity: 3 wei * 25% rounds to 0");
 
         vault.sync();
 
         uint256 sharesAfter = vault.balanceOf(feeRecipient);
         uint256 lastAfter = vault.lastTotalAssetsForFee();
 
-        // Snapshot must update at least to the new value. The relevant invariant:
-        // lastTotalAssetsForFee tracks current totalAssets after accrual.
-        assertGe(lastAfter, lastBefore, "snapshot non-decreasing after accrual");
-        // Fee shares non-decreasing.
-        assertGe(sharesAfter, sharesBefore, "fee shares non-decreasing");
-        // The 3 wei delta * 25% / 10000 = 0 fee — confirms rounding-to-zero path.
-        // (Lender premium also generates 0 delta at this step since it's still unvested.)
-        assertEq(sharesAfter, sharesBefore, "tiny donation rounds to zero fee shares");
+        // POST-FIX assertions (would FAIL on the un-fixed code):
+        //   - Pre-fix: snapshot advanced unconditionally. `lastAfter > lastBefore`.
+        //   - Post-fix: feeShares == 0 → early-return → snapshot frozen.
+        assertEq(
+            lastAfter, lastBefore,
+            "snapshot MUST be frozen when feeShares == 0 (pre-fix would advance to SEED+3)"
+        );
+        // Fee shares unchanged — the 3-wei dust silently leaked to LPs pre-fix
+        // (snapshot was advanced, the delta consumed without minting). Post-fix,
+        // the dust is preserved as a pending delta; on a future call where
+        // cumulative growth crosses the fee threshold, it will mint.
+        assertEq(
+            sharesAfter, sharesBefore,
+            "no fee shares minted on dust donation"
+        );
     }
 
     // =========================================================================

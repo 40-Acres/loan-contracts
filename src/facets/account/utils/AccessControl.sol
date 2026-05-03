@@ -9,13 +9,16 @@ import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
  * @dev Library for access control
  */
 abstract contract AccessControl {
+    error NotPortfolioManagerMulticall();
+    error NotAuthorizedCaller();
+
     modifier onlyPortfolioManagerMulticall(PortfolioFactory portfolioFactory) {
-        require(msg.sender == address(portfolioFactory.portfolioManager()));
+        require(msg.sender == address(portfolioFactory.portfolioManager()), NotPortfolioManagerMulticall());
         _;
     }
-    
+
     modifier onlyAuthorizedCaller(PortfolioFactory portfolioFactory) {
-        require(portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender));
+        require(portfolioFactory.portfolioManager().isAuthorizedCaller(msg.sender), NotAuthorizedCaller());
         _;
     }
 }
