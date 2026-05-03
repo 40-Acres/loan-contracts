@@ -12,10 +12,6 @@ import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 
-interface IYieldBasisDebtBalanceReader {
-    function getDebtBalance(address borrower) external view returns (uint256);
-}
-
 /**
  * @title YieldBasisCollateralManager
  * @dev Library for managing YieldBasis LP tokens as collateral.
@@ -102,10 +98,15 @@ library YieldBasisCollateralManager {
 
         uint256 assetValue = _resolveCollateralValue(vault, underlying, shares);
 
+        uint256 prevShares = data.shares;
         data.shares += shares;
         data.depositedAssetValue += assetValue;
 
         emit YieldBasisCollateralAdded(vault, shares, assetValue, address(this));
+
+        if (prevShares == 0) {
+            _notifyCollateralAdded(portfolioFactoryConfig, vault);
+        }
     }
 
     function removeCollateral(address portfolioFactoryConfig, address vault, address underlying, uint256 shares) public {
@@ -124,6 +125,10 @@ library YieldBasisCollateralManager {
         require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         emit YieldBasisCollateralRemoved(vault, shares, assetValueToRemove, address(this));
+
+        if (data.shares == 0) {
+            _notifyCollateralRemoved(portfolioFactoryConfig, vault);
+        }
     }
 
     function getTotalCollateralValue(address vault, address underlying) public view returns (uint256 totalValue) {
@@ -174,7 +179,7 @@ library YieldBasisCollateralManager {
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
 
-        data.debt = IYieldBasisDebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+        data.debt = lendingPool.getDebtBalance(address(this));
 
         return (loanAmount, originationFee);
     }
@@ -199,7 +204,7 @@ library YieldBasisCollateralManager {
 
         excess = amount - actualPaid;
 
-        data.debt = IYieldBasisDebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+        data.debt = lendingPool.getDebtBalance(address(this));
 
         if (data.overSuppliedVaultDebt > 0) {
             data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > actualPaid ? actualPaid : data.overSuppliedVaultDebt;
@@ -314,6 +319,10 @@ library YieldBasisCollateralManager {
             }
             data.shares = actualLp;
             _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+
+            if (actualLp == 0) {
+                _notifyCollateralRemoved(portfolioFactoryConfig, vault);
+            }
         }
     }
 
@@ -342,7 +351,7 @@ library YieldBasisCollateralManager {
 
     function _syncDebt(address portfolioFactoryConfig) internal {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        _getStorage().debt = IYieldBasisDebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+        _getStorage().debt = lendingPool.getDebtBalance(address(this));
     }
 
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address underlying) internal {
@@ -389,5 +398,17 @@ library YieldBasisCollateralManager {
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
         require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+
+        if (data.shares == 0) {
+            _notifyCollateralRemoved(portfolioFactoryConfig, vault);
+        }
+    }
+
+    function _notifyCollateralAdded(address portfolioFactoryConfig, address lp) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralAdded(lp, 0) {} catch {}
+    }
+
+    function _notifyCollateralRemoved(address portfolioFactoryConfig, address lp) internal {
+        try PortfolioFactoryConfig(portfolioFactoryConfig).onCollateralRemoved(lp, 0) {} catch {}
     }
 }

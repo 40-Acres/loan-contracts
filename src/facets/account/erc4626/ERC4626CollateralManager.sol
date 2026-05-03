@@ -11,10 +11,6 @@ import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
 
-interface IERC4626DebtBalanceReader {
-    function getDebtBalance(address borrower) external view returns (uint256);
-}
-
 
 /**
  * @title ERC4626CollateralManager
@@ -238,7 +234,7 @@ library ERC4626CollateralManager {
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
 
-        data.debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+        data.debt = lendingPool.getDebtBalance(address(this));
 
         return (loanAmount, originationFee);
     }
@@ -275,7 +271,7 @@ library ERC4626CollateralManager {
 
         // Sync local debt with vault's actual debt balance.
         // The vault may have implicitly reduced debt via reward settlement beyond the explicit payment.
-        data.debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+        data.debt = lendingPool.getDebtBalance(address(this));
 
         if (data.overSuppliedVaultDebt > 0) {
             data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > actualPaid ? actualPaid : data.overSuppliedVaultDebt;
@@ -411,7 +407,7 @@ library ERC4626CollateralManager {
 
     function _syncDebt(address portfolioFactoryConfig) internal {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        _getStorage().debt = IERC4626DebtBalanceReader(address(lendingPool)).getDebtBalance(address(this));
+        _getStorage().debt = lendingPool.getDebtBalance(address(this));
     }
 
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address lpToken) internal {

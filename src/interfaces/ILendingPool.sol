@@ -45,4 +45,24 @@ interface ILendingPool {
      * @param amount The amount of reward tokens to deposit
      */
     function depositRewards(uint256 amount) external;
+
+    /**
+     * @notice Per-borrower outstanding principal denominated in `lendingAsset()`.
+     * @dev Canonical input to collateral-manager debt sync. Implementations MUST aggregate
+     *      across all loan positions the borrower holds. MUST NOT revert; return 0 if the
+     *      borrower has no positions.
+     * @param borrower The portfolio account address
+     * @return The borrower's outstanding debt
+     */
+    function getDebtBalance(address borrower) external view returns (uint256);
+
+    /**
+     * @notice Effective per-borrower debt after accounting for any vault-side reward vesting
+     *         that has not yet been settled to the underlying debt balance.
+     * @dev For implementations without a separate "effective" notion, this MUST return the
+     *      same value as `getDebtBalance(borrower)`. MUST NOT revert.
+     * @param borrower The portfolio account address
+     * @return The borrower's effective debt
+     */
+    function getEffectiveDebtBalance(address borrower) external view returns (uint256);
 }

@@ -47,6 +47,14 @@ contract NoOpVault is ILendingPool {
         return 0;
     }
 
+    function getDebtBalance(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function getEffectiveDebtBalance(address) external pure returns (uint256) {
+        return 0;
+    }
+
     // ============ ILoan compatibility (used by PortfolioFactoryConfig) ============
 
     function _vault() external view returns (address) {

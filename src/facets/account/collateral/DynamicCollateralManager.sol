@@ -13,11 +13,6 @@ import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface IDynamicFeesVault {
-    function getDebtBalance(address borrower) external view returns (uint256);
-    function getEffectiveDebtBalance(address borrower) external view returns (uint256);
-}
-
 /**
  * @title DynamicCollateralManager
  * @dev Variant of CollateralManager for DynamicFeesVault.
@@ -166,7 +161,7 @@ library DynamicCollateralManager {
 
     function getTotalDebt(address portfolioFactoryConfig) public view returns (uint256) {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        return IDynamicFeesVault(address(lendingPool)).getEffectiveDebtBalance(address(this));
+        return lendingPool.getEffectiveDebtBalance(address(this));
     }
 
     function increaseTotalDebt(address portfolioFactoryConfig, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
@@ -180,7 +175,7 @@ library DynamicCollateralManager {
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
 
-        uint256 actualTotalDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
+        uint256 actualTotalDebt = lendingPool.getDebtBalance(address(this));
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
 
         // Update enforcement flags based on actual post-borrow state
@@ -213,7 +208,7 @@ library DynamicCollateralManager {
         }
 
         // Read actual post-payment, post-settlement debt for accurate enforcement
-        uint256 actualTotalDebt = IDynamicFeesVault(address(lendingPool)).getDebtBalance(address(this));
+        uint256 actualTotalDebt = lendingPool.getDebtBalance(address(this));
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
 
         // Update enforcement flags based on actual post-payment state

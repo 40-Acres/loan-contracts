@@ -165,8 +165,12 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
 
     // ============ Debt Balance Reader (for ERC4626CollateralManager) ============
 
-    function getDebtBalance(address borrower) external view returns (uint256) {
+    function getDebtBalance(address borrower) public view returns (uint256) {
         return _getStorage().debtBalance[borrower];
+    }
+
+    function getEffectiveDebtBalance(address borrower) external view returns (uint256) {
+        return getDebtBalance(borrower);
     }
 
     // ============ ERC4626 Overrides ============

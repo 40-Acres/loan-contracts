@@ -11,6 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
@@ -22,7 +23,7 @@ import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
  * @dev Combines vault functionality with debt token accounting for reward distribution
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
-contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ILendingPool {
+contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardUpgradeable, ILendingPool {
     using SafeERC20 for IERC20;
 
     // ============ Events ============
@@ -106,6 +107,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address feeRecipient;          // recipient of accrued fee shares; if zero, fee is disabled
         uint256 feeBps;                // basis points of realized interest minted as fee shares (cap MAX_FEE_BPS)
         uint256 lastTotalAssetsForFee; // snapshot of totalAssets() at last fee accrual; deltas count as interest
+
+        // APPEND-ONLY: do not reorder fields above this line.
+        uint256 escrowedExcessTotal;   // running sum of escrowedExcess[*] — liability deducted from totalAssets()
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -143,6 +147,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         __ERC20_init(_name, _symbol);
         __UUPSUpgradeable_init();
         __Ownable2Step_init();
+        __ReentrancyGuard_init();
         _transferOwnership(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -221,6 +226,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function totalLoanedAssets() public view returns (uint256) {
         return _getStorage().totalLoanedAssets;
+    }
+
+    function escrowedExcessTotal() external view returns (uint256) {
+        return _getStorage().escrowedExcessTotal;
+    }
+
+    function escrowedExcessOf(address user) external view returns (uint256) {
+        return _getStorage().escrowedExcess[user];
     }
 
     function getDebtBalance(address borrower) public view returns (uint256) {
@@ -386,7 +399,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         uint256 deductions = _getUnvestedLenderPremium()
             + $.totalUnsettledRewards
-            + excessPendingOwedToBorrowers;
+            + excessPendingOwedToBorrowers
+            + $.escrowedExcessTotal;
         uint256 gross = IERC20(asset()).balanceOf(address(this)) + outstandingDebt;
         return gross > deductions ? gross - deductions : 0;
     }
@@ -627,6 +641,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             emit ExcessRewardsPaid(user, amount);
         } else {
             $.escrowedExcess[user] += amount;
+            $.escrowedExcessTotal += amount;
             emit ExcessRewardsEscrowed(user, amount);
         }
     }
@@ -634,11 +649,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     /**
      * @notice Claim escrowed excess rewards that failed to transfer
      */
-    function claimEscrow() external {
+    function claimEscrow() external nonReentrant {
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 amount = $.escrowedExcess[msg.sender];
         if (amount == 0) revert ZeroAmount();
         $.escrowedExcess[msg.sender] = 0;
+        $.escrowedExcessTotal -= amount;
         IERC20(asset()).safeTransfer(msg.sender, amount);
         emit EscrowClaimed(msg.sender, amount);
     }
@@ -870,7 +886,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
         if ($.lastDepositBlock[owner] >= block.number) return 0;
-        uint256 assets = convertToAssets(balanceOf(owner));
+        // Mirror previewWithdraw's accrual so withdraw(maxWithdraw(owner)) cannot revert in _burn.
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        uint256 newTotalSupply = totalSupply() + pending;
+        uint256 assets = Math.mulDiv(
+            balanceOf(owner),
+            newTotalAssets + 1,
+            newTotalSupply + 10 ** _decimalsOffset(),
+            Math.Rounding.Floor
+        );
         uint256 liquid = IERC20(asset()).balanceOf(address(this));
         return assets < liquid ? assets : liquid;
     }
@@ -879,9 +903,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
         if ($.lastDepositBlock[owner] >= block.number) return 0;
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        uint256 newTotalSupply = totalSupply() + pending;
         uint256 shares = balanceOf(owner);
         uint256 liquid = IERC20(asset()).balanceOf(address(this));
-        uint256 maxShares = convertToShares(liquid);
+        uint256 maxShares = Math.mulDiv(
+            liquid,
+            newTotalSupply + 10 ** _decimalsOffset(),
+            newTotalAssets + 1,
+            Math.Rounding.Floor
+        );
         return shares < maxShares ? shares : maxShares;
     }
 
