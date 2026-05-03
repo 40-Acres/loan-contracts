@@ -108,7 +108,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 feeBps;                // basis points of realized interest minted as fee shares (cap MAX_FEE_BPS)
         uint256 lastTotalAssetsForFee; // snapshot of totalAssets() at last fee accrual; deltas count as interest
 
-        // APPEND-ONLY: do not reorder fields above this line.
         uint256 escrowedExcessTotal;   // running sum of escrowedExcess[*] — liability deducted from totalAssets()
     }
 
@@ -634,10 +633,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @notice Attempt transfer, escrow on failure (e.g. USDC blacklist)
      */
     function _transferOrEscrow(DynamicFeesVaultStorage storage $, address user, uint256 amount) internal {
-        (bool success, bytes memory data) = asset().call(
-            abi.encodeWithSelector(IERC20.transfer.selector, user, amount)
-        );
-        if (success && (data.length == 0 || abi.decode(data, (bool)))) {
+        if (amount == 0) return;
+        if (IERC20(asset()).trySafeTransfer(user, amount)) {
             emit ExcessRewardsPaid(user, amount);
         } else {
             $.escrowedExcess[user] += amount;

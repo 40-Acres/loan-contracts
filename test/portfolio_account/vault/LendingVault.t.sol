@@ -119,6 +119,8 @@ contract LendingVaultMaxWithdrawTest is Test {
         usdc.approve(address(vault), amount);
         vault.deposit(amount, depositor);
         vm.stopPrank();
+        // Advance block so flash-deposit guard doesn't block subsequent withdraws.
+        vm.roll(block.number + 1);
     }
 
     function _borrow(address _borrower, uint256 amount) internal {

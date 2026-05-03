@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
@@ -22,8 +23,11 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
  * totalAssets = USDC balance + total loaned out
  * share price appreciates as origination fees are collected.
  */
-contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILendingPool {
+contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, ILendingPool {
     using SafeERC20 for IERC20;
+
+    /// @notice Maximum origination fee in basis points (10%)
+    uint256 public constant MAX_FEE_BPS = 1000;
 
     /// @custom:storage-location erc7201:storage.LendingVault
     struct LendingVaultStorage {
@@ -37,6 +41,8 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         // Epoch-based reward vesting: fees trickle into totalAssets over the epoch
         uint256 currentEpochRewards; // accumulated fees this epoch
         uint256 currentEpochStart;   // start timestamp of current epoch
+        mapping(address => uint256) lastDepositBlock; // flash-deposit protection
+        uint8 sharesDecimalsOffset; // asset decimals cached at init for inflation-attack-resistant offset
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.LendingVault");
@@ -53,6 +59,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
     error ExceedsUtilization();
     error VaultPaused();
     error ZeroAmount();
+    error FeeBpsTooHigh();
 
     constructor() {
         _disableInitializers();
@@ -67,20 +74,24 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         uint256 maxUtilizationBps_,
         uint256 originationFeeBps_
     ) public initializer {
+        if (originationFeeBps_ > MAX_FEE_BPS) revert FeeBpsTooHigh();
+
         __ERC4626_init(ERC20(asset_));
         __ERC20_init(name_, symbol_);
         __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
 
         LendingVaultStorage storage $ = _getStorage();
         $.portfolioFactory = PortfolioFactory(portfolioFactory_);
         $.owner = owner_;
         $.maxUtilizationBps = maxUtilizationBps_;
         $.originationFeeBps = originationFeeBps_;
+        $.sharesDecimalsOffset = IERC20Metadata(asset_).decimals();
     }
 
     // ============ ILendingPool ============
 
-    function borrowFromPortfolio(uint256 amount) external onlyPortfolio whenNotPaused returns (uint256 originationFee) {
+    function borrowFromPortfolio(uint256 amount) external nonReentrant onlyPortfolio whenNotPaused returns (uint256 originationFee) {
         if (amount == 0) revert ZeroAmount();
 
         LendingVaultStorage storage $ = _getStorage();
@@ -108,7 +119,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         emit Borrowed(msg.sender, amount, originationFee);
     }
 
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external onlyPortfolio returns (uint256 actualPaid) {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external nonReentrant onlyPortfolio returns (uint256 actualPaid) {
         LendingVaultStorage storage $ = _getStorage();
 
         // Cap fees at total payment
@@ -179,26 +190,47 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
         return IERC20(asset()).balanceOf(address(this)) + _getStorage().totalLoanedAssets - epochRewardsLocked();
     }
 
-    // Override ERC4626 view functions to cap at liquid asset balance  
-    function maxWithdraw(address owner) public view override returns (uint256) {  
-        uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));  
-        uint256 maxAssets = super.maxWithdraw(owner);  
-        return liquidAssets < maxAssets ? liquidAssets : maxAssets;  
-    }  
-  
-    function maxRedeem(address owner) public view override returns (uint256) {  
-        uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));  
-        uint256 maxShares = super.maxRedeem(owner);  
-        uint256 maxAssets = convertToAssets(maxShares);  
-        if (maxAssets > liquidAssets) {  
-            return convertToShares(liquidAssets);  
-        }  
-        return maxShares;  
+    // Override ERC4626 view functions to cap at liquid asset balance
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        if (_getStorage().lastDepositBlock[owner] >= block.number) return 0;
+        uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));
+        uint256 maxAssets = super.maxWithdraw(owner);
+        return liquidAssets < maxAssets ? liquidAssets : maxAssets;
     }
 
-    function _decimalsOffset() internal view override returns (uint8) {  
-        return IERC20Metadata(asset()).decimals();  
-    }  
+    function maxRedeem(address owner) public view override returns (uint256) {
+        if (_getStorage().lastDepositBlock[owner] >= block.number) return 0;
+        uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));
+        uint256 maxShares = super.maxRedeem(owner);
+        uint256 maxAssets = convertToAssets(maxShares);
+        if (maxAssets > liquidAssets) {
+            return convertToShares(liquidAssets);
+        }
+        return maxShares;
+    }
+
+    function _decimalsOffset() internal view override returns (uint8) {
+        return _getStorage().sharesDecimalsOffset;
+    }
+
+    /// @dev Track the block of every share mint for flash-deposit protection.
+    function _update(address from, address to, uint256 value) internal virtual override {
+        super._update(from, to, value);
+        if (from == address(0) && to != address(0)) {
+            _getStorage().lastDepositBlock[to] = block.number;
+        }
+    }
+
+    function _withdraw(
+        address caller,
+        address receiver,
+        address _owner,
+        uint256 assets,
+        uint256 shares
+    ) internal virtual override {
+        require(_getStorage().lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
+        super._withdraw(caller, receiver, _owner, assets, shares);
+    }
 
 
 
@@ -235,7 +267,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
      *      Can be called by portfolio accounts or authorized callers.
      * @param amount Amount of reward tokens (same as vault asset) to deposit
      */
-    function depositRewards(uint256 amount) external whenNotPaused {
+    function depositRewards(uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroAmount();
 
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
@@ -266,6 +298,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ILe
     }
 
     function setOriginationFee(uint256 originationFeeBps_) external onlyOwner {
+        if (originationFeeBps_ > MAX_FEE_BPS) revert FeeBpsTooHigh();
         _getStorage().originationFeeBps = originationFeeBps_;
     }
 
