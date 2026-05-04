@@ -43,6 +43,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event FeeAccrued(address indexed recipient, uint256 feeAssets, uint256 feeShares);
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
     event FeeBpsUpdated(uint256 oldBps, uint256 newBps);
+    event Incentivized(address indexed from, uint256 amount, uint256 epoch);
 
     // ============ Errors ============
     error ContractPaused();
@@ -720,7 +721,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 total = remaining + amount;
         uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
         uint256 duration = periodFinish - block.timestamp;
-        uint256 newRate = (total + duration - 1) / duration;
+        uint256 newRate = total / duration;
         require(newRate > 0, "Amount too small");
 
         $.userRewardRate[msg.sender] = newRate;
@@ -741,6 +742,30 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;
 
         emit RewardsMinted(msg.sender, amount);
+    }
+
+    /// @notice Permissionless lender-side incentive top-up. 100% to lender premium,
+    /// vests linearly over the current epoch. No matching borrower-credit stream.
+    function incentivize(uint256 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        _processGlobalVesting();
+
+        // Transfer before storage write so totalAssets() is non-decreasing mid-call.
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
+
+        uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        if ($.vestingEpochStart > 0 && nowEpoch > $.vestingEpochStart) {
+            $.vestingEpochPremium = 0;
+            $.vestingEpochStart = 0;
+        }
+        $.vestingEpochPremium += amount;
+        if ($.vestingEpochStart < nowEpoch) {
+            $.vestingEpochStart = nowEpoch;
+        }
+
+        emit Incentivized(msg.sender, amount, nowEpoch);
     }
 
     // ============ ILendingPool Implementation ============

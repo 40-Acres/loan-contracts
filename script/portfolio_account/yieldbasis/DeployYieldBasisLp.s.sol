@@ -196,28 +196,29 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         lendingSelectors[1] = YieldBasisLpLendingFacet.pay.selector;
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "YieldBasisLpLendingFacet");
 
-        // // // Deploy YieldBasisLpRewardsProcessingFacet (YB default token, LP as locked asset via constructor)
-        // YieldBasisLpRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisLpRewardsProcessingFacet(
-        //     portfolioFactory, swapConfig, gauge, vault, underlying, underlying
-        // );
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        // rewardsProcessingSelectors[0] = YieldBasisLpRewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[1] = YieldBasisLpRewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[2] = YieldBasisLpRewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[3] = YieldBasisLpRewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        // rewardsProcessingSelectors[4] = YieldBasisLpRewardsProcessingFacet.calculateRoutes.selector;
-        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisLpRewardsProcessingFacet");
+        // Deploy YieldBasisLpRewardsProcessingFacet (defaultToken=underlying; underlying drives debt math)
+        YieldBasisLpRewardsProcessingFacet rewardsProcessingFacet = new YieldBasisLpRewardsProcessingFacet(
+            portfolioFactory, swapConfig, gauge, vault, underlying, underlying
+        );
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisLpRewardsProcessingFacet");
 
-        // // // Deploy RewardsConfigFacet
-        // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
-        // bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
-        // rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
-        // rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        // rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        // rewardsConfigSelectors[3] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        // rewardsConfigSelectors[4] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        // rewardsConfigSelectors[5] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
-        // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
+        // Deploy RewardsConfigFacet
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.clearZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 }
 

@@ -202,29 +202,28 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         yieldBasisVotingSelectors[1] = veYieldBasisVotingFacet.defaultVote.selector;
         _registerFacet(facetRegistry, address(yieldBasisVotingFacet), yieldBasisVotingSelectors, "veYieldBasisVotingFacet");
 
-        // // Deploy veYieldBasisRewardsProcessingFacet
-        // require(SWAP_CONFIG != address(0), "Set SWAP_CONFIG address");
-        // require(VAULT != address(0), "Set VAULT address");
-        // veYieldBasisRewardsProcessingFacet rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(PORTFOLIO_FACTORY, SWAP_CONFIG, VE_YB, address(veYBAdapter), VAULT);
-        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
-        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
-        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "veYieldBasisRewardsProcessingFacet");
-        //
-        // // Deploy RewardsConfigFacet
-        // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(PORTFOLIO_FACTORY);
-        // bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
-        // rewardsConfigSelectors[0] = RewardsConfigFacet.setRewardsToken.selector;
-        // rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        // rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        // rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        // rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        // rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        // rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
-        // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
+        // Deploy veYieldBasisRewardsProcessingFacet
+        require(VAULT != address(0), "Set VAULT address");
+        veYieldBasisRewardsProcessingFacet rewardsProcessingFacet = new veYieldBasisRewardsProcessingFacet(PORTFOLIO_FACTORY, ETH_SWAP_CONFIG, VE_YB, address(veYBAdapter), VAULT, YB);
+        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
+        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "veYieldBasisRewardsProcessingFacet");
+
+        // Deploy RewardsConfigFacet
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(PORTFOLIO_FACTORY);
+        bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
+        rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[2] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[3] = RewardsConfigFacet.clearZeroBalanceDistribution.selector;
+        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        rewardsConfigSelectors[6] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
     }
 
 }

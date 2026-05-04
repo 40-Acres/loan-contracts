@@ -61,10 +61,7 @@ contract veYieldBasisFacet is AccessControl, IERC721Receiver {
         _faucet = YieldBasisFaucet(faucet);
     }
 
-    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
-        if (msg.sender == address(_veYB)) {
-            DynamicCollateralManager.addLockedCollateral(address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_veYBAdapter));
-        }
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
