@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {Loan} from "../../src/LoanV2.sol";
 import {XPharaohLoan} from "../../src/Pharaoh/XPharaohLoan.sol";
-import {XPharaohFacet} from "../../src/facets/account/XPharaohFacet.sol";
+import {XPharaohFacet} from "../../src/legacy/XPharaohFacet.sol";
 import {IXLoan} from "../../src/interfaces/IXLoan.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IXVoter} from "src/interfaces/IXVoter.sol";
@@ -33,7 +33,7 @@ import {ILoan} from "../../src/interfaces/ILoan.sol";
 import { Loan as Loanv2 } from "../../src/LoanV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
-import {XPharaohFacet} from "../../src/facets/account/XPharaohFacet.sol";
+import {XPharaohFacet} from "../../src/legacy/XPharaohFacet.sol";
 
 contract MockOdosRouterRL {
     address public testContract;

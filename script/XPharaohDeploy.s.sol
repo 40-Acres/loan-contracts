@@ -12,7 +12,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Swapper} from "../src/Swapper.sol";
 import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {XPharaohFacet} from "../src/facets/account/XPharaohFacet.sol";
+import {XPharaohFacet} from "../src/legacy/XPharaohFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../src/accounts/PortfolioManager.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";

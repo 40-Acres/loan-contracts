@@ -67,7 +67,7 @@ contract YieldBasisLpLendingFacet is AccessControl {
     /**
      * @dev Pay back debt
      */
-    function pay(uint256 amount) external {
+    function pay(uint256 amount) external returns (uint256 excess) {
         address from = msg.sender == address(_portfolioFactory.portfolioManager())
             ? _portfolioFactory.ownerOf(address(this))
             : msg.sender;
@@ -81,6 +81,8 @@ contract YieldBasisLpLendingFacet is AccessControl {
         if (excess > 0) {
             _lendingToken.safeTransfer(from, excess);
         }
+
+        return excess;
     }
 
     function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {

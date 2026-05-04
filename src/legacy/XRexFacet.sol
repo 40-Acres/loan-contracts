@@ -1,39 +1,32 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
-import {IXLoan} from "../../interfaces/IXLoan.sol";
+import {IXLoan} from "../interfaces/IXLoan.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IVotingEscrow} from "../../interfaces/IVotingEscrow.sol";
-import {PortfolioFactory} from "../../accounts/PortfolioFactory.sol";
-import {CollateralStorage} from "../../storage/CollateralStorage.sol";
-import {IXRex} from "../../interfaces/IXRex.sol";
-import {IVoteModule} from "../../interfaces/IVoteModule.sol";
-import {AccountConfigStorage} from "../../storage/AccountConfigStorage.sol";
-import {IXVoter} from "../../interfaces/IXVoter.sol";
-
-
-
-interface PharaohMigrator {
-    function migrateVe(uint256 _tokenID) external;
-}
-
+import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
+import {PortfolioFactory} from "../accounts/PortfolioFactory.sol";
+import {CollateralStorage} from "../storage/CollateralStorage.sol";
+import {IXRex} from "../interfaces/IXRex.sol";
+import {IVoteModule} from "../interfaces/IVoteModule.sol";
+import {AccountConfigStorage} from "../storage/AccountConfigStorage.sol";
+import {IXVoter} from "../interfaces/IXVoter.sol";
 
 /**
- * @title XPharaohFacet
+ * @title XRexFacet
  */
-contract XPharaohFacet {
+contract XRexFacet {
     using SafeERC20 for IERC20;
     PortfolioFactory public immutable _portfolioFactory;
     AccountConfigStorage public immutable _accountConfigStorage;
-    IERC4626 public immutable _phar33 = IERC4626(0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9);
-    address public immutable _xphar = 0xE8164Ea89665DAb7a553e667F81F30CfDA736B9A;
-    address public immutable _voteModule = 0x34F233F868CdB42446a18562710eE705d66f846b;
-    address public immutable _voter = 0x922b9Ca8e2207bfB850B6FF647c054d4b58a2Aa7;
-    address public immutable _vePhar = 0xAAAEa1fB9f3DE3F70E89f37B69Ab11B47eb9Ce6F;
-    address public constant _odosRouter = 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05;
+    IERC4626 public immutable _rex33 = IERC4626(0xe4eEB461Ad1e4ef8b8EF71a33694CCD84Af051C4);
+    address public immutable _xrex = 0xc93B315971A4f260875103F5DA84cB1E30f366Cc;
+    address public immutable _voteModule = 0xedD7cbc9C47547D0b552d5Bc2BE76135f49C15b1;
+    
+    address public immutable _voter = 0x942117Ec0458a8AA08669E94B52001Bd43F889C1;
+    address public constant _odosRouter = 0x2d8879046f1559E53eb052E949e9544bCB72f414;
 
     constructor(address portfolioFactory, address accountConfigStorage) {
         require(portfolioFactory != address(0));
@@ -41,43 +34,43 @@ contract XPharaohFacet {
         _accountConfigStorage = AccountConfigStorage(accountConfigStorage);
     }
 
-    function xPharClaimCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
+    function xRexClaimCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
         IVoteModule(_voteModule).withdraw(amount);
-        IXLoan(loanContract).confirmClaimCollateral(_xphar);
+        IXLoan(loanContract).confirmClaimCollateral(_xrex);
 
         if(IVoteModule(_voteModule).balanceOf(address(this)) == 0) {
             address asset = address(IXLoan(loanContract)._lockedAsset());
             CollateralStorage.removeTotalCollateral(asset);
         }
 
-        IERC20(lockedAsset).approve(address(_phar33), amount);
-        uint256 assets = _phar33.deposit(amount, address(this));
-        IERC20(address(_phar33)).safeTransfer(msg.sender, assets);
+        IERC20(lockedAsset).approve(address(_rex33), amount);
+        uint256 assets = _rex33.deposit(amount, address(this));
+        IERC20(address(_rex33)).safeTransfer(msg.sender, assets);
     }
 
-    function xPharIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
+    function xRexIncreaseLoan(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).increaseLoan(amount);
     }
 
-    function xPharIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
+    function xRexIncreaseCollateral(address loanContract, uint256 amount) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
-        IERC20(address(_phar33)).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(address(_rex33)).safeTransferFrom(msg.sender, address(this), amount);
         _increaseCollateral(amount, address(IXLoan(loanContract)._lockedAsset()));
     }
     
-    function xPharRequestLoan(uint256 collateralAmount, address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
+    function xRexRequestLoan(uint256 collateralAmount, address loanContract, uint256 loanAmount, IXLoan.ZeroBalanceOption zeroBalanceOption, uint256 increasePercentage, address preferredToken, bool topUp) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
 
         address lockedAsset = address(IXLoan(loanContract)._lockedAsset());
 
-        IERC20(address(_phar33)).safeTransferFrom(msg.sender, address(this), collateralAmount);
+        IERC20(address(_rex33)).safeTransferFrom(msg.sender, address(this), collateralAmount);
 
-        _phar33.approve(_voteModule, collateralAmount);
-        uint256 assets = _phar33.redeem(collateralAmount, address(this), address(this));
+        _rex33.approve(_voteModule, collateralAmount);
+        uint256 assets = _rex33.redeem(collateralAmount, address(this), address(this));
         IERC20(lockedAsset).approve(_voteModule, assets);
         IVoteModule(_voteModule).deposit(assets);
         IVoteModule(_voteModule).delegate(address(loanContract));
@@ -88,17 +81,17 @@ contract XPharaohFacet {
 
     }
 
-    function xPharUserVote(address loanContract, address[] calldata pools, uint256[] calldata weights) external onlyApprovedContract(loanContract) {
+    function xRexUserVote(address loanContract, address[] calldata pools, uint256[] calldata weights) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IVoteModule(_voteModule).delegate(address(loanContract));
         IXLoan(loanContract).userVote(pools, weights);
         IVoteModule(_voteModule).delegate(address(0));
     }
     
-    function xPharClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
+    function xRexClaim(address loanContract, address[] calldata fees, address[][] calldata tokens, bytes calldata tradeData, uint256[2] calldata allocations) external onlyApprovedContract(loanContract) returns (uint256) {
         require(_accountConfigStorage.isAuthorizedCaller(msg.sender));
 
-        uint256 beginningUnderlyingAssetBalance = _phar33.balanceOf(address(this));
+        uint256 beginningUnderlyingAssetBalance = _rex33.balanceOf(address(this));
 
         // claim the rewards
         uint256 result = IXLoan(loanContract).claim(fees, tokens, tradeData, allocations[0]);
@@ -106,14 +99,14 @@ contract XPharaohFacet {
         // increase the collateral if necessary
         if(allocations[1] > 0) {
             // amount we can increase is the difference between the beginning and ending locked asset balance
-            uint256 pharaohAmount = _phar33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
-            _increaseCollateral(pharaohAmount, address(IXLoan(loanContract)._lockedAsset()));
+            uint256 rexAmount = _rex33.balanceOf(address(this)) - beginningUnderlyingAssetBalance;
+            _increaseCollateral(rexAmount, address(IXLoan(loanContract)._lockedAsset()));
         }
 
         return result;
     }
 
-    function xPharProcessRewards(
+    function xRexProcessRewards(
         address[] calldata gauges,
         address[][] calldata tokens,
         bytes calldata tradeData
@@ -166,7 +159,7 @@ contract XPharaohFacet {
         }
     }
 
-    function xPharVote(address loanContract) external onlyApprovedContract(loanContract) returns (bool) {
+    function xRexVote(address loanContract) external onlyApprovedContract(loanContract) returns (bool) {
         IVoteModule(_voteModule).delegate(address(loanContract));
         bool success = IXLoan(loanContract).vote(address(this));
         IVoteModule(_voteModule).delegate(address(0));
@@ -174,8 +167,8 @@ contract XPharaohFacet {
     }
 
     function _increaseCollateral(uint256 amount, address lockedAsset) internal {
-        _phar33.approve(_voteModule, amount);
-        uint256 assetsReceived = _phar33.redeem(amount, address(this), address(this));
+        _rex33.approve(_voteModule, amount);
+        uint256 assetsReceived = _rex33.redeem(amount, address(this), address(this));
         IERC20(lockedAsset).approve(_voteModule, assetsReceived);
         IVoteModule(_voteModule).deposit(assetsReceived);
     }
@@ -186,39 +179,23 @@ contract XPharaohFacet {
         _;
     }
     
-    function xPharSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
+    function xRexSetIncreasePercentage(address loanContract, uint256 increasePercentage) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).setIncreasePercentage(increasePercentage);
     }
 
-    function xPharSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {
+    function xRexSetPreferredToken(address loanContract, address preferredToken) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).setPreferredToken(preferredToken);
     }
 
-    function xPharSetTopUp(address loanContract, bool topUp) external onlyApprovedContract(loanContract) {
+    function xRexSetTopUp(address loanContract, bool topUp) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).setTopUp(topUp);
     }
 
-    function xPharSetZeroBalanceOption(address loanContract, IXLoan.ZeroBalanceOption zeroBalanceOption) external onlyApprovedContract(loanContract) {
+    function xRexSetZeroBalanceOption(address loanContract, IXLoan.ZeroBalanceOption zeroBalanceOption) external onlyApprovedContract(loanContract) {
         require(msg.sender == _portfolioFactory.ownerOf(address(this)));
         IXLoan(loanContract).setZeroBalanceOption(zeroBalanceOption);
     }
-
-    function migratePharaohToXPharaoh(uint256 tokenId) external {
-        require(_accountConfigStorage.isApprovedContract(msg.sender));
-        
-        require(IERC721(_vePhar).ownerOf(tokenId) == address(this));
-        IERC721(_vePhar).approve(0x2E1Ad4f8055D39442c86B1F40599293388277669, tokenId);
-        PharaohMigrator(0x2E1Ad4f8055D39442c86B1F40599293388277669).migrateVe(tokenId);
-        IERC20 lockedAsset = IERC20(address(IXLoan(msg.sender)._lockedAsset()));
-        IERC20(lockedAsset).approve(_voteModule, type(uint256).max);
-        IVoteModule(_voteModule).depositAll();
-        IERC20(lockedAsset).approve(_voteModule, 0);
-        if(!CollateralStorage.getTotalCollateral(address(lockedAsset))) {
-            CollateralStorage.addTotalCollateral(address(lockedAsset));
-        }
-    }
-
 }

@@ -51,6 +51,7 @@ import {YieldBasisPortfolioFactoryConfig} from "../../../../src/facets/account/c
 
 // Facet under test
 import {YieldBasisLpFacet} from "../../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
+import {AccessControl} from "../../../../src/facets/account/utils/AccessControl.sol";
 import {ICollateralFacet} from "../../../../src/facets/account/collateral/ICollateralFacet.sol";
 
 // External
@@ -380,9 +381,7 @@ contract LiveYieldBasisLpETHDepositTest is Test {
     }
 
     /// Direct calls (bypassing PortfolioManager.multicall) must revert at the
-    /// onlyPortfolioManagerMulticall modifier. That modifier uses `require(
-    /// msg.sender == address(portfolioFactory.portfolioManager()))` with NO
-    /// error message, so the revert carries empty returndata.
+    /// onlyPortfolioManagerMulticall modifier with NotPortfolioManagerMulticall().
     function testDepositDirectCallReverts() public {
         uint256 depositAmount = 1 ether;
         _dealLp(user, depositAmount);
@@ -390,7 +389,7 @@ contract LiveYieldBasisLpETHDepositTest is Test {
         lpToken.approve(portfolioAccount, depositAmount);
 
         vm.prank(user);
-        vm.expectRevert(bytes(""));
+        vm.expectRevert(AccessControl.NotPortfolioManagerMulticall.selector);
         YieldBasisLpFacet(portfolioAccount).deposit(depositAmount);
     }
 }

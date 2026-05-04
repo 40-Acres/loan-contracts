@@ -12,7 +12,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Swapper} from "../src/Swapper.sol";
 import {AccountConfigStorage} from "../src/storage/AccountConfigStorage.sol";
 import {FacetRegistry} from "../src/accounts/FacetRegistry.sol";
-import {XRexFacet} from "../src/facets/account/XRexFacet.sol";
+import {XRexFacet} from "../src/legacy/XRexFacet.sol";
 import {PortfolioFactory} from "../src/accounts/PortfolioFactory.sol";
 import {IXLoan} from "../src/interfaces/IXLoan.sol";
 contract EtherexDeploy is Script {

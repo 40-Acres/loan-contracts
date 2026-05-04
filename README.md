@@ -20,20 +20,7 @@ If you were approached by anyone claiming to be 40 Acres Finance outside of thes
 
 ## Overview
 
-40 Acres provides utility for veNFT holders including instant access to loans based on their veNFTs future revenue. Each week the veNFT rewards are used to repay the loan automatically. Additionally, veNFTs can be listed on the marketplace and purchased with or without outstanding loans. Supports aggregation of external markets and leveraged buyouts of veNFTs using flash loans.
-
-## Contract Architecture
-
-The system is built using upgradeable contracts with the following key components:
-
-- **Vault**: Holds loan assets (typically USDC) and manages asset accounting
-- **Loan**: Core loan logic with rewards handling and repayment mechanics
-- **Market**: Enables trading of veNFTs with or without outstanding loans
-- **Voter**: Interfaces with external voting systems for protocol governance
-- **Swapper**: Handles token swaps for rewards distribution
-- **RateStorage**: Stores protocol fee rates and other parameters
-
-Contracts use UUPS upgradeability pattern and inherit from OpenZeppelin's upgradeable contracts.
+40 Acres provides utility for veNFT holders including instant access to loans based on their veNFTs future revenue. Each week the veNFT rewards are used to repay the loan automatically. Additionally, veNFTs can be listed on the marketplace and purchased with or without outstanding loans. Supports aggregation of external markets and leveraged buyouts of veNFTs using fla
 
 ### Portfolio Accounts Architecture
 
@@ -63,17 +50,29 @@ Full-featured deployment for veAERO/veVELO collateral with marketplace, voting, 
 | **RewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
 | **ERC721ReceiverFacet** | onERC721Received |
 
-#### YieldBasis Factory
+#### veYieldBasis Factory
 
-Deployment for YieldBasis protocol integration with veNFT collateral, YB-specific locking/voting, and rewards processing.
+Deployment for veYB locking, gauge voting, and rewards distribution against a `DynamicFeesVault`. Uses `DynamicCollateralFacet` (veYB acts as the underlying voting-escrow collateral) and a `veYieldBasisAdapter` to bridge the veYB ABI to the standard `IVotingEscrow` interface. See [`script/portfolio_account/yieldbasis/DeployYieldBasis.s.sol`](script/portfolio_account/yieldbasis/DeployYieldBasis.s.sol).
 
 | Facet | Functions |
 |-------|-----------|
-| **CollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getMaxLoan, getOriginTimestamp, enforceCollateralRequirements |
-| **YieldBasisFacet** | createLock, increaseLock, depositLock |
-| **YieldBasisVotingFacet** | vote, defaultVote |
-| **YieldBasisRewardsProcessingFacet** | processRewards, setRewardsOption, getRewardsOption, getRewardsOptionPercentage, setRewardsToken, setRecipient, setRewardsOptionPercentage, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple |
-| **ERC721ReceiverFacet** | onERC721Received |
+| **DynamicCollateralFacet** | addCollateral, removeCollateral, getTotalLockedCollateral, getTotalDebt, getMaxLoan, getOriginTimestamp, getCollateralToken, getLoanUtilization, enforceCollateralRequirements |
+| **veYieldBasisFacet** | createLock, increaseLock, depositLock, onERC721Received |
+| **veYieldBasisVotingFacet** | vote, defaultVote |
+| **veYieldBasisRewardsProcessingFacet** | processRewards, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple, calculateRoutes |
+| **RewardsConfigFacet** | setRecipient, setZeroBalanceDistribution, getZeroBalanceDistribution, clearZeroBalanceDistribution, setActiveBalanceDistribution, getActiveBalanceDistribution, clearActiveBalanceDistribution |
+
+#### YieldBasis LP Factory
+
+Deployment for borrowing the underlying asset (e.g. WETH, WBTC, cbBTC) against gauge-staked YieldBasis LP collateral. Uses a per-market `LendingVault` (ERC4626) that lends directly to portfolio accounts — there is no separate Loan contract. The `YieldBasisLpFacet` itself implements `ICollateralFacet` (its own collateral storage), and the `YieldBasisLpLendingFacet` reads gauge shares as collateral. See [`script/portfolio_account/yieldbasis/DeployYieldBasisLp.s.sol`](script/portfolio_account/yieldbasis/DeployYieldBasisLp.s.sol).
+
+| Facet | Functions |
+|-------|-----------|
+| **YieldBasisLpFacet** | deposit, withdraw, setStakedMode, getStakingState, getTotalLockedCollateral, getTotalDebt, getMaxLoan, enforceCollateralRequirements, getLoanUtilization, getCollateralToken |
+| **YieldBasisLpLendingFacet** | borrow, pay |
+| **YieldBasisLpClaimingFacet** | claimGaugeRewards, previewGaugeRewards, harvestLpFees, getAvailableLpFeeYield, getDepositInfo |
+| **YieldBasisLpRewardsProcessingFacet** | processRewards, getRewardsToken, swapToRewardsToken, swapToRewardsTokenMultiple, calculateRoutes |
+| **RewardsConfigFacet** | setRecipient, setZeroBalanceDistribution, getZeroBalanceDistribution, clearZeroBalanceDistribution, setActiveBalanceDistribution, getActiveBalanceDistribution, clearActiveBalanceDistribution |
 
 #### Wallet Factory
 
@@ -94,50 +93,6 @@ Deployment for borrowing against ERC4626 vault share collateral (e.g. LP positio
 | **ERC4626CollateralFacet** | addCollateral, addCollateralFrom, removeCollateral, getTotalLockedCollateral, getTotalDebt, getMaxLoan, getOriginTimestamp, getCollateralVault, getLockedCollateral, enforceCollateralRequirements, getCollateralToken |
 | **ERC4626LendingFacet** | borrow, pay |
 | **ERC4626ClaimingFacet** | claimVaultYield, getAvailableYield, getDepositInfo |
-
-## Contracts
-
-- [LoanV2](src/LoanV2.sol) - Main loan contract with rewards rate-based lending and manages the veNFTs.
-- [LoanV2Native](src/LoanV2Native.sol) - Inherits LoanV2 but overrides the USDC oracle since do not need to verify usdc price
-- [Vault](src/Vault.sol) - Base vault contract implementing ERC4626 to hold the loan assets (typically USDC) and use the veNFT rewards to repay the loan automatically.
-- [VaultV2](src/VaultV2.sol) - Upgradeable version of the vault
-- [Voter](src/interfaces/IVoter.sol) - Interface for external voting systems
-- [Swapper](src/Swapper.sol) - Token swapping logic for rewards
-- [RateStorage](src/RateStorage.sol) - Storage for protocol fee rates
-- [ReentrancyGuard](src/ReentrancyGuard.sol) - Reentrancy protection for contracts
-- [VeloLoan](src/VeloLoan.sol) - Velo-specific loan implementation
-- [VeloLoanV2](src/VeloLoanV2.sol) - Upgradeable Velo loan contract
-- [VeloLoanV2Native](src/VeloLoanV2Native.sol) - Native token version of VeloLoanV2
-
-### Market V1 Diamond Implementation
-
-Storage uses ERC‑7201 layouts in `src/libraries/storage/MarketStorage.sol`.
-
-**Core facets:** `DiamondCutFacet`, `DiamondLoupeFacet`, `OwnershipFacet`.
-
-**Market facets:**
-- `MarketRouterFacet` (single entry; routes to wallet/loan/external flows)
-- `MarketConfigFacet` (init/admin/pause/allowlists; expected `loanAsset`)
-- `MarketViewFacet` (readonly)
-- `MarketListingsWalletFacet` (wallet‑held listings/takes)
-- `MarketListingsLoanFacet` (LoanV2/LoanV3‑held listings/takes; enforces payoff before transfer)
-- `MarketOfferFacet` (offers)
-- `MarketMatchingFacet` (single entry; routes to wallet/loan/external flows)
-- Adapter facets (per external market). Example implemented: `src/facets/market/VexyAdapterFacet.sol`.
-
-**Internal libraries**
-- MarketLogicLib
-  - Listing/offer liveness checks; custody/owner resolution; operator rights.
-- Permit2Lib
-  - Optional Uniswap Permit2 permit+pull for exact‑input flows.
-  - Optimization: if a sufficient, unexpired Permit2 allowance already exists, permit is skipped and only transferFrom is used.
-- FeeLib
-  - Protocol and adapter fee computations and recipients.
-- RevertHelper
-  - Bubble up revert data from delegatecalls to adapters and external markets.
-- AccessRoleLib (+ AccessManager)
-  - Owner and optional MARKET_ADMIN role gates for config/fees/pausing.
-
 
 ## Testing
 
