@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# Pre-commit guardrail. Two checks:
+#   1) addresses/**/*.json is well-formed (via addresses/validate.sh)
+#   2) If any address file changed, a changeset exists too.
+#
+# Skip with `git commit --no-verify` if you genuinely need to bypass.
+
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# 1. Validate address registry shape (always — fast).
+if ! bash addresses/validate.sh; then
+  echo
+  echo "❌ pre-commit: address registry validation failed."
+  echo "   See errors above. Fix before committing, or use --no-verify."
+  exit 1
+fi
+
+# 2. If addresses/ files are staged but no changeset is staged, complain.
+addresses_changed=$(git diff --cached --name-only -- 'addresses/**/*.json' | grep -v '^addresses/addresses\.json$' || true)
+if [[ -n "$addresses_changed" ]]; then
+  changeset_staged=$(git diff --cached --name-only -- '.changeset/*.md' | grep -v 'README.md$' || true)
+  if [[ -z "$changeset_staged" ]]; then
+    echo
+    echo "❌ pre-commit: address files changed but no changeset is staged."
+    echo "   Files: $(echo "$addresses_changed" | tr '\n' ' ')"
+    echo
+    echo "   Run:  pnpm changeset:from-diff   (auto-drafts one from the diff)"
+    echo "   Or:   pnpm changeset             (interactive)"
+    echo "   Then stage the changeset and re-commit."
+    exit 1
+  fi
+fi

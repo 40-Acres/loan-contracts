@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {PortfolioManager} from "../../src/accounts/PortfolioManager.sol";
+import {AddressRegistry} from "../utils/AddressRegistry.sol";
 
 /**
  * @title DeployPortfolioManager
@@ -37,10 +38,18 @@ contract DeployPortfolioManager is Script {
 
         vm.stopBroadcast();
 
+        // Persist into the addresses registry. The PortfolioManager is
+        // chain-level (CREATE2 + fixed salt -> same address on every chain),
+        // so we fan out to every V2 platform on this chain. The require()
+        // above hardcodes the prod vanity, so we always write to .prod;
+        // a future dev variant of this script would use IS_DEV detection.
+        AddressRegistry.recordChainLevel(vm, "portfolioManager.prod", address(pm));
+
         console.log("=== PortfolioManager Deployed ===");
         console.log("Address:", address(pm));
         console.log("Owner:", owner);
         console.log("Chain ID:", block.chainid);
+        console.log("Recorded into addresses/<network>/<platform>.json for every V2 platform on this chain.");
     }
 }
 

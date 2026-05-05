@@ -1,0 +1,12 @@
+{
+  "chainId": 43114,
+  "network": "avalanche",
+  "platform": "pharaoh",
+  "contracts": {
+    "portfolioFactory": "0x52d43C377e498980135C8F2E858f120A18Ea96C2",
+    "portfolioManager": {
+      "dev": "0x0000000000000000000000000000000000000000",
+      "prod": "0x0000000000000000000000000000000000000000"
+    }
+  }
+}

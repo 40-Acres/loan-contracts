@@ -1,0 +1,35 @@
+{
+  "chainId": 1,
+  "network": "mainnet",
+  "platform": "yieldbasis-eth",
+  "contracts": {
+    "portfolioManager": {
+      "dev": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec",
+      "prod": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec"
+    },
+    "walletFactory": {
+      "dev": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264",
+      "prod": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264"
+    },
+    "strategies": {
+      "usdc-loan": {
+        "factory": {
+          "dev": "0xDef2781c0b9a76C317f74d97a09A1671B1979969",
+          "prod": "0xDef2781c0b9a76C317f74d97a09A1671B1979969"
+        },
+        "config": {
+          "dev": "0x8706FD061241266959e6A6E9e084f34935087012",
+          "prod": "0x8706FD061241266959e6A6E9e084f34935087012"
+        },
+        "loanConfig": {
+          "dev": "0xF0bD3142BdFe8458F41D3513fb91eeDC9aF1C661",
+          "prod": "0xF0bD3142BdFe8458F41D3513fb91eeDC9aF1C661"
+        },
+        "supplyVault": {
+          "dev": "0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3",
+          "prod": "0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3"
+        }
+      }
+    }
+  }
+}

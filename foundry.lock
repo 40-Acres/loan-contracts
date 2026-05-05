@@ -1,0 +1,11 @@
+{
+  "lib/forge-std": {
+    "rev": "77041d2ce690e692d6e03cc812b57d1ddaa4d505"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "e34251682bac9c3252af30e91e999f13dd098b9f"
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "rev": "17f3f82d1b47ada8b29431c359a5bc85e30d47db"
+  }
+}

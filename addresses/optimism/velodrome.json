@@ -3,25 +3,49 @@
   "network": "optimism",
   "platform": "velodrome",
   "contracts": {
-    "FacetRegistry": "0x0000000000000000000000000000000000000000",
-    "PortfolioFactory": "0x0000000000000000000000000000000000000000",
-    "PortfolioAccountConfig": "0x0000000000000000000000000000000000000000",
-    "AccountConfigStorage": "0x0000000000000000000000000000000000000000",
-    "VotingConfig": "0x0000000000000000000000000000000000000000",
-    "LoanConfig": "0x0000000000000000000000000000000000000000",
-    "facets": {
-      "BridgeFacet": "0x0000000000000000000000000000000000000000",
-      "ClaimingFacet": "0x0000000000000000000000000000000000000000",
-      "LendingFacet": "0x0000000000000000000000000000000000000000",
-      "MigrationFacet": "0x0000000000000000000000000000000000000000",
-      "VotingFacet": "0x0000000000000000000000000000000000000000",
-      "SuperchainVotingFacet": "0x0000000000000000000000000000000000000000",
-      "VotingEscrowFacet": "0x0000000000000000000000000000000000000000"
+    "portfolioManager": {
+      "dev": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec",
+      "prod": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec"
+    },
+    "walletFactory": {
+      "dev": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264",
+      "prod": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264"
+    },
+    "marketplaces": {
+      "native": {
+        "dev": "0x446c8aa6B9f66f49A6Ad9c7cd015d20081234937",
+        "prod": "0x446c8aa6B9f66f49A6Ad9c7cd015d20081234937"
+      }
+    },
+    "strategies": {
+      "usdc-loan": {
+        "factory": {
+          "dev": "0x8A71e4BaB42DDC3d996FA4b4780919567e367924",
+          "prod": "0x8A71e4BaB42DDC3d996FA4b4780919567e367924"
+        },
+        "config": {
+          "dev": "0x8d104e49cd7748eDaec3C1226311161AbbfA1A03",
+          "prod": "0x8d104e49cd7748eDaec3C1226311161AbbfA1A03"
+        },
+        "loanConfig": {
+          "dev": "0xE353A56c4FA4DCd07149EC89DD2AED3Dd1E502dB",
+          "prod": "0xE353A56c4FA4DCd07149EC89DD2AED3Dd1E502dB"
+        },
+        "supplyVault": {
+          "dev": "0x08dcdbf7bade91ccd42cb2a4ea8e5d199d285957",
+          "prod": "0x08dcdbf7bade91ccd42cb2a4ea8e5d199d285957"
+        }
+      },
+      "relayer": {
+        "factory": {
+          "dev": "0xCe904f1C3c9Bdf74d4DBD6a204058D1eb649140B",
+          "prod": "0xCe904f1C3c9Bdf74d4DBD6a204058D1eb649140B"
+        },
+        "config": {
+          "dev": "0x1D7Ce30E1340bbcef7BE4Cc8A3E0b0c52e080ced",
+          "prod": "0x1D7Ce30E1340bbcef7BE4Cc8A3E0b0c52e080ced"
+        }
+      }
     }
   }
 }
-
-
-
-
-
