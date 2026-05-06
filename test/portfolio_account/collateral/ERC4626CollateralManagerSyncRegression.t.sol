@@ -178,6 +178,7 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
         usdc.mint(address(pool), 100_000_000e6);
 
         loanConfig.setMultiplier(LTV_BPS);
+        loanConfig.setLtv(LTV_BPS); // like-to-like ERC4626 market uses LTV branch
         cfg.setLoanContract(address(pool));
         factory.setPortfolioFactoryConfig(address(cfg));
 

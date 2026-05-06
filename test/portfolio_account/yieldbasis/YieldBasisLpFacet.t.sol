@@ -93,6 +93,7 @@ contract YieldBasisLpFacetTest is Test {
 
         // Configure lending infrastructure
         _loanConfig.setMultiplier(7000); // 70% LTV
+        _loanConfig.setLtv(7000); // 70% LTV — like-to-like YB LP market uses LTV branch
         _portfolioFactoryConfig.setLoanContract(address(_lendingVault));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 

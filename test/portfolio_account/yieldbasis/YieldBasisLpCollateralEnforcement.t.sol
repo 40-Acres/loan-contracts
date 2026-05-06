@@ -137,6 +137,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // --- Configure ---
         _loanConfig.setMultiplier(LTV_BPS);
+        _loanConfig.setLtv(LTV_BPS); // like-to-like YB LP market uses LTV branch
         _portfolioFactoryConfig.setLoanContract(address(_lendingVault));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 

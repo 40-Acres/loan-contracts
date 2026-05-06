@@ -120,6 +120,7 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
         underlying.mint(address(lendingVault), VAULT_LIQ);
 
         loanConfig.setMultiplier(LTV_BPS);
+        loanConfig.setLtv(LTV_BPS); // like-to-like YB LP market uses LTV branch
         portfolioFactoryConfig.setLoanContract(address(lendingVault));
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 
@@ -178,6 +179,7 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
         underlying.mint(address(lendingVault2), VAULT_LIQ);
 
         loanConfig2.setMultiplier(LTV_BPS);
+        loanConfig2.setLtv(LTV_BPS); // like-to-like YB LP market uses LTV branch
         portfolioFactoryConfig2.setLoanContract(address(lendingVault2));
         portfolioFactory2.setPortfolioFactoryConfig(address(portfolioFactoryConfig2));
 

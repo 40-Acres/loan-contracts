@@ -121,6 +121,7 @@ contract YieldBasisBtcE2ETest is Test {
 
         // --- Configure ---
         _loanConfig.setMultiplier(7000); // 70% LTV
+        _loanConfig.setLtv(7000); // 70% LTV — like-to-like YB LP market uses LTV branch
         _portfolioFactoryConfig.setLoanContract(address(_lendingVault));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 

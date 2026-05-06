@@ -11,6 +11,7 @@ import {YieldBasisCollateralManager} from "./YieldBasisCollateralManager.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 import {YieldBasisPortfolioFactoryConfig} from "../config/YieldBasisPortfolioFactoryConfig.sol";
 import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /**
  * @title YieldBasisLpFacet
@@ -25,7 +26,7 @@ import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
  * Withdraw flow: remove collateral tracking → unstake from gauge if needed → send LP token to user
  * Mode switch (admin only): stake/unstake to toggle between trading yield and YB emissions
  */
-contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
+contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     PortfolioFactory public immutable _portfolioFactory;
@@ -129,7 +130,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet {
      *      individual account, the admin flips the factory flag, runs this
      *      on affected accounts, and (if needed) flips the flag back.
      */
-    function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) {
+    function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) nonReentrant {
         bool staked = getStakedMode();
         if (staked) {
             uint256 lpBalance = _lpToken.balanceOf(address(this));

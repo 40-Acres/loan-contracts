@@ -45,6 +45,7 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
         uint256 treasuryFee;
         uint256 zeroBalanceFee;
         uint256 multiplier;
+        uint256 ltv;
     }
 
 
@@ -89,6 +90,17 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
             require(multiplier <= collateralStorage.multiplier * 2, TooHigh(multiplier, collateralStorage.multiplier * 2));
         }
         collateralStorage.multiplier = multiplier;
+    }
+    
+    function setLtv(uint256 ltv) public onlyOwner {
+        LoanConfigData storage collateralStorage = _getLoanConfig();
+        require(ltv <= MAX_FEE_BPS, "LTV cannot exceed max fee");
+        collateralStorage.ltv = ltv;
+    }
+
+    function getLtv() public view returns (uint256) {
+        LoanConfigData storage collateralStorage = _getLoanConfig();
+        return collateralStorage.ltv;
     }
 
     function getMultiplier() public view returns (uint256) {

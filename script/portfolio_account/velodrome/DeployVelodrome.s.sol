@@ -40,6 +40,7 @@ import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {SuperchainVotingFacet} from "../../../src/facets/account/vote/SuperchainVoting.sol";
 import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
 import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/SuperchainClaimingFacet.sol";
+import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 import {console} from "forge-std/console.sol";
 
 contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {

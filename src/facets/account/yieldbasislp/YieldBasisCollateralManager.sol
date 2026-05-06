@@ -221,8 +221,18 @@ library YieldBasisCollateralManager {
         uint256 totalCollateralValue = getTotalCollateralValue(vault, underlying);
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
 
-        uint256 ltv = loanConfig.getMultiplier();
-        maxLoanIgnoreSupply = (totalCollateralValue * ltv) / 10000;
+        uint256 ltv = loanConfig.getLtv();
+
+        if (ltv == 0) {
+            // For Lending assets that are not like-to-like, loan is based on future cash flow
+            uint256 rewardsRate = loanConfig.getRewardsRate();
+            uint256 multiplier = loanConfig.getMultiplier();
+            maxLoanIgnoreSupply = (((totalCollateralValue * rewardsRate) / 1000000) *
+                multiplier) / 1e12; // rewardsRate * veNFT balance of token
+        } else {
+            // For like-to-like lending, loan is based on LTV of collateral value
+            maxLoanIgnoreSupply = (totalCollateralValue * ltv) / 10000;
+        }
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();

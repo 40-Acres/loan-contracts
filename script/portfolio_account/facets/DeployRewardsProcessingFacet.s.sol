@@ -3,11 +3,13 @@ pragma solidity ^0.8.30;
 
 import {AccountFacetsDeploy} from "./AccountFacetsDeploy.s.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
+import {PortfolioFactory} from "../../../src/accounts/PortfolioFactory.sol";
 import {RewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/RewardsProcessingFacet.sol";
 import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing/RewardsConfigFacet.sol";
 import {VotingEscrowRewardsProcessingFacet} from "../../../src/facets/account/rewards_processing/VotingEscrowRewardsProcessingFacet.sol";
 import {SwapConfig} from "../../../src/facets/account/config/SwapConfig.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
+import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 
 /**
  * @title DeployRewardsProcessingFacet
@@ -19,7 +21,11 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
         address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
-        address VAULT = vm.envAddress("VAULT");
+        address VAULT = vm.envOr("VAULT", address(0));
+        if (VAULT == address(0)) {
+            VAULT = PortfolioHelperUtils.getVaultFromFactory(vm, PortfolioFactory(PORTFOLIO_FACTORY));
+        }
+        require(VAULT != address(0), "VAULT zero");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(PORTFOLIO_FACTORY, SWAP_CONFIG, VOTING_ESCROW, VAULT, IVotingEscrow(VOTING_ESCROW).token());

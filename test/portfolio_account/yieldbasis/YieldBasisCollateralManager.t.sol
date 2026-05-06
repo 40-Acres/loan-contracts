@@ -311,6 +311,7 @@ contract YieldBasisCollateralManagerTest is Test {
 
         // Wire configs
         loanConfig.setMultiplier(LTV_BPS);
+        loanConfig.setLtv(LTV_BPS); // like-to-like YB LP market uses LTV branch
         cfg.setLoanContract(address(lendingVault));
         factory.setPortfolioFactoryConfig(address(cfg));
 

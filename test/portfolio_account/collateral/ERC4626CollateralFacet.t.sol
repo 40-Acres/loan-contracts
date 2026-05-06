@@ -85,6 +85,7 @@ contract ERC4626CollateralFacetTest is Test {
         // Set config
         _loanConfig.setRewardsRate(10000);
         _loanConfig.setMultiplier(7000); // 70% LTV
+        _loanConfig.setLtv(7000); // 70% LTV — like-to-like ERC4626 market uses LTV branch
         _loanConfig.setLenderPremium(2000);
         _loanConfig.setTreasuryFee(500);
         _loanConfig.setZeroBalanceFee(100);

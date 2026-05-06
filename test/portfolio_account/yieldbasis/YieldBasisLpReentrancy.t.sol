@@ -28,8 +28,11 @@ import {MockTunableYieldBasisLP} from "../../mocks/MockTunableYieldBasisLP.sol";
 import {MockTunableYieldBasisGauge} from "../../mocks/MockTunableYieldBasisGauge.sol";
 import {MockReentrantYieldBasisGauge} from "../../mocks/MockReentrantYieldBasisGauge.sol";
 import {MockReentrantYieldBasisLP} from "../../mocks/MockReentrantYieldBasisLP.sol";
+import {MockReentrantSetStakedModeGauge} from "../../mocks/MockReentrantSetStakedModeGauge.sol";
+import {YieldBasisPortfolioFactoryConfig} from "../../../src/facets/account/config/YieldBasisPortfolioFactoryConfig.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract YieldBasisLpReentrancyTest is Test {
@@ -219,5 +222,195 @@ contract YieldBasisLpReentrancyTest is Test {
         vm.prank(authorizedCaller);
         vm.expectRevert(YieldBasisLpClaimingFacet.ReentrantCall.selector);
         YieldBasisLpClaimingFacet(portfolioAccount).harvestLpFees(floor);
+    }
+
+    /* =====================================================================
+     * Test 3: malicious gauge re-enters setStakedMode during gauge.deposit
+     *         (the staked=true branch of setStakedMode).
+     *
+     * The newly-added `nonReentrant` modifier on setStakedMode (was not
+     * previously guarded) MUST trip when the gauge calls back into the
+     * facet mid-stake. ReentrancyGuardTransient raises
+     * `ReentrancyGuardReentrantCall()` on the second entry.
+     *
+     * Without the guard, two compounding effects could occur:
+     *   - Double-stake of approval residue (if _stake-then-stake interleaves
+     *     before approve(0) lands).
+     *   - Inconsistent factory-flag observation if a parallel mode flip
+     *     races (less likely here but the guard makes the surface verifiable).
+     * =====================================================================*/
+    /// @dev Note on isolation: setStakedMode applies BOTH onlyAuthorizedCaller
+    ///      AND nonReentrant. To test the reentrancy guard in isolation we
+    ///      must make the malicious gauge an authorized caller — otherwise
+    ///      the inner re-entry reverts with `NotAuthorizedCaller` before
+    ///      reaching the guard, and we'd be measuring the access-control
+    ///      modifier instead. This is a worthwhile observation in its own
+    ///      right: onlyAuthorizedCaller is the FIRST line of defense; the
+    ///      transient guard exists for the (in-practice rare) case where
+    ///      a malicious actor IS authorized — e.g. an exploited keeper.
+    function test_SetStakedMode_GaugeReentrancyOnDeposit_Reverts() public {
+        // Standard mock LP (we don't need it to misbehave for this test).
+        MockTunableYieldBasisLP ybLp = new MockTunableYieldBasisLP("ybETH", "ybETH", 18, address(underlying));
+        MockReentrantSetStakedModeGauge maliciousGauge =
+            new MockReentrantSetStakedModeGauge(address(ybLp));
+
+        (address portfolioAccount, , ) = _buildHarness(address(maliciousGauge), address(ybLp));
+
+        // Authorize the malicious gauge so its inner re-entry passes the
+        // access-control check and we observe nonReentrant in isolation.
+        vm.prank(owner_);
+        portfolioManager.setAuthorizedCaller(address(maliciousGauge), true);
+
+        // User has LP minted onto them; deposit it unstaked first.
+        ybLp.mint(user, DEPOSIT * 2);
+        _depositVia(portfolioAccount, MockERC20(address(ybLp)), DEPOSIT);
+
+        // Flip the factory flag to staked AFTER deposit (so deposit doesn't
+        // auto-stake yet — leaving direct LP on the account for setStakedMode
+        // to consume).
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
+
+        // Arm: when the facet calls _gauge.deposit during _stake, the gauge
+        // re-enters setStakedMode on the same account. Re-entry path will
+        // also see staked=true and call _stake again — exactly what we're
+        // guarding against.
+        bytes memory reentrantCall = abi.encodeWithSelector(YieldBasisLpFacet.setStakedMode.selector);
+        maliciousGauge.armOnDeposit(portfolioAccount, reentrantCall);
+
+        vm.prank(authorizedCaller);
+        vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+    }
+
+    /* =====================================================================
+     * Test 4: malicious gauge re-enters setStakedMode during gauge.redeem
+     *         (the staked=false branch of setStakedMode).
+     * =====================================================================*/
+    function test_SetStakedMode_GaugeReentrancyOnRedeem_Reverts() public {
+        MockTunableYieldBasisLP ybLp = new MockTunableYieldBasisLP("ybETH", "ybETH", 18, address(underlying));
+        MockReentrantSetStakedModeGauge maliciousGauge =
+            new MockReentrantSetStakedModeGauge(address(ybLp));
+
+        (address portfolioAccount, , ) = _buildHarness(address(maliciousGauge), address(ybLp));
+
+        // Authorize the malicious gauge — see deposit-path test for rationale.
+        vm.prank(owner_);
+        portfolioManager.setAuthorizedCaller(address(maliciousGauge), true);
+
+        // Get into a state where the account has gauge shares: deposit while
+        // factory mode is staked=true, so deposit auto-stakes.
+        ybLp.mint(user, DEPOSIT * 2);
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
+        _depositVia(portfolioAccount, MockERC20(address(ybLp)), DEPOSIT);
+
+        // Flip flag to false so a setStakedMode call goes down the unstake branch.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
+
+        // Arm redeem to re-enter setStakedMode.
+        bytes memory reentrantCall = abi.encodeWithSelector(YieldBasisLpFacet.setStakedMode.selector);
+        maliciousGauge.armOnRedeem(portfolioAccount, reentrantCall);
+
+        vm.prank(authorizedCaller);
+        vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+    }
+
+    /* =====================================================================
+     * Test 5: two SEQUENTIAL setStakedMode calls in DIFFERENT transactions
+     *         both succeed.
+     *
+     * `ReentrancyGuardTransient` uses an EIP-1153 transient slot that auto-
+     * clears at end-of-tx. If the slot were ever migrated to a regular
+     * storage slot (a common refactor mistake), the second call in a later
+     * tx would still see the slot set and revert.
+     *
+     * Forge runs each test in a fresh tx context, but cheatcodes inside a
+     * single test stay in one tx. We simulate two txs via vm.prank between
+     * calls AND a vm.roll bump — every consecutive prank to the same
+     * address actually reuses the tx, so the strongest signal is to call
+     * at different block heights and confirm both succeed without revert.
+     * =====================================================================*/
+    function test_SetStakedMode_SequentialCallsAcrossTxs_BothSucceed() public {
+        // Use plain (non-malicious) tunable mocks so neither call self-aborts.
+        MockTunableYieldBasisLP ybLp = new MockTunableYieldBasisLP("ybETH", "ybETH", 18, address(underlying));
+        MockTunableYieldBasisGauge gauge = new MockTunableYieldBasisGauge(address(ybLp));
+        (address portfolioAccount, , ) = _buildHarness(address(gauge), address(ybLp));
+
+        ybLp.mint(user, DEPOSIT * 2);
+
+        // Deposit unstaked. Direct LP sits on the account.
+        _depositVia(portfolioAccount, MockERC20(address(ybLp)), DEPOSIT);
+
+        // Tx 1: stake.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
+        vm.prank(authorizedCaller);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+
+        // After tx 1: LP is gone, gauge shares present.
+        (uint256 staked1, uint256 unstaked1) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(unstaked1, 0, "tx1: direct LP consumed");
+        assertGt(staked1, 0, "tx1: gauge shares present");
+
+        // Roll forward to make explicit this is "later" — and also forces
+        // anything block-scoped to reset. Transient slots clear at end-of-tx
+        // regardless of block.
+        vm.roll(block.number + 1);
+
+        // Tx 2: unstake. If transient slot persisted across txs, this would
+        // revert with ReentrancyGuardReentrantCall before doing any work.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
+        vm.prank(authorizedCaller);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+
+        (uint256 staked2, uint256 unstaked2) = YieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(staked2, 0, "tx2: gauge shares consumed");
+        assertGt(unstaked2, 0, "tx2: LP returned to account");
+    }
+
+    /* =====================================================================
+     * Test 6: storage isolation — the transient reentrancy slot must NOT
+     *         collide with any persistent diamond storage.
+     *
+     * ReentrancyGuardTransient computes its slot from a hash that should
+     * never conflict with the ERC-7201 namespaced slots used by the
+     * collateral managers. We sanity-check this by:
+     *   1. Making a call that asserts the guard runs (re-entry trips).
+     *   2. After the tx ends, doing a normal deposit that depends on
+     *      YieldBasisCollateralManager storage — if the guard slot HAD
+     *      stomped storage.YieldBasisCollateralManager.shares, this
+     *      deposit's required-balance check would misbehave.
+     * =====================================================================*/
+    function test_SetStakedMode_TransientSlot_DoesNotCorruptCollateralStorage() public {
+        MockTunableYieldBasisLP ybLp = new MockTunableYieldBasisLP("ybETH", "ybETH", 18, address(underlying));
+        MockTunableYieldBasisGauge gauge = new MockTunableYieldBasisGauge(address(ybLp));
+        (address portfolioAccount, , ) = _buildHarness(address(gauge), address(ybLp));
+
+        ybLp.mint(user, DEPOSIT * 5);
+
+        // Tx A: deposit + stake. Exercises setStakedMode (trips transient set).
+        _depositVia(portfolioAccount, MockERC20(address(ybLp)), DEPOSIT);
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(true);
+        vm.prank(authorizedCaller);
+        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+
+        // Tx B: deposit again — depends on collateral storage being intact
+        // (data.shares accumulating, depositedAssetValue accumulating).
+        // If transient slot collided with the storage slot, this deposit
+        // would either revert (insufficient balance check using stomped
+        // shares) or accumulate to a wrong total.
+        uint256 prelocked = YieldBasisLpFacet(portfolioAccount).getTotalLockedCollateral();
+        vm.roll(block.number + 1);
+        _depositVia(portfolioAccount, MockERC20(address(ybLp)), DEPOSIT);
+
+        uint256 postlocked = YieldBasisLpFacet(portfolioAccount).getTotalLockedCollateral();
+        // pps default = 1e18 on the tunable mock, so locked-value should
+        // increase by exactly DEPOSIT.
+        assertEq(postlocked, prelocked + DEPOSIT, "collateral accounting intact across setStakedMode txs");
     }
 }

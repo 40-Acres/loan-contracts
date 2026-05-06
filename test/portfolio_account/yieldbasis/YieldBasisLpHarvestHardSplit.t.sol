@@ -96,6 +96,7 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
         underlying.mint(address(lendingVault), VAULT_LIQ);
 
         loanConfig.setMultiplier(LTV_BPS);
+        loanConfig.setLtv(LTV_BPS); // like-to-like YB LP market uses LTV branch
         portfolioFactoryConfig.setLoanContract(address(lendingVault));
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
 

@@ -13,4 +13,6 @@ interface ILoanConfig {
     function setLenderPremium(uint256 lenderPremium) external;
     function setTreasuryFee(uint256 treasuryFee) external;
     function setZeroBalanceFee(uint256 zeroBalanceFee) external;
+    function setLtv(uint256 ltv) external;
+    function getLtv() external view returns (uint256);
 }
