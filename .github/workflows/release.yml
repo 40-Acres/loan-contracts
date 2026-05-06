@@ -1,0 +1,117 @@
+name: Release @40-acres/contracts
+
+# Changesets-driven publish flow. The contributor's workflow:
+#
+#   1. Edit Solidity / addresses / wagmi.config.ts
+#   2. Run `pnpm changeset:from-diff` (auto-drafts a changeset) or
+#      `pnpm changeset` (interactive). Edit it to add a one-line "why".
+#   3. Open a PR. CI runs build + tests via the Tests workflow.
+#   4. Merge.
+#   5. This workflow then opens (or updates) a "Version Packages" PR that
+#      bumps versions and consolidates changelogs.
+#   6. When that "Version Packages" PR is merged, this workflow publishes
+#      @40-acres/contracts to GitHub Packages.
+#
+# Step 6 is the only step that needs admin attention. Until you merge the
+# auto-PR, nothing publishes.
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release-${{ github.workflow }}
+  cancel-in-progress: false   # never abort a release mid-flight
+
+permissions:
+  contents: write          # Changesets pushes the version PR
+  pull-requests: write     # Changesets opens/updates the version PR
+  packages: write          # publish to GitHub Packages
+  id-token: write          # provenance, optional
+
+jobs:
+  release:
+    name: Version or publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Changesets needs full history to compute changelog deltas.
+          fetch-depth: 0
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.3
+          cache: true
+
+      - name: Cache Foundry build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            out
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'foundry.toml') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+
+      - name: Install Node + configure GitHub Packages auth
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          # Configures ~/.npmrc so that pnpm publish authenticates to
+          # GitHub Packages for the @40-acres scope using GITHUB_TOKEN.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@40-acres'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package (forge build + wagmi generate + addresses + tsc)
+        run: pnpm build:package
+
+      - name: Validate addresses registry
+        run: bash addresses/validate.sh
+
+      # The Changesets action does one of two things, depending on repo state:
+      #   - if .changeset/*.md files exist on main:
+      #       opens or updates the "Version Packages" PR
+      #   - if package.json was just bumped (the version PR was merged):
+      #       runs `pnpm changeset:publish` which calls `changeset publish`
+      - name: Create version PR or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: pnpm changeset:publish
+          version: pnpm changeset:version
+          # Don't auto-commit anything outside the version PR.
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `changesets publish` invokes `pnpm publish` which reads this
+          # token from ~/.npmrc (set up by actions/setup-node above).
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        if: always()
+        run: |
+          if [[ "${{ steps.changesets.outputs.published }}" == "true" ]]; then
+            echo "## Published" >> $GITHUB_STEP_SUMMARY
+            echo '${{ steps.changesets.outputs.publishedPackages }}' >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ steps.changesets.outputs.hasChangesets }}" == "true" ]]; then
+            echo "Version PR is open or updated." >> $GITHUB_STEP_SUMMARY
+            echo "Merge it to publish." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No changesets to process." >> $GITHUB_STEP_SUMMARY
+          fi

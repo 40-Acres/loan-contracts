@@ -3,21 +3,53 @@
   "network": "base",
   "platform": "aerodrome",
   "contracts": {
-    "FacetRegistry": "0x0000000000000000000000000000000000000000",
-    "PortfolioFactory": "0x0000000000000000000000000000000000000000",
-    "PortfolioAccountConfig": "0x0000000000000000000000000000000000000000",
-    "AccountConfigStorage": "0x0000000000000000000000000000000000000000",
-    "VotingConfig": "0x0000000000000000000000000000000000000000",
-    "LoanConfig": "0x0000000000000000000000000000000000000000",
-    "facets": {
-      "BridgeFacet": "0x0000000000000000000000000000000000000000",
-      "ClaimingFacet": "0x0000000000000000000000000000000000000000",
-      "LendingFacet": "0x0000000000000000000000000000000000000000",
-      "MigrationFacet": "0x0000000000000000000000000000000000000000",
-      "VotingFacet": "0x0000000000000000000000000000000000000000",
-      "SuperchainVotingFacet": "0x0000000000000000000000000000000000000000",
-      "VotingEscrowFacet": "0x0000000000000000000000000000000000000000"
+    "portfolioManager": {
+      "dev": "0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5",
+      "prod": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec"
+    },
+    "walletFactory": {
+      "dev": "0x2CC600d0d114a156c66C2B8Eb85E0D87bFA194f8",
+      "prod": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264"
+    },
+    "marketplaces": {
+      "native": {
+        "dev": "0x7b22D5D5753B76B5AAF2cC0ac11457e069b9f2C8",
+        "prod": "0xA62C351b3DEDAB4C3e0Cab59B1bc9E5e3097BdF6"
+      },
+      "vexy": {
+        "dev": "0x6b478209974BD27e6cf661FEf86C68072b0d6738",
+        "prod": "0x6b478209974BD27e6cf661FEf86C68072b0d6738"
+      }
+    },
+    "strategies": {
+      "usdc-loan": {
+        "factory": {
+          "dev": "0xfeeb5c58786617230095a008164b096e3205eaf2",
+          "prod": "0x967361472f99Fedc26A2B8BB3cfc1d0966979c8e"
+        },
+        "config": {
+          "dev": "0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8",
+          "prod": "0xf43Fc8752F138636a003408AcE519976567ed032"
+        },
+        "loanConfig": {
+          "dev": "0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8",
+          "prod": "0xa5b8bC2C39c669132930AdFD3e56E988e5629C88"
+        },
+        "supplyVault": {
+          "dev": "0x24914636DAb84236Cb7D4394cD25D15Ec6e3Bd50",
+          "prod": "0xb99b6df96d4d5448cc0a5b3e0ef7896df9507cf5"
+        }
+      },
+      "relayer": {
+        "factory": {
+          "dev": "0xc8bb0a19ae5aef356668cd530cc4bb31bd8e83e3",
+          "prod": "0xC3b96D5e971407902c563194bf8386ca5DaD787B"
+        },
+        "config": {
+          "dev": "0x400C710cbEadc5bb8b7132B3061fA1b6d6f80Dd8",
+          "prod": "0xD545d9b1A825f6266DD8De00ff147c4BC9F02087"
+        }
+      }
     }
   }
 }
-

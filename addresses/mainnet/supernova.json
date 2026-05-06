@@ -1,0 +1,33 @@
+{
+  "chainId": 1,
+  "network": "mainnet",
+  "platform": "supernova",
+  "contracts": {
+    "portfolioManager": {
+      "dev": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec",
+      "prod": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec"
+    },
+    "walletFactory": {
+      "dev": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264",
+      "prod": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264"
+    },
+    "marketplaces": {
+      "native": {
+        "dev": "0xb71d66583A420cbc77641759c1a6E6F3FB68CeB2",
+        "prod": "0xb71d66583A420cbc77641759c1a6E6F3FB68CeB2"
+      }
+    },
+    "strategies": {
+      "relayer": {
+        "factory": {
+          "dev": "0x581333879b1B6726dD92A740DA0109193640a395",
+          "prod": "0x581333879b1B6726dD92A740DA0109193640a395"
+        },
+        "config": {
+          "dev": "0xd5f0dFeB2F10559352CC5CA11b3E54aB08505EAC",
+          "prod": "0xd5f0dFeB2F10559352CC5CA11b3E54aB08505EAC"
+        }
+      }
+    }
+  }
+}

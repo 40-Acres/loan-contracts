@@ -1,0 +1,9 @@
+{
+  "chainId": 43114,
+  "network": "avalanche",
+  "platform": "blackhole",
+  "contracts": {
+    "loan": "0x5122f5154DF20E5F29df53E633cE1ac5b6623558",
+    "supply": "0xC0485C4bafB594Ae1457820fb6e5B67e8A04BCFD"
+  }
+}

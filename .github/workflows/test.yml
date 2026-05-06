@@ -20,6 +20,72 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
+  validate-addresses:
+    name: Validate Address Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run validator
+        run: bash addresses/validate.sh
+
+  build-package:
+    name: Build @40-acres/contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.3
+          cache: true
+
+      - name: Cache Foundry build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            out
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'foundry.toml') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.3
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package (forge build + wagmi generate + addresses + tsc)
+        run: pnpm build:package
+
+      - name: Smoke-test package import
+        run: |
+          cat > /tmp/smoke.ts <<'EOF'
+          import { addresses, loanAbi, vaultAbi } from '@40-acres/contracts';
+          if (!addresses.base.aerodrome.strategies['usdc-loan'].supplyVault.prod) {
+            throw new Error('addresses tree missing expected key');
+          }
+          if (loanAbi.length === 0 || vaultAbi.length === 0) {
+            throw new Error('ABIs are empty');
+          }
+          console.log('OK', { abis: ['loan', 'vault'].length, addresses: 'resolved' });
+          EOF
+          pnpm exec tsx /tmp/smoke.ts
+
   test:
     name: Local Tests
     runs-on: ubuntu-latest
