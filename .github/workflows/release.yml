@@ -103,6 +103,42 @@ jobs:
           # token from ~/.npmrc (set up by actions/setup-node above).
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Notify downstream consumers (frontend, later homestead) that a
+      # new @40-acres/contracts version was published, so they can
+      # auto-open a bump PR. This sidesteps Dependabot's daily-at-best
+      # cadence and gets a PR open within ~3 minutes of publish.
+      #
+      # Failures here do NOT fail the release -- Dependabot is the
+      # weekly safety net.
+      - name: Notify consumers of release
+        if: steps.changesets.outputs.published == 'true'
+        continue-on-error: true
+        env:
+          DISPATCH_TOKEN: ${{ secrets.RELEASE_DISPATCH_TOKEN }}
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DISPATCH_TOKEN:-}" ]]; then
+            echo "::warning::RELEASE_DISPATCH_TOKEN not set -- skipping consumer notification."
+            exit 0
+          fi
+          version=$(echo "$PUBLISHED_PACKAGES" \
+            | jq -r '.[] | select(.name == "@40-acres/contracts") | .version')
+          if [[ -z "$version" || "$version" == "null" ]]; then
+            echo "::notice::No @40-acres/contracts in publishedPackages -- nothing to dispatch."
+            exit 0
+          fi
+          echo "Dispatching contracts-released event to consumers (version=$version)..."
+          for consumer in frontend; do
+            echo "-> 40-Acres/$consumer"
+            curl --fail-with-body -sS -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Authorization: Bearer $DISPATCH_TOKEN" \
+              "https://api.github.com/repos/40-Acres/$consumer/dispatches" \
+              -d "$(jq -nc --arg v "$version" '{event_type: "contracts-released", client_payload: {version: $v}}')"
+          done
+
       - name: Summary
         if: always()
         run: |
