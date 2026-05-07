@@ -48,6 +48,24 @@ export default defineConfig({
         // Frontend consumes this via portfolio-operations/operations/wallet.ts.
         'WalletFacet.sol/WalletFacet.json',
 
+        // Diamond facets exposed via the portfolio account proxy.
+        // Frontend currently has these methods union-typed in src/abi/facets_abi.ts;
+        // shipping the individual facet ABIs lets consumers pick per call site
+        // (e.g. lendingFacetAbi for borrow(), votingFacetAbi for batchVote()).
+        'ERC4626LendingFacet.sol/ERC4626LendingFacet.json',
+        'RewardsProcessingFacet.sol/RewardsProcessingFacet.json',
+        'YieldBasisLpFacet.sol/YieldBasisLpFacet.json',
+        'CollateralFacet.sol/CollateralFacet.json',
+        'ERC4626CollateralFacet.sol/ERC4626CollateralFacet.json',
+        'DynamicVotingEscrowFacet.sol/DynamicVotingEscrowFacet.json',
+        'veYieldBasisFacet.sol/veYieldBasisFacet.json',
+        'VotingFacet.sol/VotingFacet.json',
+
+        // XPharaohFacet -- Pharaoh's V1 facet, still active in production
+        // (Pharaoh's V1 is NOT being erased like other platforms). Lives in
+        // src/legacy/ for historical organization but functionally current.
+        'XPharaohFacet.sol/XPharaohFacet.json',
+
         // Pharaoh adapter (Avalanche). PharaohVault is just `contract Vault
         // is VaultV2` -- a thin wrapper, so we don't ship it (VaultV2 above
         // is the parent). PharaohLoan (V1) is dropped per the V1-erasure plan.
