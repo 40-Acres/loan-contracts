@@ -1,5 +1,11 @@
 # @40-acres/contracts
 
+## 0.3.1
+
+### Patch Changes
+
+- 3d78d23: Document the auto-bump pipeline in the package README. End-to-end test of the Changesets release flow + cross-repo dispatch to frontend.
+
 ## 0.3.0
 
 ### Minor Changes
