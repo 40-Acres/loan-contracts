@@ -4,6 +4,8 @@ Typed ABIs and on-chain addresses for the 40Acres Finance protocol.
 
 Single source of truth — generated from [loan-contracts](https://github.com/40-Acres/loan-contracts) on every release. Consumers (frontend, backend, off-chain bots) never hand-copy ABIs or addresses.
 
+Releases are Changesets-driven. Each publish to GitHub Packages fires a `repository_dispatch` to consumer repos, which auto-open a bump PR within ~3 minutes. Dependabot is the weekly safety net.
+
 ## Install
 
 This is a private package on GitHub Packages. In the consuming repo, configure auth:
