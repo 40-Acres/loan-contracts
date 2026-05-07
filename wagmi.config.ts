@@ -43,6 +43,11 @@ export default defineConfig({
         // Note: VexyMarketplace is third-party (not in our src/). The frontend
         // ships its own copy of that ABI; it does not belong here.
 
+        // Wallet facet (per-user account utilities: receiveERC20,
+        // transferERC20, transferNFT, withdrawERC20, swap).
+        // Frontend consumes this via portfolio-operations/operations/wallet.ts.
+        'WalletFacet.sol/WalletFacet.json',
+
         // Pharaoh adapter (Avalanche). PharaohVault is just `contract Vault
         // is VaultV2` -- a thin wrapper, so we don't ship it (VaultV2 above
         // is the parent). PharaohLoan (V1) is dropped per the V1-erasure plan.
