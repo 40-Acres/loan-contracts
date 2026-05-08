@@ -50,4 +50,9 @@ Steps:
   5. Run: git add .changeset/auto-<that-hex>.md
   6. Print only the path you created -- nothing else.'
 
-claude -p "$prompt"
+# --permission-mode bypassPermissions: needed because the prompt asks
+# Claude to write a file and run `git add`. Without it, claude -p would
+# halt asking for approval, which there's no way to grant in non-
+# interactive mode. The scope is narrow: this single invocation, this
+# specific prompt. The dev runs the script knowingly.
+claude -p --permission-mode bypassPermissions "$prompt"
