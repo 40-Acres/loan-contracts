@@ -15,6 +15,7 @@
   "files": [
     "dist",
     "src",
+    "abis",
     "README.md"
   ],
   "publishConfig": {
@@ -23,7 +24,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "clean": "rm -rf dist src/generated.ts src/addresses.ts"
+    "clean": "rm -rf dist src/generated.ts src/addresses.ts abis"
   },
   "peerDependencies": {
     "abitype": "^1.0.0"

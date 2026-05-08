@@ -129,7 +129,7 @@ jobs:
             exit 0
           fi
           echo "Dispatching contracts-released event to consumers (version=$version)..."
-          for consumer in frontend; do
+          for consumer in frontend homestead; do
             echo "-> 40-Acres/$consumer"
             curl --fail-with-body -sS -X POST \
               -H "Accept: application/vnd.github+json" \

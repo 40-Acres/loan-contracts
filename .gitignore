@@ -28,4 +28,5 @@ node_modules/
 packages/contracts/dist/
 packages/contracts/src/generated.ts
 packages/contracts/src/addresses.ts
+packages/contracts/abis/
 packages/contracts/*.tsbuildinfo
