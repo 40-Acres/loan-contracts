@@ -10,6 +10,7 @@
     "build:package": "pnpm build:abis && pnpm build:abi-json && pnpm build:addresses && pnpm --filter @40-acres/contracts build",
     "validate:addresses": "bash addresses/validate.sh",
     "changeset": "changeset",
+    "changeset:claude": "bash scripts/changeset-claude.sh",
     "changeset:from-diff": "tsx scripts/changeset-from-diff.ts",
     "changeset:version": "changeset version",
     "changeset:publish": "changeset publish",
