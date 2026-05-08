@@ -2,7 +2,19 @@
 #
 # Pre-commit guardrail. Two checks:
 #   1) addresses/**/*.json is well-formed (via addresses/validate.sh)
-#   2) If any address file changed, a changeset exists too.
+#   2) If any "release-trigger" file is staged, a changeset must be too.
+#
+#      Release-trigger files are things that affect what the published
+#      @40-acres/contracts package contains:
+#
+#        - addresses/**/*.json    — address registry shipped in the package
+#        - src/**/*.sol           — Solidity changes affect ABI surface
+#        - wagmi.config.ts        — controls which ABIs the package exports
+#        - packages/contracts/**  — package source / scripts / manifest
+#
+#      Without a changeset, these merge to main but never publish, leaving
+#      consumers (frontend, homestead) silently behind. We've been bitten
+#      by this; the hook is the cheap way to catch it at commit time.
 #
 # Skip with `git commit --no-verify` if you genuinely need to bypass.
 
@@ -18,18 +30,37 @@ if ! bash addresses/validate.sh; then
   exit 1
 fi
 
-# 2. If addresses/ files are staged but no changeset is staged, complain.
-addresses_changed=$(git diff --cached --name-only -- 'addresses/**/*.json' | grep -v '^addresses/addresses\.json$' || true)
-if [[ -n "$addresses_changed" ]]; then
+# 2. If any release-trigger file is staged but no changeset is staged, complain.
+#    `:(glob)` makes `**` cross directories the way you'd expect (without it,
+#    git pathspec treats `**` as `*` and misses src/Loan.sol etc).
+addresses_changed=$(git diff --cached --name-only -- ':(glob)addresses/**/*.json' | grep -v '^addresses/addresses\.json$' || true)
+solidity_changed=$(git diff --cached --name-only -- ':(glob)src/**/*.sol' || true)
+wagmi_changed=$(git diff --cached --name-only -- 'wagmi.config.ts' || true)
+package_changed=$(git diff --cached --name-only -- ':(glob)packages/contracts/**' || true)
+
+triggered=""
+[[ -n "$addresses_changed" ]] && triggered+="$addresses_changed"$'\n'
+[[ -n "$solidity_changed" ]]  && triggered+="$solidity_changed"$'\n'
+[[ -n "$wagmi_changed" ]]     && triggered+="$wagmi_changed"$'\n'
+[[ -n "$package_changed" ]]   && triggered+="$package_changed"$'\n'
+triggered=$(printf '%s' "$triggered" | sed '/^$/d')
+
+if [[ -n "$triggered" ]]; then
   changeset_staged=$(git diff --cached --name-only -- '.changeset/*.md' | grep -v 'README.md$' || true)
   if [[ -z "$changeset_staged" ]]; then
     echo
-    echo "❌ pre-commit: address files changed but no changeset is staged."
-    echo "   Files: $(echo "$addresses_changed" | tr '\n' ' ')"
+    echo "❌ pre-commit: a release-trigger file changed but no changeset is staged."
     echo
-    echo "   Run:  pnpm changeset:from-diff   (auto-drafts one from the diff)"
-    echo "   Or:   pnpm changeset             (interactive)"
-    echo "   Then stage the changeset and re-commit."
+    echo "   Files affecting the published @40-acres/contracts package:"
+    printf '%s\n' "$triggered" | sed 's/^/     /'
+    echo
+    echo "   A changeset is what tells the release pipeline what version to publish."
+    echo "   Without it, your changes merge to main but never reach consumers."
+    echo
+    echo "   Run:  pnpm changeset:from-diff   (auto-drafts from address diff; best for deploys)"
+    echo "   Or:   pnpm changeset             (interactive; best for Solidity / wagmi.config.ts)"
+    echo
+    echo "   Then stage the changeset (.changeset/*.md) and re-commit."
     exit 1
   fi
 fi
