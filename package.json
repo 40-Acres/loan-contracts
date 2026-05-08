@@ -5,8 +5,9 @@
   "description": "Workspace root for the loan-contracts repo. The publishable package lives at packages/contracts.",
   "scripts": {
     "build:abis": "wagmi generate",
+    "build:abi-json": "tsx packages/contracts/scripts/build-abis.ts",
     "build:addresses": "tsx packages/contracts/scripts/build-addresses.ts",
-    "build:package": "pnpm build:abis && pnpm build:addresses && pnpm --filter @40-acres/contracts build",
+    "build:package": "pnpm build:abis && pnpm build:abi-json && pnpm build:addresses && pnpm --filter @40-acres/contracts build",
     "validate:addresses": "bash addresses/validate.sh",
     "changeset": "changeset",
     "changeset:from-diff": "tsx scripts/changeset-from-diff.ts",
