@@ -57,10 +57,11 @@ if [[ -n "$triggered" ]]; then
     echo "   A changeset is what tells the release pipeline what version to publish."
     echo "   Without it, your changes merge to main but never reach consumers."
     echo
-    echo "   Run:  pnpm changeset:from-diff   (auto-drafts from address diff; best for deploys)"
-    echo "   Or:   pnpm changeset             (interactive; best for Solidity / wagmi.config.ts)"
+    echo "   Run:  pnpm changeset:claude     (Claude Code drafts one from your staged diff -- recommended)"
+    echo "   Or:   pnpm changeset:from-diff  (mechanical draft from addresses JSON diff)"
+    echo "   Or:   pnpm changeset            (interactive)"
     echo
-    echo "   Then stage the changeset (.changeset/*.md) and re-commit."
+    echo "   Then re-commit. (changeset:claude already stages the file for you.)"
     exit 1
   fi
 fi
