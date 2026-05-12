@@ -10,12 +10,18 @@ import {IRootPool} from "../../src/interfaces/IRootPool.sol";
  */
 contract MockRootPool is IRootPool {
     uint256 private _chainid;
+    address private _factory;
 
-    constructor(uint256 chainId_) {
+    constructor(uint256 chainId_, address factory_) {
         _chainid = chainId_;
+        _factory = factory_;
     }
 
     function chainid() external view override returns (uint256) {
         return _chainid;
+    }
+
+    function factory() external view override returns (address) {
+        return _factory;
     }
 }

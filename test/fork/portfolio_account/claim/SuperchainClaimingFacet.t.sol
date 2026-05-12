@@ -34,7 +34,8 @@ import {IReward} from "../../../../src/interfaces/IReward.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../../src/facets/account/config/VotingConfig.sol";
-import {SuperchainVotingConfig} from "../../../../src/facets/account/config/SuperchainVotingConfig.sol";
+import {RootPoolVotingConfig} from "../../../../src/facets/account/config/RootPoolVotingConfig.sol";
+import {IRootPool} from "../../../../src/interfaces/IRootPool.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
 import {SwapConfig} from "../../../../src/facets/account/config/SwapConfig.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -90,7 +91,7 @@ contract SuperchainClaimingFacetTest is Test {
     PortfolioManager pm;
     PortfolioFactory portfolioFactory;
     FacetRegistry facetRegistry;
-    SuperchainVotingConfig superchainVotingConfig;
+    RootPoolVotingConfig superchainVotingConfig;
     LoanConfig loanConfig;
     SwapConfig swapConfig;
     address portfolioAccount;
@@ -113,14 +114,14 @@ contract SuperchainClaimingFacetTest is Test {
         VotingConfig votingConfig;
         (portfolioFactoryConfig, votingConfig, loanConfig, swapConfig) = configDeployer.deploy(address(portfolioFactory), FORTY_ACRES_DEPLOYER);
 
-        // Deploy SuperchainVotingConfig
-        SuperchainVotingConfig scVotingConfigImpl = new SuperchainVotingConfig();
+        // Deploy RootPoolVotingConfig (replaces SuperchainVotingConfig)
+        RootPoolVotingConfig scVotingConfigImpl = new RootPoolVotingConfig();
         bytes memory initData = abi.encodeWithSelector(
             VotingConfig.initialize.selector,
             FORTY_ACRES_DEPLOYER
         );
         ERC1967Proxy scVotingConfigProxy = new ERC1967Proxy(address(scVotingConfigImpl), initData);
-        superchainVotingConfig = SuperchainVotingConfig(address(scVotingConfigProxy));
+        superchainVotingConfig = RootPoolVotingConfig(address(scVotingConfigProxy));
 
         // Deploy SuperchainVotingFacet
         DeploySuperchainVotingFacet votingDeployer = new DeploySuperchainVotingFacet();
@@ -157,9 +158,14 @@ contract SuperchainClaimingFacetTest is Test {
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
         portfolioFactoryConfig.setLoanContract(address(loanProxy));
 
-        // Configure superchain pool (real root pool with chainid())
+        // Configure superchain pool via the factory allowlist. The new
+        // RootPoolVotingConfig identifies superchain pools by probing
+        // IRootPool.factory() at vote time. We pull the factory off the
+        // real pool to verify the probe matches the live deployment.
         superchainVotingConfig.setApprovedPool(SUPERCHAIN_POOL, true);
-        superchainVotingConfig.setSuperchainPool(SUPERCHAIN_POOL, true);
+        address poolFactory = IRootPool(SUPERCHAIN_POOL).factory();
+        require(poolFactory != address(0), "pool factory should be non-zero");
+        superchainVotingConfig.setRootPoolFactory(poolFactory, true);
 
         // Set minimum locked balance
         int128 lockedAmount = IVotingEscrow(VE).locked(TOKEN_ID).amount;

@@ -13,7 +13,8 @@ import {IRewardsDistributor} from "../../../src/interfaces/IRewardsDistributor.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
-import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
+import {RootPoolVotingConfig} from "../../../src/facets/account/config/RootPoolVotingConfig.sol";
+import {IRootPool} from "../../../src/interfaces/IRootPool.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
@@ -38,7 +39,7 @@ contract SuperchainTest is Test, Setup {
     uint256[] public weights = [100e18];
     address public launchpadToken = address(0x9126236476eFBA9Ad8aB77855c60eB5BF37586Eb);
     address public tokenMessenger = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
-    SuperchainVotingConfig public _superchainVotingConfig;
+    RootPoolVotingConfig public _superchainVotingConfig;
 
     function setUp() public override {
         super.setUp();
@@ -62,10 +63,10 @@ contract SuperchainTest is Test, Setup {
         address voter = address(0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C);
         address rewardsDistributor = address(0x9D4736EC60715e71aFe72973f7885DCBC21EA99b);
 
-        SuperchainVotingConfig superchainVotingConfigImpl = new SuperchainVotingConfig();
+        RootPoolVotingConfig superchainVotingConfigImpl = new RootPoolVotingConfig();
         bytes memory initData = abi.encodeWithSelector(VotingConfig.initialize.selector, FORTY_ACRES_DEPLOYER);
         ERC1967Proxy superchainVotingConfigProxy = new ERC1967Proxy(address(superchainVotingConfigImpl), initData);
-        SuperchainVotingConfig superchainVotingConfig = SuperchainVotingConfig(address(superchainVotingConfigProxy));
+        RootPoolVotingConfig superchainVotingConfig = RootPoolVotingConfig(address(superchainVotingConfigProxy));
         votingConfig = VotingConfig(address(superchainVotingConfigProxy));
         DeploySuperchainVotingFacet deployer = new DeploySuperchainVotingFacet();
         deployer.deploy(address(portfolioFactory), address(superchainVotingConfig), address(ve), address(voter));
@@ -108,9 +109,16 @@ contract SuperchainTest is Test, Setup {
         address authorizedCaller = address(0xaaaaa);
         _pm.setAuthorizedCaller(authorizedCaller, true);
 
-        // Real root pool (implements IRootPool.chainid() → 1868 Soneium)
+        // Real root pool (implements IRootPool.chainid() → 1868 Soneium).
+        // After the migration, superchain pools are identified by the
+        // root-pool factory allowlist rather than per-pool. Pull the
+        // factory off the live pool and register it. The pool itself
+        // still needs the standard VotingConfig approval.
         address superchainPool = 0x21cD02d175D61a4b4D6b62d8707186B1FedaaEAd;
-        superchainVotingConfig.setSuperchainPool(superchainPool, true);
+        address rootPoolFactory = IRootPool(superchainPool).factory();
+        require(rootPoolFactory != address(0), "pool factory should be non-zero");
+        superchainVotingConfig.setRootPoolFactory(rootPoolFactory, true);
+        superchainVotingConfig.setApprovedPool(superchainPool, true);
 
         uint256 tokenId = 5005;
 
