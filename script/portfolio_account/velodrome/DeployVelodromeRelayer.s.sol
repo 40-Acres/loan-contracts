@@ -135,7 +135,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
         // // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory, address(swapConfig));
         bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
         rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
         rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

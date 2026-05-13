@@ -414,7 +414,7 @@ contract LiveYieldBasisLpETHTest is Test {
         facetRegistry.registerFacet(address(rpFacet), rpSel, "YieldBasisLpRewardsProcessingFacet");
 
         // --- RewardsConfigFacet (6 selectors) ---
-        RewardsConfigFacet rcFacet = new RewardsConfigFacet(factory);
+        RewardsConfigFacet rcFacet = new RewardsConfigFacet(factory, ETH_SWAP_CONFIG);
         bytes4[] memory rcSel = new bytes4[](6);
         rcSel[0] = RewardsConfigFacet.setRecipient.selector;
         rcSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

@@ -7,32 +7,44 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 /**
  * @title SwapConfig
+ * @dev Per-network singleton. In addition to the swap-target allowlist, this contract
+ *      also acts as the protocol-wide registry of approved investment vaults and approved
+ *      output tokens used by RewardsConfigFacet to validate user-supplied targets.
  */
 contract SwapConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     using EnumerableSet for EnumerableSet.AddressSet;
     constructor() {
         _disableInitializers();
     }
-    
+
     function initialize(address owner) initializer public {
-        __Ownable_init(owner); 
+        __Ownable_init(owner);
     }
-    
+
     /**
      * @dev This function is used to authorize upgrades to the contract.
      *      It restricts the upgradeability to only the contract owner.
      * @param newImplementation The address of the new implementation contract.
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-    
-    // Token storage data using named storage slot
+
+    // Token storage data using named storage slot.
+    // Append-only: new fields MUST be added at the end to preserve storage layout
+    // across upgrades.
     struct SwapConfigData {
         mapping(address => bool) approvedSwapTargets;
         EnumerableSet.AddressSet approvedSwapTargetsList;
+        mapping(address => bool) approvedVaults;
+        EnumerableSet.AddressSet approvedVaultsList;
+        mapping(address => bool) approvedOutputTokens;
+        EnumerableSet.AddressSet approvedOutputTokensList;
     }
 
     // Named storage slot for account data
     bytes32 private constant ACCOUNT_STORAGE_POSITION = keccak256("storage.SwapConfig");
+
+    event ApprovedVaultSet(address indexed vault, bool approved);
+    event ApprovedOutputTokenSet(address indexed token, bool approved);
 
     /**
      * @dev Get token storage data from named storage slot
@@ -72,6 +84,68 @@ contract SwapConfig is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     function getApprovedSwapTargetAtIndex(uint256 index) public view returns (address) {
         SwapConfigData storage swapConfigData = _getSwapConfig();
         return swapConfigData.approvedSwapTargetsList.at(index);
+    }
+
+    function setApprovedVault(address vault, bool approved) public onlyOwner {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        swapConfigData.approvedVaults[vault] = approved;
+        if (approved) {
+            swapConfigData.approvedVaultsList.add(vault);
+        } else {
+            swapConfigData.approvedVaultsList.remove(vault);
+        }
+        emit ApprovedVaultSet(vault, approved);
+    }
+
+    function isApprovedVault(address vault) public view returns (bool) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedVaults[vault];
+    }
+
+    function getApprovedVaultsList() public view returns (address[] memory) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedVaultsList.values();
+    }
+
+    function getApprovedVaultsListLength() public view returns (uint256) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedVaultsList.length();
+    }
+
+    function getApprovedVaultAtIndex(uint256 index) public view returns (address) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedVaultsList.at(index);
+    }
+
+    function setApprovedOutputToken(address token, bool approved) public onlyOwner {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        swapConfigData.approvedOutputTokens[token] = approved;
+        if (approved) {
+            swapConfigData.approvedOutputTokensList.add(token);
+        } else {
+            swapConfigData.approvedOutputTokensList.remove(token);
+        }
+        emit ApprovedOutputTokenSet(token, approved);
+    }
+
+    function isApprovedOutputToken(address token) public view returns (bool) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedOutputTokens[token];
+    }
+
+    function getApprovedOutputTokensList() public view returns (address[] memory) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedOutputTokensList.values();
+    }
+
+    function getApprovedOutputTokensListLength() public view returns (uint256) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedOutputTokensList.length();
+    }
+
+    function getApprovedOutputTokenAtIndex(uint256 index) public view returns (address) {
+        SwapConfigData storage swapConfigData = _getSwapConfig();
+        return swapConfigData.approvedOutputTokensList.at(index);
     }
 
 }

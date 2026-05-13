@@ -209,7 +209,7 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "YieldBasisLpRewardsProcessingFacet");
 
         // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory, swapConfig);
         bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
         rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
         rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
