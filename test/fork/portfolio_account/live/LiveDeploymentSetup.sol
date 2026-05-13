@@ -150,6 +150,7 @@ abstract contract LiveDeploymentSetup is Test {
             address(loanConfig),
             USDC,
             TOKEN_MESSENGER,
+            2,
             address(swapConfig),
             loanContract,
             USDC,

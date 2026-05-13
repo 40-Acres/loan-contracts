@@ -197,7 +197,7 @@ contract SuperchainTest is Test, Setup {
 
         // deploy the bridge facet
         DeployBridgeFacet ink_deployer = new DeployBridgeFacet();
-        ink_deployer.deploy(address(ink_portfolioFactory), address(0x4200000000000000000000000000000000000006), tokenMessenger, address(ink_swapConfig));
+        ink_deployer.deploy(address(ink_portfolioFactory), address(0x4200000000000000000000000000000000000006), tokenMessenger, 2, address(ink_swapConfig));
 
         // user should have a balance on WETH and XVELO
         assertEq(IERC20(0x4200000000000000000000000000000000000006).balanceOf(user), 7797992391058710);

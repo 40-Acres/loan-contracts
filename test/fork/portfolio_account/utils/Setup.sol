@@ -85,7 +85,7 @@ contract Setup is Test {
         
         _vault = address(vault);
         portfolioFactory.setPortfolioFactoryConfig(address(portfolioFactoryConfig));
-        deployer.deploy(address(portfolioFactory), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), _tokenMessenger, address(swapConfig), address(_loanContract), address(_usdc), _vault);
+        deployer.deploy(address(portfolioFactory), address(votingConfig), address(_ve), address(_voter), address(_rewardsDistributor), address(loanConfig), address(_usdc), _tokenMessenger, 2, address(swapConfig), address(_loanContract), address(_usdc), _vault);
         vm.stopPrank();
 
         // create a portfolio account

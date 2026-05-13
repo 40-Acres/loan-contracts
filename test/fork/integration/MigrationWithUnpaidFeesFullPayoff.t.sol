@@ -95,6 +95,7 @@ contract MigrationWithUnpaidFeesTest is Test {
             address(loanConfig),
             address(usdc),
             address(0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d),
+            2, // destinationDomain
             address(swapConfig), // swapConfig
             BASE_LOAN_CONTRACT, // loanContract
             address(usdc), // lendingToken

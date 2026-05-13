@@ -128,6 +128,7 @@ contract BridgeFacetTest is Test {
             address(_portfolioFactory),
             INK_USDC,
             TOKEN_MESSENGER,
+            2,
             address(_swapConfig)
         );
 

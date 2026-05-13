@@ -23,12 +23,15 @@ contract DeployVotingFacet is AccountFacetsDeploy {
     }
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = VotingFacet.vote.selector;
         selectors[1] = VotingFacet.voteForLaunchpadToken.selector;
         selectors[2] = VotingFacet.setVotingMode.selector;
         selectors[3] = VotingFacet.isManualVoting.selector;
         selectors[4] = VotingFacet.defaultVote.selector;
+        selectors[5] = VotingFacet.batchVote.selector;
+        selectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
+        selectors[7] = VotingFacet.isElligibleForManualVoting.selector;
         return selectors;
     }
 }
