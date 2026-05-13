@@ -339,7 +339,7 @@ contract DynamicLocalSetup is Test {
         _facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "DynamicRewardsProcessingFacet");
 
         // ── 9. RewardsConfigFacet (6 selectors) ──
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(_portfolioFactory));
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(_portfolioFactory), address(_swapConfig));
         bytes4[] memory rewardsConfigSel = new bytes4[](6);
         rewardsConfigSel[0] = RewardsConfigFacet.setRecipient.selector;
         rewardsConfigSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

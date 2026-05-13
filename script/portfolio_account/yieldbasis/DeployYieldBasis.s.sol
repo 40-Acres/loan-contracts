@@ -214,7 +214,7 @@ contract YieldBasisRootUpgrade is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "veYieldBasisRewardsProcessingFacet");
 
         // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(PORTFOLIO_FACTORY);
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(PORTFOLIO_FACTORY, ETH_SWAP_CONFIG);
         bytes4[] memory rewardsConfigSelectors = new bytes4[](7);
         rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
         rewardsConfigSelectors[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

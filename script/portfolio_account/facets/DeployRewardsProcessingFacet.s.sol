@@ -32,7 +32,7 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
 
         registerFacet(PORTFOLIO_FACTORY, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", false);
 
-        RewardsConfigFacet configFacet = new RewardsConfigFacet(PORTFOLIO_FACTORY);
+        RewardsConfigFacet configFacet = new RewardsConfigFacet(PORTFOLIO_FACTORY, SWAP_CONFIG);
         registerFacet(PORTFOLIO_FACTORY, address(configFacet), getSelectorsForConfigFacet(), "RewardsConfigFacet", false);
         vm.stopBroadcast();
     }
@@ -41,7 +41,7 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
         RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, IVotingEscrow(votingEscrow).token());
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", true);
 
-        RewardsConfigFacet configFacet = new RewardsConfigFacet(portfolioFactory);
+        RewardsConfigFacet configFacet = new RewardsConfigFacet(portfolioFactory, swapConfig);
         registerFacet(portfolioFactory, address(configFacet), getSelectorsForConfigFacet(), "RewardsConfigFacet", true);
     }
 

@@ -148,7 +148,7 @@ contract RewardsProcessingMixedAndConfigTest is Test, RewardsTokenHelper {
         deployer.deploy(address(_portfolioFactory), address(_swapConfig), address(_ve), _vault);
 
         // Register additional selectors not in default deploy
-        RewardsConfigFacet configFacetForExtras = new RewardsConfigFacet(address(_portfolioFactory));
+        RewardsConfigFacet configFacetForExtras = new RewardsConfigFacet(address(_portfolioFactory), address(_swapConfig));
         bytes4[] memory extraSel = new bytes4[](3);
         extraSel[0] = RewardsConfigFacet.setVaultForInvesting.selector;
         extraSel[1] = RewardsConfigFacet.clearZeroBalanceDistribution.selector;

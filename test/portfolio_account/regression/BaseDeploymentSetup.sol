@@ -310,7 +310,7 @@ abstract contract BaseDeploymentSetup is Test {
         facetRegistry.registerFacet(address(rewardsProcessingFacet), rewardsSel, "RewardsProcessingFacet");
 
         // ── 9. RewardsConfigFacet (6 selectors) ──
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory));
+        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(address(portfolioFactory), address(swapConfig));
         bytes4[] memory rewardsConfigSel = new bytes4[](6);
         rewardsConfigSel[0] = RewardsConfigFacet.setRecipient.selector;
         rewardsConfigSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

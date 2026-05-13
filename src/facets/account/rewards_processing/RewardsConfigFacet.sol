@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
+import {SwapConfig} from "../config/SwapConfig.sol";
 import {UserRewardsConfig} from "./UserRewardsConfig.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {IPortfolioManager} from "../../../accounts/IPortfolioManager.sol";
@@ -14,6 +15,7 @@ import {IPortfolioManager} from "../../../accounts/IPortfolioManager.sol";
  */
 contract RewardsConfigFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
+    SwapConfig public immutable _swapConfig;
 
     event RecipientSet(address recipient, address indexed owner);
     event VaultForInvestingSet(address vault, address indexed owner);
@@ -22,9 +24,11 @@ contract RewardsConfigFacet is AccessControl {
     event ActiveBalanceDistributionSet(uint256 entryCount, address indexed owner);
     event ActiveBalanceDistributionCleared(address indexed owner);
 
-    constructor(address portfolioFactory) {
+    constructor(address portfolioFactory, address swapConfig) {
         require(portfolioFactory != address(0));
+        require(swapConfig != address(0));
         _portfolioFactory = PortfolioFactory(portfolioFactory);
+        _swapConfig = SwapConfig(swapConfig);
     }
 
     function setRecipient(address recipient) external onlyPortfolioManagerMulticall(_portfolioFactory) {
@@ -34,6 +38,7 @@ contract RewardsConfigFacet is AccessControl {
     }
 
     function setVaultForInvesting(address vault) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        require(_swapConfig.isApprovedVault(vault), "Vault not approved");
         UserRewardsConfig.setVaultForInvesting(vault);
         emit VaultForInvestingSet(vault, _portfolioFactory.ownerOf(address(this)));
     }
@@ -52,6 +57,12 @@ contract RewardsConfigFacet is AccessControl {
                 require(portfolioManager.isRegisteredFactory(entries[i].target), "PayDebt target must be registered factory");
                 address targetPortfolio = PortfolioFactory(entries[i].target).portfolioOf(thisOwner);
                 require(targetPortfolio != address(0), "PayDebt target factory must have portfolio for owner");
+            }
+            if (entries[i].option == UserRewardsConfig.RewardsOption.InvestToVault) {
+                require(_swapConfig.isApprovedVault(entries[i].target), "InvestToVault target not approved");
+            }
+            if (entries[i].option == UserRewardsConfig.RewardsOption.PayToRecipient && entries[i].outputToken != address(0)) {
+                require(_swapConfig.isApprovedOutputToken(entries[i].outputToken), "PayToRecipient outputToken not approved");
             }
         }
         UserRewardsConfig.setZeroBalanceDistribution(entries);
@@ -81,6 +92,12 @@ contract RewardsConfigFacet is AccessControl {
             require(portfolioManager.isRegisteredFactory(entry.target), "PayDebt target must be registered factory");
             address targetPortfolio = PortfolioFactory(entry.target).portfolioOf(thisOwner);
             require(targetPortfolio != address(0), "PayDebt target factory must have portfolio for owner");
+        }
+        if (entry.option == UserRewardsConfig.RewardsOption.InvestToVault) {
+            require(_swapConfig.isApprovedVault(entry.target), "InvestToVault target not approved");
+        }
+        if (entry.option == UserRewardsConfig.RewardsOption.PayToRecipient && entry.outputToken != address(0)) {
+            require(_swapConfig.isApprovedOutputToken(entry.outputToken), "PayToRecipient outputToken not approved");
         }
         UserRewardsConfig.setActiveBalanceDistribution(entry);
         emit ActiveBalanceDistributionSet(1, _portfolioFactory.ownerOf(address(this)));
