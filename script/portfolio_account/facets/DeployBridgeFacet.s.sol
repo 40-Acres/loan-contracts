@@ -32,7 +32,7 @@ contract DeployBridgeFacet is AccountFacetsDeploy {
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
         bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = BridgeFacet.bridge.selector;
-        selectors[1] = BridgeFacet.swapAndBridge.selector;
+        selectors[1] = BridgeFacet.swapMultiple.selector;
         return selectors;
     }
 }

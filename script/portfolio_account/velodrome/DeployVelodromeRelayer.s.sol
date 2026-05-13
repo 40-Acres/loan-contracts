@@ -73,11 +73,13 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
+
         SwapConfig swapConfig = SwapConfig(OP_SWAP_CONFIG);
         address votingConfig = VELO_VOTING_CONFIG;
 
         // // Link configs on the new PortfolioFactoryConfig (deployer is owner of these)
         portfolioFactoryConfig.setVoteConfig(votingConfig);
+        // portfolioFactoryConfig.setLoanConfig(address(loanConfig));
         portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
     }
 
@@ -114,11 +116,21 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
         // Read existing Velodrome deployment configs
         SwapConfig swapConfig = SwapConfig(OP_SWAP_CONFIG);
-        address loanConfig = address(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getLoanConfig());
+        // address loanConfig = address(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getLoanConfig());
         address votingConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getVoteConfig();
         Vault vault = Vault(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957);
 
-        // // Deploy SuperchainClaimingFacet
+
+        // LoanConfig loanConfigImpl = new LoanConfig();
+        // LoanConfig loanConfig = LoanConfig(
+        //     address(new ERC1967Proxy(
+        //         address(loanConfigImpl),
+        //         abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 20_00, 5_00, 1_00))
+        //     ))
+        // );
+        // loanConfig.transferOwnership(MULTISIG_ADDRESS);
+
+        // Deploy SuperchainClaimingFacet
         SuperchainClaimingFacet superchainClaimingFacet = new SuperchainClaimingFacet();
         bytes4[] memory superchainClaimingSelectors = new bytes4[](1);
         superchainClaimingSelectors[0] = SuperchainClaimingFacet.claimSuperchainRewards.selector;
@@ -187,15 +199,15 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
-        // VotingEscrowFacet - mergeInternal toToken listing guard
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        // // VotingEscrowFacet - mergeInternal toToken listing guard
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        // votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
         // _validateDeployment(portfolioFactoryConfig, portfolioFactory);
