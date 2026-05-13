@@ -197,7 +197,7 @@ contract LiveSuperNovaE2ENoLoan is Test {
     }
 
     function _registerRewardsConfigFacet() internal {
-        RewardsConfigFacet facet = new RewardsConfigFacet(address(portfolioFactory));
+        RewardsConfigFacet facet = new RewardsConfigFacet(address(portfolioFactory), address(swapConfig));
         bytes4[] memory sel = new bytes4[](6);
         sel[0] = RewardsConfigFacet.setRecipient.selector;
         sel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

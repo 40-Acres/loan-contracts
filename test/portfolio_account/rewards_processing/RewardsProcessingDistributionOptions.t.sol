@@ -170,7 +170,7 @@ contract RewardsProcessingDistributionOptionsTest is Test, RewardsTokenHelper {
 
         // Register setVaultForInvesting and clearZeroBalanceDistribution selectors
         // (not registered by default in LocalSetup)
-        RewardsConfigFacet configFacetForExtras = new RewardsConfigFacet(address(_portfolioFactory));
+        RewardsConfigFacet configFacetForExtras = new RewardsConfigFacet(address(_portfolioFactory), address(_swapConfig));
         bytes4[] memory extraSel = new bytes4[](2);
         extraSel[0] = RewardsConfigFacet.setVaultForInvesting.selector;
         extraSel[1] = RewardsConfigFacet.clearZeroBalanceDistribution.selector;

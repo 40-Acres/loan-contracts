@@ -187,7 +187,7 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
         noVaultRegistry.registerFacet(address(rpFacet), rpSel, "RewardsProcessingFacet");
 
         // 7. Register RewardsConfigFacet
-        RewardsConfigFacet rcFacet = new RewardsConfigFacet(address(noVaultFactory));
+        RewardsConfigFacet rcFacet = new RewardsConfigFacet(address(noVaultFactory), address(_swapConfig));
         bytes4[] memory rcSel = new bytes4[](6);
         rcSel[0] = RewardsConfigFacet.setRecipient.selector;
         rcSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;

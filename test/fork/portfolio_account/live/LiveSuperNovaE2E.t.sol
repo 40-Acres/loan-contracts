@@ -190,7 +190,7 @@ contract LiveSuperNovaE2E is Test {
         facetRegistry.registerFacet(address(rpFacet), rpSel, "RewardsProcessingFacet");
 
         // Deploy RewardsConfigFacet
-        RewardsConfigFacet rcFacet = new RewardsConfigFacet(address(portfolioFactory));
+        RewardsConfigFacet rcFacet = new RewardsConfigFacet(address(portfolioFactory), address(swapConfig));
         bytes4[] memory rcSel = new bytes4[](6);
         rcSel[0] = RewardsConfigFacet.setRecipient.selector;
         rcSel[1] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
