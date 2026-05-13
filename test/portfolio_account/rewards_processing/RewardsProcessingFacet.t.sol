@@ -137,7 +137,12 @@ contract RewardsProcessingFacetTest is Test, LocalSetup {
 
     function testProcessRewardsZeroDebtInvestToVault() public {
         setupRewards();
-        
+
+        // SwapConfig allowlist gate: address(0) target falls back to default _vault at processing time,
+        // but the config-write still requires isApprovedVault(target) — approve address(0).
+        vm.prank(FORTY_ACRES_DEPLOYER);
+        _swapConfig.setApprovedVault(address(0), true);
+
         // Change zero balance option to InvestToVault via setZeroBalanceDistribution
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);

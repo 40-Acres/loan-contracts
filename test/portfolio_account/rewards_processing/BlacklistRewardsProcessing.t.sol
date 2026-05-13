@@ -88,6 +88,7 @@ contract BlacklistRewardsProcessingTest is Test, RewardsTokenHelper {
     }
 
     function _setZeroBalanceDistribution(UserRewardsConfig.DistributionEntry[] memory entries) internal {
+        _approveAllowlistForEntries(entries);
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
@@ -97,6 +98,21 @@ contract BlacklistRewardsProcessingTest is Test, RewardsTokenHelper {
             entries
         );
         _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    function _approveAllowlistForEntries(UserRewardsConfig.DistributionEntry[] memory entries) internal {
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].option == UserRewardsConfig.RewardsOption.InvestToVault) {
+                _swapConfig.setApprovedVault(entries[i].target, true);
+            } else if (
+                entries[i].option == UserRewardsConfig.RewardsOption.PayToRecipient
+                    && entries[i].outputToken != address(0)
+            ) {
+                _swapConfig.setApprovedOutputToken(entries[i].outputToken, true);
+            }
+        }
         vm.stopPrank();
     }
 

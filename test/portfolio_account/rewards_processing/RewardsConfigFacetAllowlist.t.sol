@@ -283,7 +283,7 @@ contract RewardsConfigFacetAllowlistTest is LocalSetup {
 
     function test_setActive_investToVault_approvedTargetSucceeds() public {
         _setActiveBalanceDistribution(
-            _entry(UserRewardsConfig.RewardsOption.InvestToVault, 100, address(0), approvedVault)
+            _entry(UserRewardsConfig.RewardsOption.InvestToVault, 25, address(0), approvedVault)
         );
 
         UserRewardsConfig.DistributionEntry memory stored = rewardsConfigFacet.getActiveBalanceDistribution();
@@ -293,7 +293,7 @@ contract RewardsConfigFacetAllowlistTest is LocalSetup {
 
     function test_setActive_payToRecipient_zeroOutputTokenSucceeds() public {
         _setActiveBalanceDistribution(
-            _entry(UserRewardsConfig.RewardsOption.PayToRecipient, 100, address(0), someRecipient)
+            _entry(UserRewardsConfig.RewardsOption.PayToRecipient, 25, address(0), someRecipient)
         );
 
         UserRewardsConfig.DistributionEntry memory stored = rewardsConfigFacet.getActiveBalanceDistribution();
@@ -310,7 +310,7 @@ contract RewardsConfigFacetAllowlistTest is LocalSetup {
 
     function test_setActive_payToRecipient_approvedOutputTokenSucceeds() public {
         _setActiveBalanceDistribution(
-            _entry(UserRewardsConfig.RewardsOption.PayToRecipient, 100, approvedOutputToken, someRecipient)
+            _entry(UserRewardsConfig.RewardsOption.PayToRecipient, 25, approvedOutputToken, someRecipient)
         );
 
         UserRewardsConfig.DistributionEntry memory stored = rewardsConfigFacet.getActiveBalanceDistribution();
@@ -320,7 +320,7 @@ contract RewardsConfigFacetAllowlistTest is LocalSetup {
 
     function test_setActive_payBalance_ignoresTargetAndOutputToken() public {
         _setActiveBalanceDistribution(
-            _entry(UserRewardsConfig.RewardsOption.PayBalance, 100, unapprovedOutputToken, unapprovedVault)
+            _entry(UserRewardsConfig.RewardsOption.PayBalance, 25, unapprovedOutputToken, unapprovedVault)
         );
 
         UserRewardsConfig.DistributionEntry memory stored = rewardsConfigFacet.getActiveBalanceDistribution();
@@ -331,7 +331,7 @@ contract RewardsConfigFacetAllowlistTest is LocalSetup {
 
     function test_setActive_increaseCollateral_ignoresTargetAndOutputToken() public {
         _setActiveBalanceDistribution(
-            _entry(UserRewardsConfig.RewardsOption.IncreaseCollateral, 100, unapprovedOutputToken, unapprovedVault)
+            _entry(UserRewardsConfig.RewardsOption.IncreaseCollateral, 25, unapprovedOutputToken, unapprovedVault)
         );
 
         UserRewardsConfig.DistributionEntry memory stored = rewardsConfigFacet.getActiveBalanceDistribution();
@@ -340,7 +340,7 @@ contract RewardsConfigFacetAllowlistTest is LocalSetup {
 
     function test_setActive_payDebt_zeroTargetSucceeds() public {
         _setActiveBalanceDistribution(
-            _entry(UserRewardsConfig.RewardsOption.PayDebt, 100, address(0), address(0))
+            _entry(UserRewardsConfig.RewardsOption.PayDebt, 25, address(0), address(0))
         );
 
         UserRewardsConfig.DistributionEntry memory stored = rewardsConfigFacet.getActiveBalanceDistribution();

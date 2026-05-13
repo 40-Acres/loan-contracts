@@ -7,15 +7,16 @@ import {RewardsConfigFacet} from "../../../src/facets/account/rewards_processing
 contract DeployRewardsConfigFacet is AccountFacetsDeploy {
     function run() external {
         address PORTFOLIO_FACTORY = vm.envAddress("PORTFOLIO_FACTORY");
+        address SWAP_CONFIG = vm.envAddress("SWAP_CONFIG");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        RewardsConfigFacet facet = new RewardsConfigFacet(PORTFOLIO_FACTORY);
+        RewardsConfigFacet facet = new RewardsConfigFacet(PORTFOLIO_FACTORY, SWAP_CONFIG);
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "RewardsConfigFacet", false);
         vm.stopBroadcast();
     }
 
-    function deploy(address portfolioFactory) external {
-        RewardsConfigFacet newFacet = new RewardsConfigFacet(portfolioFactory);
+    function deploy(address portfolioFactory, address swapConfig) external {
+        RewardsConfigFacet newFacet = new RewardsConfigFacet(portfolioFactory, swapConfig);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "RewardsConfigFacet", true);
     }
 

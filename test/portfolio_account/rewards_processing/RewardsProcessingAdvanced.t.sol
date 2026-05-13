@@ -240,6 +240,7 @@ contract RewardsProcessingAdvancedTest is Test, RewardsTokenHelper {
     }
 
     function _setZeroBalanceDistribution(UserRewardsConfig.DistributionEntry[] memory entries) internal {
+        _approveAllowlistForEntries(entries);
         vm.startPrank(_user);
         address[] memory pf = new address[](1);
         pf[0] = address(_portfolioFactory);
@@ -250,12 +251,30 @@ contract RewardsProcessingAdvancedTest is Test, RewardsTokenHelper {
     }
 
     function _setActiveBalanceDistribution(UserRewardsConfig.DistributionEntry memory entry) internal {
+        UserRewardsConfig.DistributionEntry[] memory entries = new UserRewardsConfig.DistributionEntry[](1);
+        entries[0] = entry;
+        _approveAllowlistForEntries(entries);
         vm.startPrank(_user);
         address[] memory pf = new address[](1);
         pf[0] = address(_portfolioFactory);
         bytes[] memory cd = new bytes[](1);
         cd[0] = abi.encodeWithSelector(RewardsConfigFacet.setActiveBalanceDistribution.selector, entry);
         _portfolioManager.multicall(cd, pf);
+        vm.stopPrank();
+    }
+
+    function _approveAllowlistForEntries(UserRewardsConfig.DistributionEntry[] memory entries) internal {
+        vm.startPrank(FORTY_ACRES_DEPLOYER);
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].option == UserRewardsConfig.RewardsOption.InvestToVault) {
+                _swapConfig.setApprovedVault(entries[i].target, true);
+            } else if (
+                entries[i].option == UserRewardsConfig.RewardsOption.PayToRecipient
+                    && entries[i].outputToken != address(0)
+            ) {
+                _swapConfig.setApprovedOutputToken(entries[i].outputToken, true);
+            }
+        }
         vm.stopPrank();
     }
 
@@ -306,6 +325,10 @@ contract RewardsProcessingAdvancedTest is Test, RewardsTokenHelper {
     }
 
     function _setVaultForInvesting(address vault) internal {
+        if (vault != address(0)) {
+            vm.prank(FORTY_ACRES_DEPLOYER);
+            _swapConfig.setApprovedVault(vault, true);
+        }
         _multicall(abi.encodeWithSelector(RewardsConfigFacet.setVaultForInvesting.selector, vault));
     }
 
