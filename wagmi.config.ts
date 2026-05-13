@@ -60,6 +60,7 @@ export default defineConfig({
         'DynamicVotingEscrowFacet.sol/DynamicVotingEscrowFacet.json',
         'veYieldBasisFacet.sol/veYieldBasisFacet.json',
         'VotingFacet.sol/VotingFacet.json',
+        'BridgeFacet.sol/BridgeFacet.json',
 
         // XPharaohFacet -- Pharaoh's V1 facet, still active in production
         // (Pharaoh's V1 is NOT being erased like other platforms). Lives in

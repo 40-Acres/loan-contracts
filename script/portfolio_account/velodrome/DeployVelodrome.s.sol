@@ -39,6 +39,7 @@ import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
 import {IVotingEscrow} from "../../../src/interfaces/IVotingEscrow.sol";
 import {SuperchainVotingFacet} from "../../../src/facets/account/vote/SuperchainVoting.sol";
 import {SuperchainVotingConfig} from "../../../src/facets/account/config/SuperchainVotingConfig.sol";
+import {RootPoolVotingConfig} from "../../../src/facets/account/config/RootPoolVotingConfig.sol";
 import {SuperchainClaimingFacet} from "../../../src/facets/account/claim/SuperchainClaimingFacet.sol";
 import {PortfolioHelperUtils} from "../../utils/PortfolioHelperUtils.sol";
 import {console} from "forge-std/console.sol";
@@ -49,10 +50,11 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
     address public constant VOTING_ESCROW = 0xFAf8FD17D9840595845582fCB047DF13f006787d; // Velodrome veVELO
     address public constant VOTER = 0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C; // Velodrome Voter
     address public constant REWARDS_DISTRIBUTOR = 0x9D4736EC60715e71aFe72973f7885DCBC21EA99b; // Velodrome RewardsDistributor
+    address public constant VELODROME_ROOT_POOL_FACTORY_V2 = 0x31832f2a97Fd20664D76Cc421207669b55CE4BC0;
+    address public constant VELODROME_ROOT_POOL_FACTORY_CL = 0x04625B046C69577EfC40e6c0Bb83CDBAfab5a55F;
     PortfolioManager public _portfolioManager;
     PortfolioFactory public _portfolioFactory;
     address public _loanContract;
-
 
     function run() external {
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
@@ -82,13 +84,17 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
-        SuperchainVotingConfig votingConfigImpl = new SuperchainVotingConfig();
-        SuperchainVotingConfig votingConfig = SuperchainVotingConfig(
+        RootPoolVotingConfig votingConfigImpl = new RootPoolVotingConfig();
+        RootPoolVotingConfig votingConfig = RootPoolVotingConfig(
             address(new ERC1967Proxy(
                 address(votingConfigImpl),
                 abi.encodeCall(VotingConfig.initialize, (DEPLOYER_ADDRESS))
             ))
         );
+
+        // Seed Velodrome OP root-pool factories (V2 + CL)
+        votingConfig.setRootPoolFactory(VELODROME_ROOT_POOL_FACTORY_V2, true);
+        votingConfig.setRootPoolFactory(VELODROME_ROOT_POOL_FACTORY_CL, true);
 
         SwapConfig swapConfig = _deploySwapConfig(DEPLOYER_ADDRESS);
 
@@ -104,7 +110,7 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
 
         console.log("Deployed PortfolioFactoryConfig at:", address(portfolioFactoryConfig));
         console.log("Deployed LoanConfig at:", address(loanConfig));
-        console.log("Deployed SuperchainVotingConfig at:", address(votingConfig));
+        console.log("Deployed RootPoolVotingConfig at:", address(votingConfig));
         console.log("Deployed SwapConfig at:", address(swapConfig));
     }
 
@@ -139,7 +145,7 @@ contract VelodromeLeafDeploy is PortfolioFactoryConfigDeploy {
 
         // bytes4[] memory bridgeSelectors = new bytes4[](6);
         // bridgeSelectors[0] = BridgeFacet.bridge.selector;
-        // bridgeSelectors[1] = BridgeFacet.swapAndBridge.selector;
+        // bridgeSelectors[1] = BridgeFacet.swapMultiple.selector;
         // bridgeSelectors[2] = bytes4(keccak256("_token()"));
         // bridgeSelectors[3] = bytes4(keccak256("_tokenMessenger()"));
         // bridgeSelectors[4] = bytes4(keccak256("_destinationDomain()"));
@@ -191,39 +197,39 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         // ============================================================
 
         // 1. CollateralFacet - adds getLoanUtilization, carries decreaseTotalDebt fix via CollateralManager library
-        CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](11);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
-        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        // CollateralFacet collateralFacet = new CollateralFacet(address(portfolioFactory), VOTING_ESCROW);
+        // bytes4[] memory collateralSelectors = new bytes4[](11);
+        // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        // collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        // collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        // collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        // collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        // collateralSelectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
+        // collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        // collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        // collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        // collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
+        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
         // 2. LendingFacet - carries decreaseTotalDebt fix via CollateralManager library
-        LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
-        bytes4[] memory lendingSelectors = new bytes4[](4);
-        lendingSelectors[0] = BaseLendingFacet.borrow.selector;
-        lendingSelectors[1] = BaseLendingFacet.pay.selector;
-        lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
-        lendingSelectors[3] = BaseLendingFacet.borrowTo.selector;
-        _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
+        // LendingFacet lendingFacet = new LendingFacet(address(portfolioFactory), USDC);
+        // bytes4[] memory lendingSelectors = new bytes4[](4);
+        // lendingSelectors[0] = BaseLendingFacet.borrow.selector;
+        // lendingSelectors[1] = BaseLendingFacet.pay.selector;
+        // lendingSelectors[2] = BaseLendingFacet.setTopUp.selector;
+        // lendingSelectors[3] = BaseLendingFacet.borrowTo.selector;
+        // _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "LendingFacet");
 
         // 3. VotingEscrowFacet - mergeInternal toToken listing guard
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        // votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // ============================================================
         // Unchanged facets (commented out):
@@ -284,23 +290,23 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
 
         // // Deploy SuperchainVotingFacet
-        // SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
-        // bytes4[] memory votingSelectors = new bytes4[](8);
-        // votingSelectors[0] = SuperchainVotingFacet.vote.selector;
-        // votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
-        // votingSelectors[2] = VotingFacet.setVotingMode.selector;
-        // votingSelectors[3] = VotingFacet.isManualVoting.selector;
-        // votingSelectors[4] = VotingFacet.defaultVote.selector;
-        // votingSelectors[5] = VotingFacet.batchVote.selector;
-        // votingSelectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
-        // votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
-        // _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
+        SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(address(portfolioFactory), address(votingConfig), VOTING_ESCROW, VOTER);
+        bytes4[] memory votingSelectors = new bytes4[](8);
+        votingSelectors[0] = SuperchainVotingFacet.vote.selector;
+        votingSelectors[1] = VotingFacet.voteForLaunchpadToken.selector;
+        votingSelectors[2] = VotingFacet.setVotingMode.selector;
+        votingSelectors[3] = VotingFacet.isManualVoting.selector;
+        votingSelectors[4] = VotingFacet.defaultVote.selector;
+        votingSelectors[5] = VotingFacet.batchVote.selector;
+        votingSelectors[6] = VotingFacet.batchVoteForLaunchpadToken.selector;
+        votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
+        _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
-        // // Deploy SuperchainClaimingFacet
-        // SuperchainClaimingFacet superchainClaimingFacet = new SuperchainClaimingFacet();
-        // bytes4[] memory superchainClaimingSelectors = new bytes4[](1);
-        // superchainClaimingSelectors[0] = SuperchainClaimingFacet.claimSuperchainRewards.selector;
-        // _registerFacet(facetRegistry, address(superchainClaimingFacet), superchainClaimingSelectors, "SuperchainClaimingFacet");
+        // Deploy SuperchainClaimingFacet
+        SuperchainClaimingFacet superchainClaimingFacet = new SuperchainClaimingFacet();
+        bytes4[] memory superchainClaimingSelectors = new bytes4[](1);
+        superchainClaimingSelectors[0] = SuperchainClaimingFacet.claimSuperchainRewards.selector;
+        _registerFacet(facetRegistry, address(superchainClaimingFacet), superchainClaimingSelectors, "SuperchainClaimingFacet");
 
         // // Deploy VotingEscrowFacet
         // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(address(portfolioFactory), VOTING_ESCROW, VOTER);
@@ -366,6 +372,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeRootDeploy --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeLeafDeploy --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeRootUpgrade --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
+// forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeRootPoolVotingMigrate --chain-id 10 --rpc-url $OP_RPC_URL --broadcast --verify --via-ir
 
 // forge script script/portfolio_account/velodrome/DeployVelodrome.s.sol:VelodromeLeafDeploy \
 //     --chain-id 57073 \

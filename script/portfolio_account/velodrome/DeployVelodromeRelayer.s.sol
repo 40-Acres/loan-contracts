@@ -73,11 +73,13 @@ contract VelodromeRootDeploy is PortfolioFactoryConfigDeploy {
             ))
         );
 
+
         SwapConfig swapConfig = SwapConfig(OP_SWAP_CONFIG);
         address votingConfig = VELO_VOTING_CONFIG;
 
         // // Link configs on the new PortfolioFactoryConfig (deployer is owner of these)
         portfolioFactoryConfig.setVoteConfig(votingConfig);
+        // portfolioFactoryConfig.setLoanConfig(address(loanConfig));
         portfolioFactoryConfig.transferOwnership(MULTISIG_ADDRESS);
     }
 
@@ -114,67 +116,96 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
 
         // Read existing Velodrome deployment configs
         SwapConfig swapConfig = SwapConfig(OP_SWAP_CONFIG);
-        address loanConfig = address(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getLoanConfig());
+        // address loanConfig = address(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getLoanConfig());
         address votingConfig = PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getVoteConfig();
         Vault vault = Vault(0x08dCDBf7baDe91Ccd42CB2a4EA8e5D199d285957);
 
-        // // Deploy SuperchainClaimingFacet
+
+        // LoanConfig loanConfigImpl = new LoanConfig();
+        // LoanConfig loanConfig = LoanConfig(
+        //     address(new ERC1967Proxy(
+        //         address(loanConfigImpl),
+        //         abi.encodeCall(LoanConfig.initialize, (DEPLOYER_ADDRESS, 20_00, 5_00, 1_00))
+        //     ))
+        // );
+        // loanConfig.transferOwnership(MULTISIG_ADDRESS);
+
+        // Deploy SuperchainClaimingFacet
         SuperchainClaimingFacet superchainClaimingFacet = new SuperchainClaimingFacet();
         bytes4[] memory superchainClaimingSelectors = new bytes4[](1);
         superchainClaimingSelectors[0] = SuperchainClaimingFacet.claimSuperchainRewards.selector;
         _registerFacet(facetRegistry, address(superchainClaimingFacet), superchainClaimingSelectors, "SuperchainClaimingFacet");
 
-        // // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), USDC);
-        bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
-        rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
-        rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
-        rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
-        rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
-        rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
-        _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
+        // Deploy ClaimingFacet (relayer: loanConfig and vault may be zero — only consumed by
+        // claimLaunchpadToken when totalDebt > 0, which never holds for relayer accounts)
+        // ClaimingFacet claimingFacet = new ClaimingFacet(
+        //     portfolioFactory,
+        //     VOTING_ESCROW,
+        //     VOTER,
+        //     REWARDS_DISTRIBUTOR,
+        //     loanConfig,
+        //     address(swapConfig),
+        //     address(vault)
+        // );
+        // bytes4[] memory claimingSelectors = new bytes4[](3);
+        // claimingSelectors[0] = ClaimingFacet.claimFees.selector;
+        // claimingSelectors[1] = ClaimingFacet.claimRebase.selector;
+        // claimingSelectors[2] = ClaimingFacet.claimLaunchpadToken.selector;
+        // _registerFacet(facetRegistry, address(claimingFacet), claimingSelectors, "ClaimingFacet");
 
-        // // Deploy RewardsConfigFacet
-        RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
-        bytes4[] memory rewardsConfigSelectors = new bytes4[](6);
-        rewardsConfigSelectors[1] = RewardsConfigFacet.setRecipient.selector;
-        rewardsConfigSelectors[2] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[3] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
-        rewardsConfigSelectors[4] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[5] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
-        rewardsConfigSelectors[0] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
-        _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
+        // // // Deploy RewardsProcessingFacet
+        // RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), USDC);
+        // bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
+        // rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
+        // rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
+        // rewardsProcessingSelectors[2] = RewardsProcessingFacet.swapToRewardsToken.selector;
+        // rewardsProcessingSelectors[3] = RewardsProcessingFacet.swapToRewardsTokenMultiple.selector;
+        // rewardsProcessingSelectors[4] = RewardsProcessingFacet.calculateRoutes.selector;
+        // _registerFacet(facetRegistry, address(rewardsProcessingFacet), rewardsProcessingSelectors, "RewardsProcessingFacet");
 
-        // // Deploy CollateralFacet
-        CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, VOTING_ESCROW);
-        bytes4[] memory collateralSelectors = new bytes4[](11);
-        collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
-        collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
-        collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
-        collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
-        collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
-        collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
-        collateralSelectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
-        collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
-        collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
-        collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
-        collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
-        _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
+        // // // Deploy RewardsConfigFacet
+        // RewardsConfigFacet rewardsConfigFacet = new RewardsConfigFacet(portfolioFactory);
+        // bytes4[] memory rewardsConfigSelectors = new bytes4[](9);
+        // rewardsConfigSelectors[0] = RewardsConfigFacet.setRecipient.selector;
+        // rewardsConfigSelectors[1] = RewardsConfigFacet.setVaultForInvesting.selector;
+        // rewardsConfigSelectors[2] = RewardsConfigFacet.getVaultForInvesting.selector;
+        // rewardsConfigSelectors[3] = RewardsConfigFacet.setZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[4] = RewardsConfigFacet.getZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[5] = RewardsConfigFacet.clearZeroBalanceDistribution.selector;
+        // rewardsConfigSelectors[6] = RewardsConfigFacet.setActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[7] = RewardsConfigFacet.getActiveBalanceDistribution.selector;
+        // rewardsConfigSelectors[8] = RewardsConfigFacet.clearActiveBalanceDistribution.selector;
+        // _registerFacet(facetRegistry, address(rewardsConfigFacet), rewardsConfigSelectors, "RewardsConfigFacet");
 
-        MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, VOTING_ESCROW, VEVELO_MARKETPLACE);
-        bytes4[] memory marketplaceSelectors = new bytes4[](8);
-        marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
-        marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
-        marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
-        marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
-        marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
-        marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
-        marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
-        marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
-        _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+        // // // Deploy CollateralFacet
+        // CollateralFacet collateralFacet = new CollateralFacet(portfolioFactory, VOTING_ESCROW);
+        // bytes4[] memory collateralSelectors = new bytes4[](11);
+        // collateralSelectors[0] = BaseCollateralFacet.addCollateral.selector;
+        // collateralSelectors[1] = BaseCollateralFacet.getTotalLockedCollateral.selector;
+        // collateralSelectors[2] = BaseCollateralFacet.getTotalDebt.selector;
+        // collateralSelectors[3] = BaseCollateralFacet.getMaxLoan.selector;
+        // collateralSelectors[4] = BaseCollateralFacet.getOriginTimestamp.selector;
+        // collateralSelectors[5] = BaseCollateralFacet.removeCollateral.selector;
+        // collateralSelectors[6] = BaseCollateralFacet.removeCollateralTo.selector;
+        // collateralSelectors[7] = BaseCollateralFacet.getCollateralToken.selector;
+        // collateralSelectors[8] = BaseCollateralFacet.getLockedCollateral.selector;
+        // collateralSelectors[9] = BaseCollateralFacet.enforceCollateralRequirements.selector;
+        // collateralSelectors[10] = BaseCollateralFacet.getLoanUtilization.selector;
+        // _registerFacet(facetRegistry, address(collateralFacet), collateralSelectors, "CollateralFacet");
 
-        // Deploy SuperchainVotingFacet with missing selectors
-        // SuperchainVotingConfig votingConfig = SuperchainVotingConfig(PortfolioFactory(portfolioFactory).portfolioFactoryConfig().getVoteConfig());
+        // MarketplaceFacet marketplaceFacet = new MarketplaceFacet(portfolioFactory, VOTING_ESCROW, VEVELO_MARKETPLACE);
+        // bytes4[] memory marketplaceSelectors = new bytes4[](8);
+        // marketplaceSelectors[0] = BaseMarketplaceFacet.cancelListing.selector;
+        // marketplaceSelectors[1] = BaseMarketplaceFacet.receiveSaleProceeds.selector;
+        // marketplaceSelectors[2] = BaseMarketplaceFacet.marketplace.selector;
+        // marketplaceSelectors[3] = BaseMarketplaceFacet.makeListing.selector;
+        // marketplaceSelectors[4] = BaseMarketplaceFacet.getSaleAuthorization.selector;
+        // marketplaceSelectors[5] = BaseMarketplaceFacet.hasSaleAuthorization.selector;
+        // marketplaceSelectors[6] = BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector;
+        // marketplaceSelectors[7] = BaseMarketplaceFacet.isListingPurchasable.selector;
+        // _registerFacet(facetRegistry, address(marketplaceFacet), marketplaceSelectors, "MarketplaceFacet");
+
+        // Deploy SuperchainVotingFacet
         SuperchainVotingFacet votingFacet = new SuperchainVotingFacet(portfolioFactory, address(votingConfig), VOTING_ESCROW, VOTER);
         bytes4[] memory votingSelectors = new bytes4[](8);
         votingSelectors[0] = SuperchainVotingFacet.vote.selector;
@@ -187,15 +218,15 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         votingSelectors[7] = VotingFacet.isElligibleForManualVoting.selector;
         _registerFacet(facetRegistry, address(votingFacet), votingSelectors, "VotingFacet");
 
-        // VotingEscrowFacet - mergeInternal toToken listing guard
-        VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
-        bytes4[] memory votingEscrowSelectors = new bytes4[](5);
-        votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
-        votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
-        votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
-        votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
-        votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
-        _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
+        // // VotingEscrowFacet - mergeInternal toToken listing guard
+        // VotingEscrowFacet votingEscrowFacet = new VotingEscrowFacet(portfolioFactory, VOTING_ESCROW, VOTER);
+        // bytes4[] memory votingEscrowSelectors = new bytes4[](5);
+        // votingEscrowSelectors[0] = VotingEscrowFacet.increaseLock.selector;
+        // votingEscrowSelectors[1] = VotingEscrowFacet.createLock.selector;
+        // votingEscrowSelectors[2] = VotingEscrowFacet.merge.selector;
+        // votingEscrowSelectors[3] = VotingEscrowFacet.onERC721Received.selector;
+        // votingEscrowSelectors[4] = VotingEscrowFacet.mergeInternal.selector;
+        // _registerFacet(facetRegistry, address(votingEscrowFacet), votingEscrowSelectors, "VotingEscrowFacet");
 
         // Post-deployment validation - reverts the entire script if anything is wrong
         // _validateDeployment(portfolioFactoryConfig, portfolioFactory);
