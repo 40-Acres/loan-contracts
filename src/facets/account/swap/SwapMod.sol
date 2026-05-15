@@ -30,10 +30,10 @@ library SwapMod {
         if(!SwapConfig(swapData.swapConfig).isApprovedSwapTarget(swapData.swapTarget)) {
             revert NotApprovedSwapTarget(swapData.swapTarget);
         }
-        IERC20(swapData.inputToken).approve(swapData.swapTarget, swapData.inputAmount);
+        IERC20(swapData.inputToken).forceApprove(swapData.swapTarget, swapData.inputAmount);
         (bool success, ) = swapData.swapTarget.call(swapData.swapData);
         require(success, "Swap failed");
-        IERC20(swapData.inputToken).approve(swapData.swapTarget, 0);
+        IERC20(swapData.inputToken).forceApprove(swapData.swapTarget, 0);
         uint256 balanceAfter = IERC20(swapData.outputToken).balanceOf(address(this));
         amount = balanceAfter - balanceBefore;
         require(amount >= swapData.minimumOutputAmount, "Slippage exceeded");
