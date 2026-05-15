@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 /**
  * @title SwapMod
@@ -9,6 +10,8 @@ import {SwapConfig} from "../config/SwapConfig.sol";
  */
 
 library SwapMod {
+    using SafeERC20 for IERC20;
+
     event SwapExecuted(address indexed swapTarget, address indexed inputToken, uint256 inputAmount, address indexed outputToken, uint256 outputAmount);
     
     error NotApprovedSwapTarget(address swapTarget);
