@@ -774,10 +774,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         DynamicFeesVaultStorage storage $ = _getStorage();
 
+        // Zero totalAssets is treated as fully utilized: any borrow against a zero-asset
+        // vault is by definition over the cap. Strict inequality in multiplication form
+        // avoids the division and a zero-denominator bypass.
         uint256 total = totalAssets();
+        require(total > 0, "Borrow would exceed max utilization");
         uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
-        uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
-        require(postBorrowUtilization < $.maxUtilizationBps, "Borrow would exceed max utilization");
+        require(postBorrowLoaned * 10000 < $.maxUtilizationBps * total, "Borrow would exceed max utilization");
 
         $.debtBalance[msg.sender] += amount;
         $.totalDebtBalance += amount;

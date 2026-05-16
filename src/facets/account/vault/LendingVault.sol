@@ -100,11 +100,12 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         originationFee = (amount * $.originationFeeBps) / 10000;
         uint256 amountAfterFee = amount - originationFee;
 
-        // Check utilization cap
+        // Check utilization cap. Zero totalAssets is treated as fully utilized:
+        // any borrow against a zero-asset vault is by definition over the cap.
         uint256 total = totalAssets();
+        if (total == 0) revert ExceedsUtilization();
         uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
-        uint256 postBorrowUtilization = total > 0 ? (postBorrowLoaned * 10000) / total : 0;
-        if (postBorrowUtilization >= $.maxUtilizationBps) revert ExceedsUtilization();
+        if (postBorrowLoaned * 10000 >= $.maxUtilizationBps * total) revert ExceedsUtilization();
 
         // Track debt (full amount — borrower owes amount, vault disbursed amount)
         $.debtBalance[msg.sender] += amount;
