@@ -149,7 +149,7 @@ contract BlackholeRootDeploy is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(migrationFacet), migrationSelectors, "MigrationFacet");
 
         // Deploy BlackholeRewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new BlackholeRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), AERO, AERO);
+        RewardsProcessingFacet rewardsProcessingFacet = new BlackholeRewardsProcessingFacet(address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(vault), AERO, USDC);
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;
