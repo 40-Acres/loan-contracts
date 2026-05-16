@@ -229,6 +229,36 @@ contract MockDynamicVault {
 
 
 // ──────────────────────────────────────────────────────────────────────────
+// EffectiveDebtReader: a thin facet exposing library functions through the
+// diamond so they can be called with the portfolio account as `address(this)`.
+// Lets us assert directly on `getEffectiveTotalDebt` and
+// `getRequiredPaymentForCollateralRemoval`, which would otherwise be
+// unreachable from off-diamond context (they read `address(this)` for the
+// LendingPool debt lookup).
+// ──────────────────────────────────────────────────────────────────────────
+contract EffectiveDebtReader {
+    PortfolioFactory public immutable _portfolioFactory;
+
+    constructor(address portfolioFactory) {
+        _portfolioFactory = PortfolioFactory(portfolioFactory);
+    }
+
+    function readEffectiveTotalDebt() external view returns (uint256) {
+        return DynamicCollateralManager.getEffectiveTotalDebt(
+            address(_portfolioFactory.portfolioFactoryConfig())
+        );
+    }
+
+    function readRequiredPaymentForCollateralRemoval(uint256 tokenId) external view returns (uint256) {
+        return DynamicCollateralManager.getRequiredPaymentForCollateralRemoval(
+            address(_portfolioFactory.portfolioFactoryConfig()),
+            tokenId
+        );
+    }
+}
+
+
+// ──────────────────────────────────────────────────────────────────────────
 // Test contract
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -611,10 +641,10 @@ contract DynamicCollateralManagerSnapshotTest is Test {
 
         // Simulate the vault reporting a debt balance (e.g., from rewards vesting)
         // This proves the collateral facet reads from vault, not local storage.
-        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 2000e6);
+        _dynamicVault.setDebtBalance(_portfolioAccount, 2000e6);
 
         uint256 debtAfter = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
-        assertEq(debtAfter, 2000e6, "Debt should match vault effective debt balance");
+        assertEq(debtAfter, 2000e6, "Debt should match vault stored debt balance");
 
         // Verify maxLoan calculation uses the vault-reported debt
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = DynamicCollateralFacet(_portfolioAccount).getMaxLoan();
@@ -629,7 +659,7 @@ contract DynamicCollateralManagerSnapshotTest is Test {
         assertEq(maxLoan, MAX_LOAN_IGNORE_SUPPLY - 2000e6, "maxLoan should reflect vault debt");
 
         // Clean up vault debt for subsequent tests
-        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 0);
+        _dynamicVault.setDebtBalance(_portfolioAccount, 0);
     }
 
     /**
@@ -979,20 +1009,20 @@ contract DynamicCollateralManagerSnapshotTest is Test {
         // Expected LTV: (0 * 100) / 5000e6 = 0
 
         // ── LTV = 50 (debt = 2500e6) ──
-        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 2500e6);
+        _dynamicVault.setDebtBalance(_portfolioAccount, 2500e6);
         uint256 debt50 = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debt50, 2500e6, "Debt should be 2500e6 from vault");
         // Expected LTV: (2500e6 * 100) / 5000e6 = 50
 
         // ── LTV = 100 (debt = maxLoan, at the limit) ──
-        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 5000e6);
+        _dynamicVault.setDebtBalance(_portfolioAccount, 5000e6);
         uint256 debt100 = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debt100, 5000e6, "Debt should be 5000e6 from vault");
         (uint256 maxLoan100,) = DynamicCollateralFacet(_portfolioAccount).getMaxLoan();
         assertEq(maxLoan100, 0, "maxLoan should be 0 when debt == maxLoanIgnoreSupply");
 
         // ── LTV = 200 (debt = 2x maxLoan, deeply underwater) ──
-        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 10000e6);
+        _dynamicVault.setDebtBalance(_portfolioAccount, 10000e6);
         uint256 debt200 = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
         assertEq(debt200, 10000e6, "Debt should be 10000e6 from vault");
         (uint256 maxLoan200,) = DynamicCollateralFacet(_portfolioAccount).getMaxLoan();
@@ -1002,7 +1032,7 @@ contract DynamicCollateralManagerSnapshotTest is Test {
         vm.startPrank(_owner);
         _loanConfig.setRewardsRate(0);
         vm.stopPrank();
-        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 1000e6);
+        _dynamicVault.setDebtBalance(_portfolioAccount, 1000e6);
         (, uint256 maxLoanIgnoreSupplyZero) = DynamicCollateralFacet(_portfolioAccount).getMaxLoan();
         assertEq(maxLoanIgnoreSupplyZero, 0, "maxLoanIgnoreSupply should be 0 with zero rewards rate");
         uint256 debtInf = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
@@ -1643,5 +1673,162 @@ contract DynamicCollateralManagerSnapshotTest is Test {
 
         uint256 totalCollateral = DynamicCollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(totalCollateral, 7500e18, "Both tokens should be collateralized");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  SECTION 9: Stored vs Effective Debt Split (AUDIT REMEDIATION)
+    // ════════════════════════════════════════════════════════════════════════
+    //
+    //  Background: A direct ERC20 transfer to the vault can lower the simulated
+    //  ratio used by `getEffectiveDebtBalance`, which previously also gated
+    //  authorization checks (e.g. `removeLockedCollateral`). The fix is:
+    //   - `getTotalDebt`        -> reads STORED debt (authoritative for gates)
+    //   - `getEffectiveTotalDebt` -> reads stored MINUS vested-but-unsettled
+    //                              borrower rewards (UX quote only)
+    //   - `getRequiredPaymentForCollateralRemoval` -> uses effective (UX)
+    //   - `removeLockedCollateral` gate -> still uses stored (authoritative)
+    //
+    //  These tests pin those semantics so a regression that re-routes the gate
+    //  through `getEffectiveTotalDebt` would fail loudly.
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// @dev Register the EffectiveDebtReader facet on the existing FacetRegistry
+    /// so the portfolio account dispatches `readEffectiveTotalDebt` and
+    /// `readRequiredPaymentForCollateralRemoval` through delegatecall.
+    function _registerEffectiveDebtReader() internal returns (EffectiveDebtReader reader) {
+        reader = new EffectiveDebtReader(address(_portfolioFactory));
+        bytes4[] memory sels = new bytes4[](2);
+        sels[0] = EffectiveDebtReader.readEffectiveTotalDebt.selector;
+        sels[1] = EffectiveDebtReader.readRequiredPaymentForCollateralRemoval.selector;
+        vm.prank(FORTY_ACRES_DEPLOYER);
+        _facetRegistry.registerFacet(address(reader), sels, "EffectiveDebtReader");
+    }
+
+    /**
+     * @notice getEffectiveTotalDebt nets vested-but-unsettled rewards while
+     *         getTotalDebt continues to surface the raw stored value.
+     *
+     * Sets stored=2000e6 and effective=1500e6 on the mock vault for the
+     * portfolio account, then asserts both readers return what they should.
+     * If a regression re-aliased one to the other, both reads would return
+     * the same number and this test would fail.
+     */
+    function testDynamicGetEffectiveTotalDebt_NetsVestedRewards() public {
+        addCollateralViaMulticall(_tokenId);
+        _registerEffectiveDebtReader();
+
+        // Diverge stored and effective: stored is what the gate sees,
+        // effective is what UX quotes against.
+        _dynamicVault.setDebtBalance(_portfolioAccount, 2000e6);
+        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 1500e6);
+
+        // getTotalDebt -> stored
+        uint256 stored = DynamicCollateralFacet(_portfolioAccount).getTotalDebt();
+        assertEq(stored, 2000e6, "getTotalDebt must return STORED debt (gate input)");
+
+        // getEffectiveTotalDebt -> stored minus vested rewards (UX)
+        uint256 effective = EffectiveDebtReader(_portfolioAccount).readEffectiveTotalDebt();
+        assertEq(effective, 1500e6, "getEffectiveTotalDebt must return EFFECTIVE debt (UX quote)");
+
+        // And explicitly: they MUST differ here, otherwise the test would not
+        // exercise the split.
+        assertGt(stored, effective, "Stored must exceed effective when rewards have vested");
+    }
+
+    /**
+     * @notice getRequiredPaymentForCollateralRemoval quotes against EFFECTIVE
+     *         debt, so users aren't asked to pay down rewards that have
+     *         already vested.
+     *
+     * Setup: maxLoanIgnoreSupply = 5000e6 (single tokenId).
+     *   stored    = 6000e6 (above max — gate would block removal)
+     *   effective = 4000e6 (below max — UX quote should be zero)
+     *
+     * Required payment must be 0 because effective debt is already within
+     * the post-removal capacity. (`newTotalCollateral` after removing the
+     * only token is 0, so `newMaxLoanIgnoreSupply` becomes 0 too — so the
+     * quote should equal currentEffectiveDebt, NOT zero.)
+     *
+     * Updated to use a *second* collateral token so post-removal capacity is
+     * non-zero — this is the realistic UX scenario for the quote.
+     */
+    function testDynamicRequiredPayment_UsesEffectiveDebt() public {
+        // Add tokenId2 too so removing tokenId leaves non-zero collateral
+        // (otherwise newMaxLoanIgnoreSupply collapses to 0 and the quote
+        // would equal currentDebt regardless of stored/effective).
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
+        vm.stopPrank();
+
+        addCollateralViaMulticall(_tokenId);
+        addCollateralViaMulticall(_tokenId2);
+
+        _registerEffectiveDebtReader();
+
+        // Both tokens: 5000e18 + 2500e18 = 7500e18 -> maxLoanIgnoreSupply = 7500e6
+        // After removing tokenId: 2500e18 -> newMaxLoanIgnoreSupply = 2500e6
+        //
+        // stored    = 6000e6 -> 6000 > 2500, gate would revert
+        // effective = 2000e6 -> 2000 < 2500, UX quote should be 0
+        _dynamicVault.setDebtBalance(_portfolioAccount, 6000e6);
+        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 2000e6);
+
+        uint256 requiredPayment = EffectiveDebtReader(_portfolioAccount)
+            .readRequiredPaymentForCollateralRemoval(_tokenId);
+
+        // If this function were (incorrectly) consuming stored debt, it would
+        // return 6000e6 - 2500e6 = 3500e6. Asserting 0 pins the effective path.
+        assertEq(
+            requiredPayment,
+            0,
+            "Required payment must be 0 when EFFECTIVE debt is within post-removal capacity"
+        );
+
+        // Sanity: flip effective up above 2500e6 and the quote should match
+        // (effective - newMax), not (stored - newMax). Use 4000e6.
+        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 4000e6);
+        uint256 requiredPaymentAfter = EffectiveDebtReader(_portfolioAccount)
+            .readRequiredPaymentForCollateralRemoval(_tokenId);
+        assertEq(
+            requiredPaymentAfter,
+            4000e6 - 2500e6,
+            "Required payment must be derived from EFFECTIVE debt, not stored"
+        );
+    }
+
+    /**
+     * @notice removeLockedCollateral's gate authorizes on STORED debt even
+     *         when effective debt would pass.
+     *
+     * This is the core audit-remediation invariant: an attacker who inflates
+     * vault balance via direct transfer cannot drop effective debt below the
+     * threshold to slip past the removal gate. The gate reads stored debt,
+     * so the donation has no effect on authorization.
+     *
+     * Setup matches the UX-quote test but expects revert:
+     *   maxLoanIgnoreSupply after removal = 2500e6
+     *   stored    = 6000e6 (gate sees this -> reverts "Debt exceeds max loan")
+     *   effective = 2000e6 (UX would say "free to remove")
+     */
+    function testDynamicRemoveCollateral_GatesOnStoredEvenWhenEffectivePasses() public {
+        // Two-token setup so post-removal max is non-zero (otherwise this
+        // would revert for trivially-different reasons).
+        vm.startPrank(_tokenId2Owner);
+        IVotingEscrow(_ve).transferFrom(_tokenId2Owner, _portfolioAccount, _tokenId2);
+        vm.stopPrank();
+
+        addCollateralViaMulticall(_tokenId);
+        addCollateralViaMulticall(_tokenId2);
+
+        _dynamicVault.setDebtBalance(_portfolioAccount, 6000e6);
+        _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 2000e6);
+
+        // Confirm the precondition: post-removal capacity is 2500e6,
+        // stored (6000e6) > 2500e6, effective (2000e6) < 2500e6.
+        // If we routed the gate through effective, removal would succeed.
+        // We expect the STORED-debt gate to reject this.
+        vm.roll(BLOCK_START + 1);
+        vm.expectRevert(bytes("Debt exceeds max loan"));
+        removeCollateralViaMulticall(_tokenId);
     }
 }

@@ -38,7 +38,7 @@ contract DynamicMarketplaceFacet is BaseMarketplaceFacet {
     }
 
     function _getTotalDebt() internal view override returns (uint256) {
-        return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
+        return DynamicCollateralManager.getEffectiveTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
     }
 
     function _getLockedCollateral(uint256 tokenId) internal view override returns (uint256) {
