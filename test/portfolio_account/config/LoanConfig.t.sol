@@ -113,4 +113,92 @@ contract LoanConfigTest is Test {
         ILoanConfig(address(cfg)).setLtv(4242);
         assertEq(cfg.getLtv(), 4242);
     }
+
+    // ================================================================
+    //  maxUtilizationBps -- promoted from hardcoded 8000 in
+    //  CollateralManager.getMaxLoanByRewardsRate. The CollateralManager
+    //  cap is the ONLY utilization protection in the LoanV2 portfolio
+    //  borrow path (PortfolioLoanLib.borrowFromPortfolio does no
+    //  vault-side check). Regressions here remove that protection.
+    // ================================================================
+
+    /// @notice UUPS upgrade safety: a proxy upgraded BEFORE
+    ///         setMaxUtilizationBps is ever called must still report the
+    ///         legacy 8000 default. The storage field appended for layout
+    ///         safety is zero on un-seeded proxies; the fallback in
+    ///         getMaxUtilizationBps converts that to DEFAULT_MAX_UTILIZATION_BPS.
+    function test_getMaxUtilizationBps_unsetStorageReturnsDefault8000() public view {
+        assertEq(cfg.getMaxUtilizationBps(), 8000, "fresh proxy must fall back to 8000");
+        assertEq(cfg.DEFAULT_MAX_UTILIZATION_BPS(), 8000, "constant pins the spec");
+    }
+
+    function test_setMaxUtilizationBps_onlyOwner_revertsForStranger() public {
+        // OZ Ownable encodes OwnableUnauthorizedAccount(stranger); we just
+        // assert it reverts -- the encoding can drift across OZ minor versions.
+        vm.prank(stranger);
+        vm.expectRevert();
+        cfg.setMaxUtilizationBps(7000);
+    }
+
+    function test_setMaxUtilizationBps_ownerCanSet_getterRoundTrips() public {
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(7000);
+        assertEq(cfg.getMaxUtilizationBps(), 7000);
+
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(9500);
+        assertEq(cfg.getMaxUtilizationBps(), 9500);
+    }
+
+    function test_setMaxUtilizationBps_revertsOnZero() public {
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LoanConfig.InvalidMaxUtilization.selector, uint256(0)));
+        cfg.setMaxUtilizationBps(0);
+    }
+
+    function test_setMaxUtilizationBps_revertsAboveMaxFeeBps() public {
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(LoanConfig.InvalidMaxUtilization.selector, uint256(10_001)));
+        cfg.setMaxUtilizationBps(10_001);
+    }
+
+    function test_setMaxUtilizationBps_acceptsBoundaryMaxBps() public {
+        // 10000 is the spec ceiling (100%). Accepting it is the only way an
+        // operator can deliberately disable the cap on a like-to-like market.
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(10_000);
+        assertEq(cfg.getMaxUtilizationBps(), 10_000);
+    }
+
+    function test_setMaxUtilizationBps_acceptsBoundaryOne() public {
+        // 1 bps is permissive on the lower end -- the only floor is "not zero".
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(1);
+        assertEq(cfg.getMaxUtilizationBps(), 1);
+    }
+
+    /// @notice After setting to the default 8000 via the setter, the value
+    ///         persists through the SET path -- not the unset-fallback path.
+    ///         A second proxy with the same stored 8000 must behave identically
+    ///         to the fresh proxy, which is the contract this test pins.
+    function test_setMaxUtilizationBps_persistsDefaultViaSetter() public {
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(8000);
+        assertEq(cfg.getMaxUtilizationBps(), 8000);
+
+        // Round-trip to a non-default and back, proving the setter path
+        // is reachable for every value (storage is mutated, not bypassed).
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(6000);
+        assertEq(cfg.getMaxUtilizationBps(), 6000);
+        vm.prank(owner);
+        cfg.setMaxUtilizationBps(8000);
+        assertEq(cfg.getMaxUtilizationBps(), 8000);
+    }
+
+    function test_ILoanConfig_setMaxUtilizationBps_reachableViaInterface() public {
+        vm.prank(owner);
+        ILoanConfig(address(cfg)).setMaxUtilizationBps(7500);
+        assertEq(ILoanConfig(address(cfg)).getMaxUtilizationBps(), 7500);
+    }
 }

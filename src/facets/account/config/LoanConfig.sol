@@ -11,8 +11,10 @@ import {ILoanConfig} from "./ILoanConfig.sol";
  */
 contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     uint256 public constant MAX_FEE_BPS = 100_00; // 100% in basis points
+    uint256 public constant DEFAULT_MAX_UTILIZATION_BPS = 8000;
     error TooHigh(uint256 value, uint256 max);
     error CombinedFeesTooHigh(uint256 combined, uint256 max);
+    error InvalidMaxUtilization(uint256 value);
     constructor() {
         _disableInitializers();
     }
@@ -46,6 +48,7 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
         uint256 zeroBalanceFee;
         uint256 multiplier;
         uint256 ltv;
+        uint256 maxUtilizationBps;
     }
 
 
@@ -144,5 +147,17 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     function getZeroBalanceFee() public view returns (uint256) {
         LoanConfigData storage collateralStorage = _getLoanConfig();
         return collateralStorage.zeroBalanceFee;
+    }
+
+    function setMaxUtilizationBps(uint256 maxUtilizationBps) public onlyOwner {
+        if (maxUtilizationBps == 0 || maxUtilizationBps > MAX_FEE_BPS) {
+            revert InvalidMaxUtilization(maxUtilizationBps);
+        }
+        _getLoanConfig().maxUtilizationBps = maxUtilizationBps;
+    }
+
+    function getMaxUtilizationBps() public view returns (uint256) {
+        uint256 stored = _getLoanConfig().maxUtilizationBps;
+        return stored == 0 ? DEFAULT_MAX_UTILIZATION_BPS : stored;
     }
 }

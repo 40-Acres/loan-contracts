@@ -242,7 +242,9 @@ library CollateralManager {
         // Get current total debt for the portfolio account
         uint256 currentLoanBalance = getTotalDebt();
 
-        return getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, vaultBalance, outstandingCapital, currentLoanBalance);
+        uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
+
+        return getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, vaultBalance, outstandingCapital, currentLoanBalance, maxUtilizationBps);
     }
 
     function getOriginTimestamp(uint256 tokenId) external view returns (uint256) {
@@ -293,15 +295,15 @@ library CollateralManager {
         uint256 multiplier,
         uint256 vaultBalance,
         uint256 outstandingCapital,
-        uint256 currentLoanBalance
+        uint256 currentLoanBalance,
+        uint256 maxUtilizationBps
     ) internal pure returns (uint256, uint256) {
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             multiplier) / 1e12; // rewardsRate * veNFT balance of token
 
-        // Calculate the maximum utilization ratio (80% of the vault supply)
         uint256 vaultSupply = vaultBalance + outstandingCapital;
-        uint256 maxUtilization = (vaultSupply * 8000) / 10000;
+        uint256 maxUtilization = (vaultSupply * maxUtilizationBps) / 10000;
 
         // If the vault is over-utilized, no loans can be made
         if (outstandingCapital >= maxUtilization) {

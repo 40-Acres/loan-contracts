@@ -15,4 +15,6 @@ interface ILoanConfig {
     function setZeroBalanceFee(uint256 zeroBalanceFee) external;
     function setLtv(uint256 ltv) external;
     function getLtv() external view returns (uint256);
+    function setMaxUtilizationBps(uint256 maxUtilizationBps) external;
+    function getMaxUtilizationBps() external view returns (uint256);
 }

@@ -35,6 +35,7 @@ contract SetLoanConfigDefaults is Script {
     uint256 public constant DEFAULT_LTV = 7000;
     uint256 public constant DEFAULT_TREASURY_FEE = 500;
     uint256 public constant DEFAULT_ZERO_BALANCE_FEE = 100;
+    uint256 public constant DEFAULT_MAX_UTILIZATION_BPS = 8000;
 
     /**
      * @dev Set rewardsRate, multiplier, and ltv on LoanConfig.
@@ -57,6 +58,13 @@ contract SetLoanConfigDefaults is Script {
         loanConfig.setLtv(ltv);
         loanConfig.setTreasuryFee(DEFAULT_TREASURY_FEE);
         loanConfig.setZeroBalanceFee(DEFAULT_ZERO_BALANCE_FEE);
+        loanConfig.setMaxUtilizationBps(DEFAULT_MAX_UTILIZATION_BPS);
+
+        // Post-set invariant: legacy borrow paths read this through CollateralManager;
+        // an unset or out-of-range value would silently weaken the protocol's only
+        // utilization gate on LoanV2-style stacks. Fail the deploy instead.
+        uint256 cap = loanConfig.getMaxUtilizationBps();
+        require(cap > 0 && cap <= 10_000, "maxUtilizationBps out of range");
 
         console.log("LoanConfig values set successfully!");
         console.log("LoanConfig Address:", address(loanConfig));
@@ -65,6 +73,7 @@ contract SetLoanConfigDefaults is Script {
         console.log("LTV (bps):", ltv);
         console.log("Treasury Fee:", DEFAULT_TREASURY_FEE);
         console.log("Zero Balance Fee:", DEFAULT_ZERO_BALANCE_FEE);
+        console.log("Max Utilization (bps):", cap);
     }
 
     /**
