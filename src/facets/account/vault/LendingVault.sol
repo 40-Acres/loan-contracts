@@ -214,12 +214,11 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         return _getStorage().sharesDecimalsOffset;
     }
 
-    /// @dev Track the block of every share mint for flash-deposit protection.
-    function _update(address from, address to, uint256 value) internal virtual override {
-        super._update(from, to, value);
-        if (from == address(0) && to != address(0)) {
-            _getStorage().lastDepositBlock[to] = block.number;
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        if (caller == receiver) {
+            _getStorage().lastDepositBlock[receiver] = block.number;
         }
+        super._deposit(caller, receiver, assets, shares);
     }
 
     function _withdraw(

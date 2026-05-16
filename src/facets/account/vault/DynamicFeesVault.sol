@@ -976,7 +976,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
 
-        $.lastDepositBlock[receiver] = block.number;
+        if (caller == receiver) {
+            $.lastDepositBlock[receiver] = block.number;
+        }
 
         super._deposit(caller, receiver, assets, shares);
 
@@ -1003,16 +1005,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // totalAssets() fell by `assets`; mirror in the snapshot with zero-floor guard.
         uint256 last = $.lastTotalAssetsForFee;
         $.lastTotalAssetsForFee = last > assets ? last - assets : 0;
-    }
-
-    // ============ ERC20 Override ============
-    function _update(address from, address to, uint256 value) internal virtual override {
-        super._update(from, to, value);
-        // Flash loan protection: track the block of the last deposit for each user
-        if (from == address(0) && to != address(0)) {
-            DynamicFeesVaultStorage storage $ = _getStorage();
-            $.lastDepositBlock[to] = block.number;
-        }
     }
 
     // ============ ERC4626 Inflation Attack Prevention ============
