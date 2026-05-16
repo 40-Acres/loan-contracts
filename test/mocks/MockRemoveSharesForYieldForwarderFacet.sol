@@ -29,9 +29,4 @@ contract MockRemoveSharesForYieldForwarderFacet {
         address config = address(_portfolioFactory.portfolioFactoryConfig());
         ERC4626CollateralManager.removeSharesForYield(config, _vault, shares);
     }
-
-    function forwardRemoveSharesForYieldOverloaded(address lpToken, uint256 shares) external {
-        address config = address(_portfolioFactory.portfolioFactoryConfig());
-        ERC4626CollateralManager.removeSharesForYield(config, _vault, lpToken, shares);
-    }
 }

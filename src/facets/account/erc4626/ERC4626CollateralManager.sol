@@ -9,7 +9,6 @@ import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
-import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
 
 
 /**
@@ -17,6 +16,7 @@ import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
  * @dev Library for managing ERC4626 vault shares as collateral
  * Handles share tracking, collateral value calculation, and debt management.
  * The vault address is NOT stored here — it is an immutable on each facet.
+ * YieldBasis LP collateral is handled by YieldBasisCollateralManager, not here.
  */
 library ERC4626CollateralManager {
     using SafeERC20 for IERC20;
@@ -50,25 +50,12 @@ library ERC4626CollateralManager {
     }
 
     /**
-     * @dev Resolve the collateral value of vault shares, optionally applying LP pricePerShare conversion.
-     * @param vault The ERC4626 vault (e.g. gauge) address
-     * @param lpToken If non-zero, apply two-layer pricing: vault shares → LP tokens → underlying via pricePerShare()
-     * @param shares The amount of vault shares to value
-     * @return value The collateral value in underlying asset units
+     * @dev Resolve the collateral value of vault shares via standard ERC4626 conversion.
+     *      Returns vault.convertToAssets(shares) in the vault's underlying asset units.
      */
-    /**
-     * @dev Resolve the collateral value of vault shares.
-     * When lpToken == address(0): standard ERC4626 — returns vault.convertToAssets(shares).
-     * When lpToken != address(0): two-layer pricing — gauge shares → LP tokens → underlying
-     *   via LP pricePerShare(). Result is in 18 decimals (LP-native precision).
-     */
-    function _resolveCollateralValue(address vault, address lpToken, uint256 shares) internal view returns (uint256 value) {
+    function _resolveCollateralValue(address vault, uint256 shares) internal view returns (uint256 value) {
         if (shares == 0 || vault == address(0)) return 0;
-        uint256 lpAmount = IERC4626(vault).convertToAssets(shares);
-        if (lpToken == address(0)) return lpAmount;
-        // Two-layer: LP amount × pricePerShare / 1e18 → underlying value (18 decimals)
-        uint256 pps = IYieldBasisLP(lpToken).pricePerShare();
-        return (lpAmount * pps) / 1e18;
+        return IERC4626(vault).convertToAssets(shares);
     }
 
     /**
@@ -77,40 +64,19 @@ library ERC4626CollateralManager {
      * @param vault The ERC4626 vault address (immutable on facet)
      * @param shares The amount of shares to add as collateral
      */
-    function addCollateral(address portfolioFactoryConfig, address vault, uint256 shares) external {
-        addCollateral(portfolioFactoryConfig, vault, address(0), shares);
-    }
-
-    /**
-     * @dev Add ERC4626 shares as collateral with optional LP pricing
-     * @param portfolioFactoryConfig The portfolio account config address
-     * @param vault The ERC4626 vault address (immutable on facet)
-     * @param lpToken If non-zero, value shares using LP pricePerShare for underlying asset pricing
-     * @param shares The amount of shares to add as collateral
-     */
-    function addCollateral(address portfolioFactoryConfig, address vault, address lpToken, uint256 shares) public {
+    function addCollateral(address portfolioFactoryConfig, address vault, uint256 shares) public {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
         ERC4626CollateralData storage data = _getStorage();
 
-        // Ensure the portfolio actually holds the shares being registered.
-        // When lpToken is set (YB mode), some shares may be unstaked as LP tokens
-        // on the portfolio directly — count both gauge shares and LP token balance.
         uint256 requiredBalance = data.shares + shares;
         uint256 actualBalance = IERC20(vault).balanceOf(address(this));
-        if (lpToken != address(0)) {
-            // LP tokens held directly are equivalent to gauge shares for balance purposes
-            uint256 lpBalance = IERC20(lpToken).balanceOf(address(this));
-            uint256 equivalentShares = lpBalance > 0 ? IERC4626(vault).convertToShares(lpBalance) : 0;
-            actualBalance += equivalentShares;
-        }
         if (actualBalance < requiredBalance) {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
 
-        // Calculate asset value of shares (underlying value if lpToken provided)
-        uint256 assetValue = _resolveCollateralValue(vault, lpToken, shares);
+        uint256 assetValue = _resolveCollateralValue(vault, shares);
 
         data.shares += shares;
         data.depositedAssetValue += assetValue;
@@ -121,27 +87,19 @@ library ERC4626CollateralManager {
     /**
      * @dev Remove ERC4626 shares from collateral
      */
-    function removeCollateral(address portfolioFactoryConfig, address vault, uint256 shares) external {
-        removeCollateral(portfolioFactoryConfig, vault, address(0), shares);
-    }
-
-    /**
-     * @dev Remove ERC4626 shares from collateral with optional LP pricing
-     */
-    function removeCollateral(address portfolioFactoryConfig, address vault, address lpToken, uint256 shares) public {
+    function removeCollateral(address portfolioFactoryConfig, address vault, uint256 shares) public {
         require(shares > 0, "Shares must be > 0");
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
 
         ERC4626CollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient collateral shares");
 
-        // Calculate proportional asset value to remove
         uint256 assetValueToRemove = (data.depositedAssetValue * shares) / data.shares;
 
         data.shares -= shares;
         data.depositedAssetValue -= assetValueToRemove;
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         emit ERC4626CollateralRemoved(vault, shares, assetValueToRemove, address(this));
@@ -151,32 +109,14 @@ library ERC4626CollateralManager {
      * @dev Get total collateral value in underlying assets
      */
     function getTotalCollateralValue(address vault) public view returns (uint256 totalValue) {
-        return getTotalCollateralValue(vault, address(0));
-    }
-
-    /**
-     * @dev Get total collateral value with optional LP pricing
-     */
-    function getTotalCollateralValue(address vault, address lpToken) public view returns (uint256 totalValue) {
         ERC4626CollateralData storage data = _getStorage();
-        totalValue = _resolveCollateralValue(vault, lpToken, data.shares);
+        totalValue = _resolveCollateralValue(vault, data.shares);
     }
 
     /**
      * @dev Get collateral info
      */
-    function getCollateral(address vault) external view returns (
-        uint256 shares,
-        uint256 depositedAssetValue,
-        uint256 currentAssetValue
-    ) {
-        return getCollateral(vault, address(0));
-    }
-
-    /**
-     * @dev Get collateral info with optional LP pricing
-     */
-    function getCollateral(address vault, address lpToken) public view returns (
+    function getCollateral(address vault) public view returns (
         uint256 shares,
         uint256 depositedAssetValue,
         uint256 currentAssetValue
@@ -184,7 +124,7 @@ library ERC4626CollateralManager {
         ERC4626CollateralData storage data = _getStorage();
         shares = data.shares;
         depositedAssetValue = data.depositedAssetValue;
-        currentAssetValue = _resolveCollateralValue(vault, lpToken, shares);
+        currentAssetValue = _resolveCollateralValue(vault, shares);
     }
 
     /**
@@ -212,20 +152,15 @@ library ERC4626CollateralManager {
      * @return loanAmount The actual loan amount after fees
      * @return originationFee The origination fee
      */
-    function increaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) external returns (uint256 loanAmount, uint256 originationFee) {
-        return increaseTotalDebt(portfolioFactoryConfig, vault, address(0), amount);
-    }
-
-    function increaseTotalDebt(address portfolioFactoryConfig, address vault, address lpToken, uint256 amount) public returns (uint256 loanAmount, uint256 originationFee) {
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+    function increaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) public returns (uint256 loanAmount, uint256 originationFee) {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
         ERC4626CollateralData storage data = _getStorage();
-        // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
         if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
-        (uint256 maxLoan,) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+        (uint256 maxLoan,) = getMaxLoan(portfolioFactoryConfig, vault);
 
         if (amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
@@ -246,16 +181,12 @@ library ERC4626CollateralManager {
      * @param amount The amount to pay
      * @return excess Any excess amount after fully paying debt
      */
-    function decreaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) external returns (uint256 excess) {
-        return decreaseTotalDebt(portfolioFactoryConfig, vault, address(0), amount);
+    function decreaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) public returns (uint256 excess) {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
+        return _decreaseTotalDebt(portfolioFactoryConfig, amount);
     }
 
-    function decreaseTotalDebt(address portfolioFactoryConfig, address vault, address lpToken, uint256 amount) public returns (uint256 excess) {
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
-        return _decreaseTotalDebt(portfolioFactoryConfig, vault, lpToken, amount);
-    }
-
-    function _decreaseTotalDebt(address portfolioFactoryConfig, address vault, address lpToken, uint256 amount) internal returns (uint256 excess) {
+    function _decreaseTotalDebt(address portfolioFactoryConfig, uint256 amount) internal returns (uint256 excess) {
         ERC4626CollateralData storage data = _getStorage();
 
         uint256 totalDebt = data.debt;
@@ -284,28 +215,22 @@ library ERC4626CollateralManager {
      * @dev Get the maximum loan amount based on collateral value
      */
     function getMaxLoan(address portfolioFactoryConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return getMaxLoan(portfolioFactoryConfig, vault, address(0));
-    }
-
-    /**
-     * @dev Get the maximum loan amount with optional LP pricing
-     */
-    function getMaxLoan(address portfolioFactoryConfig, address vault, address lpToken) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        uint256 totalCollateralValue = getTotalCollateralValue(vault, lpToken);
+        uint256 totalCollateralValue = getTotalCollateralValue(vault);
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
-
-
 
         uint256 ltv = loanConfig.getLtv();
 
         if (ltv == 0) {
-            // For Lending assets that are not like-to-like, loan is based on future cash flow
+            // Cash-flow path: operator calibrates rewardsRate*multiplier to bake in
+            // periodic rate plus any cross-asset price. The 1e12 divisor absorbs
+            // collateral-vs-lending-asset decimal scaling.
             uint256 rewardsRate = loanConfig.getRewardsRate();
             uint256 multiplier = loanConfig.getMultiplier();
             maxLoanIgnoreSupply = (((totalCollateralValue * rewardsRate) / 1000000) *
-                multiplier) / 1e12; // rewardsRate * veNFT balance of token
+                multiplier) / 1e12;
         } else {
-            // For like-to-like lending, loan is based on LTV of collateral value
+            // Like-to-like path. convertToAssets returns vault-asset native decimals;
+            // for this branch to be correct the lending asset must match the vault asset.
             maxLoanIgnoreSupply = (totalCollateralValue * ltv) / 10000;
         }
 
@@ -352,14 +277,10 @@ library ERC4626CollateralManager {
     }
 
     function getLoanUtilization(address portfolioFactoryConfig, address vault) public view returns (uint256) {
-        return getLoanUtilization(portfolioFactoryConfig, vault, address(0));
-    }
-
-    function getLoanUtilization(address portfolioFactoryConfig, address vault, address lpToken) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt();
         if (totalDebt == 0) return 0;
 
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         if (maxLoanIgnoreSupply == 0) return type(uint256).max;
 
         return (totalDebt * 100) / maxLoanIgnoreSupply;
@@ -368,8 +289,8 @@ library ERC4626CollateralManager {
     /**
      * @dev Compute the current shortfall: how much debt exceeds maxLoanIgnoreSupply.
      */
-    function _currentShortfall(address portfolioFactoryConfig, address vault, address lpToken) internal view returns (uint256) {
-        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+    function _currentShortfall(address portfolioFactoryConfig, address vault) internal view returns (uint256) {
+        (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         uint256 debt = getTotalDebt();
         return debt > maxLoanIgnoreSupply ? debt - maxLoanIgnoreSupply : 0;
     }
@@ -377,28 +298,18 @@ library ERC4626CollateralManager {
     /**
      * @dev Snapshot the shortfall at the start of the first mutating call in this block.
      */
-    function snapshotShortfall(address portfolioFactoryConfig, address vault) external {
-        snapshotShortfall(portfolioFactoryConfig, vault, address(0));
-    }
-
-    function snapshotShortfall(address portfolioFactoryConfig, address vault, address lpToken) public {
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+    function snapshotShortfall(address portfolioFactoryConfig, address vault) public {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
     }
 
     /**
      * @dev Enforce collateral requirements using snapshot comparison.
      */
-    function enforceCollateralRequirements(address portfolioFactoryConfig, address vault) external view returns (bool) {
-        return enforceCollateralRequirements(portfolioFactoryConfig, vault, address(0));
-    }
-
-    function enforceCollateralRequirements(address portfolioFactoryConfig, address vault, address lpToken) public view returns (bool) {
+    function enforceCollateralRequirements(address portfolioFactoryConfig, address vault) public view returns (bool) {
         ERC4626CollateralData storage data = _getStorage();
 
-        uint256 end = _currentShortfall(portfolioFactoryConfig, vault, lpToken);
+        uint256 end = _currentShortfall(portfolioFactoryConfig, vault);
 
-        // If a snapshot was taken this block, use it as the baseline.
-        // Otherwise no collateral/debt operation ran, so start == end (no change).
         uint256 start = (data.snapshotBlockNumber == block.number)
             ? data.startShortfall
             : end;
@@ -419,12 +330,12 @@ library ERC4626CollateralManager {
         _getStorage().debt = lendingPool.getDebtBalance(address(this));
     }
 
-    function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address lpToken) internal {
+    function _snapshotIfNeeded(address portfolioFactoryConfig, address vault) internal {
         _syncDebt(portfolioFactoryConfig);
         ERC4626CollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber != block.number) {
             data.snapshotBlockNumber = block.number;
-            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, lpToken);
+            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault);
         }
     }
 
@@ -435,12 +346,8 @@ library ERC4626CollateralManager {
      *      otherwise burn share tracking without burning real shares and unlock
      *      fictitious borrow capacity.
      */
-    function removeSharesForYield(address portfolioFactoryConfig, address vault, uint256 shares) external {
-        removeSharesForYield(portfolioFactoryConfig, vault, address(0), shares);
-    }
-
-    function removeSharesForYield(address portfolioFactoryConfig, address vault, address lpToken, uint256 shares) public {
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, lpToken);
+    function removeSharesForYield(address portfolioFactoryConfig, address vault, uint256 shares) public {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault);
 
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         require(
@@ -452,12 +359,12 @@ library ERC4626CollateralManager {
         require(data.shares >= shares, "Insufficient shares");
 
         uint256 remainingShares = data.shares - shares;
-        uint256 remainingValue = _resolveCollateralValue(vault, lpToken, remainingShares);
+        uint256 remainingValue = _resolveCollateralValue(vault, remainingShares);
         require(remainingValue >= data.depositedAssetValue, "Would remove principal");
 
         data.shares = remainingShares;
 
-        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, lpToken);
+        (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
     }
 }
