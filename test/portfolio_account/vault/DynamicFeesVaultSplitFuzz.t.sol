@@ -156,6 +156,14 @@ contract DynamicFeesVaultSplitFuzzTest is Test {
         // Cap by remaining unsettled (mirrors vault).
         uint256 unsettled = vault.getTotalUnsettledRewards();
         if (vested > unsettled) vested = unsettled;
+        // Mirror vault boundary sweep: when currentTime reaches the active
+        // epoch end, _processGlobalVesting consumes any residual
+        // totalUnsettledRewards (floor-division dust from depositRewards) at
+        // the boundary-time ratio. Reference must book the same so the split
+        // invariant holds.
+        if (currentTime >= vaultActiveEnd && vested < unsettled) {
+            vested = unsettled;
+        }
         uint256 lenderShare = (vested * spotRatioBps) / 10000;
         uint256 borrowerShare = vested - lenderShare;
         refLenderCredit += lenderShare;
@@ -253,20 +261,20 @@ contract DynamicFeesVaultSplitFuzzTest is Test {
         // measure realized lender gain via totalAssets.
         if (totalRewardsDeposited == 0) return; // nothing to compare
 
-        // Warp to a point still in current epoch for final settle, then advance
-        // reference one last time using the most recent spot conditions.
-        uint256 finalInEpoch = EPOCH_3 - 1;
-        if (block.timestamp < finalInEpoch) {
-            uint256 currentRate = vault.getActiveEpochRate();
-            uint256 currentRatio = vault.getCurrentVaultRatioBps();
-            vm.warp(finalInEpoch);
-            vm.roll(block.number + 1);
-            _advanceReference(finalInEpoch, currentRate, currentRatio);
-        }
-
-        // Cross to epoch boundary so streams finalize.
+        // Cross to epoch boundary so streams finalize. _processGlobalVesting at
+        // sync sweeps the residual `totalUnsettledRewards` (floor-division
+        // dust) at boundary-time ratio, which folds the entire interval since
+        // the last action into one chunk. _advanceReference mirrors this with
+        // the `currentTime >= vaultActiveEnd` branch — so we advance straight
+        // from the last loop step to EPOCH_3 using boundary-time rate/ratio,
+        // skipping any intermediate "finalInEpoch" step that would double-book.
         vm.warp(EPOCH_3);
         vm.roll(block.number + 1);
+        {
+            uint256 boundaryRate = vault.getActiveEpochRate();
+            uint256 boundaryRatio = vault.getCurrentVaultRatioBps();
+            _advanceReference(EPOCH_3, boundaryRate, boundaryRatio);
+        }
         vault.sync();
         vault.settleRewards(user1);
 

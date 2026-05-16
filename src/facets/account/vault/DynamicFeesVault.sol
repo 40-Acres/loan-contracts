@@ -485,7 +485,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
                 uint256 endingEpoch = $.activeEpochEnd;
 
                 // Cap globalVested at totalUnsettledRewards to prevent underflow from rounding
-                if (globalVested > $.totalUnsettledRewards) {
+                if (epochEnded || globalVested > $.totalUnsettledRewards) {
                     globalVested = $.totalUnsettledRewards;
                 }
 

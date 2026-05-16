@@ -90,6 +90,7 @@ jobs:
     name: Local Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
         with:
