@@ -76,6 +76,7 @@ contract YieldBasisBtcE2ETest is Test {
 
     // Test amounts
     uint256 constant DEPOSIT_AMOUNT = 10e8;     // 10 ybBTC (8 decimals)
+    uint256 constant PPS_DEC_SCALE = 1e28;       // 18-dec pps for 8-dec LP/underlying
     uint256 constant VAULT_LIQUIDITY = 100_000e8; // 100k USDC-equivalent in vault
 
     function setUp() public {
@@ -95,6 +96,12 @@ contract YieldBasisBtcE2ETest is Test {
 
         // --- Deploy mock tokens ---
         _ybBtc = new MockYieldBasisLP("ybBTC", "ybBTC", 8);
+        // POST-LTV-REFACTOR: pricePerShare is always 18-dec. For 8-dec LP shares
+        // backed by an 8-dec underlying at 1:1, the right pps is 1e28
+        // (value_18 = shares_8 * 1e28 / 1e18). Default of 1e18 produced an LP
+        // value 1e10× too small in 18-dec terms; the new getMaxLoan rescale
+        // exposes that.
+        _ybBtc.setPricePerShare(PPS_DEC_SCALE);
         _usdc = new MockERC20("USDC", "USDC", 8);
         _ybToken = new MockERC20("YieldBasis", "YB", 18);
 
@@ -242,7 +249,7 @@ contract YieldBasisBtcE2ETest is Test {
 
         // Verify: collateral is auto-tracked (no separate addCollateral step needed)
         uint256 totalCollateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(totalCollateral, DEPOSIT_AMOUNT, "Step 1: collateral should be auto-tracked on deposit");
+        assertEq(totalCollateral, DEPOSIT_AMOUNT * PPS_DEC_SCALE / 1e18, "Step 1: collateral should be auto-tracked on deposit (18-dec value)");
 
         (uint256 maxLoan, ) = ICollateralFacet(_portfolioAccount).getMaxLoan();
         assertGt(maxLoan, 0, "Step 1: max loan should be > 0 with collateral");
@@ -299,7 +306,7 @@ contract YieldBasisBtcE2ETest is Test {
 
         // Verify collateral unchanged
         totalCollateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(totalCollateral, DEPOSIT_AMOUNT, "Step 4: collateral should be unchanged after failed withdrawal");
+        assertEq(totalCollateral, DEPOSIT_AMOUNT * PPS_DEC_SCALE / 1e18, "Step 4: collateral should be unchanged after failed withdrawal (18-dec value)");
 
         // ================================================================
         // STEP 5: User repays debt in full

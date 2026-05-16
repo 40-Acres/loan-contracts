@@ -158,7 +158,71 @@ for raw in "${FACETS[@]}"; do
     echo "[dry-run]" "${base_args[@]}" ${EXTRA_FORGE_ARGS:-}
     continue
   fi
-  base_args+=(--broadcast --verify)
+  # SIMULATE=1 runs the full pre-broadcast pipeline (gas cap, cost gate,
+  # forge simulation) without actually broadcasting or verifying.
+  if [[ "${SIMULATE:-0}" != "1" ]]; then
+    base_args+=(--broadcast --verify)
+  else
+    echo "    [simulate] skipping --broadcast/--verify"
+  fi
+
+  # On ETH mainnet, forge's default EIP-1559 cap (baseFee*2 + tip) reserves
+  # ~2x the actual cost — expensive when gas is high. Snap maxFeePerGas to
+  # the live gas price plus a small buffer so broadcasts stay dynamic
+  # without doubling the required balance. L2s are cheap enough that the
+  # default headroom isn't worth the extra moving parts.
+  # Override via GAS_PRICE_BUFFER_BPS (default 1500 = +15%), ETH_USD
+  # (default 2500), MAX_TX_USD (default 7), or pass your own
+  # --with-gas-price in EXTRA_FORGE_ARGS to skip this block.
+  if [[ "$CHAIN_ID" == "1" && "${EXTRA_FORGE_ARGS:-}" != *"--with-gas-price"* ]]; then
+    live_gas_price="$(cast gas-price --rpc-url "$RPC_URL" 2>/dev/null || echo "")"
+    if [[ -n "$live_gas_price" ]]; then
+      buffer_bps="${GAS_PRICE_BUFFER_BPS:-1500}"
+      capped_gas_price=$(( live_gas_price * (10000 + buffer_bps) / 10000 ))
+      echo "    gas-price: live=$live_gas_price wei, cap=$capped_gas_price wei (+${buffer_bps} bps)"
+
+      # Simulate first to get an accurate gas estimate, then gate broadcast
+      # on USD cost. ETH_USD is a rough static assumption — bump it if the
+      # price has drifted.
+      eth_usd="${ETH_USD:-2500}"
+      max_tx_usd="${MAX_TX_USD:-7}"
+      dry_args=(
+        forge script "$FACETS_DIR/$target"
+        --chain-id "$CHAIN_ID"
+        --rpc-url "$RPC_URL"
+        --via-ir
+      )
+      echo "    simulating to estimate cost..."
+      dry_out="$("${dry_args[@]}" 2>&1 || true)"
+      gas_used="$(echo "$dry_out" | grep -oE 'Estimated total gas used for script: *[0-9]+' | grep -oE '[0-9]+' | head -1 || true)"
+      if [[ -n "$gas_used" ]]; then
+        # cost_cents = gas_used * gas_price_wei * eth_usd * 100 / 1e18.
+        # Use awk for floating math — bash int can overflow on the product.
+        cost_usd_cents=$(awk -v g="$gas_used" -v p="$capped_gas_price" -v e="$eth_usd" \
+          'BEGIN { printf "%.0f", g * p * e / 10^16 }')
+        dollars=$(( cost_usd_cents / 100 ))
+        cents=$(( cost_usd_cents % 100 ))
+        printf '    estimated tx cost: $%d.%02d (gas=%s, ETH=$%s)\n' "$dollars" "$cents" "$gas_used" "$eth_usd"
+        if (( cost_usd_cents > max_tx_usd * 100 )) && [[ "${SIMULATE:-0}" != "1" ]]; then
+          if [[ ! -t 0 ]]; then
+            echo "    cost exceeds \$$max_tx_usd and no TTY — aborting. Re-run interactively or raise MAX_TX_USD." >&2
+            exit 1
+          fi
+          printf '    cost exceeds $%s. proceed? [y/N] ' "$max_tx_usd"
+          read -r yn
+          if [[ ! "$yn" =~ ^[Yy]$ ]]; then
+            echo "    aborted by user"
+            exit 1
+          fi
+        fi
+      else
+        echo "    warning: could not parse gas estimate; proceeding without USD gate"
+      fi
+
+      base_args+=(--with-gas-price "$capped_gas_price")
+    fi
+  fi
+
   if [[ -n "${VERIFIER:-}" ]]; then
     base_args+=(--verifier "$VERIFIER")
     [[ -n "${VERIFIER_URL:-}" ]] && base_args+=(--verifier-url "$VERIFIER_URL")

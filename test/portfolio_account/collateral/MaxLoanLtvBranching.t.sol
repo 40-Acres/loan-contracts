@@ -314,10 +314,31 @@ contract YieldBasisMaxLoanLtvBranchingTest is MaxLoanBranchingBase {
     MockERC20 underlyingAsset;
 
     function setUp() public override {
-        super.setUp();
+        // Override the base's USDC-6dec lending asset with an 18-dec lending asset so
+        // the YB like-to-like LTV branch's rescale collapses to identity and all the
+        // 18-dec expected values below stay valid post-refactor. Then point
+        // `underlyingAsset` at the same token so getMaxLoan's
+        // `lendingAsset != underlying` check is satisfied.
+        vm.startPrank(OWNER);
+        pm = new PortfolioManager(OWNER);
+        (PortfolioFactory f, FacetRegistry r) = pm.deployFactory(keccak256(abi.encodePacked("ltv-branching-yb-", address(this))));
+        factory = f;
+        registry = r;
+
+        DeployPortfolioFactoryConfig deployer = new DeployPortfolioFactoryConfig();
+        (cfg, , loanConfig, ) = deployer.deploy(address(factory), OWNER);
+
+        lendingAsset = new MockERC20("UNDER18", "UND18", 18);
+        pool = new MaxLoanMockPool(address(lendingAsset), address(factory));
+        lendingAsset.mint(address(pool), 1_000_000_000e18);
+
+        cfg.setLoanContract(address(pool));
+        factory.setPortfolioFactoryConfig(address(cfg));
+        vm.stopPrank();
+
         h = new YBHarness();
         ybLp = new MockYieldBasisLP("ybETH", "ybETH", 18);
-        underlyingAsset = new MockERC20("UNDER", "UND", 18);
+        underlyingAsset = lendingAsset; // like-to-like: underlying == lendingAsset
         // pps=1 makes "shares == value" trivially.
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 1_000_000e18);

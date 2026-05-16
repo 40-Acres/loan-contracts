@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
@@ -44,6 +45,7 @@ library YieldBasisCollateralManager {
     error UndercollateralizedDebt(uint256 debt);
     error NotPortfolioManager();
     error InsufficientShareBalance(uint256 required, uint256 actual);
+    error LtvRequiresLikeToLike();
 
     event YieldBasisCollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event YieldBasisCollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -220,21 +222,35 @@ library YieldBasisCollateralManager {
     ) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
         uint256 totalCollateralValue = getTotalCollateralValue(vault, underlying);
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
         uint256 ltv = loanConfig.getLtv();
 
         if (ltv == 0) {
-            // For Lending assets that are not like-to-like, loan is based on future cash flow
+            // Cash-flow path: operator calibrates rewardsRate*multiplier to bake in
+            // both the periodic rate and the cross-asset price; the 1e12 divisor
+            // absorbs the 18-dec collateral scaling for non-18-dec lending assets.
             uint256 rewardsRate = loanConfig.getRewardsRate();
             uint256 multiplier = loanConfig.getMultiplier();
             maxLoanIgnoreSupply = (((totalCollateralValue * rewardsRate) / 1000000) *
-                multiplier) / 1e12; // rewardsRate * veNFT balance of token
+                multiplier) / 1e12;
         } else {
-            // For like-to-like lending, loan is based on LTV of collateral value
-            maxLoanIgnoreSupply = (totalCollateralValue * ltv) / 10000;
+            // Like-to-like path: pricePerShare returns value in LP underlying at 18-dec
+            // regardless of native decimals. Downstream comparisons in _calculateMaxLoan
+            // are in lending-asset native decimals, so we (a) enforce that lending asset
+            // matches the LP underlying and (b) rescale to lending-asset decimals before
+            // applying the LTV bps. Rescale floors — favors protocol.
+            address lendingAsset = lendingPool.lendingAsset();
+            if (lendingAsset != underlying) revert LtvRequiresLikeToLike();
+            uint8 ld = IERC20Metadata(lendingAsset).decimals();
+            uint256 valueNative = ld == 18
+                ? totalCollateralValue
+                : (ld < 18
+                    ? totalCollateralValue / (10 ** (18 - ld))
+                    : totalCollateralValue * (10 ** (ld - 18)));
+            maxLoanIgnoreSupply = (valueNative * ltv) / 10000;
         }
 
-        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();
 
         address lendingVault = lendingPool.lendingVault();

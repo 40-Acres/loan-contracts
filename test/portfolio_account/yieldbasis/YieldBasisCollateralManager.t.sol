@@ -293,7 +293,13 @@ contract YieldBasisCollateralManagerTest is Test {
         ybLp = new MockYieldBasisLP("ybETH", "ybETH", 18);
         ybLp.setPricePerShare(1.5e18);
         underlying = new MockERC20("WETH", "WETH", 18);
-        usdc = new MockERC20("USDC", "USDC", 6);
+        // POST-LTV-REFACTOR: getMaxLoan's like-to-like LTV branch reverts unless
+        // lendingAsset == underlying. Use the same WETH-labeled 18-dec token as
+        // both the YB LP underlying AND the lending asset so the like-to-like
+        // check passes. The 18-dec/18-dec rescale collapses to identity, so all
+        // pre-refactor expected values stay correct. `usdc` is repointed at the
+        // same `underlying` token solely to avoid renaming every reference below.
+        usdc = underlying;
 
         // LendingVault (UUPS proxy)
         LendingVault impl = new LendingVault();

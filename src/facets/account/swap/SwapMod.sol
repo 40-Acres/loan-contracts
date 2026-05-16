@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
 /**
  * @title SwapMod
@@ -9,6 +10,8 @@ import {SwapConfig} from "../config/SwapConfig.sol";
  */
 
 library SwapMod {
+    using SafeERC20 for IERC20;
+
     event SwapExecuted(address indexed swapTarget, address indexed inputToken, uint256 inputAmount, address indexed outputToken, uint256 outputAmount);
     
     error NotApprovedSwapTarget(address swapTarget);
@@ -30,10 +33,10 @@ library SwapMod {
         if(!SwapConfig(swapData.swapConfig).isApprovedSwapTarget(swapData.swapTarget)) {
             revert NotApprovedSwapTarget(swapData.swapTarget);
         }
-        IERC20(swapData.inputToken).approve(swapData.swapTarget, swapData.inputAmount);
+        IERC20(swapData.inputToken).forceApprove(swapData.swapTarget, swapData.inputAmount);
         (bool success, ) = swapData.swapTarget.call(swapData.swapData);
         require(success, "Swap failed");
-        IERC20(swapData.inputToken).approve(swapData.swapTarget, 0);
+        IERC20(swapData.inputToken).forceApprove(swapData.swapTarget, 0);
         uint256 balanceAfter = IERC20(swapData.outputToken).balanceOf(address(this));
         amount = balanceAfter - balanceBefore;
         require(amount >= swapData.minimumOutputAmount, "Slippage exceeded");

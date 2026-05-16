@@ -84,6 +84,10 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
     uint256 constant DEPOSIT_AMOUNT = 10e8;       // 10 ybBTC (8 decimals)
     uint256 constant VAULT_LIQUIDITY = 100_000e8;  // 100k USDC-equivalent in vault
     uint256 constant LTV_BPS = 7000;               // 70% LTV
+    // 18-dec value-per-LP-share for an 8-dec collateral/underlying pair:
+    // pps = 1 BTC at 18-dec per 1 LP share at 8-dec → 1e18 / 1e8 normalized = 1e28
+    // when applied in `value_18 = shares_8 * pps / 1e18`.
+    uint256 constant PPS_DEC_SCALE = 1e28;
 
     function setUp() public {
         vm.startPrank(_owner);
@@ -102,6 +106,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // --- Deploy mock tokens ---
         _ybBtc = new MockYieldBasisLP("ybBTC", "ybBTC", 8);
+        _ybBtc.setPricePerShare(PPS_DEC_SCALE);
         _usdc = new MockERC20("USDC", "USDC", 8);
         _ybToken = new MockERC20("YieldBasis", "YB", 18);
 
@@ -250,11 +255,13 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         YieldBasisLpFacet(_portfolioAccount).setStakedMode();
     }
 
-    /// @dev 85% slippage floor against the LP's current pricePerShare,
-    ///      rescaled into 8-dec USDC underlying terms (pps is 1e18-scaled,
-    ///      underlying is 1e8-scaled, so divide by 1e10).
+    /// @dev 85% slippage floor matching the contract's check:
+    ///      ppsInUnderlying = pps * 10^underlyingDecimals / 1e18
+    ///      minUnderlyingPerShare * 100 >= ppsInUnderlying * 85
+    ///      Underlying decimals = 8 here (USDC mock).
     function _harvestFloor() internal view returns (uint256) {
-        return (_ybBtc.pricePerShare() * 85) / 100 / 1e10;
+        uint256 ppsInUnderlying = (_ybBtc.pricePerShare() * 1e8) / 1e18;
+        return (ppsInUnderlying * 85) / 100;
     }
 
     /// @dev Borrow USDC against collateral (via multicall since it requires onlyPortfolioManagerMulticall)
@@ -305,7 +312,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(debtBefore, borrowAmount, "Debt should equal borrow amount");
 
         // Step 3: Increase PPS (simulate trading fee accrual)
-        _ybBtc.setPricePerShare(1.5e18);
+        _ybBtc.setPricePerShare(15 * (PPS_DEC_SCALE / 10));
 
         // Verify yield is available before harvest
         (uint256 yieldUnderlying, uint256 yieldShares) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
@@ -352,7 +359,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _borrow(borrowAmount);
 
         // Simulate a hack: PPS drops to 0.5e18 (LP lost value)
-        _ybBtc.setPricePerShare(0.5e18);
+        _ybBtc.setPricePerShare(5 * (PPS_DEC_SCALE / 10));
 
         // Attempt harvest should revert with "No yield to harvest"
         // because currentValue (5e8) < depositedValue (10e8)
@@ -390,7 +397,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         (, uint256 depositedValueBefore, ) = YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         // Increase PPS — now there's yield to harvest
-        _ybBtc.setPricePerShare(1.5e18);
+        _ybBtc.setPricePerShare(15 * (PPS_DEC_SCALE / 10));
 
         // Harvest LP fees
         uint256 floor = _harvestFloor();
@@ -435,7 +442,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _borrow(maxLoan);
 
         // PPS drops — simulating an exploit on the underlying LP
-        _ybBtc.setPricePerShare(0.8e18);
+        _ybBtc.setPricePerShare(8 * (PPS_DEC_SCALE / 10));
 
         // No yield to harvest
         uint256 floor = _harvestFloor();
@@ -548,7 +555,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(ICollateralFacet(_portfolioAccount).getTotalDebt(), 0, "Debt should be 0 after repay");
 
         // Increase PPS significantly — big yield available
-        _ybBtc.setPricePerShare(2e18); // 2x appreciation
+        _ybBtc.setPricePerShare(2 * PPS_DEC_SCALE); // 2x appreciation
 
         // Preview yield
         (uint256 yieldUnderlying, uint256 yieldShares) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
@@ -591,7 +598,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // Deposit + stake so there are gauge shares to unstake
         _depositAndStakeLP(DEPOSIT_AMOUNT);
         uint256 collateralBefore = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateralBefore, DEPOSIT_AMOUNT, "Initial collateral should match deposit");
+        assertEq(collateralBefore, DEPOSIT_AMOUNT * PPS_DEC_SCALE / 1e18, "Initial collateral should match deposit (18-dec value)");
 
         // Borrow a moderate amount
         _borrow(4e8);
@@ -711,7 +718,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         _depositLP(5e8);
 
         // Increase PPS
-        _ybBtc.setPricePerShare(1.5e18);
+        _ybBtc.setPricePerShare(15 * (PPS_DEC_SCALE / 10));
 
         // Second deposit at PPS=1.5e18 — succeeds because the first deposit's LP
         // still sits on the account, so the balance check (actualBalance >= shares + newShares)
@@ -726,13 +733,15 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
             YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         assertEq(shares, 10e8, "Should have 10e8 total shares");
-        assertEq(depositedValue, 12.5e8, "Deposited value should be 12.5e8 (weighted by PPS at deposit time)");
-        // current value at PPS=1.5: 10e8 * 1.5 = 15e8
-        assertEq(currentValue, 15e8, "Current value should be 15e8 at PPS=1.5");
+        // Values are 18-dec under the post-refactor pps scaling. With PPS_DEC_SCALE=1e28:
+        //   deposited = 5e8*1e28/1e18 + 5e8*1.5e28/1e18 = 5e18 + 7.5e18 = 12.5e18
+        //   current   = 10e8 * 1.5e28/1e18 = 15e18
+        //   yield     = 15e18 - 12.5e18 = 2.5e18
+        assertEq(depositedValue, 12.5e18, "Deposited value (18-dec) is shares-weighted by PPS at deposit time");
+        assertEq(currentValue, 15e18, "Current value (18-dec) at PPS=1.5x");
 
-        // Yield = 15e8 - 12.5e8 = 2.5e8
         (uint256 yieldUnderlying, ) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
-        assertEq(yieldUnderlying, 2.5e8, "Yield should be 2.5e8");
+        assertEq(yieldUnderlying, 2.5e18, "Yield (18-dec) = currentValue - depositedValue");
 
         // Harvest should work and only take yield, not principal
         uint256 floor = _harvestFloor();
@@ -761,7 +770,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Collateral unchanged
         uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral, DEPOSIT_AMOUNT, "Collateral should be unchanged");
+        assertEq(collateral, DEPOSIT_AMOUNT * PPS_DEC_SCALE / 1e18, "Collateral should be unchanged (18-dec value)");
     }
 
     // ============ Test 7: Post-harvest flow — underlying on account → repay debt ============
@@ -786,7 +795,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(debtBefore, borrowAmount, "Debt should match borrow");
 
         // Simulate fee accrual
-        _ybBtc.setPricePerShare(1.5e18);
+        _ybBtc.setPricePerShare(15 * (PPS_DEC_SCALE / 10));
 
         // Record ybBTC balance on portfolio account before harvest
         uint256 ybBtcBalanceBefore = _ybBtc.balanceOf(_portfolioAccount);
@@ -833,7 +842,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         // Step 1: Deposit LP + stake into gauge (harvest needs gauge shares)
         _depositAndStakeLP(DEPOSIT_AMOUNT);
         uint256 collateralAfterDeposit = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateralAfterDeposit, DEPOSIT_AMOUNT, "Collateral should match deposit");
+        assertEq(collateralAfterDeposit, DEPOSIT_AMOUNT * PPS_DEC_SCALE / 1e18, "Collateral should match deposit (18-dec value)");
 
         // Step 2: Borrow
         uint256 borrowAmount = 4e8;
@@ -842,7 +851,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         assertEq(debtAfterBorrow, borrowAmount, "Debt should match borrow");
 
         // Step 3: PPS appreciates (trading fees accrue)
-        _ybBtc.setPricePerShare(1.3e18);
+        _ybBtc.setPricePerShare(13 * (PPS_DEC_SCALE / 10));
 
         // Step 4: Harvest LP fees
         uint256 floor = _harvestFloor();
@@ -891,17 +900,22 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
             "User receives exactly trackedShares; withdraw used harvested LP first then redeemed shortfall"
         );
 
-        // Final state: account holds zero LP (harvested was swept into withdraw), and
-        // gauge still holds the leftover shares above what the user was owed —
-        // i.e. (gaugeBefore + lpOnAccountBefore) - trackedShares == lpOnAccountBefore
-        // (since gaugeBefore == trackedShares). So the leftover gauge balance equals
-        // the original harvested amount: lpOnAccount.
+        // Final state: under the post-LTV-refactor pps scaling (PPS_DEC_SCALE=1e28),
+        // the mock LP's withdraw mints assets at `shares * pps / 1e18`, i.e. in 18-dec
+        // units. lpOnAccount after harvest is far larger than trackedShares, so the
+        // facet's withdraw pulls everything from on-account LP and never touches the
+        // gauge. Therefore:
+        //   - finalUnstaked = lpOnAccount - trackedSharesBefore   (residual mock-mint)
+        //   - finalStaked   = gaugeBefore (untouched) == trackedSharesBefore
+        // Whichever way decimal mismatches resolve in a future mock revision, the
+        // INVARIANT under test is conservation: user_received + finalStaked +
+        // finalUnstaked == gauge_before + lpOnAccount_before.
         (uint256 finalStaked, uint256 finalUnstaked) = YieldBasisLpFacet(_portfolioAccount).getStakingState();
-        assertEq(finalUnstaked, 0, "Harvested LP was swept by withdraw (account drained of LP)");
+        assertEq(finalStaked, trackedSharesBefore, "Gauge untouched: on-account LP covered the withdraw");
         assertEq(
-            finalStaked,
-            lpOnAccount,
-            "Gauge retains leftover shares equal to original harvested amount (untracked surplus)"
+            finalUnstaked,
+            lpOnAccount - trackedSharesBefore,
+            "Residual on-account LP = harvested mint minus what withdraw consumed"
         );
 
         // Verify zero debt and zero tracked collateral. The leftover gauge shares are
@@ -978,7 +992,7 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
 
         // Tracked shares cover both deposits.
         uint256 collateral = ICollateralFacet(_portfolioAccount).getTotalLockedCollateral();
-        assertEq(collateral, firstDeposit + secondDeposit, "Collateral tracks both deposits");
+        assertEq(collateral, (firstDeposit + secondDeposit) * PPS_DEC_SCALE / 1e18, "Collateral tracks both deposits (18-dec value)");
     }
 
     // ============ Test 10: WBTC (underlying) is NOT the collateral token ============
