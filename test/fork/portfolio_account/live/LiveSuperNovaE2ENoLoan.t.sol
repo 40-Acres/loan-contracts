@@ -183,9 +183,11 @@ contract LiveSuperNovaE2ENoLoan is Test {
     }
 
     function _registerRewardsProcessingFacet() internal {
-        // vault = address(0), underlyingLockedAsset routed as defaultToken = USDC.
+        // vault = address(0), defaultToken = USDC. underlyingLockedAsset set to USDC
+        // preserves previous behavior (lock-increase path silently no-ops since the
+        // veNFT's true lock asset is NOVA, not USDC).
         BlackholeRewardsProcessingFacet facet = new BlackholeRewardsProcessingFacet(
-            address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC
+            address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC, USDC
         );
         bytes4[] memory sel = new bytes4[](5);
         sel[0] = RewardsProcessingFacet.processRewards.selector;

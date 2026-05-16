@@ -328,7 +328,7 @@ contract DynamicLocalSetup is Test {
         // ── 8. DynamicRewardsProcessingFacet (uses DynamicCollateralManager.decreaseTotalDebt) ──
         DynamicRewardsProcessingFacet rewardsProcessingFacet = new DynamicRewardsProcessingFacet(
             address(_portfolioFactory),
-            address(_swapConfig), address(_ve), _vault, address(_mockAero)
+            address(_swapConfig), address(_ve), _vault, address(_mockAero), address(_mockAero)
         );
         bytes4[] memory rewardsSel = new bytes4[](5);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
