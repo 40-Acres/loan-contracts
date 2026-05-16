@@ -779,8 +779,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // avoids the division and a zero-denominator bypass.
         uint256 total = totalAssets();
         require(total > 0, "Borrow would exceed max utilization");
-        uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
-        require(postBorrowLoaned * 10000 < $.maxUtilizationBps * total, "Borrow would exceed max utilization");
+        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
+        uint256 effectiveLoaned = $.totalLoanedAssets > totalReduction
+            ? $.totalLoanedAssets - totalReduction
+            : 0;
+        require(
+            (effectiveLoaned + amount) * 10000 < $.maxUtilizationBps * total,
+            "Borrow would exceed max utilization"
+        );
 
         $.debtBalance[msg.sender] += amount;
         $.totalDebtBalance += amount;
@@ -835,7 +841,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     function activeAssets() external view returns (uint256) {
-        return _getStorage().totalLoanedAssets;
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
+        return $.totalLoanedAssets > totalReduction
+            ? $.totalLoanedAssets - totalReduction
+            : 0;
     }
 
     function sync() public {
