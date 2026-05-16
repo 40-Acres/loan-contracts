@@ -159,7 +159,14 @@ library DynamicCollateralManager {
         return collateralManagerData.totalLockedCollateral;
     }
 
+    /// @notice stored debt, guard against donation manipulation
     function getTotalDebt(address portfolioFactoryConfig) public view returns (uint256) {
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+        return lendingPool.getDebtBalance(address(this));
+    }
+
+    /// @notice Stored debt minus vested rewards.
+    function getEffectiveTotalDebt(address portfolioFactoryConfig) public view returns (uint256) {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         return lendingPool.getEffectiveDebtBalance(address(this));
     }
@@ -362,7 +369,8 @@ library DynamicCollateralManager {
      */
     function getRequiredPaymentForCollateralRemoval(address portfolioFactoryConfig, uint256 tokenId) public view returns (uint256) {
         CollateralManagerData storage data = _getCollateralManagerData();
-        uint256 currentDebt = getTotalDebt(portfolioFactoryConfig);
+        // Quote against effective debt, include borrowers vested rewards
+        uint256 currentDebt = getEffectiveTotalDebt(portfolioFactoryConfig);
         if (currentDebt == 0) return 0;
 
         uint256 nftCollateral = data.lockedCollaterals[tokenId];
