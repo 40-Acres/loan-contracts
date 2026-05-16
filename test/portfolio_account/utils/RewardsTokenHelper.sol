@@ -52,12 +52,14 @@ abstract contract RewardsTokenHelper is LocalSetup {
         RewardsAssetShimVault mockVault = new RewardsAssetShimVault(token);
 
         vm.startPrank(FORTY_ACRES_DEPLOYER);
+        address _veToken = IVotingEscrow(_ve).token();
         VotingEscrowRewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(
             address(_portfolioFactory),
             address(_swapConfig),
             address(_ve),
             address(mockVault),
-            IVotingEscrow(_ve).token()
+            _veToken,
+            _veToken
         );
         bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = RewardsProcessingFacet.processRewards.selector;

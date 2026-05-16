@@ -108,6 +108,7 @@ contract DeployBlackholeRewardsProcessingFacet is AccountFacetsDeploy {
         address VOTING_ESCROW = vm.envAddress("VOTING_ESCROW");
         address VAULT = vm.envAddress("VAULT");
         address REWARDS_TOKEN = vm.envAddress("REWARDS_TOKEN");
+        address DEFAULT_TOKEN = vm.envAddress("DEFAULT_TOKEN");
 
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
         BlackholeRewardsProcessingFacet facet = new BlackholeRewardsProcessingFacet(
@@ -115,7 +116,8 @@ contract DeployBlackholeRewardsProcessingFacet is AccountFacetsDeploy {
             SWAP_CONFIG,
             VOTING_ESCROW,
             VAULT,
-            REWARDS_TOKEN
+            REWARDS_TOKEN,
+            DEFAULT_TOKEN
         );
         registerFacet(PORTFOLIO_FACTORY, address(facet), getSelectorsForFacet(), "RewardsProcessingFacet", false);
         vm.stopBroadcast();

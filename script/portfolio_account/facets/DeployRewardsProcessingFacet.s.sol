@@ -27,8 +27,11 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
         }
         require(VAULT != address(0), "VAULT zero");
 
+        address veToken = IVotingEscrow(VOTING_ESCROW).token();
+        address DEFAULT_TOKEN = vm.envOr("DEFAULT_TOKEN", veToken);
+
         vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER"));
-        RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(PORTFOLIO_FACTORY, SWAP_CONFIG, VOTING_ESCROW, VAULT, IVotingEscrow(VOTING_ESCROW).token());
+        RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(PORTFOLIO_FACTORY, SWAP_CONFIG, VOTING_ESCROW, VAULT, veToken, DEFAULT_TOKEN);
 
         registerFacet(PORTFOLIO_FACTORY, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", false);
 
@@ -38,7 +41,8 @@ contract DeployRewardsProcessingFacet is AccountFacetsDeploy {
     }
 
     function deploy(address portfolioFactory, address swapConfig, address votingEscrow, address vault) external {
-        RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, IVotingEscrow(votingEscrow).token());
+        address veToken = IVotingEscrow(votingEscrow).token();
+        RewardsProcessingFacet newFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, veToken, veToken);
         registerFacet(portfolioFactory, address(newFacet), getSelectorsForFacet(), "RewardsProcessingFacet", true);
 
         RewardsConfigFacet configFacet = new RewardsConfigFacet(portfolioFactory, swapConfig);

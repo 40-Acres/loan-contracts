@@ -175,8 +175,9 @@ contract DefaultTokenRewardsProcessingTest is Test, LocalSetup {
             address(noVaultFactory),
             address(_swapConfig),
             address(_ve),
-            address(0),        // vault = address(0)
-            address(_mockUsdc) // defaultToken = USDC
+            address(0),         // vault = address(0)
+            address(_mockUsdc), // underlyingLockedAsset (matches prior coupling)
+            address(_mockUsdc)  // defaultToken = USDC
         );
         bytes4[] memory rpSel = new bytes4[](5);
         rpSel[0] = RewardsProcessingFacet.processRewards.selector;

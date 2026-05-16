@@ -25,13 +25,14 @@ contract VotingEscrowRewardsProcessingFacet is RewardsProcessingFacet {
         address swapConfig,
         address votingEscrow,
         address vault,
-        address underlyingLockedAsset
+        address underlyingLockedAsset,
+        address defaultToken
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
         underlyingLockedAsset,
         vault,
-        underlyingLockedAsset
+        defaultToken
     ) {
         require(votingEscrow != address(0), "Invalid votingEscrow");
         _votingEscrow = IVotingEscrow(votingEscrow);

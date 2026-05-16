@@ -319,7 +319,7 @@ contract LocalSetup is Test {
         // ── 8. RewardsProcessingFacet (5 selectors) ──
         RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(
             address(_portfolioFactory),
-            address(_swapConfig), address(_ve), _vault, address(_mockAero)
+            address(_swapConfig), address(_ve), _vault, address(_mockAero), address(_mockAero)
         );
         bytes4[] memory rewardsSel = new bytes4[](5);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;

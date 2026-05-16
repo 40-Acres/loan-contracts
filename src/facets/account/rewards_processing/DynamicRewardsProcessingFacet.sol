@@ -14,8 +14,8 @@ import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 contract DynamicRewardsProcessingFacet is VotingEscrowRewardsProcessingFacet {
     using SafeERC20 for IERC20;
 
-    constructor(address portfolioFactory, address swapConfig, address votingEscrow, address vault, address underlyingLockedAsset)
-        VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, underlyingLockedAsset) {}
+    constructor(address portfolioFactory, address swapConfig, address votingEscrow, address vault, address underlyingLockedAsset, address defaultToken)
+        VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, underlyingLockedAsset, defaultToken) {}
 
     function _getTotalDebt() internal view override returns (uint256) {
         return DynamicCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));

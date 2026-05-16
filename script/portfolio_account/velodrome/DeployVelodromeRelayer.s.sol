@@ -137,7 +137,7 @@ contract VelodromeRootUpgrade is PortfolioFactoryConfigDeploy {
         _registerFacet(facetRegistry, address(superchainClaimingFacet), superchainClaimingSelectors, "SuperchainClaimingFacet");
 
         // // Deploy RewardsProcessingFacet
-        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), USDC);
+        RewardsProcessingFacet rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(portfolioFactory, address(swapConfig), VOTING_ESCROW, address(vault), USDC, USDC);
         bytes4[] memory rewardsProcessingSelectors = new bytes4[](5);
         rewardsProcessingSelectors[0] = RewardsProcessingFacet.processRewards.selector;
         rewardsProcessingSelectors[1] = RewardsProcessingFacet.getRewardsToken.selector;

@@ -20,8 +20,9 @@ contract BlackholeRewardsProcessingFacet is VotingEscrowRewardsProcessingFacet {
         address swapConfig,
         address votingEscrow,
         address vault,
-        address underlyingLockedAsset
-    ) VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, underlyingLockedAsset) {}
+        address underlyingLockedAsset,
+        address defaultToken
+    ) VotingEscrowRewardsProcessingFacet(portfolioFactory, swapConfig, votingEscrow, vault, underlyingLockedAsset, defaultToken) {}
 
     function _increaseLock(uint256 tokenId, uint256 increaseAmount, address lockedAsset) internal override returns (uint256 usedAmount) {
         if (tokenId == 0) {

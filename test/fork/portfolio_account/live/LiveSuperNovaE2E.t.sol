@@ -179,7 +179,7 @@ contract LiveSuperNovaE2E is Test {
 
         // Deploy RewardsProcessingFacet (no vault, default token = USDC)
         BlackholeRewardsProcessingFacet rpFacet = new BlackholeRewardsProcessingFacet(
-            address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC
+            address(portfolioFactory), address(swapConfig), VOTING_ESCROW, address(0), USDC, USDC
         );
         bytes4[] memory rpSel = new bytes4[](5);
         rpSel[0] = RewardsProcessingFacet.processRewards.selector;

@@ -299,7 +299,7 @@ abstract contract BaseDeploymentSetup is Test {
         // ── 8. RewardsProcessingFacet (5 selectors) ──
         rewardsProcessingFacet = new VotingEscrowRewardsProcessingFacet(
             address(portfolioFactory),
-            address(swapConfig), VOTING_ESCROW, address(vault), AERO
+            address(swapConfig), VOTING_ESCROW, address(vault), AERO, AERO
         );
         bytes4[] memory rewardsSel = new bytes4[](5);
         rewardsSel[0] = RewardsProcessingFacet.processRewards.selector;
