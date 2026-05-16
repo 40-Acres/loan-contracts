@@ -2833,3 +2833,133 @@ contract DynamicFeesVaultTest is Test {
         assertEq(freshVault.pendingFeeShares(), 0, "snapshot not bumped - pending should be 0 immediately after accrual");
     }
 }
+
+/**
+ * @notice Tests for the borrow-side utilization gate.
+ *
+ * DynamicFeesVault.borrowFromPortfolio uses string require()s rather than a
+ * custom error, and the same shape as LendingVault's gate:
+ *
+ *   require(total > 0, "Borrow would exceed max utilization");
+ *   require(postBorrowLoaned * 10000 < maxUtilizationBps * total,
+ *           "Borrow would exceed max utilization");
+ *
+ * (1) Zero totalAssets must revert (previously: borrows passed freely on empty vault).
+ * (2) Strict inequality: a borrow that lands at exactly the cap must revert;
+ *     one wei below the cap must succeed.
+ * (3) Withdraw is intentionally NOT gated by maxUtilizationBps — the cap only
+ *     applies to new lending.
+ */
+contract DynamicFeesVaultUtilizationCapTest is Test {
+    DynamicFeesVault public vault;
+    MockUSDC public usdc;
+    MockPortfolioFactory public portfolioFactory;
+
+    address public owner = address(0x1);
+    address public depositor1 = address(0xB1);
+    address public borrower = address(0xC1);
+
+    uint256 constant WEEK = ProtocolTimeLibrary.WEEK;
+    uint256 constant EPOCH_2 = 2 * WEEK;
+
+    uint256 constant MAX_UTIL_BPS = 8000; // 80%
+
+    function setUp() public {
+        vm.warp(EPOCH_2);
+
+        usdc = new MockUSDC();
+        portfolioFactory = new MockPortfolioFactory();
+
+        DynamicFeesVault vaultImpl = new DynamicFeesVault();
+        bytes memory initData = abi.encodeWithSelector(
+            DynamicFeesVault.initialize.selector,
+            address(usdc),
+            "USDC Vault",
+            "vUSDC",
+            address(portfolioFactory),
+            MAX_UTIL_BPS,
+            owner, // feeRecipient
+            uint256(0) // feeBps = 0 — keep totalAssets math clean for boundary checks
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(vaultImpl), initData);
+        vault = DynamicFeesVault(address(proxy));
+
+        vault.transferOwnership(owner);
+        vm.prank(owner);
+        vault.acceptOwnership();
+    }
+
+    function _deposit(address depositor, uint256 amount) internal {
+        deal(address(usdc), depositor, amount);
+        vm.startPrank(depositor);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, depositor);
+        vm.stopPrank();
+        vm.roll(block.number + 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // (2) Zero-supply borrow reverts with the expected reason string.
+    // ─────────────────────────────────────────────────────────────────
+
+    function test_borrowFromPortfolio_revertsOnZeroTotalAssets() public {
+        assertEq(vault.totalAssets(), 0, "precondition: empty vault");
+
+        vm.prank(borrower);
+        vm.expectRevert(bytes("Borrow would exceed max utilization"));
+        vault.borrowFromPortfolio(1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // (4) Strict-inequality boundary.
+    // ─────────────────────────────────────────────────────────────────
+
+    function test_borrowFromPortfolio_revertsAtExactCap() public {
+        _deposit(depositor1, 1000e6);
+
+        // 800 * 10000 == 8000 * 1000 → strict-less-than rejects.
+        vm.prank(borrower);
+        vm.expectRevert(bytes("Borrow would exceed max utilization"));
+        vault.borrowFromPortfolio(800e6);
+    }
+
+    function test_borrowFromPortfolio_succeedsOneWeiBelowCap() public {
+        _deposit(depositor1, 1000e6);
+
+        vm.prank(borrower);
+        vault.borrowFromPortfolio(799e6);
+
+        assertEq(vault.getDebtBalance(borrower), 799e6, "debt = 799 USDC");
+        assertEq(vault.totalLoanedAssets(), 799e6, "totalLoanedAssets = 799 USDC");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // (6) Regression: withdraw not gated by maxUtilizationBps.
+    //     Mirror the LendingVault scenario in DynamicFeesVault.
+    // ─────────────────────────────────────────────────────────────────
+
+    function test_withdraw_notGatedByUtilizationCap() public {
+        _deposit(depositor1, 1000e6);
+
+        vm.prank(borrower);
+        vault.borrowFromPortfolio(700e6);
+
+        // Liquid = 1000 - 700 = 300 USDC. Withdraw 290 → 10 liquid + 700 loaned.
+        // Post-withdraw utilization ≈ 98.6% (far above the 80% cap), yet the
+        // withdraw must succeed: the cap is borrow-side only.
+        assertEq(usdc.balanceOf(address(vault)), 300e6, "precondition: 300 USDC liquid");
+
+        vm.prank(depositor1);
+        uint256 sharesBurned = vault.withdraw(290e6, depositor1, depositor1);
+
+        assertGt(sharesBurned, 0, "withdraw returned 0 shares");
+        assertEq(usdc.balanceOf(depositor1), 290e6, "depositor received 290 USDC");
+        assertEq(usdc.balanceOf(address(vault)), 10e6, "vault liquid drained to 10 USDC");
+
+        // Confirms post-withdraw utilization is well above the cap.
+        uint256 totalAssetsAfter = vault.totalAssets();
+        // With feeBps = 0 and no realized interest, totalAssets stays at 710.
+        assertEq(totalAssetsAfter, 710e6, "totalAssets = 10 liquid + 700 loaned");
+        assertGt((700e6 * 10000) / totalAssetsAfter, MAX_UTIL_BPS, "util exceeds cap post-withdraw");
+    }
+}
