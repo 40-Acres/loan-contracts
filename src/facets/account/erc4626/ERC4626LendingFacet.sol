@@ -70,7 +70,7 @@ contract ERC4626LendingFacet is AccessControl {
      * @dev Pay back debt
      * @param amount The amount to pay
      */
-    function pay(uint256 amount) external nonReentrant {
+    function pay(uint256 amount) external nonReentrant returns (uint256 excess) {
         // If caller is portfolio manager, use portfolio owner as from address
         address from = msg.sender == address(_portfolioFactory.portfolioManager())
             ? _portfolioFactory.ownerOf(address(this))
@@ -86,13 +86,15 @@ contract ERC4626LendingFacet is AccessControl {
 
         _lendingToken.safeTransferFrom(from, address(this), amount);
 
-        uint256 excess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _vault, amount);
+        excess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _vault, amount);
 
         emit Paid(amount - excess, from);
 
         if (excess > 0) {
             _lendingToken.safeTransfer(from, excess);
         }
+
+        return excess;
     }
 
     /**
