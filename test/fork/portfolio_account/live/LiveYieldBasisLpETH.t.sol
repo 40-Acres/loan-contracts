@@ -14,18 +14,9 @@ pragma solidity ^0.8.30;
  * --------------------------------------------------------------------------
  * DEPLOYMENT GAPS OBSERVED (not things this test fabricates — real findings):
  *
- * [G1] PortfolioFactoryConfig has no LoanConfig set. The deploy script
- *      (YieldBasisLpDeploy) only calls setLoanContract(...) and never
- *      setLoanConfig(...). ERC4626CollateralManager.getMaxLoan() calls
- *      loanConfig.getMultiplier() and will REVERT against the live deployment
- *      until a LoanConfig is set. Same for processRewards() which reads
- *      treasury fee / lender premium / zero-balance fee from LoanConfig.
- *
- * [G2] The deploy script transfers PortfolioFactoryConfig ownership to the
- *      multisig but has not yet wired PortfolioFactoryConfig onto the factory
- *      via portfolioFactory.setPortfolioFactoryConfig(...) — the script
- *      comments it out. We detect and patch this in setup if needed so the
- *      rest of the test can exercise production facet wiring.
+ * [G0] FacetRegistry has no YB selectors registered yet on mainnet
+ *      (YieldBasisLpUpgrade has not run). Test patches in a freshly compiled
+ *      facet set so the production wiring it WILL produce is exercised here.
  *
  * [G3] The production PortfolioManager does not have a per-user "authorized
  *      caller" for this factory yet, so reward claim/unstake/stake
@@ -34,37 +25,10 @@ pragma solidity ^0.8.30;
  * [G4] Processing rewards requires setting a rewardsToken via
  *      RewardsConfigFacet (per-portfolio state the factory can't preset).
  *
- * [G5] *** CRITICAL *** The YIELDBASIS_LP_GAUGE env var used for the
- *      Ethereum mainnet deploy (0x931d40dD07b25B91932b481B63631Ea86d236e09)
- *      is the **yb-WETH LP token itself**, NOT a YieldBasis gauge.
- *      The real gauge is 0xe4e656b5215a82009969219b1babB7c0757A3315
- *      (symbol "g(yb-WETH)", asset() = the LP at 0x931d40…e09). This test
- *      now defaults LIVE_GAUGE to the real gauge; the live production
- *      deploy script must be re-run with the correct YIELDBASIS_LP_GAUGE. Probing
- *      this address on-chain:
- *          symbol()          = "yb-WETH"
- *          name()            = "Yield Basis liquidity for WETH"
- *          pricePerShare()   = ~1.018e18  (IYieldBasisLP method)
- *          asset()           = REVERT    (not an ERC4626 gauge)
- *          deposit(a,r)      = REVERT
- *          claim(rew,user)   = REVERT
- *      The YieldBasisLpFacet constructor calls
- *      `IYieldBasisGauge(gauge).asset()` to bind the LP token — that call
- *      reverts, so the facet cannot have been deployed against this gauge
- *      address. Either (a) the env var is wrong and should point at the
- *      real yb-WETH gauge, or (b) the LP-for-WETH system on Ethereum does
- *      not yet have a gauge live. The YieldBasisLpUpgrade script on the
- *      referenced run commands will revert at construction.
- *
- *      This test detects the condition and skips (with a loud log) so the
- *      CI run flags the deployment gap without blocking the rest of the
- *      suite. To run the real E2E lifecycle, set YIELDBASIS_LP_GAUGE to
- *      the correct gauge address and re-run.
- *
- * These gaps mean: the happy-path lifecycle ONLY works after the multisig
- * completes the config wiring (G1-G4) AND the gauge address is corrected
- * (G5). The test makes those patches explicit and labels them so it's
- * obvious what remains to be done on-chain.
+ * [G6] PortfolioFactoryConfig implementation predates getStakedGaugeMode().
+ *      The deposit/stake path reads it via getStakedMode(); the lifecycle
+ *      test probes and vm.skips loudly when the live impl reverts on that
+ *      selector, so CI flags the upgrade dependency.
  */
 
 import {Test, console} from "forge-std/Test.sol";
@@ -77,10 +41,6 @@ import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 // Config
 import {PortfolioFactoryConfig} from "../../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {YieldBasisPortfolioFactoryConfig} from "../../../../src/facets/account/config/YieldBasisPortfolioFactoryConfig.sol";
-import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
-import {ILoanConfig} from "../../../../src/facets/account/config/ILoanConfig.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
 // Facets under test
 import {YieldBasisLpFacet} from "../../../../src/facets/account/yieldbasislp/YieldBasisLpFacet.sol";
 import {YieldBasisLpClaimingFacet} from "../../../../src/facets/account/yieldbasislp/YieldBasisLpClaimingFacet.sol";
@@ -100,27 +60,16 @@ contract LiveYieldBasisLpETHTest is Test {
     // ─── Live addresses (hardcoded — these are the production deployment) ───
     address public constant LIVE_PORTFOLIO_MANAGER = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
     address public constant LIVE_VAULT = 0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3;
-    // yb-WETH gauge on Ethereum mainnet. Discovered on-chain by enumerating
-    // ERC20 Transfer recipients of the yb-WETH LP token (0x931d40…) — the
-    // gauge is the top non-EOA holder. Verified:
+    // yb-WETH gauge on Ethereum mainnet.
     //   asset()   = 0x931d40dD07b25B91932b481B63631Ea86d236e09 (yb-WETH LP)
     //   symbol()  = "g(yb-WETH)"
     //   name()    = "YB Gauge: yb-WETH"
-    //   preview_claim(YB, user) does not revert
-    // The prior address (0x931d40…e09) stored here was the LP token itself,
-    // not the gauge — that is the deployment misconfiguration flagged by [G5].
     address public constant LIVE_GAUGE = 0xe4e656B5215a82009969219b1bAbB7c0757A3315;
     address public constant YB_WETH_LP = 0x931d40dD07b25B91932b481B63631Ea86d236e09;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant YB = 0x01791F726B4103694969820be083196cC7c045fF;
     address public constant MULTISIG = 0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23;
     address public constant ETH_SWAP_CONFIG = 0xD504Da3Ae86Aa3233871dbc8ae3Eb38824138F7C;
-    // PortfolioFactoryConfig that the multisig is expected to wire via
-    // factory.setPortfolioFactoryConfig(). Confirmed on mainnet:
-    //   owner()          = 0x40FecA5f7156030b78200450852792ea93f7c6cd
-    //   getLoanContract()= 0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3 (LIVE_VAULT)
-    //   getLoanConfig()  = 0x0 (still unset — LoanConfig will be wired separately)
-    address public constant ASSUMED_PFC = 0x8706FD061241266959e6A6E9e084f34935087012;
 
     bytes32 public constant FACTORY_SALT = keccak256(abi.encodePacked("yieldbasiseth"));
 
@@ -145,30 +94,9 @@ contract LiveYieldBasisLpETHTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.envString("ETH_RPC_URL"));
 
-        // [PRODUCTION CONFIG NOTE] The live deploy script (DeployYieldBasisLp.s.sol)
-        // currently deploys LoanConfig with:
-        //   lenderPremium=9500, treasuryFee=500, zeroBalanceFee=500,
-        //   multiplier=0, rewardsRate=0
-        // With multiplier=0, getMaxLoan() returns 0 — borrowing is IMPOSSIBLE
-        // against this production LoanConfig until the multisig calls
-        // LoanConfig.setMultiplier(...) with a sane value. This test patches
-        // a local LoanConfig with multiplier=7000 below so the borrow flow
-        // can be validated; do not mistake that patch for production-ready.
-        console.log(
-            "[NOTE] production LoanConfig will deploy with multiplier=0, "
-            "borrowing will be disabled until multisig sets multiplier via LoanConfig.setMultiplier"
-        );
-
         portfolioManager = PortfolioManager(LIVE_PORTFOLIO_MANAGER);
 
-        // Discover factory by salt
-        address factoryAddr = portfolioManager.factoryBySalt(FACTORY_SALT);
-        if (factoryAddr == address(0)) {
-            console.log("[SKIP] No factory for salt 'yieldbasiseth' on this fork.");
-            vm.skip(true);
-            return;
-        }
-        portfolioFactory = PortfolioFactory(factoryAddr);
+        portfolioFactory = PortfolioFactory(portfolioManager.factoryBySalt(FACTORY_SALT));
         facetRegistry = portfolioFactory.facetRegistry();
 
         vm.label(address(portfolioManager), "PortfolioManager");
@@ -180,46 +108,13 @@ contract LiveYieldBasisLpETHTest is Test {
 
         vault = LendingVault(LIVE_VAULT);
 
-        // Allow operator override for when the real gauge address is known
-        // (env var LIVE_YB_GAUGE). Defaults to the deploy-script constant.
-        address gaugeAddr = LIVE_GAUGE;
-        try vm.envAddress("LIVE_YB_GAUGE") returns (address override_) {
-            if (override_ != address(0)) {
-                gaugeAddr = override_;
-                console.log("[OVERRIDE] Using LIVE_YB_GAUGE from env:", override_);
-            }
-        } catch {}
-        gauge = IYieldBasisGauge(gaugeAddr);
-        vm.label(gaugeAddr, "YB-ETH-Gauge");
+        gauge = IYieldBasisGauge(LIVE_GAUGE);
+        vm.label(LIVE_GAUGE, "YB-ETH-Gauge");
 
-        // [G5] Probe gauge.asset() — on mainnet this reverts, indicating the
-        // env var YIELDBASIS_LP_GAUGE points at the LP token rather than a
-        // gauge. Log it and skip the test so CI flags the misconfiguration.
-        try gauge.asset() returns (address lpAddr) {
-            lpToken = IERC20(lpAddr);
-            vm.label(address(lpToken), "YB-ETH-LP");
-        } catch {
-            console.log("[G5 FINDING] gauge.asset() reverted for address:", LIVE_GAUGE);
-            console.log("             This address is the yb-WETH LP token, not a gauge.");
-            console.log("             Check YIELDBASIS_LP_GAUGE env used for the production deploy.");
-            vm.skip(true);
-            return;
-        }
+        lpToken = IERC20(gauge.asset());
+        vm.label(address(lpToken), "YB-ETH-LP");
 
-        // Check / patch config wiring (Gap G2).
-        // Assume the multisig will wire the already-deployed ASSUMED_PFC onto
-        // the factory. If the factory's PFC slot is empty on this fork, prank
-        // the PortfolioManager owner (who is authorized by
-        // PortfolioFactory.setPortfolioFactoryConfig) to perform that call.
         portfolioFactoryConfig = portfolioFactory.portfolioFactoryConfig();
-        if (address(portfolioFactoryConfig) == address(0)) {
-            console.log("[PATCH G2] PortfolioFactoryConfig not wired on factory; using ASSUMED_PFC:", ASSUMED_PFC);
-            require(ASSUMED_PFC.code.length > 0, "ASSUMED_PFC has no code on this fork");
-            address pmOwner = portfolioManager.owner();
-            vm.prank(pmOwner);
-            portfolioFactory.setPortfolioFactoryConfig(ASSUMED_PFC);
-            portfolioFactoryConfig = PortfolioFactoryConfig(ASSUMED_PFC);
-        }
 
         // Sanity: vault wired
         assertEq(
@@ -228,51 +123,15 @@ contract LiveYieldBasisLpETHTest is Test {
             "[FAIL] PortfolioFactoryConfig.loanContract != live vault"
         );
 
-        // Patch LoanConfig if missing OR if the existing production LoanConfig has
-        // multiplier=0 (the initial deploy script value). Gap G1 — borrowing is
-        // IMPOSSIBLE until the multisig sets a sane multiplier; we patch in a
-        // full test-local LoanConfig so the E2E lifecycle can exercise borrow/pay.
-        // LoanConfig.initialize requires all of {lenderPremium, treasuryFee,
-        // zeroBalanceFee} to be > 0. Use sensible production-style defaults:
-        //   - 70% LTV multiplier (7000 bps)
-        //   - 1% lender premium (100 bps)
-        //   - 1% treasury fee (100 bps)
-        //   - 1 bps zero-balance fee (minimal; must be nonzero)
-        //   - rewardsRate = 100 (1%) to avoid div-by-zero in rewards math
-        ILoanConfig existingLc = portfolioFactoryConfig.getLoanConfig();
-        bool needsLoanConfigPatch = address(existingLc) == address(0);
-        if (!needsLoanConfigPatch) {
-            // Multiplier==0 disables borrowing; treat it as "needs patch" so the
-            // lifecycle test can validate the happy path.
-            try existingLc.getMultiplier() returns (uint256 m) {
-                needsLoanConfigPatch = (m == 0);
-            } catch {
-                needsLoanConfigPatch = true;
-            }
-        }
-        if (needsLoanConfigPatch) {
-            console.log("[PATCH G1] Deploying fresh LoanConfig and wiring into factory config.");
-            LoanConfig lcImpl = new LoanConfig();
-            LoanConfig lc = LoanConfig(address(new ERC1967Proxy(
-                address(lcImpl),
-                // (owner, lenderPremium, treasuryFee, zeroBalanceFee)
-                abi.encodeCall(LoanConfig.initialize, (address(this), 100, 100, 1))
-            )));
-            lc.setMultiplier(7000);
-            lc.setRewardsRate(100);
-
-            address cfgOwner = portfolioFactoryConfig.owner();
-            vm.prank(cfgOwner);
-            portfolioFactoryConfig.setLoanConfig(address(lc));
-        }
+        // Sanity: LoanConfig wired with non-zero multiplier (borrowing enabled).
         assertTrue(
             address(portfolioFactoryConfig.getLoanConfig()) != address(0),
-            "[FAIL] LoanConfig still unset after patch"
+            "[FAIL] LoanConfig unset on production PortfolioFactoryConfig"
         );
         assertGt(
             portfolioFactoryConfig.getLoanConfig().getMultiplier(),
             0,
-            "[FAIL] LoanConfig.multiplier still 0 after patch - borrowing would be disabled"
+            "[FAIL] LoanConfig.multiplier == 0 - borrowing disabled"
         );
 
         // Patch FacetRegistry (Gap G0): the live registry has no selectors

@@ -5,13 +5,12 @@ pragma solidity ^0.8.30;
  * LiveYieldBasisLpETHDepositTest — deposit-only validation of the production
  * yb-WETH YieldBasisLpFacet on Ethereum mainnet (salt = "yieldbasiseth").
  *
- * This test exercises the CURRENT deposit semantics in
+ * Exercises current deposit semantics in
  * src/facets/account/yieldbasislp/YieldBasisLpFacet.sol: the user brings
  * **LP tokens**. deposit() pulls LP from the owner via
  * `IERC20(_lpToken).safeTransferFrom(...)` and tracks them as collateral.
  * No gauge staking happens inside deposit() — LP sits unstaked on the
- * portfolio account until stake() is explicitly called by the authorized
- * caller.
+ * portfolio account until stake() is explicitly called.
  *
  * Run:
  *   FOUNDRY_PROFILE=fork forge test \
@@ -24,18 +23,13 @@ pragma solidity ^0.8.30;
  *
  * [G0] Facet registry may lack YieldBasisLp selectors; register/replace with
  *      a freshly compiled YieldBasisLpFacet so the test exercises current code.
- * [G2] PortfolioFactoryConfig not wired onto the factory; patch as PM-owner.
- * [G5] gauge.asset() on mainnet may revert if the gauge env var points at the
- *      LP token. Probe and vm.skip with a loud log if so.
+ * [G6] PortfolioFactoryConfig implementation predates getStakedGaugeMode().
+ *      The deposit path reads getStakedMode() → getStakedGaugeMode(); we probe
+ *      and vm.skip with a loud log if the live impl reverts on the new selector.
  *
  * Skipped gaps (deposit() does not exercise these code paths):
- *   [G1] LoanConfig — deposit does not call getMultiplier / getMaxLoan.
  *   [G3] authorized caller — deposit goes through multicall, not onlyAuthorizedCaller.
  *   [G4] RewardsConfigFacet / rewards token.
- *
- * Because G1 is NOT patched here, DO NOT call `getMaxLoan()` inside this test
- * — it reads `loanConfig.getMultiplier()` and will revert with "multiplier=0"
- * (or an empty revert if loanConfig is the zero address).
  */
 
 import {Test, console} from "forge-std/Test.sol";
@@ -67,7 +61,6 @@ contract LiveYieldBasisLpETHDepositTest is Test {
     address public constant YB_WETH_LP = 0x931d40dD07b25B91932b481B63631Ea86d236e09;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant YB = 0x01791F726B4103694969820be083196cC7c045fF;
-    address public constant ASSUMED_PFC = 0x8706FD061241266959e6A6E9e084f34935087012;
 
     bytes32 public constant FACTORY_SALT = keccak256(abi.encodePacked("yieldbasiseth"));
 
@@ -92,14 +85,7 @@ contract LiveYieldBasisLpETHDepositTest is Test {
 
         portfolioManager = PortfolioManager(LIVE_PORTFOLIO_MANAGER);
 
-        // Discover the yb-WETH factory by salt.
-        address factoryAddr = portfolioManager.factoryBySalt(FACTORY_SALT);
-        if (factoryAddr == address(0)) {
-            console.log("[SKIP] No factory for salt 'yieldbasiseth' on this fork.");
-            vm.skip(true);
-            return;
-        }
-        portfolioFactory = PortfolioFactory(factoryAddr);
+        portfolioFactory = PortfolioFactory(portfolioManager.factoryBySalt(FACTORY_SALT));
         facetRegistry = portfolioFactory.facetRegistry();
 
         vm.label(address(portfolioManager), "PortfolioManager");
@@ -113,32 +99,10 @@ contract LiveYieldBasisLpETHDepositTest is Test {
         gauge = IYieldBasisGauge(LIVE_GAUGE);
         vm.label(LIVE_GAUGE, "YB-ETH-Gauge");
 
-        // [G5] Probe gauge.asset(). If it reverts, the configured gauge
-        //      address is actually the LP token and the deploy is broken.
-        //      Skip loudly rather than fail obscurely.
-        try gauge.asset() returns (address lpAddr) {
-            lpToken = IERC20(lpAddr);
-            vm.label(address(lpToken), "YB-ETH-LP");
-        } catch {
-            console.log("[G5 FINDING] gauge.asset() reverted for address:", LIVE_GAUGE);
-            console.log("             Likely the gauge address is actually the LP token.");
-            vm.skip(true);
-            return;
-        }
+        lpToken = IERC20(gauge.asset());
+        vm.label(address(lpToken), "YB-ETH-LP");
 
-        // [G2] Wire PortfolioFactoryConfig onto the factory if not already.
         portfolioFactoryConfig = portfolioFactory.portfolioFactoryConfig();
-        if (address(portfolioFactoryConfig) == address(0)) {
-            console.log("[PATCH G2] PortfolioFactoryConfig not wired; using ASSUMED_PFC:", ASSUMED_PFC);
-            require(ASSUMED_PFC.code.length > 0, "ASSUMED_PFC has no code on this fork");
-            address pmOwner = portfolioManager.owner();
-            vm.prank(pmOwner);
-            portfolioFactory.setPortfolioFactoryConfig(ASSUMED_PFC);
-            portfolioFactoryConfig = PortfolioFactoryConfig(ASSUMED_PFC);
-        }
-
-        // Intentionally NOT patching LoanConfig (gap G1). deposit() does not
-        // touch LoanConfig — but getMaxLoan() does, so the test never calls it.
 
         // [G0] Register / replace YieldBasisLpFacet with freshly compiled
         //      bytecode so we exercise the current source. Register all 10
