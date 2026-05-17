@@ -15,6 +15,9 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     error TooHigh(uint256 value, uint256 max);
     error CombinedFeesTooHigh(uint256 combined, uint256 max);
     error InvalidMaxUtilization(uint256 value);
+    error InvalidTreasury();
+
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     constructor() {
         _disableInitializers();
     }
@@ -49,6 +52,7 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
         uint256 multiplier;
         uint256 ltv;
         uint256 maxUtilizationBps;
+        address treasury;
     }
 
 
@@ -159,5 +163,19 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     function getMaxUtilizationBps() public view returns (uint256) {
         uint256 stored = _getLoanConfig().maxUtilizationBps;
         return stored == 0 ? DEFAULT_MAX_UTILIZATION_BPS : stored;
+    }
+
+    function setTreasury(address treasury) public onlyOwner {
+        if (treasury == address(0)) revert InvalidTreasury();
+        LoanConfigData storage collateralStorage = _getLoanConfig();
+        address old = collateralStorage.treasury;
+        collateralStorage.treasury = treasury;
+        emit TreasuryUpdated(old, treasury);
+    }
+
+    // @dev Returns the configured treasury; falls back to owner() when unset.
+    function getTreasury() public view returns (address) {
+        address t = _getLoanConfig().treasury;
+        return t == address(0) ? owner() : t;
     }
 }

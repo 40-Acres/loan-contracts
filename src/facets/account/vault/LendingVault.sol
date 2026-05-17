@@ -46,6 +46,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         uint256 currentEpochStart;   // start timestamp of current epoch
         mapping(address => uint256) lastDepositBlock; // flash-deposit protection
         uint8 sharesDecimalsOffset; // asset decimals cached at init for inflation-attack-resistant offset
+        address treasury; // recipient of protocol/origination fees; zero falls back to owner()
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.LendingVault");
@@ -56,12 +57,14 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
 
     error NotOwner();
     error NotPortfolio();
     error VaultPaused();
     error ZeroAmount();
     error FeeBpsTooHigh();
+    error InvalidTreasury();
 
     constructor() {
         _disableInitializers();
@@ -104,10 +107,10 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         $.debtBalance[msg.sender] += amount;
         $.totalLoanedAssets += amount;
 
-        // Transfer loan to borrower, fee to owner
+        // Transfer loan to borrower, fee to treasury
         IERC20(asset()).safeTransfer(msg.sender, amountAfterFee);
         if (originationFee > 0) {
-            IERC20(asset()).safeTransfer($.owner, originationFee);
+            IERC20(asset()).safeTransfer(getTreasury(), originationFee);
         }
 
         emit Borrowed(msg.sender, amount, originationFee);
@@ -121,9 +124,9 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
             feesToPay = totalPayment;
         }
 
-        // Transfer protocol fees to owner
+        // Transfer protocol fees to treasury
         if (feesToPay > 0) {
-            IERC20(asset()).safeTransferFrom(msg.sender, $.owner, feesToPay);
+            IERC20(asset()).safeTransferFrom(msg.sender, getTreasury(), feesToPay);
         }
 
         // Repay debt
@@ -311,6 +314,20 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
 
     function owner() public view returns (address) {
         return _getStorage().owner;
+    }
+
+    function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0)) revert InvalidTreasury();
+        LendingVaultStorage storage $ = _getStorage();
+        address old = $.treasury;
+        $.treasury = newTreasury;
+        emit TreasuryUpdated(old, newTreasury);
+    }
+
+    // @dev Returns the configured treasury; falls back to owner() when unset.
+    function getTreasury() public view returns (address) {
+        address t = _getStorage().treasury;
+        return t == address(0) ? _getStorage().owner : t;
     }
 
     // ============ View ============

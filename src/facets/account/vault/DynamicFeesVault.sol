@@ -44,6 +44,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
     event FeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event Incentivized(address indexed from, uint256 amount, uint256 epoch);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
 
     // ============ Errors ============
     error ContractPaused();
@@ -53,6 +54,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     error ZeroAmount();
     error ZeroAddress();
     error FeeBpsTooHigh();
+    error InvalidTreasury();
 
     // ============ Constants ============
     uint256 public constant MAX_FEE_BPS = 5000;
@@ -109,6 +111,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 lastTotalAssetsForFee; // snapshot of totalAssets() at last fee accrual; deltas count as interest
 
         uint256 escrowedExcessTotal;   // running sum of escrowedExcess[*] — liability deducted from totalAssets()
+
+        // Treasury (recipient of protocol fees); zero falls back to owner()
+        address treasury;
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -203,6 +208,20 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.lastTotalAssetsForFee = totalAssets();
         }
         emit FeeBpsUpdated(old, _feeBps);
+    }
+
+    function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0)) revert InvalidTreasury();
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        address old = $.treasury;
+        $.treasury = newTreasury;
+        emit TreasuryUpdated(old, newTreasury);
+    }
+
+    // @dev Returns the configured treasury; falls back to owner() when unset.
+    function getTreasury() public view returns (address) {
+        address t = _getStorage().treasury;
+        return t == address(0) ? owner() : t;
     }
 
     // ============ View Functions ============
@@ -783,7 +802,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         }
 
         if (feesToPay > 0) {
-            IERC20(asset()).safeTransferFrom(msg.sender, owner(), feesToPay);
+            IERC20(asset()).safeTransferFrom(msg.sender, getTreasury(), feesToPay);
         }
 
         uint256 amountToRepay;

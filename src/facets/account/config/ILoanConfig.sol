@@ -17,4 +17,6 @@ interface ILoanConfig {
     function getLtv() external view returns (uint256);
     function setMaxUtilizationBps(uint256 maxUtilizationBps) external;
     function getMaxUtilizationBps() external view returns (uint256);
+    function setTreasury(address treasury) external;
+    function getTreasury() external view returns (address);
 }

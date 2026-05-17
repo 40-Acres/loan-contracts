@@ -429,7 +429,7 @@ contract RewardsProcessingFacet is AccessControl {
     function _payZeroBalanceFee(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
         uint256 zeroBalanceFee = (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
-        IERC20(asset).safeTransfer(config.owner(), zeroBalanceFee);
+        IERC20(asset).safeTransfer(config.getLoanConfig().getTreasury(), zeroBalanceFee);
         emit ZeroBalanceFeePaid(_currentEpochStart(), tokenId, zeroBalanceFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return zeroBalanceFee;
     }
@@ -482,7 +482,7 @@ contract RewardsProcessingFacet is AccessControl {
         PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
         uint256 protocolFee = (rewardsAmount * config.getLoanConfig().getTreasuryFee()) / 10000;
 
-        IERC20(asset).safeTransfer(config.owner(), protocolFee);
+        IERC20(asset).safeTransfer(config.getLoanConfig().getTreasury(), protocolFee);
         emit ProtocolFeePaid(_currentEpochStart(), tokenId, protocolFee, _portfolioFactory.ownerOf(address(this)), address(asset));
         return protocolFee;
     }
