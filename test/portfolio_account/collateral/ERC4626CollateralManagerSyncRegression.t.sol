@@ -162,6 +162,13 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
 
     address internal OWNER = address(0x40FecA5f7156030b78200450852792ea93f7c6cd);
     address internal AUTH = address(0xAAAA);
+    // Manager-impersonation prank target. The non-AUTH caller path skips the
+    // inline `enforceCollateralRequirements` that was added to the AUTH branch
+    // of increaseTotalDebt — multicall flows rely on PortfolioManager.multicall
+    // to enforce at end-of-tx instead. Tests that intentionally stage
+    // stale-cache scenarios via pool.setDebt produce post-borrow states that
+    // would trip the inline enforce; they must use this path.
+    address internal MANAGER;
 
     uint256 internal constant LTV_BPS = 7000;
 
@@ -189,6 +196,7 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
         factory.setPortfolioFactoryConfig(address(cfg));
 
         pm.setAuthorizedCaller(AUTH, true);
+        MANAGER = address(pm);
 
         vm.stopPrank();
 
@@ -217,7 +225,11 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
         h.addCollateral(address(cfg), address(vault), shares);
 
         pool.setDebt(50e18);
-        vm.prank(AUTH);
+        // Manager-impersonation: pool.setDebt stages an "already at maxLoan"
+        // post-sync state, so the manager's pre-borrow maxLoan = 0 and the
+        // request lands fully on the supply flag. AUTH would revert inline
+        // on BadDebt; we only want to inspect that the cache resyncs.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(vault), 50e18);
         assertEq(h.getTotalDebt(), 50e18, "post-borrow cache reflects pool truth");
 
@@ -282,7 +294,11 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
         h.addCollateral(address(cfg), address(vault), shares);
 
         pool.setDebt(7e18);
-        vm.prank(AUTH);
+        // Manager-impersonation: pool.setDebt(7e18) puts data.debt at the cap
+        // after sync, so pre-borrow maxLoan = 0 and the 7e18 request flags
+        // supply overshoot. The point of this test is to verify the LATER
+        // remove-after-vesting succeeds, not to assert on the borrow's flag.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(vault), 7e18);
         assertEq(h.getTotalDebt(), 7e18);
 
@@ -306,7 +322,11 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
 
         pool.setDebt(105e18); // pool charges 5% on borrow request
 
-        vm.prank(AUTH);
+        // Manager-impersonation: pool.setDebt(105e18) > maxLoanIgnoreSupply
+        // (70e18 at 70% LTV against 100e18 shares), so maxLoan = 0 and the
+        // 100e18 request flags supply overshoot. The point of this test is
+        // verifying the cache picks up the pool's reported debt, not flag math.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(vault), 100e18);
 
         assertEq(h.getTotalDebt(), 105e18, "cache = pool truth, not request");

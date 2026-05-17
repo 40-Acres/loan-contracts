@@ -155,6 +155,13 @@ contract YieldBasisUtilizationCapTest is Test {
 
     address internal OWNER = address(0x40FecA5f7156030b78200450852792ea93f7c6cd);
     address internal AUTH = address(0xAAAA);
+    // Manager-impersonation prank target. The non-AUTH caller path skips the
+    // inline `enforceCollateralRequirements` that was added to the AUTH branch
+    // of increaseTotalDebt — multicall flows rely on PortfolioManager.multicall
+    // to enforce at end-of-tx instead. Tests that intentionally stage over-cap
+    // state to inspect flag math must use this path so the inline enforce
+    // doesn't revert mid-borrow before the assertions can run.
+    address internal MANAGER;
 
     function setUp() public {
         vm.startPrank(OWNER);
@@ -188,6 +195,7 @@ contract YieldBasisUtilizationCapTest is Test {
         // the harness through vm.prank and pass the gate.
         vm.prank(OWNER);
         pm.setAuthorizedCaller(AUTH, true);
+        MANAGER = address(pm);
 
         vm.label(address(h), "YBUtilHarness");
         vm.label(address(pool), "MockUtilPool");
@@ -247,7 +255,10 @@ contract YieldBasisUtilizationCapTest is Test {
 
         // Borrow 90e18: post-state activeAssets = 90e18 > cap 80e18.
         // Expected flag = 10e18.
-        vm.prank(AUTH);
+        // Manager-impersonation: the AUTH path now reverts inline on BadDebt,
+        // which would short-circuit the staged-flag inspection below. Multicall
+        // path is the canonical path that lets the flag accumulate pre-enforce.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 90e18);
 
         assertEq(h.readOverSupplied(), 10e18, "flag = active - cap");
@@ -271,7 +282,8 @@ contract YieldBasisUtilizationCapTest is Test {
         usdc.mint(address(pool), 100e18);
         _stageCollateral(1000e18);
 
-        vm.prank(AUTH);
+        // Manager-impersonation to stage the over-cap flag before repay clears it.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 90e18);
         assertEq(h.readOverSupplied(), 10e18, "flag set after over-cap borrow");
 
@@ -302,7 +314,9 @@ contract YieldBasisUtilizationCapTest is Test {
         _stageCollateral(1000e18);
 
         // ---- At default cap (8000 via LoanConfig fallback; storage left unset).
-        vm.prank(AUTH);
+        // Manager-impersonation for the over-cap leg so inline AUTH enforce
+        // does not mask the flag math we want to inspect.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 90e18);
         uint256 flagAtDefault = h.readOverSupplied();
         assertEq(flagAtDefault, 10e18, "default cap 8000: 90e18 borrow exceeds 80e18 cap by 10e18");
@@ -314,6 +328,7 @@ contract YieldBasisUtilizationCapTest is Test {
         assertEq(h.readOverSupplied(), 0, "flag cleared after repay");
 
         // ---- At cap 9500: same 90e18 borrow now sits under cap (95e18) -> no flag.
+        // AUTH path is clean here because the flag stays at 0.
         _setCap(9500);
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 90e18);
@@ -340,7 +355,10 @@ contract YieldBasisUtilizationCapTest is Test {
         // Default cap of 8000 via LoanConfig fallback; storage left unset.
         // cap=80e18. Borrow exactly cap+1 wei. Pre-refactor this reverted at the
         // vault level. Post-refactor it succeeds and flags 1 wei.
-        vm.prank(AUTH);
+        // Manager-impersonation: AUTH would revert inline on BadDebt(1); we
+        // want to verify the vault layer does not revert, so use the path
+        // that leaves the inline enforce off.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 80e18 + 1);
 
         assertEq(h.readOverSupplied(), 1, "cap+1 wei borrow flags exactly 1 wei");
@@ -368,7 +386,8 @@ contract YieldBasisUtilizationCapTest is Test {
         _stageCollateral(1000e18);
 
         // 1 wei borrow. activeAssets = 1, cap = 0 -> flag = 1.
-        vm.prank(AUTH);
+        // Manager-impersonation to stage the flag (AUTH would revert inline).
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 1);
 
         assertEq(h.readOverSupplied(), 1, "1 wei borrow into zero-totalAssets pool flags 1 wei");
@@ -427,7 +446,9 @@ contract YieldBasisUtilizationCapTest is Test {
         );
 
         // ---- cap + 1: flag = 1.
-        vm.prank(AUTH);
+        // Manager-impersonation: AUTH would revert inline on BadDebt(1) and
+        // short-circuit the flag inspection.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 1);
         assertEq(h.readOverSupplied(), 1, "cap + 1: flag = exactly 1 wei");
 
@@ -534,7 +555,9 @@ contract YieldBasisUtilizationCapTest is Test {
 
         // Borrower's own borrow pushes pool over cap: borrow 110e18,
         // active=110e18, cap=80e18 -> flag = 30e18.
-        vm.prank(AUTH);
+        // Manager-impersonation so the inline AUTH enforce doesn't revert
+        // before the flag accumulation can be inspected.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 110e18);
         assertEq(h.readOverSupplied(), 30e18, "borrow over cap: flag = active - cap = 30e18");
 

@@ -162,7 +162,8 @@ library CollateralManager {
         // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
-        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
+        bool isAuthorizedCaller = manager.isAuthorizedCaller(msg.sender);
+        if (msg.sender != address(manager) && !isAuthorizedCaller) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
@@ -178,6 +179,14 @@ library CollateralManager {
         collateralManagerData.debt += amount;
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
+
+        // Multicall callers get end-of-tx enforce via PortfolioManager.multicall.
+        // Authorized callers (e.g. topUp) bypass that wrapper, so enforce inline so the
+        // cap invariant holds regardless of caller path.
+        if (isAuthorizedCaller) {
+            enforceCollateralRequirements();
+        }
+
         return (loanAmount, originationFee);
     }
 
@@ -278,7 +287,7 @@ library CollateralManager {
      * - No undercollateralized debt: The debt that is not being covered by the collateral, this should always be 0 at the end of every transaction
      * -- We assume when rewards rate decreases and users become undercollateralized, the debt will still be covered by the collateral as it will pay over time
      */
-    function enforceCollateralRequirements() external view returns (bool success) {
+    function enforceCollateralRequirements() public view returns (bool success) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         if(collateralManagerData.overSuppliedVaultDebt > 0) {
             revert BadDebt(collateralManagerData.overSuppliedVaultDebt);

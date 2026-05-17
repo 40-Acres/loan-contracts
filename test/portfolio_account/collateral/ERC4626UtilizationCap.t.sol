@@ -127,6 +127,13 @@ contract ERC4626UtilizationCapTest is Test {
 
     address internal OWNER = address(0x40FecA5f7156030b78200450852792ea93f7c6cd);
     address internal AUTH = address(0xAAAA);
+    // Manager-impersonation prank target. The non-AUTH caller path skips the
+    // inline `enforceCollateralRequirements` that was added to the AUTH branch
+    // of increaseTotalDebt — multicall flows rely on PortfolioManager.multicall
+    // to enforce at end-of-tx instead. Tests that intentionally stage over-cap
+    // state to inspect flag math must use this path so the inline enforce
+    // doesn't revert mid-borrow before the assertions can run.
+    address internal MANAGER;
 
     function setUp() public {
         vm.startPrank(OWNER);
@@ -155,6 +162,7 @@ contract ERC4626UtilizationCapTest is Test {
         h = new ERC4626UtilHarness();
         vm.prank(OWNER);
         pm.setAuthorizedCaller(AUTH, true);
+        MANAGER = address(pm);
 
         vm.label(address(h), "ERC4626UtilHarness");
         vm.label(address(pool), "MockUtilPool4626");
@@ -210,7 +218,10 @@ contract ERC4626UtilizationCapTest is Test {
         _stageCollateral(10_000e6); // maxLoan @70% LTV = 7000e6
 
         // Borrow 90e6: post active = 90e6 > cap 80e6 -> flag = 10e6.
-        vm.prank(AUTH);
+        // Manager-impersonation: the AUTH path now reverts inline on BadDebt,
+        // which would short-circuit the staged-flag inspection below. Multicall
+        // path is the canonical path that lets the flag accumulate pre-enforce.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 90e6);
 
         assertEq(h.readOverSupplied(), 10e6, "flag = active - cap");
@@ -230,7 +241,8 @@ contract ERC4626UtilizationCapTest is Test {
         usdc.mint(address(pool), 100e6);
         _stageCollateral(10_000e6);
 
-        vm.prank(AUTH);
+        // Manager-impersonation to stage the over-cap flag before repay clears it.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 90e6);
         assertEq(h.readOverSupplied(), 10e6, "flag set after over-cap borrow");
 
@@ -259,7 +271,9 @@ contract ERC4626UtilizationCapTest is Test {
         _stageCollateral(10_000e6);
 
         // ---- At default cap (8000 via LoanConfig fallback; storage left unset).
-        vm.prank(AUTH);
+        // Manager-impersonation for the over-cap leg so the inline AUTH enforce
+        // does not mask the flag math we want to inspect.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 90e6);
         assertEq(h.readOverSupplied(), 10e6, "default cap 8000: 90e6 exceeds 80e6 cap by 10e6");
 
@@ -270,6 +284,7 @@ contract ERC4626UtilizationCapTest is Test {
         assertEq(h.readOverSupplied(), 0, "flag cleared after repay");
 
         // ---- At cap 9500: same 90e6 borrow now sits under cap (95e6) -> no flag.
+        // AUTH path is clean here because the flag stays at 0.
         _setCap(9500);
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), address(collatVault), 90e6);
@@ -291,7 +306,11 @@ contract ERC4626UtilizationCapTest is Test {
         _stageCollateral(10_000e6);
 
         // Default cap of 8000 via LoanConfig fallback; storage left unset.
-        vm.prank(AUTH);
+        // Manager-impersonation: the AUTH path now reverts inline on BadDebt,
+        // which would short-circuit our flag inspection. The point of this
+        // test is "vault layer does not revert"; we use the path that leaves
+        // the inline enforce off.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 80e6 + 1);
 
         assertEq(h.readOverSupplied(), 1, "cap+1 wei borrow flags exactly 1 wei");
@@ -319,7 +338,8 @@ contract ERC4626UtilizationCapTest is Test {
         _stageCollateral(10_000e6);
 
         // 1 wei borrow. activeAssets = 1, cap = 0 -> flag = 1.
-        vm.prank(AUTH);
+        // Manager-impersonation to stage the flag (AUTH would revert inline).
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 1);
 
         assertEq(h.readOverSupplied(), 1, "1 wei borrow into zero-totalAssets pool flags 1 wei");
@@ -350,7 +370,7 @@ contract ERC4626UtilizationCapTest is Test {
         usdc.mint(address(pool), 100e6);
         _stageCollateral(10_000e6);
 
-        // ---- cap - 1: under cap, flag stays 0.
+        // ---- cap - 1: under cap, flag stays 0. AUTH path is clean.
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), address(collatVault), 80e6 - 1);
         assertEq(h.readOverSupplied(), 0, "cap - 1: flag must be 0");
@@ -365,14 +385,16 @@ contract ERC4626UtilizationCapTest is Test {
 
         // ---- exact cap: strict `>` -- flag stays 0, enforcement passes.
         // This is the behavior-change pin: legacy vault used `>=` and reverted here.
+        // AUTH path is clean here because the flag stays at 0.
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), address(collatVault), 80e6);
         assertEq(h.readOverSupplied(), 0, "exact cap: flag must be 0 (strict >)");
         vm.roll(block.number + 1);
         assertTrue(h.enforceCollateralRequirements(address(cfg), address(collatVault)), "exact cap: enforcement passes");
 
-        // ---- cap + 1: flag = 1.
-        vm.prank(AUTH);
+        // ---- cap + 1: flag = 1. Manager-impersonation -- AUTH would revert
+        // inline on BadDebt(1) and short-circuit the flag inspection.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 1);
         assertEq(h.readOverSupplied(), 1, "cap + 1: flag = exactly 1 wei");
 
@@ -479,7 +501,9 @@ contract ERC4626UtilizationCapTest is Test {
 
         // Borrower's own borrow pushes pool over cap: borrow 110e6,
         // active=110e6, cap=80e6 -> flag = 30e6.
-        vm.prank(AUTH);
+        // Manager-impersonation so the inline AUTH enforce doesn't revert
+        // before the flag accumulation can be inspected.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), address(collatVault), 110e6);
         assertEq(h.readOverSupplied(), 30e6, "borrow over cap: flag = active - cap = 30e6");
 

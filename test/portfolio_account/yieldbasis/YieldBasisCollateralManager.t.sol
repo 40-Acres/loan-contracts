@@ -537,6 +537,12 @@ contract YieldBasisCollateralManagerTest is Test {
         vm.prank(OWNER);
         cfg.setLoanContract(address(pool));
 
+        // Fund the pool so vault.totalAssets() lifts the cap-pinned maxLoan
+        // above the 2e18 borrow. Without this, totalAssets = 0 -> cap = 0,
+        // and the AUTH path's new inline enforce reverts on BadDebt before
+        // we can assert on the debt sync.
+        usdc.mint(address(pool), 10e18);
+
         ybLp.mint(address(h), 10e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 

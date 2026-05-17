@@ -176,8 +176,8 @@ library DynamicCollateralManager {
         // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
-        bool calledByMulticall = msg.sender == address(manager);
-        if (!calledByMulticall && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
+        bool isAuthorizedCaller = manager.isAuthorizedCaller(msg.sender);
+        if (msg.sender != address(manager) && !isAuthorizedCaller) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
         // Pre-borrow supply-side check. maxLoan derives from vault.totalAssets() and
@@ -203,9 +203,9 @@ library DynamicCollateralManager {
         }
 
         // Multicall callers get end-of-tx enforce via PortfolioManager.multicall.
-        // Authorized callers (e.g. a future topUp) bypass that wrapper, so enforce
-        // inline so the cap invariant holds regardless of caller path.
-        if (!calledByMulticall) {
+        // Authorized callers (e.g. topUp) bypass that wrapper, so enforce inline so the
+        // cap invariant holds regardless of caller path.
+        if (isAuthorizedCaller) {
             enforceCollateralRequirements();
         }
 
@@ -290,7 +290,7 @@ library DynamicCollateralManager {
         return (totalDebt * 100) / maxLoanIgnoreSupply;
     }
 
-    function enforceCollateralRequirements() external view returns (bool success) {
+    function enforceCollateralRequirements() public view returns (bool success) {
         CollateralManagerData storage collateralManagerData = _getCollateralManagerData();
         if(collateralManagerData.overSuppliedVaultDebt > 0) {
             revert BadDebt(collateralManagerData.overSuppliedVaultDebt);

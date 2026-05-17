@@ -158,7 +158,8 @@ library ERC4626CollateralManager {
         ERC4626CollateralData storage data = _getStorage();
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
-        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
+        bool isAuthorizedCaller = manager.isAuthorizedCaller(msg.sender);
+        if (msg.sender != address(manager) && !isAuthorizedCaller) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
         // Pre-borrow supply-side check
@@ -172,6 +173,11 @@ library ERC4626CollateralManager {
 
         // Sync local debt with the vault's actual post-borrow debt balance.
         data.debt = lendingPool.getDebtBalance(address(this));
+
+        // Authorized callers bypass PortfolioManager wrapper, so enforce inline
+        if (isAuthorizedCaller) {
+            enforceCollateralRequirements(portfolioFactoryConfig, vault);
+        }
 
         return (loanAmount, originationFee);
     }

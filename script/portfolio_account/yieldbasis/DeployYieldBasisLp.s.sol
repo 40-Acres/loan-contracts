@@ -191,9 +191,11 @@ contract YieldBasisLpUpgrade is PortfolioFactoryConfigDeploy {
 
         // // Deploy YieldBasisLpLendingFacet (borrow/pay against gauge share collateral)
         YieldBasisLpLendingFacet lendingFacet = new YieldBasisLpLendingFacet(portfolioFactory, vault, gauge);
-        bytes4[] memory lendingSelectors = new bytes4[](2);
+        bytes4[] memory lendingSelectors = new bytes4[](4);
         lendingSelectors[0] = YieldBasisLpLendingFacet.borrow.selector;
         lendingSelectors[1] = YieldBasisLpLendingFacet.pay.selector;
+        lendingSelectors[2] = YieldBasisLpLendingFacet.setTopUp.selector;
+        lendingSelectors[3] = YieldBasisLpLendingFacet.topUp.selector;
         _registerFacet(facetRegistry, address(lendingFacet), lendingSelectors, "YieldBasisLpLendingFacet");
 
         // Deploy YieldBasisLpRewardsProcessingFacet (defaultToken=underlying; underlying drives debt math)

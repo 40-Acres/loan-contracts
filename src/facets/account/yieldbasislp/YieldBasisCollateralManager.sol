@@ -169,7 +169,8 @@ library YieldBasisCollateralManager {
 
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
-        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
+        bool isAuthorizedCaller = manager.isAuthorizedCaller(msg.sender);
+        if (msg.sender != address(manager) && !isAuthorizedCaller) revert NotPortfolioManager();
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
@@ -183,6 +184,11 @@ library YieldBasisCollateralManager {
         loanAmount = amount - originationFee;
 
         data.debt = lendingPool.getDebtBalance(address(this));
+
+        // Authorized callers bypass PortfolioManager wrapper, so enforce inline
+        if (isAuthorizedCaller) {
+            enforceCollateralRequirements(portfolioFactoryConfig, vault, underlying);
+        }
 
         return (loanAmount, originationFee);
     }

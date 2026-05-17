@@ -9,6 +9,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
+import {UserLendingConfig} from "../lending/UserLendingConfig.sol";
 
 /**
  * @title YieldBasisLpLendingFacet
@@ -27,6 +28,8 @@ contract YieldBasisLpLendingFacet is AccessControl {
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
+    event TopUpSet(bool topUpEnabled, address indexed owner);
+    event ToppedUp(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
 
     /// @dev `_lendingToken` and `_underlying` are both derived from
     ///      `lendingPool.lendingAsset()` so they are equal by construction —
@@ -83,6 +86,37 @@ contract YieldBasisLpLendingFacet is AccessControl {
         }
 
         return excess;
+    }
+
+    /**
+     * @dev Toggle topUp opt-in for this portfolio account.
+     */
+    function setTopUp(bool topUpEnabled) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserLendingConfig.setTopUp(topUpEnabled);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit TopUpSet(topUpEnabled, owner);
+    }
+
+    /**
+     * @dev Authorized-caller path that borrows up to the current maxLoan and forwards
+     *      the proceeds to the portfolio owner.
+     */
+    function topUp() external onlyAuthorizedCaller(_portfolioFactory) {
+        if (!UserLendingConfig.getTopUp()) return;
+
+        address config = _config();
+        SequencerLivenessLib.assertUp(config);
+
+        (uint256 maxLoan, ) = YieldBasisCollateralManager.getMaxLoan(config, _lpToken, _underlying);
+        if (maxLoan == 0) return;
+
+        (uint256 amountAfterFees, uint256 originationFee) =
+            YieldBasisCollateralManager.increaseTotalDebt(config, _lpToken, _underlying, maxLoan);
+
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+
+        emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
 
     function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {

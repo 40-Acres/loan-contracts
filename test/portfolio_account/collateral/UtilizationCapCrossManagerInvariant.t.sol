@@ -238,7 +238,7 @@ contract UtilizationCapCrossManagerInvariantTest is Test {
 
     function _runDynamic() internal returns (uint256) {
         (
-            ,
+            PortfolioManager pm,
             ,
             PortfolioFactoryConfig cfg,
             ,
@@ -246,23 +246,25 @@ contract UtilizationCapCrossManagerInvariantTest is Test {
         ) = _baseFixture(keccak256("cross-mgr-dyn"));
 
         HDyn h = new HDyn();
-        vm.prank(OWNER);
-        // Authorize AUTH on the fresh pm. Re-fetch pm via factory.portfolioManager() if needed,
-        // but here we just authorize AUTH via the local fixture's pm above. Done in _baseFixture.
 
         // Stage the cash-flow ceiling so getMaxLoan does NOT pin maxLoan to 0
         // (Dynamic uses cash-flow path; needs locked > 0 for maxLoanIgnoreSupply).
         // locked=1e30 -> maxLoanIgnoreSupply = (((1e30 * 10000)/1e6) * 100)/1e12 = 1e24 (huge).
         h.__setTotalLocked(1e30);
 
-        vm.prank(AUTH);
+        // Manager-impersonation: the over-cap borrow accumulates a non-zero
+        // overSuppliedVaultDebt flag, which the inline AUTH enforce would
+        // revert on. We intentionally inspect the staged flag pre-enforce
+        // across all three managers, so we drive the call via the multicall
+        // (non-AUTH) path that skips the inline enforce.
+        vm.prank(address(pm));
         h.increaseTotalDebt(address(cfg), BORROW);
         return h.readOverSupplied();
     }
 
     function _runERC4626() internal returns (uint256) {
         (
-            ,
+            PortfolioManager pm,
             ,
             PortfolioFactoryConfig cfg,
             ,
@@ -281,14 +283,19 @@ contract UtilizationCapCrossManagerInvariantTest is Test {
         collat.deposit(10_000e18, address(h));
         h.addCollateral(address(cfg), address(collat), 10_000e18);
 
-        vm.prank(AUTH);
+        // Manager-impersonation: the over-cap borrow accumulates a non-zero
+        // overSuppliedVaultDebt flag, which the inline AUTH enforce would
+        // revert on. We intentionally inspect the staged flag pre-enforce
+        // across all three managers, so we drive the call via the multicall
+        // (non-AUTH) path that skips the inline enforce.
+        vm.prank(address(pm));
         h.increaseTotalDebt(address(cfg), address(collat), BORROW);
         return h.readOverSupplied();
     }
 
     function _runYB() internal returns (uint256) {
         (
-            ,
+            PortfolioManager pm,
             ,
             PortfolioFactoryConfig cfg,
             ,
@@ -303,7 +310,12 @@ contract UtilizationCapCrossManagerInvariantTest is Test {
 
         h.addCollateral(address(cfg), address(ybLp), address(0), address(token), 10_000e18);
 
-        vm.prank(AUTH);
+        // Manager-impersonation: the over-cap borrow accumulates a non-zero
+        // overSuppliedVaultDebt flag, which the inline AUTH enforce would
+        // revert on. We intentionally inspect the staged flag pre-enforce
+        // across all three managers, so we drive the call via the multicall
+        // (non-AUTH) path that skips the inline enforce.
+        vm.prank(address(pm));
         h.increaseTotalDebt(address(cfg), address(ybLp), address(token), BORROW);
         return h.readOverSupplied();
     }

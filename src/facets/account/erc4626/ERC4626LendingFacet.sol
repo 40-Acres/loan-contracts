@@ -8,6 +8,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
 import {SequencerLivenessLib} from "../../../oracle/SequencerLivenessLib.sol";
+import {UserLendingConfig} from "../lending/UserLendingConfig.sol";
 
 /**
  * @title ERC4626LendingFacet
@@ -37,6 +38,8 @@ contract ERC4626LendingFacet is AccessControl {
 
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
+    event TopUpSet(bool topUpEnabled, address indexed owner);
+    event ToppedUp(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
 
     constructor(address portfolioFactory, address lendingToken, address vault) {
         require(portfolioFactory != address(0), "Invalid portfolio factory");
@@ -95,6 +98,37 @@ contract ERC4626LendingFacet is AccessControl {
         }
 
         return excess;
+    }
+
+    /**
+     * @dev Toggle topUp opt-in for this portfolio account.
+     */
+    function setTopUp(bool topUpEnabled) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        UserLendingConfig.setTopUp(topUpEnabled);
+        address owner = _portfolioFactory.ownerOf(address(this));
+        emit TopUpSet(topUpEnabled, owner);
+    }
+
+    /**
+     * @dev Authorized-caller path that borrows up to the current maxLoan and forwards
+     *      the proceeds to the portfolio owner.
+     */
+    function topUp() external onlyAuthorizedCaller(_portfolioFactory) {
+        if (!UserLendingConfig.getTopUp()) return;
+
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
+
+        (uint256 maxLoan, ) = ERC4626CollateralManager.getMaxLoan(config, _vault);
+        if (maxLoan == 0) return;
+
+        (uint256 amountAfterFees, uint256 originationFee) =
+            ERC4626CollateralManager.increaseTotalDebt(config, _vault, maxLoan);
+
+        address portfolioOwner = _portfolioFactory.ownerOf(address(this));
+        _lendingToken.safeTransfer(portfolioOwner, amountAfterFees);
+
+        emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
 
     /**

@@ -33,9 +33,11 @@ contract DeployERC4626LendingFacet is AccountFacetsDeploy {
 
     function getSelectorsForFacet() internal pure override returns (bytes4[] memory) {
         // Note: getMaxLoan and getTotalDebt are already registered in ERC4626CollateralFacet
-        bytes4[] memory selectors = new bytes4[](2);
+        bytes4[] memory selectors = new bytes4[](4);
         selectors[0] = ERC4626LendingFacet.borrow.selector;
         selectors[1] = ERC4626LendingFacet.pay.selector;
+        selectors[2] = ERC4626LendingFacet.setTopUp.selector;
+        selectors[3] = ERC4626LendingFacet.topUp.selector;
         return selectors;
     }
 }

@@ -147,6 +147,13 @@ contract DynamicUtilizationCapTest is Test {
 
     address internal OWNER = address(0x40FecA5f7156030b78200450852792ea93f7c6cd);
     address internal AUTH = address(0xAAAA);
+    // Manager-impersonation prank target. The non-AUTH caller path skips the
+    // inline `enforceCollateralRequirements` that was added to the AUTH branch
+    // of increaseTotalDebt — multicall flows rely on PortfolioManager.multicall
+    // to enforce at end-of-tx instead. Tests that intentionally stage over-cap
+    // state to inspect flag math must use this path so the inline enforce
+    // doesn't revert mid-borrow before the assertions can run.
+    address internal MANAGER;
 
     // rewardsRate=10000, multiplier=100, locked=5000e18
     //   maxLoanIgnoreSupply = (((5e21 * 10000)/1e6) * 100)/1e12 = 5e9 (USDC 6dec)
@@ -180,6 +187,8 @@ contract DynamicUtilizationCapTest is Test {
         h = new DynUtilHarness();
         vm.prank(OWNER);
         pm.setAuthorizedCaller(AUTH, true);
+
+        MANAGER = address(pm);
 
         // Seed totalLockedCollateral so getMaxLoan's cash-flow ceiling is non-zero.
         h.__setTotalLocked(LOCKED);
@@ -222,7 +231,12 @@ contract DynamicUtilizationCapTest is Test {
         pool.setTotal(100e6);
         usdc.mint(address(pool), 100e6);
 
-        vm.prank(AUTH);
+        // Manager-impersonation: this borrow is intentionally over-cap to
+        // inspect raw flag accumulation. The AUTH path now reverts inline on
+        // BadDebt, which would short-circuit the assertions below. The
+        // multicall path (manager-impersonation) is the canonical path that
+        // exercises this state pre-enforce.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 90e6);
 
         assertEq(h.readOverSupplied(), 10e6, "supply flag = active - cap");
@@ -261,7 +275,9 @@ contract DynamicUtilizationCapTest is Test {
         // Borrow 1.1e9:
         //   pre-borrow:  amount 1.1e9 > maxLoan 80e6  -> overSupplied += 1.02e9
         //   post-borrow: debt 1.1e9 > maxLoanIgnoreSupply 1e9 -> undercollat = 100e6
-        vm.prank(AUTH);
+        // Use manager-impersonation so the inline AUTH enforce doesn't revert
+        // before the flag assertions can inspect raw state.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 1_100_000_000);
 
         assertEq(h.readUndercollat(), 100e6, "undercollat = actualDebt - maxLoanIgnoreSupply = 100e6");
@@ -308,7 +324,8 @@ contract DynamicUtilizationCapTest is Test {
         pool.setTotal(100e6);
         usdc.mint(address(pool), 100e6);
 
-        vm.prank(AUTH);
+        // Manager-impersonation so the over-cap borrow can stage the flag.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 90e6);
         assertEq(h.readOverSupplied(), 10e6, "flag set after over-cap borrow");
 
@@ -338,7 +355,9 @@ contract DynamicUtilizationCapTest is Test {
         usdc.mint(address(pool), 100e6);
 
         // ---- At default cap (8000 via LoanConfig fallback; storage left unset).
-        vm.prank(AUTH);
+        // Manager-impersonation for the over-cap leg so inline enforce doesn't
+        // mask the flag-math we want to inspect.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 90e6);
         assertEq(h.readOverSupplied(), 10e6, "default cap 8000: 90e6 exceeds 80e6 by 10e6");
 
@@ -348,7 +367,7 @@ contract DynamicUtilizationCapTest is Test {
         h.decreaseTotalDebt(address(cfg), 90e6);
         assertEq(h.readOverSupplied(), 0, "flag cleared after repay");
 
-        // ---- At cap 9500.
+        // ---- At cap 9500: borrow now sits under cap, AUTH path is clean.
         _setCap(9500);
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), 90e6);
@@ -376,7 +395,9 @@ contract DynamicUtilizationCapTest is Test {
         usdc.mint(address(pool), 1);
 
         // 1 wei borrow. activeAssets = 1, cap = 0 -> flag = 1.
-        vm.prank(AUTH);
+        // Manager-impersonation to bypass inline AUTH enforce so we can inspect
+        // the staged flag rather than the inline revert.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 1);
 
         assertEq(h.readOverSupplied(), 1, "1 wei borrow into zero-totalAssets pool flags 1 wei");
@@ -405,7 +426,7 @@ contract DynamicUtilizationCapTest is Test {
         pool.setTotal(100e6);
         usdc.mint(address(pool), 100e6);
 
-        // ---- cap - 1: under cap, flag stays 0.
+        // ---- cap - 1: under cap, flag stays 0. AUTH path is clean.
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), 80e6 - 1);
         assertEq(h.readOverSupplied(), 0, "cap - 1: flag must be 0");
@@ -419,13 +440,15 @@ contract DynamicUtilizationCapTest is Test {
 
         // ---- exact cap: strict `>` -- flag stays 0, enforcement passes.
         // This is the behavior-change pin: legacy vault used `>=` and reverted here.
+        // AUTH path is clean because the flag stays at 0.
         vm.prank(AUTH);
         h.increaseTotalDebt(address(cfg), 80e6);
         assertEq(h.readOverSupplied(), 0, "exact cap: flag must be 0 (strict >)");
         assertTrue(h.enforceCollateralRequirements(), "exact cap: enforcement passes");
 
-        // ---- cap + 1: flag = 1.
-        vm.prank(AUTH);
+        // ---- cap + 1: flag = 1. Manager-impersonation here -- AUTH would
+        // revert inline on BadDebt(1) and short-circuit the flag inspection.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 1);
         assertEq(h.readOverSupplied(), 1, "cap + 1: flag = exactly 1 wei");
 
@@ -523,7 +546,9 @@ contract DynamicUtilizationCapTest is Test {
 
         // Borrower's own borrow pushes pool over cap: borrow 110e6 against
         // maxLoan 80e6 -> flag += (110 - 80) = 30e6, attributed to this borrower.
-        vm.prank(AUTH);
+        // Manager-impersonation so the inline AUTH enforce doesn't revert
+        // before the flag can be inspected.
+        vm.prank(MANAGER);
         h.increaseTotalDebt(address(cfg), 110e6);
         assertEq(h.readOverSupplied(), 30e6, "over-cap borrow: flag += amount - maxLoan = 30e6");
 
