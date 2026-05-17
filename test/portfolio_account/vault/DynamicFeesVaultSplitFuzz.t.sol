@@ -111,7 +111,6 @@ contract DynamicFeesVaultSplitFuzzTest is Test {
             "USDC Vault",
             "vUSDC",
             address(portfolioFactory),
-            8000,
             address(this),
             uint256(0)
         );

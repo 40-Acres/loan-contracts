@@ -134,6 +134,12 @@ contract MockSyncPool4626 {
         return _debtBalance;
     }
 
+    // totalAssets() shim -- managers call ILendingVault(lendingPool.lendingVault()).totalAssets()
+    // from getMaxLoan. Mock plays both pool and vault, so report idle + active.
+    function totalAssets() external view returns (uint256) {
+        return IERC20(_asset).balanceOf(address(this)) + _activeAssets;
+    }
+
     function depositRewards(uint256) external {}
 }
 

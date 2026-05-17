@@ -162,7 +162,7 @@ contract DynamicFeesVaultEscrowAccountingTest is Test {
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
             address(usdc), "USDC Vault", "vUSDC",
-            address(portfolioFactory), 8000, feeRecipient, FEE_BPS
+            address(portfolioFactory), feeRecipient, FEE_BPS
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         vault = DynamicFeesVault(address(proxy));
@@ -479,7 +479,7 @@ contract DynamicFeesVaultEscrowAccountingTest is Test {
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
             address(asset), "USDC Vault", "vUSDC",
-            address(portfolioFactory), 8000, feeRecipient, _feeBps
+            address(portfolioFactory), feeRecipient, _feeBps
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         v = DynamicFeesVault(address(proxy));
@@ -695,7 +695,7 @@ contract DynamicFeesVaultEscrowAccountingTest is Test {
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
             address(reAsset), "Reentrant Vault", "rV",
-            address(portfolioFactory), 8000, feeRecipient, FEE_BPS
+            address(portfolioFactory), feeRecipient, FEE_BPS
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         DynamicFeesVault rv = DynamicFeesVault(address(proxy));

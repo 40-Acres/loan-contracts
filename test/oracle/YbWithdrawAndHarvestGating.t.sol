@@ -113,7 +113,7 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
             address(impl),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(underlying), address(portfolioFactory), owner_, "lvault", "lv", 8000, 0)
+                (address(underlying), address(portfolioFactory), owner_, "lvault", "lv", 0)
             )
         );
         lendingVault = LendingVault(address(proxy));
@@ -172,7 +172,7 @@ contract YbWithdrawAndHarvestGatingTest is Test, HarvestFloor85 {
             address(impl2),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(underlying), address(portfolioFactory2), owner_, "lvault2", "lv2", 8000, 0)
+                (address(underlying), address(portfolioFactory2), owner_, "lvault2", "lv2", 0)
             )
         );
         lendingVault2 = LendingVault(address(proxy2));

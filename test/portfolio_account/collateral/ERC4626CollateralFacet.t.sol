@@ -119,7 +119,6 @@ contract ERC4626CollateralFacetTest is Test {
             "ERC4626 Lending Vault",
             "lVAULT",
             address(_portfolioFactory),
-            8000,
             address(this),
             uint256(0)
         );

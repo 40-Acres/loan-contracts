@@ -218,7 +218,6 @@ contract LendingVaultPhaseA5Test is Test {
             vaultOwner,
             "Lending Vault",
             "lvUSDC",
-            MAX_UTIL_BPS,
             feeBps_
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
@@ -448,7 +447,6 @@ contract LendingVaultPhaseA5Test is Test {
             vaultOwner,
             "Lending Vault",
             "lvUSDC",
-            MAX_UTIL_BPS,
             uint256(1001) // one above MAX_FEE_BPS
         );
         vm.expectRevert(LendingVault.FeeBpsTooHigh.selector);

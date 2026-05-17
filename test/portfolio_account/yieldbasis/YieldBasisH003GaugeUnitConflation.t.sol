@@ -187,7 +187,7 @@ contract YBManagerH003Test is Test {
             address(impl),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(usdc), address(factory), OWNER, "lvault", "lv", 8000, 0)
+                (address(usdc), address(factory), OWNER, "lvault", "lv", 0)
             )
         );
         lendingVault = LendingVault(address(proxy));
@@ -544,7 +544,7 @@ contract YBFacetH003Test is Test {
             address(impl),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(usdc), address(portfolioFactory), owner_, "lvault", "lv", 8000, 0)
+                (address(usdc), address(portfolioFactory), owner_, "lvault", "lv", 0)
             )
         );
         lendingVault = LendingVault(address(proxy));

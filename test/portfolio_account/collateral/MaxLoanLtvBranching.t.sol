@@ -96,6 +96,12 @@ contract MaxLoanMockPool {
     function asset() external view returns (address) { return _asset; }
     function activeAssets() external view returns (uint256) { return _activeAssets; }
     function getDebtBalance(address) external view returns (uint256) { return _debt; }
+
+    // totalAssets() shim -- managers call ILendingVault(lendingPool.lendingVault()).totalAssets()
+    // from getMaxLoan. Mock plays both pool and vault, so report idle + active.
+    function totalAssets() external view returns (uint256) {
+        return IERC20(_asset).balanceOf(address(this)) + _activeAssets;
+    }
 }
 
 /* -----------------------------------------------------------------------------

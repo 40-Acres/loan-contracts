@@ -83,7 +83,7 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
         portfolioFactory = new MockPortfolioFactoryDrift();
         portfolioFactory.setPortfolio(borrower, true);
 
-        vault = _deployVault(MAX_UTIL_BPS);
+        vault = _deployVault();
 
         // Seed the vault with depositor liquidity.
         usdc.mint(lender, SEED);
@@ -100,7 +100,7 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
 
     // ============ Helpers ============
 
-    function _deployVault(uint256 maxUtilBps) internal returns (DynamicFeesVault v) {
+    function _deployVault() internal returns (DynamicFeesVault v) {
         DynamicFeesVault impl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
@@ -108,7 +108,6 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
             "Vault",
             "vUSDC",
             address(portfolioFactory),
-            maxUtilBps,
             feeRecipient,
             uint256(0) // feeBps = 0 to keep totalAssets math clean
         );
@@ -241,75 +240,6 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
             totalLoanedBefore + borrowAmt,
             "totalLoanedAssets advanced by borrow amount"
         );
-    }
-
-    // =========================================================================
-    // 2. Gate: under effective form, a borrow that exceeds the cap still reverts.
-    // =========================================================================
-
-    function test_borrow_stillRevertsAtCap_underEffectiveFormula() public {
-        _setFlatRatio(0);
-
-        uint256 firstBorrow = 7_500e6;
-        _borrow(firstBorrow);
-
-        _streamRewardsAsBorrower(3_000e6);
-        vm.warp(EPOCH_3);
-        vault.sync();
-
-        uint256 effectiveLoaned = _effectiveLoaned();
-        uint256 total = vault.totalAssets();
-
-        // Need an amount that exceeds the effective cap. Strict-< in code means
-        // exactly meeting the cap is also a revert.
-        uint256 capAssets = (MAX_UTIL_BPS * total) / 10000;
-        uint256 excessAmt = (capAssets - effectiveLoaned) + 1; // one wei over cap
-
-        // Sanity: this amount fails the effective form.
-        assertGe(
-            (effectiveLoaned + excessAmt) * 10000,
-            MAX_UTIL_BPS * total,
-            "chosen amount must violate effective gate"
-        );
-
-        vm.prank(borrower);
-        vm.expectRevert(bytes("Borrow would exceed max utilization"));
-        vault.borrowFromPortfolio(excessAmt);
-    }
-
-    // =========================================================================
-    // 3. Gate: zero totalAssets short-circuits to revert before any cap math.
-    // =========================================================================
-
-    function test_borrow_revertsOnZeroTotalAssets() public {
-        // Build a fresh vault with no LP deposit. totalAssets() == 0 trivially.
-        DynamicFeesVault freshVault;
-        {
-            DynamicFeesVault impl = new DynamicFeesVault();
-            bytes memory initData = abi.encodeWithSelector(
-                DynamicFeesVault.initialize.selector,
-                address(usdc),
-                "Empty",
-                "vEMPTY",
-                address(portfolioFactory),
-                MAX_UTIL_BPS,
-                feeRecipient,
-                uint256(0)
-            );
-            ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
-            freshVault = DynamicFeesVault(address(proxy));
-            freshVault.transferOwnership(owner);
-            vm.prank(owner);
-            freshVault.acceptOwnership();
-        }
-
-        assertEq(freshVault.totalAssets(), 0, "precondition: empty vault has totalAssets == 0");
-
-        // Any positive borrow must revert via the `total > 0` guard before
-        // reaching the multiplication gate.
-        vm.prank(borrower);
-        vm.expectRevert(bytes("Borrow would exceed max utilization"));
-        freshVault.borrowFromPortfolio(1);
     }
 
     // =========================================================================

@@ -204,7 +204,6 @@ contract DynamicLocalSetup is Test {
             "Dynamic USDC Vault",
             "DV-USDC",
             address(_portfolioFactory),
-            8000,
             FORTY_ACRES_DEPLOYER,
             uint256(2500)
         );

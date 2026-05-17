@@ -35,7 +35,10 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         address owner;
         uint256 totalLoanedAssets;
         mapping(address => uint256) debtBalance;
-        uint256 maxUtilizationBps; // e.g. 8000 = 80%
+        // Slot preserved for UUPS storage-layout compatibility. Utilization cap
+        // moved to LoanConfig.getMaxUtilizationBps(); the manager-side
+        // overSuppliedVaultDebt flag is now the sole borrow-cap gate.
+        uint256 __deprecated_maxUtilizationBps;
         uint256 originationFeeBps; // e.g. 50 = 0.5%
         bool paused;
         // Epoch-based reward vesting: fees trickle into totalAssets over the epoch
@@ -56,7 +59,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
 
     error NotOwner();
     error NotPortfolio();
-    error ExceedsUtilization();
     error VaultPaused();
     error ZeroAmount();
     error FeeBpsTooHigh();
@@ -71,7 +73,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         address owner_,
         string memory name_,
         string memory symbol_,
-        uint256 maxUtilizationBps_,
         uint256 originationFeeBps_
     ) public initializer {
         if (originationFeeBps_ > MAX_FEE_BPS) revert FeeBpsTooHigh();
@@ -84,7 +85,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         LendingVaultStorage storage $ = _getStorage();
         $.portfolioFactory = PortfolioFactory(portfolioFactory_);
         $.owner = owner_;
-        $.maxUtilizationBps = maxUtilizationBps_;
         $.originationFeeBps = originationFeeBps_;
         $.sharesDecimalsOffset = IERC20Metadata(asset_).decimals();
     }
@@ -100,14 +100,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         originationFee = (amount * $.originationFeeBps) / 10000;
         uint256 amountAfterFee = amount - originationFee;
 
-        // Check utilization cap. Zero totalAssets is treated as fully utilized:
-        // any borrow against a zero-asset vault is by definition over the cap.
-        uint256 total = totalAssets();
-        if (total == 0) revert ExceedsUtilization();
-        uint256 postBorrowLoaned = $.totalLoanedAssets + amount;
-        if (postBorrowLoaned * 10000 >= $.maxUtilizationBps * total) revert ExceedsUtilization();
-
-        // Track debt (full amount — borrower owes amount, vault disbursed amount)
+        // Track debt (full amount -- borrower owes amount, vault disbursed amount)
         $.debtBalance[msg.sender] += amount;
         $.totalLoanedAssets += amount;
 
@@ -293,10 +286,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
 
     // ============ Admin ============
 
-    function setMaxUtilization(uint256 maxUtilizationBps_) external onlyOwner {
-        _getStorage().maxUtilizationBps = maxUtilizationBps_;
-    }
-
     function setOriginationFee(uint256 originationFeeBps_) external onlyOwner {
         if (originationFeeBps_ > MAX_FEE_BPS) revert FeeBpsTooHigh();
         _getStorage().originationFeeBps = originationFeeBps_;
@@ -328,10 +317,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
 
     function getPortfolioFactory() external view returns (address) {
         return address(_getStorage().portfolioFactory);
-    }
-
-    function maxUtilizationBps() external view returns (uint256) {
-        return _getStorage().maxUtilizationBps;
     }
 
     function originationFeeBps() external view returns (uint256) {

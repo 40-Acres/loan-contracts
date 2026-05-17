@@ -97,7 +97,7 @@ contract DynamicFeesVaultMaxWithdrawAccrualTest is Test {
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
             address(usdc), "USDC Vault", "vUSDC",
-            address(portfolioFactory), 8000, feeRecipient, DEFAULT_FEE_BPS
+            address(portfolioFactory), feeRecipient, DEFAULT_FEE_BPS
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         vault = DynamicFeesVault(address(proxy));

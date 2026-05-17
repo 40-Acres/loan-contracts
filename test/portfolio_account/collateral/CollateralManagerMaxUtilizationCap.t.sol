@@ -128,7 +128,7 @@ contract CollateralManagerMaxUtilizationCapTest is Test, LocalSetup {
         _addCollateral();
         _seedVault(VAULT_BAL);
 
-        _setCap(8000);
+        // Baseline at the default cap (8000 via LoanConfig fallback; storage unset).
         (uint256 maxLoanDefault,) = CollateralFacet(_portfolioAccount).getMaxLoan();
 
         _setCap(5000);
@@ -148,7 +148,7 @@ contract CollateralManagerMaxUtilizationCapTest is Test, LocalSetup {
         _addCollateral();
         _seedVault(VAULT_BAL);
 
-        _setCap(8000);
+        // Baseline at the default cap (8000 via LoanConfig fallback; storage unset).
         (uint256 maxLoanDefault,) = CollateralFacet(_portfolioAccount).getMaxLoan();
         assertEq(maxLoanDefault, (VAULT_BAL * 8000) / 10_000, "baseline @ 80%");
 
@@ -172,8 +172,8 @@ contract CollateralManagerMaxUtilizationCapTest is Test, LocalSetup {
     ///         and then quoting again. outstandingCapital now equals
     ///         maxUtilization, so the equal-or-greater branch fires.
     function test_overUtilized_returnsZeroMaxLoan_keepsIgnoreSupply() public {
-        // Use a tight cap so the supply budget is small and easy to exhaust.
-        _setCap(8000);
+        // Default cap 8000 via LoanConfig fallback; storage left unset. Tight enough
+        // that the supply budget is small and easy to exhaust.
         _addCollateral();
 
         // Drop vault balance such that supply-bound max == 200e6 USDC.

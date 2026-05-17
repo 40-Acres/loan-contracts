@@ -219,6 +219,13 @@ contract MockLendingPoolSync {
     // IERC4626 slice used by getMaxLoan
     function asset() external view returns (address) { return _asset; }
 
+    /// @dev Mirrors the IERC4626 surface the production manager now calls to derive
+    /// the cap denominator. Returns liquid asset balance + active loans -- the mock
+    /// has no vesting/escrow concept so it is a faithful approximation.
+    function totalAssets() external view returns (uint256) {
+        return IERC20(_asset).balanceOf(address(this)) + _activeAssetsToReport;
+    }
+
     function borrowFromPortfolio(uint256 /*amount*/) external pure returns (uint256) {
         return 0;
     }
@@ -307,7 +314,7 @@ contract YieldBasisCollateralManagerTest is Test {
             address(impl),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(usdc), address(factory), OWNER, "Lending Vault", "lVAULT", 8000, 0)
+                (address(usdc), address(factory), OWNER, "Lending Vault", "lVAULT", 0)
             )
         );
         lendingVault = LendingVault(address(proxy));
@@ -590,31 +597,17 @@ contract YieldBasisCollateralManagerTest is Test {
     // with insurance-fund-backed excess debt from being treated as healthy.
 
     function test_overSuppliedVaultDebt_enforcementRevertsBadDebt() public {
-        MockLendingPoolSync pool = new MockLendingPoolSync(address(usdc), address(factory));
-        vm.prank(OWNER);
-        cfg.setLoanContract(address(pool));
+        // overSuppliedVaultDebt now tracks global pool utilization overshoot --
+        // not the old `amount > maxLoan` collateral-side overshoot. Force the
+        // flag directly via the harness setter and assert enforcement reverts
+        // with the corresponding BadDebt selector + magnitude.
+        h.__setOverSupplied(2e18);
 
-        // Seed the pool with enough "vault balance" that getMaxLoan's supply
-        // clamp does not pin maxLoan at 0. With balance=100e18, activeAssets=0:
-        //   vaultSupply=100e18, maxUtilization=80e18, vaultAvailableSupply=80e18
-        // → maxLoan = min(maxLoanIgnoreSupply=7e18, 80e18) = 7e18 as intended.
-        usdc.mint(address(pool), 100e18);
-
-        // Collateral value 10e18 @ 70% LTV → maxLoan 7e18.
+        // Collateral side must be clean so we hit the BadDebt branch, not the
+        // intra-block UndercollateralizedDebt path.
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
-
-        // Borrow 9e18 → 2e18 goes into overSuppliedVaultDebt.
-        vm.prank(AUTH_CALLER);
-        h.increaseTotalDebt(address(cfg), address(ybLp), address(underlying), 9e18);
-
-        // Roll to a new block so the shortfall snapshot is stale (start==end in
-        // enforceCollateralRequirements). Otherwise this test would revert on
-        // the intra-block UndercollateralizedDebt check before BadDebt is
-        // reached — that path is covered by test_shortfall_intraBlockGrowthReverts.
-        // Here we specifically want to prove overSuppliedVaultDebt alone raises
-        // BadDebt independently of intra-block shortfall growth.
         vm.roll(block.number + 1);
 
         vm.expectRevert(abi.encodeWithSelector(YieldBasisCollateralManager.BadDebt.selector, uint256(2e18)));

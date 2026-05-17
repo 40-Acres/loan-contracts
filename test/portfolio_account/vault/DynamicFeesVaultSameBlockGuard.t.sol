@@ -91,7 +91,6 @@ contract DynamicFeesVaultSameBlockGuardTest is Test {
             "USDC Vault",
             "vUSDC",
             address(portfolioFactory),
-            uint256(8000),
             address(this),    // feeRecipient
             uint256(0)        // feeBps = 0 (no perf fee for these tests)
         );

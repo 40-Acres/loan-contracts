@@ -117,7 +117,6 @@ contract YieldBasisBtcE2ETest is Test {
             _owner,                      // owner
             "Lending Vault",             // name
             "lVAULT",                    // symbol
-            8000,                        // maxUtilizationBps (80%)
             80                           // originationFeeBps (0.8% for E2E)
         );
         ERC1967Proxy lendingVaultProxy = new ERC1967Proxy(address(lendingVaultImpl), initData);

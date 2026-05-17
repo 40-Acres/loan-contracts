@@ -6,11 +6,11 @@ import { LoanUtils } from "../../../LoanUtils.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
+import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
-import {IERC4626} from "forge-std/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
@@ -176,23 +176,37 @@ library DynamicCollateralManager {
         // Ensure debt can only be increased via PortfolioManager multicall or authorized callers
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
-        if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
+        bool calledByMulticall = msg.sender == address(manager);
+        if (!calledByMulticall && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+
+        // Pre-borrow supply-side check. maxLoan derives from vault.totalAssets() and
+        // LoanConfig.getMaxUtilizationBps(); any request above that lands the excess on
+        // the supply-side flag. PortfolioManager.multicall.enforceCollateralRequirements()
+        // reverts at end of tx if non-zero.
+        (uint256 maxLoan,) = getMaxLoan(portfolioFactoryConfig);
+        if (amount > maxLoan) {
+            collateralManagerData.overSuppliedVaultDebt += amount - maxLoan;
+        }
 
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
 
+        // Post-borrow collateral-side check. undercollateralizedDebt mirrors actual debt
+        // against the rewards-rate / collateral ceiling. Set absolutely from current state.
         uint256 actualTotalDebt = lendingPool.getDebtBalance(address(this));
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
-
-        // Update enforcement flags based on actual post-borrow state
         if (actualTotalDebt > maxLoanIgnoreSupply) {
-            uint256 excess = actualTotalDebt - maxLoanIgnoreSupply;
-            collateralManagerData.overSuppliedVaultDebt = excess;
-            collateralManagerData.undercollateralizedDebt = excess;
+            collateralManagerData.undercollateralizedDebt = actualTotalDebt - maxLoanIgnoreSupply;
         } else {
-            collateralManagerData.overSuppliedVaultDebt = 0;
             collateralManagerData.undercollateralizedDebt = 0;
+        }
+
+        // Multicall callers get end-of-tx enforce via PortfolioManager.multicall.
+        // Authorized callers (e.g. a future topUp) bypass that wrapper, so enforce
+        // inline so the cap invariant holds regardless of caller path.
+        if (!calledByMulticall) {
+            enforceCollateralRequirements();
         }
 
         return (loanAmount, originationFee);
@@ -204,27 +218,32 @@ library DynamicCollateralManager {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         address lendingAsset = lendingPool.lendingAsset();
 
-        // Pay vault first — vault settles vested rewards then applies payment.
+        uint256 actualPaid;
+        // Pay vault first, vault settles vested rewards then applies payment.
         if (amount > 0) {
             IERC20(lendingAsset).approve(address(lendingPool), amount);
-            uint256 actualPaid = lendingPool.payFromPortfolio(amount, 0);
+            actualPaid = lendingPool.payFromPortfolio(amount, 0);
             IERC20(lendingAsset).approve(address(lendingPool), 0);
             excess = amount - actualPaid;
         } else {
             excess = 0;
         }
 
-        // Read actual post-payment, post-settlement debt for accurate enforcement
+        // Decrement supply-side flag by the amount actually paid down, clamped at zero.
+        // Repays must never revert, so we only reduce the flag instead of reading global state.
+        uint256 prevOverSupplied = collateralManagerData.overSuppliedVaultDebt;
+        if (prevOverSupplied > 0) {
+            collateralManagerData.overSuppliedVaultDebt =
+                prevOverSupplied > actualPaid ? prevOverSupplied - actualPaid : 0;
+        }
+
+        // Recompute collateral-side flag from actual post-payment debt. Debt can only
+        // shrink on a repay (collateral untouched), so this only ever clears or lowers.
         uint256 actualTotalDebt = lendingPool.getDebtBalance(address(this));
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig);
-
-        // Update enforcement flags based on actual post-payment state
         if (actualTotalDebt > maxLoanIgnoreSupply) {
-            uint256 debtExcess = actualTotalDebt - maxLoanIgnoreSupply;
-            collateralManagerData.overSuppliedVaultDebt = debtExcess;
-            collateralManagerData.undercollateralizedDebt = debtExcess;
+            collateralManagerData.undercollateralizedDebt = actualTotalDebt - maxLoanIgnoreSupply;
         } else {
-            collateralManagerData.overSuppliedVaultDebt = 0;
             collateralManagerData.undercollateralizedDebt = 0;
         }
 
@@ -240,16 +259,15 @@ library DynamicCollateralManager {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();
 
-        address vault = lendingPool.lendingVault();
-        IERC4626 vaultAsset = IERC4626(vault);
-        // Get the underlying asset balance in the vault
-        address underlyingAsset = vaultAsset.asset();
-        uint256 vaultBalance = IERC20(underlyingAsset).balanceOf(address(vault));
+        // Supply source: vault.totalAssets() (already accounts for vesting/escrowed liabilities).
+        // Cap source: LoanConfig.getMaxUtilizationBps() (single home for the cap; vault no
+        // longer enforces, only the manager-side overSuppliedVaultDebt flag does).
+        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
+        uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
 
-        // Get current total debt from the vault
         uint256 currentLoanBalance = getTotalDebt(portfolioFactoryConfig);
 
-        return getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, vaultBalance, outstandingCapital, currentLoanBalance);
+        return getMaxLoanByRewardsRate(totalLockedCollateral, rewardsRate, multiplier, vaultTotalAssets, outstandingCapital, currentLoanBalance, maxUtilizationBps);
     }
 
     function getOriginTimestamp(uint256 tokenId) external view returns (uint256) {
@@ -287,17 +305,16 @@ library DynamicCollateralManager {
         uint256 veBalance,
         uint256 rewardsRate,
         uint256 multiplier,
-        uint256 vaultBalance,
+        uint256 vaultTotalAssets,
         uint256 outstandingCapital,
-        uint256 currentLoanBalance
+        uint256 currentLoanBalance,
+        uint256 maxUtilizationBps
     ) internal pure returns (uint256, uint256) {
         // Calculate the maximum loan ignoring vault supply constraints
         uint256 maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1000000) *
             multiplier) / 1e12; // rewardsRate * veNFT balance of token
 
-        // Calculate the maximum utilization ratio (80% of the vault supply)
-        uint256 vaultSupply = vaultBalance + outstandingCapital;
-        uint256 maxUtilization = (vaultSupply * 8000) / 10000;
+        uint256 maxUtilization = (vaultTotalAssets * maxUtilizationBps) / 10000;
 
         // If the vault is over-utilized, no loans can be made
         if (outstandingCapital >= maxUtilization) {

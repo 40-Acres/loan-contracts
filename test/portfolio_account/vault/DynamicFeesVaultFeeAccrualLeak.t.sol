@@ -138,7 +138,7 @@ contract DynamicFeesVaultFeeAccrualLeakTest is Test {
         DynamicFeesVault impl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory), 8000, _recipient, _feeBps
+            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory), _recipient, _feeBps
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         v = DynamicFeesVault(address(proxy));

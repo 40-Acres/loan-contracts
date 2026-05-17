@@ -192,7 +192,7 @@ contract DynamicFeesVaultIncentivizeTest is Test {
         DynamicFeesVault impl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            asset_, "Vault", "vUSDC", pf, 8000, recip, _feeBps
+            asset_, "Vault", "vUSDC", pf, recip, _feeBps
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         v = DynamicFeesVault(address(proxy));

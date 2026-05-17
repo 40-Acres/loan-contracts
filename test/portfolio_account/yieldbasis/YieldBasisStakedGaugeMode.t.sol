@@ -96,7 +96,7 @@ contract YieldBasisStakedGaugeModeTest is Test {
             address(vaultImpl),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(_usdc), address(_portfolioFactory), _owner, "lvault", "lv", 8000, 0)
+                (address(_usdc), address(_portfolioFactory), _owner, "lvault", "lv", 0)
             )
         );
         _vault = LendingVault(address(vaultProxy));

@@ -109,7 +109,6 @@ contract YieldBasisDynamicFeesE2E is Test {
             "40Acres YB USDC Vault",
             "40YB-USDC",
             address(portfolioFactory),
-            8000,
             DEPLOYER,
             uint256(0)
         );

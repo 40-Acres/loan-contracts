@@ -87,7 +87,7 @@ contract DynamicFeesVaultEscrowTest is Test {
         DynamicFeesVault vaultImpl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory), 8000, address(this), uint256(0)
+            address(usdc), "USDC Vault", "vUSDC", address(portfolioFactory), address(this), uint256(0)
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(vaultImpl), initData);
         vault = DynamicFeesVault(address(proxy));

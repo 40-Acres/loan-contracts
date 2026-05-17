@@ -84,7 +84,7 @@ contract YieldBasisLpHarvestMultiAccountTest is Test, HarvestFloor85 {
             address(impl),
             abi.encodeCall(
                 LendingVault.initialize,
-                (address(underlying), address(portfolioFactory), owner_, "lvault", "lv", 8000, 0)
+                (address(underlying), address(portfolioFactory), owner_, "lvault", "lv", 0)
             )
         );
         lendingVault = LendingVault(address(proxy));

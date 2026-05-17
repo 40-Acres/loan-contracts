@@ -158,7 +158,6 @@ contract ERC4626SnapshotTest is Test {
             "ERC4626 Lending Vault",
             "lVAULT",
             address(_portfolioFactory),
-            8000,
             address(this),
             uint256(0)
         );

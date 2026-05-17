@@ -52,7 +52,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     error NotAPauser();
     error ZeroAmount();
     error ZeroAddress();
-    error InvalidMaxUtilization();
     error FeeBpsTooHigh();
 
     // ============ Constants ============
@@ -102,7 +101,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         mapping(address => uint256) userBorrowerCreditPerRatePaid; // per-user snapshot of borrowerCreditPerRate
         mapping(uint256 => uint256) epochEndBorrowerCreditPerRate; // borrowerCreditPerRate frozen at each epoch boundary
         mapping(address => uint256) escrowedExcess; // excess rewards escrowed when transfer fails (e.g. USDC blacklist)
-        uint256 maxUtilizationBps; // e.g. 8000 = 80%
+        uint256 __deprecated_maxUtilizationBps; // deprecated
 
         // Performance fee
         address feeRecipient;          // recipient of accrued fee shares; if zero, fee is disabled
@@ -133,14 +132,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         string memory _name,
         string memory _symbol,
         address _portfolioFactory,
-        uint256 _maxUtilizationBps,
         address _feeRecipient,
         uint256 _feeBps
     ) public initializer {
         if (_asset == address(0)) revert ZeroAddress();
         if (_portfolioFactory == address(0)) revert ZeroAddress();
         if (_feeRecipient == address(0)) revert ZeroAddress();
-        if (_maxUtilizationBps == 0 || _maxUtilizationBps > 10000) revert InvalidMaxUtilization();
         if (_feeBps > MAX_FEE_BPS) revert FeeBpsTooHigh();
 
         __ERC4626_init(ERC20(_asset));
@@ -153,7 +150,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         $.portfolioFactory = _portfolioFactory;
         $.sharesDecimalsOffset = ERC20(_asset).decimals();
-        $.maxUtilizationBps = _maxUtilizationBps;
         $.feeRecipient = _feeRecipient;
         $.feeBps = _feeBps;
 
@@ -175,11 +171,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address oldCalculator = $.feeCalculator;
         $.feeCalculator = _newFeeCalculator;
         emit FeeCalculatorUpdated(oldCalculator, _newFeeCalculator);
-    }
-
-    function setMaxUtilization(uint256 _maxUtilizationBps) external onlyOwner {
-        if (_maxUtilizationBps == 0 || _maxUtilizationBps > 10000) revert InvalidMaxUtilization();
-        _getStorage().maxUtilizationBps = _maxUtilizationBps;
     }
 
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
@@ -219,9 +210,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return _getStorage().feeCalculator;
     }
 
-    function maxUtilizationBps() external view returns (uint256) {
-        return _getStorage().maxUtilizationBps;
-    }
 
     function feeRecipient() external view returns (address) {
         return _getStorage().feeRecipient;
@@ -773,20 +761,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
-
-        // Zero totalAssets is treated as fully utilized: any borrow against a zero-asset
-        // vault is by definition over the cap. Strict inequality in multiplication form
-        // avoids the division and a zero-denominator bypass.
-        uint256 total = totalAssets();
-        require(total > 0, "Borrow would exceed max utilization");
-        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
-        uint256 effectiveLoaned = $.totalLoanedAssets > totalReduction
-            ? $.totalLoanedAssets - totalReduction
-            : 0;
-        require(
-            (effectiveLoaned + amount) * 10000 < $.maxUtilizationBps * total,
-            "Borrow would exceed max utilization"
-        );
 
         $.debtBalance[msg.sender] += amount;
         $.totalDebtBalance += amount;

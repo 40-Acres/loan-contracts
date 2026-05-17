@@ -82,7 +82,6 @@ contract YieldBasisLpFacetTest is Test {
             _owner,                      // owner
             "Lending Vault",             // name
             "lVAULT",                    // symbol
-            8000,                        // maxUtilizationBps (80%)
             0                            // originationFeeBps (0 for simpler unit tests)
         );
         ERC1967Proxy lendingVaultProxy = new ERC1967Proxy(address(lendingVaultImpl), initData);

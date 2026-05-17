@@ -93,7 +93,6 @@ contract AerodromeDynamicFeesE2E is Test {
             "40Acres AERO USDC Vault",
             "40AERO-USDC",
             address(portfolioFactory),
-            8000,
             DEPLOYER,
             uint256(0)
         );

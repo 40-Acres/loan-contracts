@@ -139,7 +139,6 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
             _owner,
             "Lending Vault",
             "lVAULT",
-            9000,
             0
         );
     }

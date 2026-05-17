@@ -170,7 +170,7 @@ contract DynamicFeesVaultTreasuryTest is Test {
         DynamicFeesVault impl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            asset_, "USDC Vault", "vUSDC", pf, 8000, recip, _feeBps
+            asset_, "USDC Vault", "vUSDC", pf, recip, _feeBps
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         v = DynamicFeesVault(address(proxy));
@@ -318,7 +318,7 @@ contract DynamicFeesVaultTreasuryTest is Test {
         DynamicFeesVault impl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            address(usdc), "X", "X", address(portfolioFactory), 8000, address(0), uint256(0)
+            address(usdc), "X", "X", address(portfolioFactory), address(0), uint256(0)
         );
         vm.expectRevert(DynamicFeesVault.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), initData);
@@ -328,7 +328,7 @@ contract DynamicFeesVaultTreasuryTest is Test {
         DynamicFeesVault impl = new DynamicFeesVault();
         bytes memory initData = abi.encodeWithSelector(
             DynamicFeesVault.initialize.selector,
-            address(usdc), "X", "X", address(portfolioFactory), 8000, feeRecipient, uint256(5001)
+            address(usdc), "X", "X", address(portfolioFactory), feeRecipient, uint256(5001)
         );
         vm.expectRevert(DynamicFeesVault.FeeBpsTooHigh.selector);
         new ERC1967Proxy(address(impl), initData);

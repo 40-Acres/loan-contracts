@@ -266,7 +266,6 @@ contract DynamicFeesVaultLenderFloorInvariantTest is StdInvariant, Test {
             "USDC Vault",
             "vUSDC",
             address(portfolioFactory),
-            8000,
             address(this),
             uint256(0) // feeBps=0 to keep side-invariant simple
         );

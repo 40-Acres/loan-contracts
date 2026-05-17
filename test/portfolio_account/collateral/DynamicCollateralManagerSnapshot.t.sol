@@ -175,6 +175,13 @@ contract MockDynamicVault {
         return totalLoaned;
     }
 
+    /// @dev Mirrors the IERC4626 surface the production managers now call to derive
+    /// the cap denominator (`vault.totalAssets() * loanConfig.maxUtilizationBps / 10000`).
+    /// Returns liquid balance + active loans -- vesting/escrow ignored in the mock.
+    function totalAssets() external view returns (uint256) {
+        return _underlyingAsset.balanceOf(address(this)) + totalLoaned;
+    }
+
     function depositRewards(uint256) external {}
 
     // ── IDynamicFeesVault implementation ──
@@ -1520,8 +1527,9 @@ contract DynamicCollateralManagerSnapshotTest is Test {
         uint256 _outstandingCapital = uint256(outstandingCapital);
         uint256 _currentLoanBalance = uint256(currentLoanBalance);
 
+        // Pin the cap at 8000 bps to exercise the invariant against the historical default.
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = DynamicCollateralManager.getMaxLoanByRewardsRate(
-            _veBalance, _rewardsRate, _multiplier, _vaultBalance, _outstandingCapital, _currentLoanBalance
+            _veBalance, _rewardsRate, _multiplier, _vaultBalance, _outstandingCapital, _currentLoanBalance, 8000
         );
 
         // Invariant 1: maxLoanIgnoreSupply = (((veBalance * rewardsRate) / 1e6) * multiplier) / 1e12

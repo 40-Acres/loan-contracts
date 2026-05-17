@@ -83,7 +83,6 @@ contract LendingVaultEffectiveDebtTest is Test {
             vaultOwner,
             "Lending Vault",
             "lvUSDC",
-            MAX_UTIL_BPS,
             ORIG_FEE_BPS
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);

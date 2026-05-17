@@ -7,6 +7,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
+import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
@@ -172,8 +173,8 @@ library YieldBasisCollateralManager {
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
+        // Pre-borrow supply-side check
         (uint256 maxLoan,) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
-
         if (amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
         }
@@ -208,8 +209,12 @@ library YieldBasisCollateralManager {
 
         data.debt = lendingPool.getDebtBalance(address(this));
 
-        if (data.overSuppliedVaultDebt > 0) {
-            data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > actualPaid ? actualPaid : data.overSuppliedVaultDebt;
+        // Decrement supply-side flag by what was actually paid, clamped at zero. Repays
+        // must never revert, so we never read global state here to potentially raise the flag.
+        uint256 prevOverSupplied = data.overSuppliedVaultDebt;
+        if (prevOverSupplied > 0) {
+            data.overSuppliedVaultDebt =
+                prevOverSupplied > actualPaid ? prevOverSupplied - actualPaid : 0;
         }
 
         return excess;
@@ -253,25 +258,27 @@ library YieldBasisCollateralManager {
 
         uint256 outstandingCapital = lendingPool.activeAssets();
 
-        address lendingVault = lendingPool.lendingVault();
-        address lendingUnderlying = IERC4626(lendingVault).asset();
-        uint256 vaultBalance = IERC20(lendingUnderlying).balanceOf(lendingVault);
+        // Supply source: vault.totalAssets() (already accounts for vesting/escrowed liabilities).
+        // Cap source: LoanConfig.getMaxUtilizationBps() (single home for the cap; vault no
+        // longer enforces, only the manager-side overSuppliedVaultDebt flag does).
+        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
+        uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
 
         uint256 currentLoanBalance = getTotalDebt();
 
-        return _calculateMaxLoan(maxLoanIgnoreSupply, vaultBalance, outstandingCapital, currentLoanBalance);
+        return _calculateMaxLoan(maxLoanIgnoreSupply, vaultTotalAssets, outstandingCapital, currentLoanBalance, maxUtilizationBps);
     }
 
     function _calculateMaxLoan(
         uint256 maxLoanIgnoreSupply,
-        uint256 vaultBalance,
+        uint256 vaultTotalAssets,
         uint256 outstandingCapital,
-        uint256 currentLoanBalance
+        uint256 currentLoanBalance,
+        uint256 maxUtilizationBps
     ) internal pure returns (uint256 maxLoan, uint256 maxLoanIgnoreSupplyOut) {
         maxLoanIgnoreSupplyOut = maxLoanIgnoreSupply;
 
-        uint256 vaultSupply = vaultBalance + outstandingCapital;
-        uint256 maxUtilization = (vaultSupply * 8000) / 10000;
+        uint256 maxUtilization = (vaultTotalAssets * maxUtilizationBps) / 10000;
 
         if (outstandingCapital >= maxUtilization) {
             return (0, maxLoanIgnoreSupply);

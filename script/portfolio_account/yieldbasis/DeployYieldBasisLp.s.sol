@@ -84,7 +84,7 @@ contract YieldBasisLpDeploy is PortfolioFactoryConfigDeploy {
         LendingVault vaultImpl = new LendingVault();
         bytes memory vaultInitData = abi.encodeCall(
             LendingVault.initialize,
-            (underlying, address(_portfolioFactory), MULTISIG_ADDRESS, vaultName, vaultSymbol, MAX_UTILIZATION_BPS, ORIGINATION_FEE_BPS)
+            (underlying, address(_portfolioFactory), MULTISIG_ADDRESS, vaultName, vaultSymbol, ORIGINATION_FEE_BPS)
         );
         address vaultProxy = address(new ERC1967Proxy(address(vaultImpl), vaultInitData));
         _vault = vaultProxy;

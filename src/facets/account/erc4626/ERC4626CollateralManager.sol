@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
+import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
@@ -160,8 +161,8 @@ library ERC4626CollateralManager {
         if (msg.sender != address(manager) && !manager.isAuthorizedCaller(msg.sender)) revert NotPortfolioManager();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
+        // Pre-borrow supply-side check
         (uint256 maxLoan,) = getMaxLoan(portfolioFactoryConfig, vault);
-
         if (amount > maxLoan) {
             data.overSuppliedVaultDebt += amount - maxLoan;
         }
@@ -169,6 +170,7 @@ library ERC4626CollateralManager {
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
 
+        // Sync local debt with the vault's actual post-borrow debt balance.
         data.debt = lendingPool.getDebtBalance(address(this));
 
         return (loanAmount, originationFee);
@@ -204,8 +206,12 @@ library ERC4626CollateralManager {
         // The vault may have implicitly reduced debt via reward settlement beyond the explicit payment.
         data.debt = lendingPool.getDebtBalance(address(this));
 
-        if (data.overSuppliedVaultDebt > 0) {
-            data.overSuppliedVaultDebt -= data.overSuppliedVaultDebt > actualPaid ? actualPaid : data.overSuppliedVaultDebt;
+        // Decrement supply-side flag by what was actually paid, clamped at zero. Repays
+        // must never revert, so we never read global state here to potentially raise the flag.
+        uint256 prevOverSupplied = data.overSuppliedVaultDebt;
+        if (prevOverSupplied > 0) {
+            data.overSuppliedVaultDebt =
+                prevOverSupplied > actualPaid ? prevOverSupplied - actualPaid : 0;
         }
 
         return excess;
@@ -237,26 +243,27 @@ library ERC4626CollateralManager {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();
 
-        address lendingVault = lendingPool.lendingVault();
-        IERC4626 vaultAsset = IERC4626(lendingVault);
-        address underlyingAsset = vaultAsset.asset();
-        uint256 vaultBalance = IERC20(underlyingAsset).balanceOf(lendingVault);
+        // Supply source: vault.totalAssets() (already accounts for vesting/escrowed liabilities).
+        // Cap source: LoanConfig.getMaxUtilizationBps() (single home for the cap; vault no
+        // longer enforces, only the manager-side overSuppliedVaultDebt flag does).
+        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
+        uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
 
         uint256 currentLoanBalance = getTotalDebt();
 
-        return _calculateMaxLoan(maxLoanIgnoreSupply, vaultBalance, outstandingCapital, currentLoanBalance);
+        return _calculateMaxLoan(maxLoanIgnoreSupply, vaultTotalAssets, outstandingCapital, currentLoanBalance, maxUtilizationBps);
     }
 
     function _calculateMaxLoan(
         uint256 maxLoanIgnoreSupply,
-        uint256 vaultBalance,
+        uint256 vaultTotalAssets,
         uint256 outstandingCapital,
-        uint256 currentLoanBalance
+        uint256 currentLoanBalance,
+        uint256 maxUtilizationBps
     ) internal pure returns (uint256 maxLoan, uint256 maxLoanIgnoreSupplyOut) {
         maxLoanIgnoreSupplyOut = maxLoanIgnoreSupply;
 
-        uint256 vaultSupply = vaultBalance + outstandingCapital;
-        uint256 maxUtilization = (vaultSupply * 8000) / 10000;
+        uint256 maxUtilization = (vaultTotalAssets * maxUtilizationBps) / 10000;
 
         if (outstandingCapital >= maxUtilization) {
             return (0, maxLoanIgnoreSupply);

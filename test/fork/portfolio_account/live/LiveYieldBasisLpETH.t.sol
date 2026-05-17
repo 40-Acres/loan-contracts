@@ -496,7 +496,13 @@ contract LiveYieldBasisLpETHTest is Test {
     function testVaultAddressMatchesDeployed() public view {
         assertEq(address(vault), LIVE_VAULT, "Vault address mismatch");
         assertEq(vault.asset(), WETH, "Vault asset must be WETH");
-        assertEq(vault.maxUtilizationBps(), EXPECTED_MAX_UTIL_BPS, "maxUtilizationBps != 8000");
+        // The cap moved from the vault onto LoanConfig; read it from the
+        // linked PortfolioFactoryConfig -> LoanConfig.
+        assertEq(
+            portfolioFactoryConfig.getLoanConfig().getMaxUtilizationBps(),
+            EXPECTED_MAX_UTIL_BPS,
+            "maxUtilizationBps != 8000"
+        );
         assertEq(vault.originationFeeBps(), EXPECTED_ORIG_FEE_BPS, "originationFeeBps != 80");
         assertEq(vault.getPortfolioFactory(), address(portfolioFactory), "Vault factory mismatch");
     }

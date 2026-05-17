@@ -106,6 +106,12 @@ contract YBLtvMockPool {
     // For decreaseTotalDebt path used in test 6.
     function borrowFromPortfolio(uint256) external pure returns (uint256) { return 0; }
     function payFromPortfolio(uint256, uint256) external pure returns (uint256) { return 0; }
+
+    // totalAssets() shim -- managers call ILendingVault(lendingPool.lendingVault()).totalAssets()
+    // from getMaxLoan. Mock plays both pool and vault, so report idle + active.
+    function totalAssets() external view returns (uint256) {
+        return IERC20(_lendingAsset).balanceOf(address(this)) + _activeAssets;
+    }
 }
 
 /* -----------------------------------------------------------------------------

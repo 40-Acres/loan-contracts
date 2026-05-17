@@ -117,7 +117,6 @@ contract ERC4626ClaimingFacetTest is Test {
             _owner,
             "Lending Vault",
             "lVAULT",
-            9000, // maxUtilizationBps_
             0     // originationFeeBps_
         );
     }
