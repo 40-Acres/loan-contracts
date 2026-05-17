@@ -32,6 +32,21 @@ contract MockTunableYieldBasisLP is MockERC20 {
     uint256 private _pricePerShare;
     uint256 public withdrawHaircutBps; // 0 = no haircut
 
+    // ---- preview_withdraw override (for testing the conservative-mark min path) ----
+    //
+    // When set, `preview_withdraw` returns `_previewWithdrawForShares` instead of the
+    // pricePerShare-derived value. Lets tests stage:
+    //   - TRD-widened (override < fundamental): collateral mark must drop to override.
+    //   - Inverted     (override > fundamental): collateral mark must stay at fundamental.
+    // Set by calling `setPreviewWithdrawForShares(sharesArg, value)`. The mock only
+    // honors the override for the exact `shares` argument it was registered against —
+    // this matches the production use-case where the manager queries a single specific
+    // share amount. For other `shares` queries the mock falls back to the haircut
+    // formula above.
+    uint256 private _previewWithdrawSharesKey;
+    uint256 private _previewWithdrawValue;
+    bool private _previewWithdrawOverrideActive;
+
     constructor(
         string memory name,
         string memory symbol,
@@ -54,6 +69,23 @@ contract MockTunableYieldBasisLP is MockERC20 {
         withdrawHaircutBps = bps;
     }
 
+    /// @notice Register a one-shot preview_withdraw override. When `shares` is queried
+    ///         next, preview_withdraw returns `value` exactly. Other share queries fall
+    ///         back to the haircut formula. Allows tests to stage a withdrawable value
+    ///         that is independent of pricePerShare (TRD-widened, inverted, or zero).
+    function setPreviewWithdrawForShares(uint256 shares, uint256 value) external {
+        _previewWithdrawSharesKey = shares;
+        _previewWithdrawValue = value;
+        _previewWithdrawOverrideActive = true;
+    }
+
+    /// @notice Clear any registered preview_withdraw override.
+    function clearPreviewWithdrawOverride() external {
+        _previewWithdrawOverrideActive = false;
+        _previewWithdrawSharesKey = 0;
+        _previewWithdrawValue = 0;
+    }
+
     // ============ YB LP Surface ============
 
     function pricePerShare() external view returns (uint256) {
@@ -62,6 +94,9 @@ contract MockTunableYieldBasisLP is MockERC20 {
 
     /// @notice What `withdraw(shares, ...)` would actually deliver right now.
     function preview_withdraw(uint256 shares) external view returns (uint256) {
+        if (_previewWithdrawOverrideActive && shares == _previewWithdrawSharesKey) {
+            return _previewWithdrawValue;
+        }
         uint256 fair = (shares * _pricePerShare) / 1e18;
         return (fair * (10_000 - withdrawHaircutBps)) / 10_000;
     }

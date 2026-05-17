@@ -161,8 +161,12 @@ contract YieldBasisLpClaimingFacet is AccessControl {
         YieldBasisCollateralManager.reconcileSharesToBalance(config, lpToken, underlying, gauge);
 
         // Step 2: read post-reconcile state and validate yield exists.
-        (uint256 trackedShares, uint256 depositedValue, uint256 currentValue) =
+        // Surplus uses pps-priced basis on both sides so real pps growth always
+        // unblocks harvest (and thus lender-premium flow) regardless of pool
+        // TRD. The collateral mark for LTV/liquidation uses min() separately.
+        (uint256 trackedShares, uint256 depositedValue, ) =
             YieldBasisCollateralManager.getCollateral(lpToken, underlying);
+        uint256 currentValue = YieldBasisCollateralManager._resolveBasisValue(lpToken, trackedShares);
 
         require(trackedShares > 0, "No shares deposited");
         require(currentValue > depositedValue, "No yield to harvest");
@@ -203,16 +207,11 @@ contract YieldBasisLpClaimingFacet is AccessControl {
     }
 
     /**
-     * @notice Preview LP fee yield that harvestLpFees would deliver right now.
-     * @dev Mirrors the action by simulating reconcileSharesToBalance: collapses
-     *      tracked shares to actual recoverable LP and proportionally scales
-     *      depositedValue. Returned yield is fair-value (pricePerShare-priced);
-     *      realized underlying after the Curve burn will be lower by the
-     *      imbalance haircut. Off-chain consumers should call
-     *      IYieldBasisLP.preview_withdraw(yieldGaugeShares) for an executable
-     *      estimate.
-     * @return yieldUnderlying Fair-value yield in underlying-native units.
-     * @return yieldGaugeShares LP units that harvest would burn.
+     * @notice Preview LP fee yield harvestLpFees would deliver.
+     * @dev Mirrors the action: pps-priced surplus on both sides. Returned value
+     *      is fair (EMA) yield; realized underlying after the Curve burn will
+     *      be lower by the pool's imbalance haircut, bounded by the slippage
+     *      floor the caller passes.
      */
     function getAvailableLpFeeYield() external view returns (uint256 yieldUnderlying, uint256 yieldGaugeShares) {
         address lpToken = address(_lpToken);
@@ -233,7 +232,7 @@ contract YieldBasisLpClaimingFacet is AccessControl {
             : 0;
 
         uint256 effectiveCurrentValue =
-            (effectiveShares * IYieldBasisLP(lpToken).pricePerShare()) / 1e18;
+            YieldBasisCollateralManager._resolveBasisValue(lpToken, effectiveShares);
 
         if (effectiveCurrentValue <= effectiveDepositedValue) return (0, 0);
 

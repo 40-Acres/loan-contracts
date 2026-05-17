@@ -70,12 +70,28 @@ library YieldBasisCollateralManager {
     }
 
     /**
-     * @dev shares × vault.pricePerShare() / 1e18.
+     * @dev Conservative mark for collateral checks (LTV, max-loan, liquidation).
+     *      Uses min(EMA fair value, current Curve withdrawable) so a pool
+     *      imbalance gap does not silently accumulate as bad debt. Assumes both
+     *      reads return same-scale values (true for 18-dec underlyings).
      */
-    function _resolveCollateralValue(address vault, address /*underlying*/, uint256 shares) internal view returns (uint256 value) {
+    function _resolveCollateralValue(address vault, address /*underlying*/, uint256 shares) internal view returns (uint256) {
         if (shares == 0 || vault == address(0)) return 0;
-        uint256 pps = IYieldBasisLP(vault).pricePerShare();
-        return (shares * pps) / 1e18;
+        uint256 fundamental = (shares * IYieldBasisLP(vault).pricePerShare()) / 1e18;
+        uint256 withdrawable = IYieldBasisLP(vault).preview_withdraw(shares);
+        return fundamental < withdrawable ? fundamental : withdrawable;
+    }
+
+    /**
+     * @dev Basis-side valuation (pps only, no TRD discount). Used to stamp
+     *      depositedAssetValue and to compute harvest surplus, so pool
+     *      imbalance never blocks lender-premium flow when real pps growth has
+     *      occurred. Honest delivery on the Curve burn is enforced separately
+     *      by the slippage floor in the claiming facet.
+     */
+    function _resolveBasisValue(address vault, uint256 shares) internal view returns (uint256) {
+        if (shares == 0 || vault == address(0)) return 0;
+        return (shares * IYieldBasisLP(vault).pricePerShare()) / 1e18;
     }
 
     function addCollateral(address portfolioFactoryConfig, address vault, address gauge, address underlying, uint256 shares) public {
@@ -99,7 +115,7 @@ library YieldBasisCollateralManager {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
 
-        uint256 assetValue = _resolveCollateralValue(vault, underlying, shares);
+        uint256 assetValue = _resolveBasisValue(vault, shares);
 
         uint256 prevShares = data.shares;
         data.shares += shares;
