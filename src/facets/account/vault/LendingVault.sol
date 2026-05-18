@@ -41,12 +41,19 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         uint256 __deprecated_maxUtilizationBps;
         uint256 originationFeeBps; // e.g. 50 = 0.5%
         bool paused;
-        // Epoch-based reward vesting: fees trickle into totalAssets over the epoch
-        uint256 currentEpochRewards; // accumulated fees this epoch
+        // Epoch-based reward vesting: fees trickle into totalAssets over the epoch.
+        // WEEK-grossed vesting basis. epochRewardsLocked() = (remaining/WEEK) * currentEpochRewards.
+        // Mid-epoch deposits add (amount * WEEK / remaining) so the immediate locked delta
+        // equals the incoming amount, keeping totalAssets() invariant at the moment of deposit.
+        // Not a token count; read currentEpochActualRewards / lastEpochReward() for that.
+        uint256 currentEpochRewards;
         uint256 currentEpochStart;   // start timestamp of current epoch
         mapping(address => uint256) lastDepositBlock; // flash-deposit protection
         uint8 sharesDecimalsOffset; // asset decimals cached at init for inflation-attack-resistant offset
         address treasury; // recipient of protocol/origination fees; zero falls back to owner()
+        // Appended slot: truthful sum of reward tokens deposited this epoch.
+        // Resets on the first depositRewards() of each new epoch. Used by lastEpochReward().
+        uint256 currentEpochActualRewards;
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.LendingVault");
@@ -251,10 +258,12 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
     }
 
     /**
-     * @notice Get the current epoch's total rewards (for external queries)
+     * @notice Get the current epoch's total reward tokens deposited (truthful sum).
+     * @dev Distinct from the internal `currentEpochRewards` vesting basis, which is
+     *      grossed up by WEEK/remaining for JIT-resistant mid-epoch deposits.
      */
     function lastEpochReward() external view returns (uint256) {
-        return _getStorage().currentEpochRewards;
+        return _getStorage().currentEpochActualRewards;
     }
 
     /**
@@ -276,14 +285,24 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
 
     function _accumulateEpochReward(LendingVaultStorage storage $, uint256 amount) internal {
         uint256 epochStart = ProtocolTimeLibrary.epochStart(block.timestamp);
+        // epochNext(t) > t always, so remaining >= 1.
+        uint256 remaining = ProtocolTimeLibrary.epochNext(block.timestamp) - block.timestamp;
 
         if ($.currentEpochStart < epochStart) {
-            // New epoch — previous rewards fully vested, start fresh
-            $.currentEpochRewards = amount;
+            // New epoch -- at a fresh boundary remaining == WEEK so the scaled amount equals amount.
+            $.currentEpochRewards = (amount * ProtocolTimeLibrary.WEEK) / remaining;
+            $.currentEpochActualRewards = amount;
             $.currentEpochStart = epochStart;
         } else {
-            // Same epoch — add to existing rewards
-            $.currentEpochRewards += amount;
+            // Gross up by WEEK/remaining so the immediate locked delta equals `amount`,
+            // cancelling the totalAssets bump from the incoming transfer. The deposit
+            // then vests linearly from now -> epochNext.
+            //
+            // Invariant: epochRewardsLocked() = (remaining/WEEK) * currentEpochRewards
+            //   dLocked = (remaining/WEEK) * (amount * WEEK / remaining) = amount
+            //   dTotalAssets = +amount (balance) - amount (locked) = 0
+            $.currentEpochRewards += (amount * ProtocolTimeLibrary.WEEK) / remaining;
+            $.currentEpochActualRewards += amount;
         }
     }
 
