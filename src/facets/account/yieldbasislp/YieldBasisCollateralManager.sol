@@ -330,6 +330,7 @@ library YieldBasisCollateralManager {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
+    /// @dev Returns per-borrower LTV in bps: 0 = no debt, 100_00 = at LTV limit, >100_00 = underwater.
     function getLoanUtilization(address portfolioFactoryConfig, address vault, address underlying) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt();
         if (totalDebt == 0) return 0;
@@ -337,7 +338,7 @@ library YieldBasisCollateralManager {
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
         if (maxLoanIgnoreSupply == 0) return type(uint256).max;
 
-        return (totalDebt * 100) / maxLoanIgnoreSupply;
+        return (totalDebt * 100_00) / maxLoanIgnoreSupply;
     }
 
     function _currentShortfall(

@@ -7,10 +7,10 @@ interface ICollateralFacet {
     function enforceCollateralRequirements() external view returns (bool success);
     function getTotalLockedCollateral() external view returns (uint256);
 
-    /// @notice Account loan utilization expressed as a percentage of borrowing capacity.
-    /// @dev Computed as `(totalDebt * 100) / maxLoanIgnoreSupply`. Returns `0` when there is
+    /// @notice Account loan utilization in basis points of borrowing capacity.
+    /// @dev Computed as `(totalDebt * 100_00) / maxLoanIgnoreSupply`. Returns `0` when there is
     ///      no debt and `type(uint256).max` when capacity is zero but debt is positive.
-    /// @return util `0` = no debt, `100` = at the borrowing limit, `>100` = underwater.
+    /// @return util `0` = no debt, `100_00` = at the borrowing limit, `>100_00` = underwater.
     function getLoanUtilization() external view returns (uint256 util);
 
     /// @notice Address of the asset that represents collateral on this account.

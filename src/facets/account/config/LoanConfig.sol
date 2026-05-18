@@ -16,8 +16,21 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     error CombinedFeesTooHigh(uint256 combined, uint256 max);
     error InvalidMaxUtilization(uint256 value);
     error InvalidTreasury();
+    error InvalidCurveBase(uint256 base, uint256 treasuryFee, uint256 max);
+    error InvalidCurveCap(uint256 cap, uint256 treasuryFee, uint256 max);
+    error InvalidCurveCapBelowBase(uint256 cap, uint256 base);
+    error InvalidCurveSlope(uint256 slope, uint256 max);
+
+    /// @dev Sanity bound for the curve slope; ample headroom (1% premium added per 1bps ltv past kink at the top end).
+    uint256 public constant MAX_LENDER_PREMIUM_SLOPE = MAX_FEE_BPS * 100;
+
+    /// @dev Defensive clamp on the curve input. Per-borrower ltv can blow past 100%
+    ///      (underwater positions); also `getLoanUtilization` returns `type(uint256).max`
+    ///      when `maxLoanIgnoreSupply == 0`. Clamping here keeps the slope multiplication safe.
+    uint256 public constant MAX_LENDER_PREMIUM_HEALTH_LTV_BPS = MAX_FEE_BPS * 100;
 
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event LenderPremiumCurveUpdated(uint256 base, uint256 slope, uint256 kink, uint256 cap);
     constructor() {
         _disableInitializers();
     }
@@ -53,6 +66,10 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
         uint256 ltv;
         uint256 maxUtilizationBps;
         address treasury;
+        uint256 lenderPremiumBase;
+        uint256 lenderPremiumSlope;
+        uint256 lenderPremiumKink;
+        uint256 lenderPremiumCap;
     }
 
 
@@ -126,6 +143,74 @@ contract LoanConfig is ILoanConfig, Initializable, Ownable2StepUpgradeable, UUPS
     function getLenderPremium() public view returns (uint256) {
         LoanConfigData storage collateralStorage = _getLoanConfig();
         return collateralStorage.lenderPremium;
+    }
+
+    /**
+     * @notice Lender premium at a given per-borrower LTV (in bps).
+     * @dev Input is the borrower's LTV as reported by `getLoanUtilization()`:
+     *      100_00 = at-the-LTV-limit, >100_00 = underwater. This is not
+     *      pool-level utilization (`loaned/totalSupplied`). The output is the
+     *      percentage of incoming borrower rewards diverted to lenders, not an APR.
+     *
+     *      Curve disabled (`slope == 0`): returns the flat `lenderPremium`.
+     *      Curve enabled: piecewise-linear with kink.
+     *        ltv <= kink: base
+     *        ltv >  kink: base + slope * (ltv - kink) / 100_00
+     *      Output clamps to `cap`, or `MAX_FEE_BPS - treasuryFee` when `cap == 0`.
+     *      Input is clamped to `MAX_LENDER_PREMIUM_HEALTH_LTV_BPS` to keep slope math safe.
+     */
+    function getLenderPremium(uint256 healthLtvBps) public view returns (uint256) {
+        LoanConfigData storage c = _getLoanConfig();
+        if (c.lenderPremiumSlope == 0) return c.lenderPremium;
+
+        if (healthLtvBps > MAX_LENDER_PREMIUM_HEALTH_LTV_BPS) healthLtvBps = MAX_LENDER_PREMIUM_HEALTH_LTV_BPS;
+
+        uint256 rate = c.lenderPremiumBase;
+        if (healthLtvBps > c.lenderPremiumKink) {
+            rate += (c.lenderPremiumSlope * (healthLtvBps - c.lenderPremiumKink)) / 100_00;
+        }
+
+        uint256 effectiveCap = c.lenderPremiumCap == 0
+            ? MAX_FEE_BPS - c.treasuryFee
+            : c.lenderPremiumCap;
+        if (rate > effectiveCap) rate = effectiveCap;
+
+        return rate;
+    }
+
+    /**
+     * @notice Set the lender-premium curve in one atomic call.
+     * @dev `slope == 0` is the implicit disable path: the flat `lenderPremium`
+     *      remains in force regardless of base/kink/cap. `kink` is unbounded
+     *      because it is an input axis (per-borrower LTV in bps), not a fee output.
+     */
+    function setLenderPremiumCurve(uint256 base, uint256 slope, uint256 kink, uint256 cap) public onlyOwner {
+        LoanConfigData storage c = _getLoanConfig();
+        uint256 treasuryFee_ = c.treasuryFee;
+
+        if (base + treasuryFee_ > MAX_FEE_BPS) {
+            revert InvalidCurveBase(base, treasuryFee_, MAX_FEE_BPS);
+        }
+        if (cap != 0) {
+            if (cap + treasuryFee_ > MAX_FEE_BPS) {
+                revert InvalidCurveCap(cap, treasuryFee_, MAX_FEE_BPS);
+            }
+            if (cap < base) revert InvalidCurveCapBelowBase(cap, base);
+        }
+        if (slope > MAX_LENDER_PREMIUM_SLOPE) {
+            revert InvalidCurveSlope(slope, MAX_LENDER_PREMIUM_SLOPE);
+        }
+
+        c.lenderPremiumBase = base;
+        c.lenderPremiumSlope = slope;
+        c.lenderPremiumKink = kink;
+        c.lenderPremiumCap = cap;
+        emit LenderPremiumCurveUpdated(base, slope, kink, cap);
+    }
+
+    function getLenderPremiumCurve() public view returns (uint256 base, uint256 slope, uint256 kink, uint256 cap) {
+        LoanConfigData storage c = _getLoanConfig();
+        return (c.lenderPremiumBase, c.lenderPremiumSlope, c.lenderPremiumKink, c.lenderPremiumCap);
     }
 
     function setTreasuryFee(uint256 treasuryFee) public onlyOwner {

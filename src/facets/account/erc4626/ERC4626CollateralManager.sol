@@ -289,6 +289,7 @@ library ERC4626CollateralManager {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
+    /// @dev Returns per-borrower LTV in bps: 0 = no debt, 100_00 = at LTV limit, >100_00 = underwater.
     function getLoanUtilization(address portfolioFactoryConfig, address vault) public view returns (uint256) {
         uint256 totalDebt = getTotalDebt();
         if (totalDebt == 0) return 0;
@@ -296,7 +297,7 @@ library ERC4626CollateralManager {
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         if (maxLoanIgnoreSupply == 0) return type(uint256).max;
 
-        return (totalDebt * 100) / maxLoanIgnoreSupply;
+        return (totalDebt * 100_00) / maxLoanIgnoreSupply;
     }
 
     /**

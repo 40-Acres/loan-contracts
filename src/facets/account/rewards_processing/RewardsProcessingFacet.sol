@@ -94,7 +94,7 @@ contract RewardsProcessingFacet is AccessControl {
         if (hasDebt) {
             // Only allow active balance distribution if utilization <= 100 (debt <= maxLoanIgnoreSupply).
             // Underwater accounts (utilization > 100) send 100% of post-fees rewards to debt repayment.
-            if (_getLoanUtilization() <= 100 && UserRewardsConfig.hasActiveBalanceDistribution()) {
+            if (_getLoanUtilization() <= 100_00 && UserRewardsConfig.hasActiveBalanceDistribution()) {
                 remaining = _processActiveBalanceDistribution(tokenId, rewardsAmount, remaining, asset, swapParams[0]);
             }
             remaining = _processActiveLoanRewards(tokenId, remaining, asset);
@@ -164,9 +164,9 @@ contract RewardsProcessingFacet is AccessControl {
     }
 
     /**
-     * @dev Returns loan utilization: 0 = no debt, 100 = at capacity, >100 = underwater.
-     *      Used to gate active balance distribution (disabled when > 100) and
-     *      can be used for liquidation thresholds (e.g. 150).
+     * @dev Returns per-borrower LTV in bps: 0 = no debt, 100_00 = at LTV limit, >100_00 = underwater.
+     *      Used to gate active balance distribution (disabled when > 100_00) and
+     *      can be used for liquidation thresholds (e.g. 150_00).
      */
     function _getLoanUtilization() internal view virtual returns (uint256) {
         return CollateralManager.getLoanUtilization(address(_portfolioFactory.portfolioFactoryConfig()));
@@ -468,7 +468,8 @@ contract RewardsProcessingFacet is AccessControl {
      */
     function _payLenderPremium(uint256 tokenId, uint256 rewardsAmount, address asset) internal returns (uint256) {
         PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
-        uint256 lenderPremium = (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;
+        uint256 healthLtvBps = _getLoanUtilization();
+        uint256 lenderPremium = (rewardsAmount * config.getLoanConfig().getLenderPremium(healthLtvBps)) / 10000;
 
         address loanContract = config.getLoanContract();
         IERC20(asset).forceApprove(loanContract, lenderPremium);
@@ -514,8 +515,9 @@ contract RewardsProcessingFacet is AccessControl {
         {
             PortfolioFactoryConfig config = _portfolioFactory.portfolioFactoryConfig();
             if(hasDebt) {
+                uint256 healthLtvBps = _getLoanUtilization();
                 remaining -= (rewardsAmount * config.getLoanConfig().getTreasuryFee()) / 10000;
-                remaining -= (rewardsAmount * config.getLoanConfig().getLenderPremium()) / 10000;
+                remaining -= (rewardsAmount * config.getLoanConfig().getLenderPremium(healthLtvBps)) / 10000;
             } else {
                 remaining -= (rewardsAmount * config.getLoanConfig().getZeroBalanceFee()) / 10000;
             }
@@ -548,7 +550,7 @@ contract RewardsProcessingFacet is AccessControl {
         address lockedAsset,
         uint256 tokenId
     ) internal view returns (SwapRoute memory route) {
-        if (_getLoanUtilization() > 100 || !UserRewardsConfig.hasActiveBalanceDistribution()) return route;
+        if (_getLoanUtilization() > 100_00 || !UserRewardsConfig.hasActiveBalanceDistribution()) return route;
         UserRewardsConfig.DistributionEntry memory entry = UserRewardsConfig.getActiveBalanceDistribution();
         uint256 entryAmount = rewardsAmount * entry.percentage / 100;
         if (entryAmount > remaining) entryAmount = remaining;
