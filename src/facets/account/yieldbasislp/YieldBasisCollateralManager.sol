@@ -72,13 +72,23 @@ library YieldBasisCollateralManager {
     /**
      * @dev Conservative mark for collateral checks (LTV, max-loan, liquidation).
      *      Uses min(EMA fair value, current Curve withdrawable) so a pool
-     *      imbalance gap does not silently accumulate as bad debt. Assumes both
-     *      reads return same-scale values (true for 18-dec underlyings).
+     *      imbalance gap does not silently accumulate as bad debt.
+     *
+     *      pricePerShare() is 18-dec normalized regardless of underlying;
+     *      preview_withdraw() returns underlying-native. Rescale withdrawable
+     *      up to 18-dec so the min() compares like with like. Output is always
+     *      18-dec — the convention every downstream caller already expects.
      */
-    function _resolveCollateralValue(address vault, address /*underlying*/, uint256 shares) internal view returns (uint256) {
+    function _resolveCollateralValue(address vault, address underlying, uint256 shares) internal view returns (uint256) {
         if (shares == 0 || vault == address(0)) return 0;
         uint256 fundamental = (shares * IYieldBasisLP(vault).pricePerShare()) / 1e18;
         uint256 withdrawable = IYieldBasisLP(vault).preview_withdraw(shares);
+        if (underlying != address(0)) {
+            uint8 dec = IERC20Metadata(underlying).decimals();
+            if (dec < 18) {
+                withdrawable = withdrawable * (10 ** (18 - dec));
+            }
+        }
         return fundamental < withdrawable ? fundamental : withdrawable;
     }
 
