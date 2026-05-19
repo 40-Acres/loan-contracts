@@ -103,7 +103,7 @@ contract DynamicYieldBasisLpLendingFacet is AccessControl {
         emit TopUpSet(topUpEnabled, owner);
     }
 
-    function topUp() external nonReentrant onlyAuthorizedCaller(_portfolioFactory) {
+    function topUp() external onlyAuthorizedCaller(_portfolioFactory) {
         if (!UserLendingConfig.getTopUp()) return;
 
         address config = _config();

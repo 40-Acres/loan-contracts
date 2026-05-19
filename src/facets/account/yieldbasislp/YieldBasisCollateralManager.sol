@@ -58,7 +58,10 @@ library YieldBasisCollateralManager {
         uint256 overSuppliedVaultDebt;
         uint256 startShortfall;
         uint256 snapshotBlockNumber;
+        address gauge;
     }
+
+    error GaugeMismatch(address stored, address provided);
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.YieldBasisCollateralManager");
 
@@ -104,23 +107,33 @@ library YieldBasisCollateralManager {
         return (shares * IYieldBasisLP(vault).pricePerShare()) / 1e18;
     }
 
-    function addCollateral(address portfolioFactoryConfig, address vault, address gauge, address underlying, uint256 shares) public {
-        require(vault != address(0), "Invalid vault address");
-        require(shares > 0, "Shares must be > 0");
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
-        YieldBasisCollateralData storage data = _getStorage();
-
-        // data.shares is canonical LP units. Gauge balance is in gauge-share units —
-        // convert to LP via convertToAssets so the sum stays in one unit even if the
-        // gauge ever drifts off 1:1.
-        uint256 requiredBalance = data.shares + shares;
-        uint256 actualBalance = IERC20(vault).balanceOf(address(this));
+    /// @dev Recoverable LP on the account: direct LP balance plus gauge receipt
+    ///      shares converted to LP via `convertToAssets`. Shared between the
+    ///      mutating ratchet in `_snapshotIfNeeded` and the in-memory clamp in
+    ///      `getTotalCollateralValue` so the two paths cannot drift.
+    function _actualLp(address vault, address gauge) internal view returns (uint256 lp) {
+        lp = IERC20(vault).balanceOf(address(this));
         if (gauge != address(0)) {
             uint256 gaugeShares = IERC20(gauge).balanceOf(address(this));
             if (gaugeShares > 0) {
-                actualBalance += IYieldBasisGauge(gauge).convertToAssets(gaugeShares);
+                lp += IYieldBasisGauge(gauge).convertToAssets(gaugeShares);
             }
         }
+    }
+
+    function addCollateral(address portfolioFactoryConfig, address vault, address gauge, address underlying, uint256 shares) public {
+        require(vault != address(0), "Invalid vault address");
+        require(shares > 0, "Shares must be > 0");
+        YieldBasisCollateralData storage data = _getStorage();
+        if (data.gauge == address(0)) {
+            data.gauge = gauge;
+        } else if (gauge != address(0) && data.gauge != gauge) {
+            revert GaugeMismatch(data.gauge, gauge);
+        }
+        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+
+        uint256 requiredBalance = data.shares + shares;
+        uint256 actualBalance = _actualLp(vault, gauge);
         if (actualBalance < requiredBalance) {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
@@ -160,9 +173,17 @@ library YieldBasisCollateralManager {
         }
     }
 
+    /// @dev Clamps tracked shares to actual recoverable LP before pricing so
+    ///      callers never see a value backed by phantom shares. Mutation of the
+    ///      stored counter happens in `_snapshotIfNeeded` on state-changing paths.
     function getTotalCollateralValue(address vault, address underlying) public view returns (uint256 totalValue) {
         YieldBasisCollateralData storage data = _getStorage();
-        totalValue = _resolveCollateralValue(vault, underlying, data.shares);
+        uint256 shares = data.shares;
+        if (shares > 0 && data.gauge != address(0)) {
+            uint256 actual = _actualLp(vault, data.gauge);
+            if (shares > actual) shares = actual;
+        }
+        totalValue = _resolveCollateralValue(vault, underlying, shares);
     }
 
     function getCollateral(address vault, address underlying) public view returns (
@@ -173,7 +194,7 @@ library YieldBasisCollateralManager {
         YieldBasisCollateralData storage data = _getStorage();
         shares = data.shares;
         depositedAssetValue = data.depositedAssetValue;
-        currentAssetValue = _resolveCollateralValue(vault, underlying, shares);
+        currentAssetValue = getTotalCollateralValue(vault, underlying);
     }
 
     function getCollateralShares() external view returns (uint256) {
@@ -355,16 +376,11 @@ library YieldBasisCollateralManager {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
     }
 
-    /**
-     * @dev Reconcile data.shares down to actual LP available on the account
-     * (LP balance + gauge balance converted via convertToAssets). Only reduces —
-     * never increases. Used at trusted boundaries (admin unstake) to absorb gauge
-     * rounding/fees as accounting truth without breaking subsequent user-facing
-     * operations on a future-withdraw safeTransfer revert.
-     *
-     * Surplus LP from gauge appreciation is NOT auto-credited — it must be
-     * brought into tracking via explicit addCollateral.
-     */
+    /// @dev Populates `data.gauge` (if unset) and forces a reconcile in the
+    ///      current block. Unlike the snapshot-time ratchet (which fires at most
+    ///      once per block), this entry is for admin paths that must reflect
+    ///      gauge drift immediately within the same block as the trigger
+    ///      (e.g. post-unstake, harvest residual settlement).
     function reconcileSharesToBalance(
         address portfolioFactoryConfig,
         address vault,
@@ -372,24 +388,32 @@ library YieldBasisCollateralManager {
         address gauge
     ) public {
         YieldBasisCollateralData storage data = _getStorage();
-        uint256 actualLp = IERC20(vault).balanceOf(address(this));
-        if (gauge != address(0)) {
-            uint256 gaugeShares = IERC20(gauge).balanceOf(address(this));
-            if (gaugeShares > 0) {
-                actualLp += IYieldBasisGauge(gauge).convertToAssets(gaugeShares);
-            }
+        if (data.gauge == address(0)) {
+            data.gauge = gauge;
+        } else if (gauge != address(0) && data.gauge != gauge) {
+            revert GaugeMismatch(data.gauge, gauge);
         }
-        if (data.shares > actualLp) {
-            if (data.shares > 0) {
-                data.depositedAssetValue = (data.depositedAssetValue * actualLp) / data.shares;
-            }
-            data.shares = actualLp;
-            _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+        bool ratcheted = _ratchetShares(portfolioFactoryConfig, vault);
+        if (ratcheted) {
+            // Force re-snapshot so startShortfall reflects the ratcheted state
+            // even when reconcile is called multiple times within a block.
+            data.snapshotBlockNumber = 0;
+        }
+        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+    }
 
-            if (actualLp == 0) {
-                _notifyCollateralRemoved(portfolioFactoryConfig, vault);
-            }
+    /// @dev Returns true if the ratchet shrank `data.shares`. One-way; never grows.
+    function _ratchetShares(address portfolioFactoryConfig, address vault) internal returns (bool) {
+        YieldBasisCollateralData storage data = _getStorage();
+        if (data.shares == 0 || data.gauge == address(0)) return false;
+        uint256 actual = _actualLp(vault, data.gauge);
+        if (data.shares <= actual) return false;
+        data.depositedAssetValue = (data.depositedAssetValue * actual) / data.shares;
+        data.shares = actual;
+        if (actual == 0) {
+            _notifyCollateralRemoved(portfolioFactoryConfig, vault);
         }
+        return true;
     }
 
     function enforceCollateralRequirements(
@@ -420,13 +444,22 @@ library YieldBasisCollateralManager {
         _getStorage().debt = lendingPool.getDebtBalance(address(this));
     }
 
+    /// @dev Invariant entry point: every state-changing manager call goes through here.
+    ///      Once per block, ratchet tracked shares down to actual recoverable LP
+    ///      before computing the shortfall baseline. Ratchet is one-way and intentional:
+    ///      a transient gauge drift permanently shrinks the user's tracked collateral
+    ///      rather than risking borrow against phantom shares between drift and the next
+    ///      admin reconcile. Surplus from later gauge appreciation must be added back
+    ///      via explicit addCollateral.
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address underlying) internal {
         _syncDebt(portfolioFactoryConfig);
         YieldBasisCollateralData storage data = _getStorage();
-        if (data.snapshotBlockNumber != block.number) {
-            data.snapshotBlockNumber = block.number;
-            data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, underlying);
-        }
+        if (data.snapshotBlockNumber == block.number) return;
+
+        _ratchetShares(portfolioFactoryConfig, vault);
+
+        data.snapshotBlockNumber = block.number;
+        data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, underlying);
     }
 
     /**
