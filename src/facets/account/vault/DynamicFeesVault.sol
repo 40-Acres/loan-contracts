@@ -39,6 +39,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event ExcessRewardsEscrowed(address indexed borrower, uint256 amount);
     event EscrowClaimed(address indexed borrower, uint256 amount);
     event Borrowed(address indexed borrower, uint256 amount);
+    event OriginationFeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event Repaid(address indexed borrower, uint256 amount, uint256 remainingDebt);
     event FeeAccrued(address indexed recipient, uint256 feeAssets, uint256 feeShares);
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
@@ -114,6 +115,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         // Treasury (recipient of protocol fees); zero falls back to owner()
         address treasury;
+
+        uint256 originationFeeBps;
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -210,6 +213,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         emit FeeBpsUpdated(old, _feeBps);
     }
 
+    function setOriginationFeeBps(uint256 _originationFeeBps) external onlyOwner {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 old = $.originationFeeBps;
+        $.originationFeeBps = _originationFeeBps;
+        emit OriginationFeeBpsUpdated(old, _originationFeeBps);
+    }
+
     function setTreasury(address newTreasury) external onlyOwner {
         if (newTreasury == address(0)) revert InvalidTreasury();
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -236,6 +246,10 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
     function feeBps() external view returns (uint256) {
         return _getStorage().feeBps;
+    }
+
+    function originationFeeBps() external view returns (uint256) {
+        return _getStorage().originationFeeBps;
     }
 
     function lastTotalAssetsForFee() external view returns (uint256) {
@@ -781,14 +795,19 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         DynamicFeesVaultStorage storage $ = _getStorage();
 
+        originationFee = (amount * $.originationFeeBps) / 10000;
+        uint256 amountAfterFee = amount - originationFee;
+
         $.debtBalance[msg.sender] += amount;
         $.totalDebtBalance += amount;
         $.totalLoanedAssets += amount;
-        IERC20(asset()).safeTransfer(msg.sender, amount);
+
+        IERC20(asset()).safeTransfer(msg.sender, amountAfterFee);
+        if (originationFee > 0) {
+            IERC20(asset()).safeTransfer(getTreasury(), originationFee);
+        }
 
         emit Borrowed(msg.sender, amount);
-
-        return 0;
     }
 
     function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused returns (uint256 actualPaid) {

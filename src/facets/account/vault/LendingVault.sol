@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
@@ -23,7 +24,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
  * totalAssets = USDC balance + total loaned out
  * share price appreciates as origination fees are collected.
  */
-contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, ILendingPool {
+contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardUpgradeable, ILendingPool {
     using SafeERC20 for IERC20;
 
     /// @notice Maximum origination fee in basis points (10%)
@@ -32,7 +33,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
     /// @custom:storage-location erc7201:storage.LendingVault
     struct LendingVaultStorage {
         PortfolioFactory portfolioFactory;
-        address owner;
         uint256 totalLoanedAssets;
         mapping(address => uint256) debtBalance;
         // Slot preserved for UUPS storage-layout compatibility. Utilization cap
@@ -61,7 +61,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
     event Borrowed(address indexed borrower, uint256 amount, uint256 originationFee);
     event Repaid(address indexed borrower, uint256 amount);
     event RewardsDeposited(address indexed from, uint256 amount);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
@@ -90,11 +89,12 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         __ERC4626_init(ERC20(asset_));
         __ERC20_init(name_, symbol_);
         __UUPSUpgradeable_init();
+        __Ownable_init(owner_);
+        __Ownable2Step_init();
         __ReentrancyGuard_init();
 
         LendingVaultStorage storage $ = _getStorage();
         $.portfolioFactory = PortfolioFactory(portfolioFactory_);
-        $.owner = owner_;
         $.originationFeeBps = originationFeeBps_;
         $.sharesDecimalsOffset = IERC20Metadata(asset_).decimals();
     }
@@ -323,17 +323,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
         emit Unpaused(msg.sender);
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Invalid owner");
-        LendingVaultStorage storage $ = _getStorage();
-        address prev = $.owner;
-        $.owner = newOwner;
-        emit OwnershipTransferred(prev, newOwner);
-    }
-
-    function owner() public view returns (address) {
-        return _getStorage().owner;
-    }
 
     function setTreasury(address newTreasury) external onlyOwner {
         if (newTreasury == address(0)) revert InvalidTreasury();
@@ -346,7 +335,7 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
     // @dev Returns the configured treasury; falls back to owner() when unset.
     function getTreasury() public view returns (address) {
         address t = _getStorage().treasury;
-        return t == address(0) ? _getStorage().owner : t;
+        return t == address(0) ? owner() : t;
     }
 
     // ============ View ============
@@ -373,11 +362,6 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ree
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
-
-    modifier onlyOwner() {
-        if (msg.sender != _getStorage().owner) revert NotOwner();
-        _;
-    }
 
     modifier onlyPortfolio() {
         LendingVaultStorage storage $ = _getStorage();
