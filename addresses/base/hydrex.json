@@ -4,33 +4,33 @@
   "platform": "hydrex",
   "contracts": {
     "portfolioManager": {
-      "dev": "0x427D890e5794A8B3AB3b9aEe0B3481F5CBCc09C5",
+      "dev": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec",
       "prod": "0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec"
     },
     "walletFactory": {
-      "dev": "0x2CC600d0d114a156c66C2B8Eb85E0D87bFA194f8",
+      "dev": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264",
       "prod": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264"
     },
     "strategies": {
       "usdc-loan": {
         "factory": {
-          "dev": "0x0000000000000000000000000000000000000000",
+          "dev": "0x74488Ee5f1599CC4b89Fa42134b9c5a142Cba7D6",
           "prod": "0x74488Ee5f1599CC4b89Fa42134b9c5a142Cba7D6"
         },
         "config": {
-          "dev": "0x0000000000000000000000000000000000000000",
+          "dev": "0xC4735B52EEA7BBd4B7614CD5d64D7fFca68b284f",
           "prod": "0xC4735B52EEA7BBd4B7614CD5d64D7fFca68b284f"
         },
         "loanConfig": {
-          "dev": "0x0000000000000000000000000000000000000000",
+          "dev": "0x66281608d5672C1BAa5601d1d2bBE2e0fFEc8ffc",
           "prod": "0x66281608d5672C1BAa5601d1d2bBE2e0fFEc8ffc"
         },
         "votingConfig": {
-          "dev": "0x0000000000000000000000000000000000000000",
+          "dev": "0xc6944b22171492Db5211441Fdd297d75E9a60887",
           "prod": "0xc6944b22171492Db5211441Fdd297d75E9a60887"
         },
         "supplyVault": {
-          "dev": "0x0000000000000000000000000000000000000000",
+          "dev": "0x16eDb4Dfc1d3368d051370699EDfB280e9a1b474",
           "prod": "0x16eDb4Dfc1d3368d051370699EDfB280e9a1b474"
         }
       }
