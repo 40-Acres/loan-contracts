@@ -1,0 +1,5 @@
+---
+"@40-acres/contracts": major
+---
+
+YieldBasis ETH: introduce DynamicYieldBasisCollateralManager + four Dynamic LP facets (`DynamicYieldBasisLpFacet`, `DynamicYieldBasisLpLendingFacet`, `DynamicYieldBasisLpClaimingFacet`, `DynamicYieldBasisLpRewardsProcessingFacet`) for use against vaults that mutate debt outside borrow/pay (DynamicFeesVault and future variants). Manager reads debt live from the pool each call (raw via `getDebtBalance` for solvency reverts, effective via `getEffectiveDebtBalance` for headroom/UX); separate storage slot from the legacy YieldBasisCollateralManager. Lending facet adds `nonReentrant` on borrow/pay/topUp sharing the slot with the claiming facet. New deploy script redeploys the ybETH/WETH `supplyVault` as a fresh DynamicFeesVault on mainnet prod (`0x204b…4Ba3` -> `0xB543…e4A1`, WETH asset, feeBps=0, feeRecipient=0x5FB61F8fC6d8C5767A2B937578A49A1869d0bDa8) and re-registers the four facets via FacetRegistry. 

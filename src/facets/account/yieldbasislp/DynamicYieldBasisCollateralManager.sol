@@ -4,7 +4,6 @@ pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
@@ -15,30 +14,28 @@ import {IYieldBasisLP} from "../../../interfaces/IYieldBasisLP.sol";
 import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
 
 /**
- * @title YieldBasisCollateralManager
- * @dev Library for managing YieldBasis LP tokens as collateral.
+ * @title DynamicYieldBasisCollateralManager
+ * @dev Manages YieldBasis LP tokens as collateral when the lending pool keeps
+ *      per-borrower debt in its own storage and may mutate it independently of
+ *      borrow/pay calls (e.g. reward streaming that auto-decrements debt).
  *
- * The YB LP token (e.g. yb-WETH at 0x931d40dD07b25B91932b481B63631Ea86d236e09) is NOT
- * ERC4626 — it has no convertToAssets/convertToShares/asset(). It exposes pricePerShare()
- * only. Trying to price it through ERC4626CollateralManager's convertToAssets call path
- * reverts with empty returndata.
+ *      Debt is never cached. Every read fetches from the pool via
+ *      `getDebtBalance` (raw) or `getEffectiveDebtBalance` (raw minus pending
+ *      reward credits that have not yet been settled into the stored balance).
  *
- * This manager treats the LP token directly as the collateral primitive:
- *   - `vault` param on every external method = the YB LP token
- *   - `underlying` param = the asset the LP represents (e.g. WETH), carried through for
- *     semantic clarity; pricing does not depend on it.
- *   - shares stored in `data.shares` are LP token amounts
- *   - collateral value = shares * IYieldBasisLP(vault).pricePerShare() / 1e18
+ *      Read-by-purpose split:
+ *      - Solvency reverts use raw debt (getTotalDebt). Conservative -- the
+ *        borrower owes that amount today, regardless of pending streams.
+ *      - Headroom and utilization views use effective debt
+ *        (getEffectiveTotalDebt). Surfaces the in-flight reward credit so
+ *        max-loan availability reflects the pool's streaming benefit before
+ *        the next settlement call.
  *
- * Gauge interactions (stake/unstake) live in YieldBasisLpFacet.stake/unstake. The gauge
- * address is passed into addCollateral so the balance check can count gauge shares (a
- * separate ERC20 representing staked LP 1:1) toward the required balance — without it,
- * deposits while in staked mode would revert because prior LP has left the account.
- *
- * Uses its own ERC-7201 storage slot, distinct from ERC4626CollateralManager, so this
- * manager and the ERC4626 one can be installed side-by-side on different diamonds.
+ *      Uses its own storage slot, distinct from YieldBasisCollateralManager,
+ *      so the cached-debt and live-read variants can be installed on
+ *      different diamonds without slot collision.
  */
-library YieldBasisCollateralManager {
+library DynamicYieldBasisCollateralManager {
     using SafeERC20 for IERC20;
 
     error InsufficientCollateral();
@@ -51,10 +48,9 @@ library YieldBasisCollateralManager {
     event YieldBasisCollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event YieldBasisCollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
 
-    struct YieldBasisCollateralData {
+    struct DynamicYieldBasisCollateralData {
         uint256 shares;
         uint256 depositedAssetValue;
-        uint256 debt;
         uint256 overSuppliedVaultDebt;
         uint256 startShortfall;
         uint256 snapshotBlockNumber;
@@ -63,9 +59,9 @@ library YieldBasisCollateralManager {
 
     error GaugeMismatch(address stored, address provided);
 
-    bytes32 private constant STORAGE_POSITION = keccak256("storage.YieldBasisCollateralManager");
+    bytes32 private constant STORAGE_POSITION = keccak256("storage.DynamicYieldBasisCollateralManager");
 
-    function _getStorage() internal pure returns (YieldBasisCollateralData storage data) {
+    function _getStorage() internal pure returns (DynamicYieldBasisCollateralData storage data) {
         bytes32 position = STORAGE_POSITION;
         assembly {
             data.slot := position
@@ -80,7 +76,7 @@ library YieldBasisCollateralManager {
      *      pricePerShare() is 18-dec normalized regardless of underlying;
      *      preview_withdraw() returns underlying-native. Rescale withdrawable
      *      up to 18-dec so the min() compares like with like. Output is always
-     *      18-dec — the convention every downstream caller already expects.
+     *      18-dec -- the convention every downstream caller already expects.
      */
     function _resolveCollateralValue(address vault, address underlying, uint256 shares) internal view returns (uint256) {
         if (shares == 0 || vault == address(0)) return 0;
@@ -124,7 +120,7 @@ library YieldBasisCollateralManager {
     function addCollateral(address portfolioFactoryConfig, address vault, address gauge, address underlying, uint256 shares) public {
         require(vault != address(0), "Invalid vault address");
         require(shares > 0, "Shares must be > 0");
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
         if (data.gauge == address(0)) {
             data.gauge = gauge;
         } else if (gauge != address(0) && data.gauge != gauge) {
@@ -155,7 +151,7 @@ library YieldBasisCollateralManager {
         require(shares > 0, "Shares must be > 0");
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
 
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
         require(data.shares >= shares, "Insufficient collateral shares");
 
         uint256 assetValueToRemove = (data.depositedAssetValue * shares) / data.shares;
@@ -163,8 +159,11 @@ library YieldBasisCollateralManager {
         data.shares -= shares;
         data.depositedAssetValue -= assetValueToRemove;
 
+        // Solvency revert uses raw debt: a borrower's pending reward credit may
+        // unwind if the stream is interrupted, so collateral release is gated
+        // by the actually-owed balance, not the optimistic effective view.
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
-        require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+        require(getTotalDebt(portfolioFactoryConfig) <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         emit YieldBasisCollateralRemoved(vault, shares, assetValueToRemove, address(this));
 
@@ -177,7 +176,7 @@ library YieldBasisCollateralManager {
     ///      callers never see a value backed by phantom shares. Mutation of the
     ///      stored counter happens in `_snapshotIfNeeded` on state-changing paths.
     function getTotalCollateralValue(address vault, address underlying) public view returns (uint256 totalValue) {
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
         uint256 shares = data.shares;
         if (shares > 0 && data.gauge != address(0)) {
             uint256 actual = _actualLp(vault, data.gauge);
@@ -191,7 +190,7 @@ library YieldBasisCollateralManager {
         uint256 depositedAssetValue,
         uint256 currentAssetValue
     ) {
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
         shares = data.shares;
         depositedAssetValue = data.depositedAssetValue;
         currentAssetValue = getTotalCollateralValue(vault, underlying);
@@ -201,8 +200,17 @@ library YieldBasisCollateralManager {
         return _getStorage().shares;
     }
 
-    function getTotalDebt() public view returns (uint256) {
-        return _getStorage().debt;
+    /// @notice Raw outstanding debt. Use for solvency reverts.
+    function getTotalDebt(address portfolioFactoryConfig) public view returns (uint256) {
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+        return lendingPool.getDebtBalance(address(this));
+    }
+
+    /// @notice Raw debt minus pending reward credits not yet settled. Use for
+    ///         headroom and utilization views. Invariant: <= getTotalDebt().
+    function getEffectiveTotalDebt(address portfolioFactoryConfig) public view returns (uint256) {
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+        return lendingPool.getEffectiveDebtBalance(address(this));
     }
 
     function increaseTotalDebt(
@@ -212,7 +220,7 @@ library YieldBasisCollateralManager {
         uint256 amount
     ) public returns (uint256 loanAmount, uint256 originationFee) {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
 
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         PortfolioManager manager = PortfolioFactory(factory).portfolioManager();
@@ -230,8 +238,6 @@ library YieldBasisCollateralManager {
         originationFee = lendingPool.borrowFromPortfolio(amount);
         loanAmount = amount - originationFee;
 
-        data.debt = lendingPool.getDebtBalance(address(this));
-
         // Authorized callers bypass PortfolioManager wrapper, so enforce inline
         if (isAuthorizedCaller) {
             enforceCollateralRequirements(portfolioFactoryConfig, vault, underlying);
@@ -247,20 +253,22 @@ library YieldBasisCollateralManager {
         uint256 amount
     ) public returns (uint256 excess) {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
-        YieldBasisCollateralData storage data = _getStorage();
-
-        uint256 totalDebt = data.debt;
-        uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
+        DynamicYieldBasisCollateralData storage data = _getStorage();
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+
+        // Read raw debt live, then size the payment to it. The pool may decrement
+        // debt during payFromPortfolio via its internal vesting/settlement, so
+        // we must clamp to the pre-call value to avoid over-paying past the
+        // outstanding balance.
+        uint256 totalDebt = lendingPool.getDebtBalance(address(this));
+        uint256 balancePayment = totalDebt > amount ? amount : totalDebt;
 
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
         uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
         IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
 
         excess = amount - actualPaid;
-
-        data.debt = lendingPool.getDebtBalance(address(this));
 
         // Decrement supply-side flag by what was actually paid, clamped at zero. Repays
         // must never revert, so we never read global state here to potentially raise the flag.
@@ -297,7 +305,7 @@ library YieldBasisCollateralManager {
             // regardless of native decimals. Downstream comparisons in _calculateMaxLoan
             // are in lending-asset native decimals, so we (a) enforce that lending asset
             // matches the LP underlying and (b) rescale to lending-asset decimals before
-            // applying the LTV bps. Rescale floors — favors protocol.
+            // applying the LTV bps. Rescale floors -- favors protocol.
             address lendingAsset = lendingPool.lendingAsset();
             if (lendingAsset != underlying) revert LtvRequiresLikeToLike();
             uint8 ld = IERC20Metadata(lendingAsset).decimals();
@@ -317,7 +325,10 @@ library YieldBasisCollateralManager {
         uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
         uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
 
-        uint256 currentLoanBalance = getTotalDebt();
+        // Headroom uses effective debt: surfaces in-flight reward credit to the
+        // borrower so available capacity reflects the stream before the next
+        // settlement call.
+        uint256 currentLoanBalance = lendingPool.getEffectiveDebtBalance(address(this));
 
         return _calculateMaxLoan(maxLoanIgnoreSupply, vaultTotalAssets, outstandingCapital, currentLoanBalance, maxUtilizationBps);
     }
@@ -351,9 +362,11 @@ library YieldBasisCollateralManager {
         return (maxLoan, maxLoanIgnoreSupply);
     }
 
-    /// @dev Returns per-borrower LTV in bps: 0 = no debt, 100_00 = at LTV limit, >100_00 = underwater.
+    /// @dev Returns per-borrower LTV in bps using effective debt: 0 = no debt,
+    ///      100_00 = at LTV limit, >100_00 = underwater. UX value, not a
+    ///      solvency gate -- enforceCollateralRequirements uses raw debt.
     function getLoanUtilization(address portfolioFactoryConfig, address vault, address underlying) public view returns (uint256) {
-        uint256 totalDebt = getTotalDebt();
+        uint256 totalDebt = getEffectiveTotalDebt(portfolioFactoryConfig);
         if (totalDebt == 0) return 0;
 
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
@@ -368,7 +381,9 @@ library YieldBasisCollateralManager {
         address underlying
     ) internal view returns (uint256) {
         (, uint256 maxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
-        uint256 debt = getTotalDebt();
+        // Solvency shortfall uses raw debt. Pending reward credits do not
+        // discount the borrower's actual owed balance until settled.
+        uint256 debt = getTotalDebt(portfolioFactoryConfig);
         return debt > maxLoanIgnoreSupply ? debt - maxLoanIgnoreSupply : 0;
     }
 
@@ -386,7 +401,7 @@ library YieldBasisCollateralManager {
         address /* underlying */,
         address gauge
     ) public {
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
         if (data.gauge == address(0)) {
             data.gauge = gauge;
         } else if (gauge != address(0) && data.gauge != gauge) {
@@ -407,7 +422,7 @@ library YieldBasisCollateralManager {
         address vault,
         address underlying
     ) public view returns (bool) {
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
 
         uint256 end = _currentShortfall(portfolioFactoryConfig, vault, underlying);
         uint256 start = (data.snapshotBlockNumber == block.number)
@@ -425,11 +440,6 @@ library YieldBasisCollateralManager {
         return true;
     }
 
-    function _syncDebt(address portfolioFactoryConfig) internal {
-        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        _getStorage().debt = lendingPool.getDebtBalance(address(this));
-    }
-
     /// @dev Invariant entry point: every state-changing manager call goes through here.
     ///      Once per block, ratchet tracked shares down to actual recoverable LP
     ///      before computing the shortfall baseline. Ratchet is one-way and intentional:
@@ -438,8 +448,7 @@ library YieldBasisCollateralManager {
     ///      admin reconcile. Surplus from later gauge appreciation must be added back
     ///      via explicit addCollateral.
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address underlying) internal {
-        _syncDebt(portfolioFactoryConfig);
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber == block.number) return;
         data.snapshotBlockNumber = block.number;
 
@@ -453,11 +462,11 @@ library YieldBasisCollateralManager {
     /**
      * @dev Burn `shares` of tracked LP and deduct basis proportionally so per-share
      *      basis D/S is preserved across the burn. Caller must validate the yield
-     *      precondition S·p > D before calling — given that, S'·p ≥ D' follows
+     *      precondition S*p > D before calling; given that, S'*p >= D' follows
      *      automatically and no post-burn invariant check is needed here.
      *
      *      Gated by isAuthorizedCaller (mirrors AccessControl.onlyAuthorizedCaller).
-     *      The PortfolioManager is intentionally NOT bypassed — it does not call this
+     *      The PortfolioManager is intentionally NOT bypassed; it does not call this
      *      path. The yield-precondition above is enforced by the caller, so an
      *      unauthorized caller could otherwise zero out depositedAssetValue without
      *      burning real LP and unlock fictitious borrow capacity.
@@ -469,7 +478,7 @@ library YieldBasisCollateralManager {
         uint256 shares
     ) public {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
-        YieldBasisCollateralData storage data = _getStorage();
+        DynamicYieldBasisCollateralData storage data = _getStorage();
 
         address factory = PortfolioFactoryConfig(portfolioFactoryConfig).getPortfolioFactory();
         require(
@@ -483,8 +492,9 @@ library YieldBasisCollateralManager {
         data.shares -= shares;
         data.depositedAssetValue -= valueToRemove;
 
+        // Solvency revert uses raw debt: pending reward credits may unwind.
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
-        require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+        require(getTotalDebt(portfolioFactoryConfig) <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
 
         if (data.shares == 0) {
             _notifyCollateralRemoved(portfolioFactoryConfig, vault);
