@@ -387,8 +387,13 @@ library DynamicCollateralManager {
      */
     function getRequiredPaymentForCollateralRemoval(address portfolioFactoryConfig, uint256 tokenId) public view returns (uint256) {
         CollateralManagerData storage data = _getCollateralManagerData();
-        // Quote against effective debt, include borrowers vested rewards
-        uint256 currentDebt = getEffectiveTotalDebt(portfolioFactoryConfig);
+        // Quote against stored debt to avoid utilization-sensitive drift
+        // between quote and execution. The borrower/lender vesting split is
+        // global and shifts with utilization; a mempool actor could change
+        // utilization between an off-chain quote and the on-chain repayment,
+        // making the pre-quoted amount insufficient at settlement and
+        // reverting removeLockedCollateral. Stored debt is utilization-stable.
+        uint256 currentDebt = getTotalDebt(portfolioFactoryConfig);
         if (currentDebt == 0) return 0;
 
         uint256 nftCollateral = data.lockedCollaterals[tokenId];

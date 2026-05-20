@@ -672,14 +672,25 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
     // ============ isListingPurchasable Staleness Tests (DFA-M-004) ============
 
     /**
-     * @notice Verifies that isListingPurchasable reflects vested-but-unsettled
-     *         borrower rewards that reduce effective debt, rather than stale stored debt.
+     * @notice Verifies that isListingPurchasable quotes against STORED debt
+     *         and does NOT rebate the borrower's pending vesting credit in
+     *         the requiredPayment figure.
      *
-     *         Scenario: Seller borrows, rewards are deposited via depositRewards,
-     *         time passes (rewards vest linearly), and isListingPurchasable should show
-     *         the reduced effective debt — not the stale pre-settlement value.
+     * Audit context: getRequiredPaymentForCollateralRemoval was previously
+     * computed against effective debt, which depends on the utilization-
+     * sensitive borrower/lender split. A mempool actor could shift utilization
+     * between the off-chain quote and the on-chain settlement, raising the
+     * effective debt at execution above the pre-quoted amount and reverting
+     * the removal. Quoting against stored debt is utilization-stable and
+     * MEV-immune; the tradeoff is the borrower over-quotes by their pending
+     * vesting credit (returned later via _transferOrEscrow if excess).
+     *
+     * Scenario: Seller borrows, rewards are deposited via depositRewards,
+     * time passes (rewards vest linearly into borrower credit), and
+     * isListingPurchasable's quote remains pinned to stored debt despite
+     * the vault's view-side getEffectiveDebtBalance reflecting the credit.
      */
-    function testIsListingPurchasableReflectsVestedRewards() public {
+    function testIsListingPurchasable_UsesStoredDebt_NotEffective() public {
         // 1. Borrow against collateral
         uint256 borrowAmount = 500e6;
         borrowViaMulticall(borrowAmount);
@@ -714,23 +725,29 @@ contract DynamicMarketplaceFacetTest is Test, DynamicLocalSetup {
         uint256 staleDebt = _dynamicVault.getDebtBalance(_portfolioAccount);
         assertEq(staleDebt, borrowAmount, "Stored debt is stale - no settlement triggered");
 
-        // 6. But getEffectiveDebtBalance should reflect vested rewards
+        // 6. Sanity: vault's getEffectiveDebtBalance still reflects vested
+        //    rewards (this view is correct and used elsewhere; only the
+        //    marketplace quote helper deliberately bypasses it).
         uint256 effectiveDebt = _dynamicVault.getEffectiveDebtBalance(_portfolioAccount);
-        assertLt(effectiveDebt, storedDebt, "Effective debt should be less than stored debt after rewards vest");
+        assertLt(effectiveDebt, storedDebt, "Effective debt view still reflects vested rewards");
 
-        // 7. isListingPurchasable should use the effective (lower) debt
+        // 7. isListingPurchasable's requiredPayment ignores the vesting rebate
+        //    by design (MEV-stable quote). Single collateral token here ->
+        //    newMaxLoanIgnoreSupply = 0 -> requiredPayment = storedDebt.
         (bool purchasable, uint256 requiredPayment, uint256 netPayment) =
             IMarketplaceFacet(_portfolioAccount).isListingPurchasable(_tokenId);
 
-        // The required payment is based on effective debt, which is lower
-        // than what stale debt would suggest
         uint256 feeBps = portfolioMarketplace.protocolFee();
         uint256 expectedNetPayment = listingPrice - (listingPrice * feeBps) / 10000;
         assertEq(netPayment, expectedNetPayment, "Net payment should match listing price minus fee");
 
-        // requiredPayment should be based on effective debt (not stale stored debt)
-        // Since effective debt < stored debt, required payment should be lower
-        assertLt(requiredPayment, borrowAmount, "Required payment should reflect vested rewards reducing debt");
-        assertTrue(purchasable, "Listing should be purchasable with effective debt accounting");
+        // Audit-fix invariant: quote pinned to stored debt, ignores effective.
+        assertEq(
+            requiredPayment,
+            borrowAmount,
+            "Required payment uses STORED debt; ignores pending vesting to be MEV-stable"
+        );
+        // Listing still purchasable because netPayment covers the full stored debt.
+        assertTrue(purchasable, "Listing still purchasable: netPayment >= storedDebt");
     }
 }

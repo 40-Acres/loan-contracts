@@ -1744,23 +1744,28 @@ contract DynamicCollateralManagerSnapshotTest is Test {
     }
 
     /**
-     * @notice getRequiredPaymentForCollateralRemoval quotes against EFFECTIVE
-     *         debt, so users aren't asked to pay down rewards that have
-     *         already vested.
+     * @notice getRequiredPaymentForCollateralRemoval quotes against STORED
+     *         debt to avoid utilization-sensitive drift between the off-chain
+     *         quote and on-chain execution.
      *
-     * Setup: maxLoanIgnoreSupply = 5000e6 (single tokenId).
-     *   stored    = 6000e6 (above max — gate would block removal)
-     *   effective = 4000e6 (below max — UX quote should be zero)
+     * Audit context: the borrower/lender split ratio in DynamicFeesVault is a
+     * function of current utilization. A mempool actor can shift utilization
+     * (e.g., by borrowing) between a victim's off-chain quote and the on-chain
+     * settlement; the next sync then re-allocates the un-synced backlog at the
+     * new (less favorable) ratio, raising the borrower's effective debt above
+     * the pre-quoted amount and causing removeLockedCollateral to revert
+     * ("Debt exceeds max loan"). Quoting against stored debt sidesteps that
+     * MEV race: stored debt is utilization-stable, so the quote at T_quote
+     * is guaranteed to cover settlement at T_execution.
      *
-     * Required payment must be 0 because effective debt is already within
-     * the post-removal capacity. (`newTotalCollateral` after removing the
-     * only token is 0, so `newMaxLoanIgnoreSupply` becomes 0 too — so the
-     * quote should equal currentEffectiveDebt, NOT zero.)
+     * Tradeoff: the borrower over-quotes by their pending vesting credit. The
+     * excess is not lost — it pays down principal upfront and any over-vest
+     * later returns to the borrower via _transferOrEscrow.
      *
-     * Updated to use a *second* collateral token so post-removal capacity is
+     * Setup uses a second collateral token so post-removal capacity is
      * non-zero — this is the realistic UX scenario for the quote.
      */
-    function testDynamicRequiredPayment_UsesEffectiveDebt() public {
+    function testDynamicRequiredPayment_UsesStoredDebt() public {
         // Add tokenId2 too so removing tokenId leaves non-zero collateral
         // (otherwise newMaxLoanIgnoreSupply collapses to 0 and the quote
         // would equal currentDebt regardless of stored/effective).
@@ -1776,31 +1781,30 @@ contract DynamicCollateralManagerSnapshotTest is Test {
         // Both tokens: 5000e18 + 2500e18 = 7500e18 -> maxLoanIgnoreSupply = 7500e6
         // After removing tokenId: 2500e18 -> newMaxLoanIgnoreSupply = 2500e6
         //
-        // stored    = 6000e6 -> 6000 > 2500, gate would revert
-        // effective = 2000e6 -> 2000 < 2500, UX quote should be 0
+        // stored    = 6000e6 -> quote = 6000 - 2500 = 3500e6
+        // effective = 2000e6 -> would have quoted 0 under the old (vulnerable) path
         _dynamicVault.setDebtBalance(_portfolioAccount, 6000e6);
         _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 2000e6);
 
         uint256 requiredPayment = EffectiveDebtReader(_portfolioAccount)
             .readRequiredPaymentForCollateralRemoval(_tokenId);
 
-        // If this function were (incorrectly) consuming stored debt, it would
-        // return 6000e6 - 2500e6 = 3500e6. Asserting 0 pins the effective path.
+        // Pin the stored-debt path: result is stored - newMax, NOT effective - newMax.
+        // Under the prior (effective) path, this would have been 0.
         assertEq(
             requiredPayment,
-            0,
-            "Required payment must be 0 when EFFECTIVE debt is within post-removal capacity"
+            6000e6 - 2500e6,
+            "Required payment derived from STORED debt to avoid utilization-drift MEV"
         );
 
-        // Sanity: flip effective up above 2500e6 and the quote should match
-        // (effective - newMax), not (stored - newMax). Use 4000e6.
+        // Sanity: changing effective debt has no effect on the quote.
         _dynamicVault.setEffectiveDebtBalance(_portfolioAccount, 4000e6);
         uint256 requiredPaymentAfter = EffectiveDebtReader(_portfolioAccount)
             .readRequiredPaymentForCollateralRemoval(_tokenId);
         assertEq(
             requiredPaymentAfter,
-            4000e6 - 2500e6,
-            "Required payment must be derived from EFFECTIVE debt, not stored"
+            6000e6 - 2500e6,
+            "Quote is utilization-stable: independent of effective debt"
         );
     }
 
