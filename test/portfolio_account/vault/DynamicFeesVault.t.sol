@@ -2321,16 +2321,18 @@ contract DynamicFeesVaultTest is Test {
     // `currentEpochStart` storage slots are retained for ERC-7201 layout
     // compatibility but are never written.
     //
-    // ACCEPTED TRADE-OFF: a lender depositing at time T inside an epoch where
-    // premium has already been extracted captures
-    // `(T − epochStart(now)) / WEEK` of the unvested premium they did not fund.
-    // See the comment block in DynamicFeesVault._processGlobalVesting for the
-    // rationale; that boost is also covered explicitly by
-    // `test_LateSettlement_DepositorCapturesElapsedFraction` below.
+    // STALE-NAV FIX: previously, a lender depositing at time T inside an epoch
+    // where premium had already been extracted captured the already-vested
+    // fraction as a retroactive boost (a value transfer from existing LPs).
+    // That was the "ACCEPTED TRADE-OFF" of the prior stale-NAV preview path.
+    // It was fixed by simulating _processGlobalVesting inside totalAssets()
+    // and the preview functions; the share price now reflects realized vesting
+    // at view time. `test_LateSettlement_DepositorCapturesElapsedFraction`
+    // below is now the regression gate asserting the boost is gone.
     //
     // The same-block flash-loan guard (`lastDepositBlock`) blocks
-    // deposit-then-withdraw within one block; cross-block exploitation is the
-    // accepted trade-off.
+    // deposit-then-withdraw within one block; cross-block exploitation of the
+    // OLD stale-NAV bug is no longer possible.
     // ============================================================================
 
     /// @notice REGRESSION GATE — premium vests linearly within the deposit
@@ -2517,23 +2519,20 @@ contract DynamicFeesVaultTest is Test {
     /// @notice REGRESSION GATE — captures the accepted retroactive boost.
     /// @dev Deposit rewards in epoch N (= EPOCH_2). Skip deep into the future
     ///      (EPOCH_7) WITHOUT calling sync, so the stream is still pending.
-    ///      A new lender deposits at EPOCH_7 + WEEK/4, which itself runs
-    ///      _processGlobalVesting and routes the stale premium to
-    ///      vestingEpochPremium with vestStart = max(EPOCH_3, EPOCH_7) = EPOCH_7.
-    ///      elapsed_at_deposit = WEEK/4 → 25% of premium already vested into
-    ///      totalAssets() at deposit moment (deduction = 75% × premium).
+    ///      A new lender deposits at EPOCH_7 + WEEK/4. The deposit runs
+    ///      _processGlobalVesting internally and routes the stale premium to
+    ///      vestingEpochPremium with vestStart = max(EPOCH_3, EPOCH_7) = EPOCH_7,
+    ///      but the simulated totalAssets() the depositor's share price is
+    ///      computed against ALSO reflects that same realization. So the
+    ///      depositor pays a share price that already prices in the 25%
+    ///      already-vested portion: their cost basis equals their deposit
+    ///      (within ERC4626 floor-rounding).
     ///
     ///      Over the remaining 3*WEEK/4 of the vest epoch the unvested 75%
-    ///      bleeds into totalAssets(). The new lender's value
-    ///      (convertToAssets of their shares) increases by approximately
-    ///      `share_fraction × (1 − elapsed/WEEK) × lenderPremium`, which is
-    ///      the boost they did NOT fund. For a lender who deposits a sum
-    ///      comparable to the existing supply this is on the order of a few
-    ///      e6 of USDC equivalent.
-    ///
-    ///      Pre-rewrite this test asserted ZERO boost; under the new model
-    ///      the boost is non-zero and bounded — this test is the regression
-    ///      gate flipping that assertion to non-zero.
+    ///      vests into totalAssets(). The new lender's value
+    ///      (convertToAssets of their shares) rises only with the unvested
+    ///      portion they did fund. The retroactive boost previously asserted
+    ///      here was the symptom of stale-NAV previews and is gone.
     function test_LateSettlement_DepositorCapturesElapsedFraction() public {
         // Pin 20% lender / 80% borrower split.
         FlatFeeCalculator flatFee = new FlatFeeCalculator(2000);
@@ -2580,25 +2579,20 @@ contract DynamicFeesVaultTest is Test {
         uint256 lateLenderShares = vault.deposit(lateDepositAssets, lateLender);
         vm.stopPrank();
 
-        // Snapshot the lender's value RIGHT AFTER deposit. Note: under the
-        // single-bucket model with elapsed_at_deposit = WEEK/4, ~25% of the
-        // 20e6 premium (5e6) is already realized into totalAssets() at the
-        // moment shares are minted. ERC4626 share-mint math gives the new
-        // lender a fraction of that already-realized 5e6 proportional to
-        // their share of the post-deposit supply (this is a benign
-        // dilution-of-virtual-shares effect, not a retroactive boost). The
-        // valueAtDeposit reading therefore exceeds lateDepositAssets by a
-        // small amount (~25 bps for a 1:1 deposit-to-supply ratio).
+        // Snapshot the lender's value RIGHT AFTER deposit. With the
+        // stale-NAV fix, totalAssets() simulates vesting in views, so the
+        // share price the depositor pays already reflects the 25% already
+        // vested. Cost basis equals deposit (within 1 wei floor-rounding).
         uint256 valueAtDeposit = vault.convertToAssets(lateLenderShares);
 
-        // Sanity: cost basis is close to (but slightly above) the deposited
-        // assets, with the small premium reflecting the at-deposit share of
-        // the already-vested 25%. Bound the spread by 1% of the deposit.
-        assertGt(valueAtDeposit, lateDepositAssets, "Cost basis includes share of already-vested 25%");
-        assertLe(
-            valueAtDeposit - lateDepositAssets,
-            lateDepositAssets / 100,
-            "At-deposit boost from already-vested portion bounded by 1% of deposit"
+        // Post-fix: depositor does NOT capture the already-vested fraction.
+        // Cost basis is equal to their deposit (within ERC4626 floor rounding
+        // of 1 wei). This is the regression gate for the stale-NAV fix.
+        assertLe(valueAtDeposit, lateDepositAssets, "Cost basis does not exceed deposit (no retroactive boost)");
+        assertGe(
+            valueAtDeposit,
+            lateDepositAssets - 1,
+            "Cost basis within ERC4626 floor-rounding of deposit"
         );
 
         // Warp to end of vest epoch (EPOCH_8 = start of N+6, one full WEEK
@@ -2613,16 +2607,12 @@ contract DynamicFeesVaultTest is Test {
         // The lender captures the unvested-at-deposit fraction proportional
         // to their share of supply. lenderPremium = 20e6, unvested-at-deposit
         // fraction = 1 − WEEK/4/WEEK = 75% → 15e6 of premium vests AFTER
-        // their deposit. With the lender's deposit roughly equal to the prior
-        // total supply, their share fraction is ~half, so expected gain ≈ 7.5e6.
+        // The depositor's share count was sized against a NAV that already
+        // reflected the 25% already-vested portion, so they share only in the
+        // remaining 75% (15e6) that vests after their deposit.
         //
-        // The exact share fraction depends on the share price at deposit
-        // (which already reflected 25% of premium vested) and the vault's
-        // borrower-credit interaction. We bound by 5% absolute tolerance of
-        // the lenderPremium, asserting:
-        //   • gain is non-zero (boost is real) — the new-model behavior
-        //   • gain is bounded above by full unvested-at-deposit portion (15e6)
-        //   • gain is bounded below by a meaningful fraction (>= 1e6)
+        // Expected gain = share_fraction * unvested-at-deposit, where
+        // share_fraction = lateLenderShares / supplyAfterDeposit.
         uint256 gain = valueAfterFullVest - valueAtDeposit;
         uint256 lenderPremium = 20e6;
         uint256 unvestedAtDeposit = (lenderPremium * 3) / 4; // 75% × 20e6 = 15e6
@@ -2630,7 +2620,7 @@ contract DynamicFeesVaultTest is Test {
         assertGt(
             gain,
             1e6,
-            "Late lender captures NON-ZERO retroactive boost (accepted trade-off)"
+            "Late lender captures their share of the unvested-at-deposit portion"
         );
         assertLe(
             gain,
@@ -2638,13 +2628,11 @@ contract DynamicFeesVaultTest is Test {
             "Late lender gain bounded above by unvested-at-deposit premium fraction"
         );
 
-        // Tighter assertion: gain should be near the share-fraction-weighted
-        // unvested portion. Compute the lender's fraction of supply right
-        // after their deposit and use it as the expected.
         uint256 supplyAfterDeposit = vault.totalSupply();
         uint256 expectedGain = (lateLenderShares * unvestedAtDeposit) / supplyAfterDeposit;
 
-        // 5% of premium tolerance (= 1e6) per the user's spec.
+        // 5% of premium tolerance (= 1e6) for share-conversion and
+        // borrower-credit interaction noise.
         uint256 tolerance = lenderPremium / 20;
         assertApproxEqAbs(
             gain,

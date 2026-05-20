@@ -31,8 +31,43 @@ permissions:
   id-token: write          # provenance, optional
 
 jobs:
+  test:
+    name: Unit tests (gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FOUNDRY_PROFILE: ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.3
+          cache: true
+
+      - name: Cache Foundry build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            out
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
+
+      # Default profile excludes test/fork/** (no_match_path in foundry.toml),
+      # so this runs unit tests only.
+      - name: Run unit tests
+        run: |
+          forge --version
+          forge test -vvv
+
   release:
     name: Version or publish
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

@@ -60,6 +60,20 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     // ============ Constants ============
     uint256 public constant MAX_FEE_BPS = 5000;
 
+    /// @notice Snapshot of the values _processGlobalVesting would write at block.timestamp,
+    ///         computed without mutating storage. Used by totalAssets() and
+    ///         getEffectiveDebtBalance() so views reflect pending vesting.
+    struct VestingSimulation {
+        uint256 globalVested;
+        uint256 lenderPremium;
+        uint256 borrowerCredit;
+        uint256 vestingEpochPremium;
+        uint256 vestingEpochStart;
+        uint256 totalUnsettledRewards;
+        uint256 globalBorrowerPending;
+        uint256 borrowerCreditPerRate;
+    }
+
     // ============ ERC-7201 Namespaced Storage ============
     /// @custom:storage-location erc7201:dynamicfeesvault.storage
     struct DynamicFeesVaultStorage {
@@ -293,59 +307,25 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 userRate = $.userRewardRate[borrower];
         if (userRate == 0) return storedDebt;
 
-        // Simulate _processGlobalVesting to get effective borrowerCreditPerRate
-        uint256 effectiveBorrowerCreditPerRate = $.borrowerCreditPerRate;
-        uint256 effectiveGlobalBorrowerPending = $.globalBorrowerPending;
-
-        uint256 currentRate = $.activeEpochRate;
-        if (currentRate > 0) {
-            uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
-            if (currentTime > $.globalLastUpdateTime) {
-                uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
-                if (globalVested > $.totalUnsettledRewards) {
-                    globalVested = $.totalUnsettledRewards;
-                }
-                uint256 ratio = getCurrentVaultRatioBps();
-                uint256 lenderPremium = (globalVested * ratio) / 10000;
-                uint256 borrowerCredit = globalVested - lenderPremium;
-                if (borrowerCredit > 0) {
-                    effectiveBorrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
-                }
-                effectiveGlobalBorrowerPending += borrowerCredit;
-            }
-        }
+        VestingSimulation memory sim = _simulateVesting();
 
         // Match _settleRewards: expired streams only get credit up to their epoch boundary
         uint256 accumulatorDelta;
-        if (block.timestamp >= $.userPeriodFinish[borrower]) {
-            uint256 cappedAccumulator = $.epochEndBorrowerCreditPerRate[$.userPeriodFinish[borrower]];
-            // If the snapshot hasn't been written yet, simulate vesting only up to userPeriodFinish
-            // (not block.timestamp) to avoid crediting rewards from epochs after the stream expired
+        uint256 userFinish = $.userPeriodFinish[borrower];
+        if (block.timestamp >= userFinish) {
+            uint256 cappedAccumulator = $.epochEndBorrowerCreditPerRate[userFinish];
             if (cappedAccumulator == 0) {
-                cappedAccumulator = $.borrowerCreditPerRate;
-                if (currentRate > 0 && $.userPeriodFinish[borrower] > $.globalLastUpdateTime) {
-                    uint256 vestedToFinish = currentRate * ($.userPeriodFinish[borrower] - $.globalLastUpdateTime);
-                    if (vestedToFinish > $.totalUnsettledRewards) {
-                        vestedToFinish = $.totalUnsettledRewards;
-                    }
-                    uint256 ratio = getCurrentVaultRatioBps();
-                    uint256 lenderPremium = (vestedToFinish * ratio) / 10000;
-                    uint256 borrowerCredit = vestedToFinish - lenderPremium;
-                    if (borrowerCredit > 0) {
-                        cappedAccumulator += (borrowerCredit * 1e18) / currentRate;
-                    }
-                }
+                cappedAccumulator = _simulateBorrowerCreditPerRateAt(userFinish);
             }
             uint256 paid = $.userBorrowerCreditPerRatePaid[borrower];
             accumulatorDelta = cappedAccumulator > paid ? cappedAccumulator - paid : 0;
         } else {
-            accumulatorDelta = effectiveBorrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[borrower];
+            accumulatorDelta = sim.borrowerCreditPerRate - $.userBorrowerCreditPerRatePaid[borrower];
         }
         uint256 borrowerReward = (userRate * accumulatorDelta) / 1e18;
 
-        // Cap at effective global borrower pending (mirrors _settleRewards cap)
-        if (borrowerReward > effectiveGlobalBorrowerPending) {
-            borrowerReward = effectiveGlobalBorrowerPending;
+        if (borrowerReward > sim.globalBorrowerPending) {
+            borrowerReward = sim.globalBorrowerPending;
         }
 
         if (borrowerReward >= storedDebt) {
@@ -422,7 +402,25 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ ERC4626 Override ============
+    /// @notice NAV that reflects pending reward-stream vesting at block.timestamp.
+    /// @dev    Simulates _processGlobalVesting without mutating storage so previews
+    ///         match the values mint/burn would see after settlement. Pre-fix this
+    ///         function read raw storage and could lag the true NAV between syncs;
+    ///         that path is preserved as _totalAssetsRaw() for use by
+    ///         getUtilizationPercent() to break the recursion
+    ///         totalAssets -> _simulateVesting -> getCurrentVaultRatioBps -> getUtilizationPercent.
     function totalAssets() public view override returns (uint256) {
+        return _totalAssetsFromSim(_simulateVesting());
+    }
+
+    /// @notice Raw NAV from current storage, without simulating pending vesting.
+    /// @dev    Internal use only. Do NOT route external views through this -- ERC4626
+    ///         consumers expect totalAssets() (the simulated value) so that preview
+    ///         and execution agree. This helper exists exclusively to break the
+    ///         recursion that would otherwise occur if getUtilizationPercent()
+    ///         called the simulated totalAssets() (which itself needs the
+    ///         utilization-derived fee ratio).
+    function _totalAssetsRaw() internal view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
 
@@ -442,6 +440,27 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return gross > deductions ? gross - deductions : 0;
     }
 
+    /// @notice Compose the simulated NAV from a VestingSimulation snapshot.
+    function _totalAssetsFromSim(VestingSimulation memory sim) internal view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 totalReduction = $.totalVestedRewardsApplied + sim.globalBorrowerPending;
+
+        uint256 outstandingDebt;
+        uint256 excessPendingOwedToBorrowers;
+        if ($.totalLoanedAssets >= totalReduction) {
+            outstandingDebt = $.totalLoanedAssets - totalReduction;
+        } else {
+            excessPendingOwedToBorrowers = totalReduction - $.totalLoanedAssets;
+        }
+
+        uint256 deductions = _getUnvestedLenderPremiumFromSim(sim)
+            + sim.totalUnsettledRewards
+            + excessPendingOwedToBorrowers
+            + $.escrowedExcessTotal;
+        uint256 gross = IERC20(asset()).balanceOf(address(this)) + outstandingDebt;
+        return gross > deductions ? gross - deductions : 0;
+    }
+
     // ============ Fee Calculator Functions ============
     function getCurrentVaultRatioBps() public view returns (uint256) {
         return getVaultRatioBps(getUtilizationPercent());
@@ -452,8 +471,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return IFeeCalculator($.feeCalculator).getVaultRatioBps(utilizationBps);
     }
 
+    /// @notice Current borrow utilization in basis points (0-10000).
+    /// @dev    Reads pre-simulation (raw) NAV by design. Never route this through
+    ///         totalAssets() -- the simulated NAV calls getCurrentVaultRatioBps()
+    ///         which calls back into this function, creating an infinite recursion.
     function getUtilizationPercent() public view returns (uint256) {
-        uint256 total = totalAssets();
+        uint256 total = _totalAssetsRaw();
         if (total == 0) return 0;
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
@@ -480,6 +503,106 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 elapsed = block.timestamp - vestStart;
         if (elapsed >= WEEK) return 0;
         return vestPremium - (vestPremium * elapsed) / WEEK;
+    }
+
+    /// @notice View-side mirror of _getUnvestedLenderPremium that reads from a
+    ///         VestingSimulation snapshot instead of storage.
+    function _getUnvestedLenderPremiumFromSim(VestingSimulation memory sim) internal view returns (uint256) {
+        uint256 vestStart = sim.vestingEpochStart;
+        if (vestStart == 0) return 0;
+
+        uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+        if (nowEpoch > vestStart) return 0;
+
+        uint256 vestPremium = sim.vestingEpochPremium;
+        if (vestPremium == 0) return 0;
+
+        uint256 WEEK = ProtocolTimeLibrary.WEEK;
+        uint256 elapsed = block.timestamp - vestStart;
+        if (elapsed >= WEEK) return 0;
+        return vestPremium - (vestPremium * elapsed) / WEEK;
+    }
+
+    /// @notice Compute the state writes _processGlobalVesting would perform at
+    ///         block.timestamp, without mutating storage. Single source of truth
+    ///         for view-side vesting simulation; consumed by totalAssets and
+    ///         getEffectiveDebtBalance.
+    /// @dev    The fee-split ratio is sampled from raw (pre-simulation) state
+    ///         via getCurrentVaultRatioBps() -> getUtilizationPercent() ->
+    ///         _totalAssetsRaw(). Matches the state-changing path, which reads
+    ///         the ratio before mutating vesting state.
+    function _simulateVesting() internal view returns (VestingSimulation memory sim) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+
+        sim.vestingEpochPremium = $.vestingEpochPremium;
+        sim.vestingEpochStart = $.vestingEpochStart;
+        sim.totalUnsettledRewards = $.totalUnsettledRewards;
+        sim.globalBorrowerPending = $.globalBorrowerPending;
+        sim.borrowerCreditPerRate = $.borrowerCreditPerRate;
+
+        uint256 currentRate = $.activeEpochRate;
+        if (currentRate == 0) return sim;
+
+        uint256 epochEnd = $.activeEpochEnd;
+        uint256 lastUpdate = $.globalLastUpdateTime;
+        uint256 currentTime = block.timestamp < epochEnd ? block.timestamp : epochEnd;
+        if (currentTime <= lastUpdate) return sim;
+
+        uint256 globalVested = currentRate * (currentTime - lastUpdate);
+        bool epochEnded = block.timestamp >= epochEnd;
+        if (epochEnded || globalVested > sim.totalUnsettledRewards) {
+            globalVested = sim.totalUnsettledRewards;
+        }
+
+        uint256 ratio = getCurrentVaultRatioBps();
+        uint256 lenderPremium = (globalVested * ratio) / 10000;
+        uint256 borrowerCredit = globalVested - lenderPremium;
+
+        if (lenderPremium > 0) {
+            uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+            if (sim.vestingEpochStart > 0 && nowEpoch > sim.vestingEpochStart) {
+                sim.vestingEpochPremium = 0;
+                sim.vestingEpochStart = 0;
+            }
+            sim.vestingEpochPremium += lenderPremium;
+            if (sim.vestingEpochStart < nowEpoch) {
+                sim.vestingEpochStart = nowEpoch;
+            }
+        }
+
+        if (borrowerCredit > 0) {
+            sim.borrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
+        }
+
+        sim.totalUnsettledRewards -= globalVested;
+        sim.globalBorrowerPending += borrowerCredit;
+
+        sim.globalVested = globalVested;
+        sim.lenderPremium = lenderPremium;
+        sim.borrowerCredit = borrowerCredit;
+    }
+
+    /// @notice Simulate borrowerCreditPerRate at a specified cutoff time (used by
+    ///         getEffectiveDebtBalance when a user's stream expired but the
+    ///         epoch-end snapshot has not yet been written by _processGlobalVesting).
+    function _simulateBorrowerCreditPerRateAt(uint256 cutoff) internal view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 acc = $.borrowerCreditPerRate;
+        uint256 currentRate = $.activeEpochRate;
+        uint256 lastUpdate = $.globalLastUpdateTime;
+        if (currentRate == 0 || cutoff <= lastUpdate) return acc;
+
+        uint256 vested = currentRate * (cutoff - lastUpdate);
+        if (vested > $.totalUnsettledRewards) {
+            vested = $.totalUnsettledRewards;
+        }
+        uint256 ratio = getCurrentVaultRatioBps();
+        uint256 lenderPremium = (vested * ratio) / 10000;
+        uint256 borrowerCredit = vested - lenderPremium;
+        if (borrowerCredit > 0) {
+            acc += (borrowerCredit * 1e18) / currentRate;
+        }
+        return acc;
     }
 
     // ============ Reward Streaming Functions ============
