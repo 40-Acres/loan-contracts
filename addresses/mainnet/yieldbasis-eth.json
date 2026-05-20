@@ -26,8 +26,8 @@
           "prod": "0xF0bD3142BdFe8458F41D3513fb91eeDC9aF1C661"
         },
         "supplyVault": {
-          "dev": "0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3",
-          "prod": "0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3"
+          "dev": "0xB543dBe91be1D34B5cEe98E8A4366dA7B999e4A1",
+          "prod": "0xB543dBe91be1D34B5cEe98E8A4366dA7B999e4A1"
         }
       }
     }
