@@ -23,6 +23,7 @@ import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
 // Mocks
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockYieldBasisLP} from "../../mocks/MockYieldBasisLP.sol";
+import {MockYieldBasisGauge} from "../../mocks/MockYieldBasisGauge.sol";
 
 // OpenZeppelin
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -810,20 +811,20 @@ contract DynamicYieldBasisCollateralManagerTest is Test {
     }
 
     function test_reconcileSharesToBalance_reducesAndScalesDepositedValue() public {
+        MockYieldBasisGauge gauge = new MockYieldBasisGauge(address(ybLp));
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
-        h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
+        h.addCollateral(address(cfg), address(ybLp), address(gauge), address(underlying), 10e18);
 
-        // Simulate gauge eating 4e18 of LP (e.g. a fee or rounding).
-        // Move 4e18 of harness LP out so balance shows 6e18.
+        // Account holds no gauge receipts; move 4e18 of direct LP out so
+        // _actualLp = lpBalance(6e18) + gauge.convertToAssets(0) = 6e18.
         vm.prank(address(h));
         ybLp.transfer(address(0xDEAD), 4e18);
 
-        h.reconcileSharesToBalance(address(cfg), address(ybLp), address(underlying), address(0));
+        h.reconcileSharesToBalance(address(cfg), address(ybLp), address(underlying), address(gauge));
 
         (uint256 shares, uint256 deposited,) = h.getCollateral(address(ybLp), address(underlying));
         assertEq(shares, 6e18, "data.shares = actual LP balance");
-        // deposited scales 6/10 of original 10e18 = 6e18.
         assertEq(deposited, 6e18, "depositedAssetValue scaled proportionally");
     }
 

@@ -391,15 +391,14 @@ library DynamicYieldBasisCollateralManager {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
     }
 
-    /// @dev Populates `data.gauge` (if unset) and forces a reconcile in the
-    ///      current block. Unlike the snapshot-time ratchet (which fires at most
-    ///      once per block), this entry is for admin paths that must reflect
-    ///      gauge drift immediately within the same block as the trigger
-    ///      (e.g. post-unstake, harvest residual settlement).
+    /// @dev Populates `data.gauge` (if unset) and shrinks `data.shares` plus
+    ///      `data.depositedAssetValue` to actual recoverable LP. One-way ratchet:
+    ///      never grows. Called both from admin paths directly and from
+    ///      `_snapshotIfNeeded` on the first state-changing touch of each block.
     function reconcileSharesToBalance(
         address portfolioFactoryConfig,
         address vault,
-        address underlying,
+        address /* underlying */,
         address gauge
     ) public {
         DynamicYieldBasisCollateralData storage data = _getStorage();
@@ -408,25 +407,14 @@ library DynamicYieldBasisCollateralManager {
         } else if (gauge != address(0) && data.gauge != gauge) {
             revert GaugeMismatch(data.gauge, gauge);
         }
-        bool ratcheted = _ratchetShares(portfolioFactoryConfig, vault);
-        if (ratcheted) {
-            data.snapshotBlockNumber = 0;
-        }
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
-    }
-
-    /// @dev Returns true if the ratchet shrank `data.shares`. One-way; never grows.
-    function _ratchetShares(address portfolioFactoryConfig, address vault) internal returns (bool) {
-        DynamicYieldBasisCollateralData storage data = _getStorage();
-        if (data.shares == 0 || data.gauge == address(0)) return false;
+        if (data.shares == 0 || data.gauge == address(0)) return;
         uint256 actual = _actualLp(vault, data.gauge);
-        if (data.shares <= actual) return false;
+        if (data.shares <= actual) return;
         data.depositedAssetValue = (data.depositedAssetValue * actual) / data.shares;
         data.shares = actual;
         if (actual == 0) {
             _notifyCollateralRemoved(portfolioFactoryConfig, vault);
         }
-        return true;
     }
 
     function enforceCollateralRequirements(
@@ -462,10 +450,12 @@ library DynamicYieldBasisCollateralManager {
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address underlying) internal {
         DynamicYieldBasisCollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber == block.number) return;
-
-        _ratchetShares(portfolioFactoryConfig, vault);
-
         data.snapshotBlockNumber = block.number;
+
+        if (data.gauge != address(0)) {
+            reconcileSharesToBalance(portfolioFactoryConfig, vault, underlying, data.gauge);
+        }
+
         data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, underlying);
     }
 

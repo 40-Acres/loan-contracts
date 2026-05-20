@@ -9,6 +9,7 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {HydrexCollateralManager} from "./HydrexCollateralManager.sol";
 import {HydrexPortfolioFactoryConfig} from "./HydrexPortfolioFactoryConfig.sol";
+import {HydrexBucketLib} from "./HydrexBucketLib.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
@@ -206,22 +207,16 @@ contract VeHydrexVotingEscrowFacet is AccessControl, IERC721Receiver, Reentrancy
     }
 
     function _absorbPermanentIntoBucket(uint256 incomingTokenId) internal {
-        address config = address(_portfolioFactory.portfolioFactoryConfig());
-        HydrexPortfolioFactoryConfig hydrexConfig = HydrexPortfolioFactoryConfig(config);
-        uint256 bucket = hydrexConfig.getRebaseTokenId(address(this));
+        (uint256 trackId, uint256 updateId) = HydrexBucketLib.absorbMint(
+            address(_portfolioFactory.portfolioFactoryConfig()), address(_votingEscrow), incomingTokenId
+        );
         address owner = _portfolioFactory.ownerOf(address(this));
-
-        bool bucketValid =
-            bucket != 0 && bucket != incomingTokenId && _votingEscrow.ownerOf(bucket) == address(this);
-
-        if (!bucketValid) {
-            hydrexConfig.setRebaseTokenId(incomingTokenId);
-            _addLockedCollateralUnchecked(incomingTokenId);
-            emit RebaseBucketAssigned(incomingTokenId, owner);
+        if (trackId != 0) {
+            _addLockedCollateralUnchecked(trackId);
+            emit RebaseBucketAssigned(trackId, owner);
         } else {
-            _votingEscrow.merge(incomingTokenId, bucket);
-            _updateLockedCollateral(bucket);
-            emit RebaseBucketAbsorbed(incomingTokenId, bucket, owner);
+            _updateLockedCollateral(updateId);
+            emit RebaseBucketAbsorbed(incomingTokenId, updateId, owner);
         }
     }
 

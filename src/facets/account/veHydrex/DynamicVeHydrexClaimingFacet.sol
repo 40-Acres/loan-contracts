@@ -18,4 +18,20 @@ contract DynamicVeHydrexClaimingFacet is VeHydrexClaimingFacet {
             address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)
         );
     }
+
+    function _addLockedCollateralUnchecked(uint256 tokenId) internal override {
+        DynamicHydrexCollateralManager.addLockedCollateralUnchecked(
+            address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)
+        );
+    }
+
+    function _getTotalDebt() internal view override returns (uint256) {
+        return DynamicHydrexCollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
+    }
+
+    function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
+        return DynamicHydrexCollateralManager.decreaseTotalDebt(
+            address(_portfolioFactory.portfolioFactoryConfig()), amount
+        );
+    }
 }
