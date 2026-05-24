@@ -166,7 +166,7 @@ contract VeHydrexVotingEscrowFacetTest is VeHydrexDiamond {
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 5e18, "tracked");
     }
 
-    function test_onERC721Received_permanent_secondArrivalMergesIntoBucket() public {
+    function test_onERC721Received_permanent_secondArrivalTracksStandalone_bucketUnchanged() public {
         uint256 first = ve.mintTo(address(this), 5e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, first);
 
@@ -174,15 +174,69 @@ contract VeHydrexVotingEscrowFacetTest is VeHydrexDiamond {
         uint256 second = ve.mintTo(address(this), 2e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, second);
 
-        // Bucket pointer stays on the first token; second is merged into it.
+        // Bucket pointer stays on the first token; the second arrival is tracked
+        // as standalone collateral (no auto-merge, because Hydrex's merge() does
+        // NOT burn the from-token and would leave zombie zero-amount NFTs in the
+        // account -- this is the live-on-Base bug that drove the refactor).
         assertEq(
             HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount),
             first,
             "bucket unchanged"
         );
-        assertEq(ve.mergeCalls(), mergesBefore + 1, "merge call made");
-        // 5 + 2 = 7 ; tracked collateral updated to reflect the bucket's new amount.
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+        // Both still owned by the account.
+        assertEq(ve.ownerOf(first), portfolioAccount, "first owned by account");
+        assertEq(ve.ownerOf(second), portfolioAccount, "second owned by account");
+        // Each token is tracked individually at its original amount.
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(first), 5e18, "first tracked standalone");
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(second), 2e18, "second tracked standalone");
+        // Total = 5 + 2 = 7 (same total as the old absorbed-merge world, different mechanism).
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 7e18, "tracked");
+    }
+
+    /// @dev Post-refactor: when two PERMANENT tokens land in the account, the
+    ///      receiver hook tracks them standalone. Users (or operators) can
+    ///      still consolidate them via the explicit mergeInternal operator
+    ///      path. After the merge: bucket pointer unchanged, first absorbs
+    ///      second's amount, second is removed from tracked collateral.
+    function test_onERC721Received_permanent_secondArrival_userCanCallMergeInternal_consolidates() public {
+        uint256 first = ve.mintTo(address(this), 5e18, IHydrexVotingEscrow.LockType.PERMANENT);
+        ve.safeTransferFrom(address(this), portfolioAccount, first);
+        uint256 second = ve.mintTo(address(this), 2e18, IHydrexVotingEscrow.LockType.PERMANENT);
+        ve.safeTransferFrom(address(this), portfolioAccount, second);
+
+        uint256 bucketBefore = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig))
+            .getRebaseTokenId(portfolioAccount);
+
+        // Operator-driven merge: second into first (the bucket).
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexVotingEscrowFacet.mergeInternal.selector, second, first)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        // Bucket pointer unchanged.
+        assertEq(
+            HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount),
+            bucketBefore,
+            "bucket pointer unchanged"
+        );
+        // First grew by second's amount.
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(first), 7e18, "first absorbed second");
+        // Second removed from tracking.
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(second), 0, "second removed from tracking");
+        // Total invariant preserved at 7e18.
+        assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 7e18, "sum invariant");
+    }
+
+    /// @dev Below-minimum PERMANENT transfer-in must revert via the CHECKED
+    ///      add path (no unchecked bypass for receiver-hook arrivals anymore).
+    function test_onERC721Received_permanent_belowMinimum_reverts() public {
+        uint256 dust = MIN_COLLATERAL / 2;
+        uint256 tokenId = ve.mintTo(address(this), dust, IHydrexVotingEscrow.LockType.PERMANENT);
+
+        vm.expectRevert(bytes("Amount below minimum collateral"));
+        ve.safeTransferFrom(address(this), portfolioAccount, tokenId);
     }
 
     function test_onERC721Received_permanent_staleBucket_resetsToIncoming() public {

@@ -20,12 +20,6 @@ contract DynamicVeHydrexVotingEscrowFacet is VeHydrexVotingEscrowFacet {
         );
     }
 
-    function _addLockedCollateralUnchecked(uint256 tokenId) internal override {
-        DynamicHydrexCollateralManager.addLockedCollateralUnchecked(
-            address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)
-        );
-    }
-
     function _updateLockedCollateral(uint256 tokenId) internal override {
         DynamicHydrexCollateralManager.updateLockedCollateral(
             address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)

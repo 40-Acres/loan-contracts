@@ -4,10 +4,13 @@ pragma solidity ^0.8.30;
 import {DynamicVeHydrexDiamond, DynamicHydrexCollateralViewFacet} from "./helpers/DynamicVeHydrexDiamond.sol";
 
 import {VeHydrexClaimingFacet} from "../../../src/facets/account/veHydrex/VeHydrexClaimingFacet.sol";
+import {DynamicVeHydrexClaimingFacet} from "../../../src/facets/account/veHydrex/DynamicVeHydrexClaimingFacet.sol";
 import {VeHydrexVotingEscrowFacet} from "../../../src/facets/account/veHydrex/VeHydrexVotingEscrowFacet.sol";
 import {IHydrexVotingEscrow} from "../../../src/interfaces/IHydrexVotingEscrow.sol";
 import {HydrexPortfolioFactoryConfig} from "../../../src/facets/account/veHydrex/HydrexPortfolioFactoryConfig.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
+import {MockReentrantHydrexDistributor} from "./mocks/MockReentrantHydrexDistributor.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /// @dev DynamicVeHydrexClaimingFacet tests. Mirrors VeHydrexClaimingFacet.t.sol
 ///      but routes the claim path against DynamicHydrexCollateralManager. The
@@ -16,6 +19,9 @@ import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollater
 ///      Dynamic-variant override of _updateLockedCollateral lands writes in the
 ///      correct slot.
 contract DynamicVeHydrexClaimingFacetTest is DynamicVeHydrexDiamond {
+    event RebaseClaimed(uint256 indexed tokenId, uint256 amount);
+    event RebaseBucketAssigned(uint256 indexed tokenId, address indexed owner);
+
     function setUp() public {
         vm.warp(100 weeks);
         _bootstrap();
@@ -91,13 +97,18 @@ contract DynamicVeHydrexClaimingFacetTest is DynamicVeHydrexDiamond {
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 7e18, "sum invariant");
     }
 
-    function test_claimRebase_nonPermanent_secondRebaseMergesIntoExistingBucket() public {
+    function test_claimRebase_nonPermanent_secondRebase_usesClaimInto_noNewMint() public {
         uint256 tokenId = _seedRollingLock(5e18);
         rewardsDistributor.setMintMode(true);
 
         rewardsDistributor.setClaimable(tokenId, 1e18);
         VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
         uint256 bucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount);
+
+        // Snapshot pre-second-rebase state to prove the second emission goes
+        // through claimInto, not via another fresh mint.
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        uint256 mergesBefore = ve.mergeCalls();
 
         rewardsDistributor.setClaimable(tokenId, 2e18);
         VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
@@ -107,7 +118,9 @@ contract DynamicVeHydrexClaimingFacetTest is DynamicVeHydrexDiamond {
             bucket,
             "bucket pointer stable"
         );
-        assertEq(DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(bucket), 3e18, "bucket grew");
+        assertEq(ve.balanceOf(portfolioAccount), balanceBefore, "no new mint");
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+        assertEq(DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(bucket), 3e18, "bucket grew via claimInto");
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 8e18, "sum invariant");
     }
 
@@ -129,7 +142,7 @@ contract DynamicVeHydrexClaimingFacetTest is DynamicVeHydrexDiamond {
         );
     }
 
-    function test_claimRebase_staleBucket_skipsBucketUpdate() public {
+    function test_claimRebase_zeroClaimableWithStaleBucket_isNoOp() public {
         uint256 tokenId = _seedRollingLock(5e18);
         rewardsDistributor.setMintMode(true);
         rewardsDistributor.setClaimable(tokenId, 1e18);
@@ -149,6 +162,125 @@ contract DynamicVeHydrexClaimingFacetTest is DynamicVeHydrexDiamond {
             trackedBefore,
             "stale bucket tracking unchanged"
         );
+    }
+
+    // ----------------------------------------------------------------
+    // New regressions: claimInto, mint-sanity, fresh-seed pointer overwrite,
+    // bucket-equals-source guard, reentrancy guard (Dynamic variant)
+    // ----------------------------------------------------------------
+
+    function test_claimRebase_nonPermanent_emitsActualDepositedAmount_fromClaimInto() public {
+        uint256 tokenId = _seedRollingLock(5e18);
+        rewardsDistributor.setMintMode(true);
+
+        rewardsDistributor.setClaimable(tokenId, 1e18);
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+
+        uint256 X = 7e18;
+        rewardsDistributor.setClaimable(tokenId, X);
+
+        vm.expectEmit(true, false, false, true, portfolioAccount);
+        emit RebaseClaimed(tokenId, X);
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+    }
+
+    function test_claimRebase_permanentSource_revertsIfMintOccurs() public {
+        uint256 tokenId = _seedPermanentLock(5e18);
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setClaimable(tokenId, 1e18);
+
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VeHydrexClaimingFacet.UnexpectedNewMint.selector, balanceBefore, balanceBefore + 1
+            )
+        );
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+    }
+
+    function test_claimRebase_nonPermanent_firstTimeSeed_revertsIfMultipleMints() public {
+        uint256 tokenId = _seedRollingLock(5e18);
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setMintsPerClaim(2);
+        rewardsDistributor.setClaimable(tokenId, 1e18);
+
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VeHydrexClaimingFacet.UnexpectedNewMint.selector, balanceBefore + 1, balanceBefore + 2
+            )
+        );
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+    }
+
+    function test_claimRebase_staleBucket_fallsThroughToFreshSeed_overwritesPointer() public {
+        uint256 rolling = _seedRollingLock(5e18);
+
+        uint256 staleId = ve.mintTo(address(0xDEAD), 4e18, IHydrexVotingEscrow.LockType.PERMANENT);
+        vm.prank(portfolioAccount);
+        HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).setRebaseTokenId(staleId);
+        assertTrue(ve.ownerOf(staleId) != portfolioAccount, "stale bucket not in account");
+
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setClaimable(rolling, 2e18);
+
+        uint256 mergesBefore = ve.mergeCalls();
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(rolling);
+
+        uint256 newBucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig))
+            .getRebaseTokenId(portfolioAccount);
+        assertTrue(newBucket != staleId, "pointer overwritten away from stale id");
+        assertEq(ve.ownerOf(newBucket), portfolioAccount, "new bucket owned by account");
+        assertEq(
+            DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(newBucket),
+            2e18,
+            "new bucket tracked"
+        );
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+    }
+
+    function test_claimRebase_bucketEqualsSource_treatedAsInvalid_fallsThroughToFreshSeed() public {
+        uint256 rolling = _seedRollingLock(5e18);
+
+        vm.prank(portfolioAccount);
+        HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).setRebaseTokenId(rolling);
+
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setClaimable(rolling, 2e18);
+
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(rolling);
+
+        uint256 newBucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig))
+            .getRebaseTokenId(portfolioAccount);
+        assertTrue(newBucket != rolling, "bucket pointer reassigned away from source");
+        assertGt(newBucket, 0, "new bucket assigned");
+        assertEq(ve.ownerOf(newBucket), portfolioAccount, "new bucket owned by account");
+        assertEq(
+            DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(newBucket),
+            2e18,
+            "new bucket tracked"
+        );
+    }
+
+    function test_claimRebase_reentrantDistributor_revertsViaNonReentrantGuard() public {
+        uint256 tokenId = _seedRollingLock(5e18);
+
+        MockReentrantHydrexDistributor reentrant = new MockReentrantHydrexDistributor(address(ve));
+        DynamicVeHydrexClaimingFacet reentrantFacet = new DynamicVeHydrexClaimingFacet(
+            address(portfolioFactory), address(ve), address(voter), address(reentrant)
+        );
+        vm.startPrank(owner_);
+        bytes4[] memory selectors = new bytes4[](2);
+        selectors[0] = bytes4(keccak256("claimFees(address[],address[][],uint256)"));
+        selectors[1] = bytes4(keccak256("claimRebase(uint256)"));
+        facetRegistry.replaceFacet(address(claimFacet), address(reentrantFacet), selectors, "ReentrantDynamicClaimingFacet");
+        vm.stopPrank();
+
+        reentrant.setClaimable(tokenId, 1e18);
+        reentrant.setTarget(portfolioAccount, tokenId);
+
+        vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
     }
 
     // ----------------------------------------------------------------
