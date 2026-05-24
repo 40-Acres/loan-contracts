@@ -22,19 +22,20 @@ import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.so
  *
  * Storage layout (computed for `vm.load`-based assertions):
  *   base = keccak256("storage.LendingVault")
- *   Slot offsets within LendingVaultStorage:
+ *   Slot offsets within LendingVaultStorage. NOTE: OZ Ownable2Step keeps its
+ *   owner in its own ERC-7201 namespace, NOT in LendingVaultStorage; do not
+ *   reserve a slot for it here.
  *     0  portfolioFactory      (address)
- *     1  owner                 (address)
- *     2  totalLoanedAssets     (uint256)
- *     3  debtBalance mapping
- *     4  __deprecated_maxUtilizationBps (uint256)
- *     5  originationFeeBps     (uint256)
- *     6  paused                (bool, alone since next is uint256)
- *     7  currentEpochRewards   (uint256)   <-- grossed-up vesting basis
- *     8  currentEpochStart     (uint256)
- *     9  lastDepositBlock mapping
- *     10 sharesDecimalsOffset + treasury packed (uint8 + address)
- *     11 currentEpochActualRewards (uint256)   <-- truthful sum
+ *     1  totalLoanedAssets     (uint256)
+ *     2  debtBalance mapping
+ *     3  __deprecated_maxUtilizationBps (uint256)
+ *     4  originationFeeBps     (uint256)
+ *     5  paused                (bool, alone since next is uint256)
+ *     6  currentEpochRewards   (uint256)   <-- grossed-up vesting basis
+ *     7  currentEpochStart     (uint256)
+ *     8  lastDepositBlock mapping
+ *     9  sharesDecimalsOffset + treasury packed (uint8 + address)
+ *    10  currentEpochActualRewards (uint256)   <-- truthful sum
  * =============================================================
  */
 
@@ -83,8 +84,8 @@ contract LendingVaultRewardVestingTest is Test {
     uint256 internal constant ORIG_FEE_BPS = 0; // disable for cleanliness in vesting tests
 
     bytes32 internal constant STORAGE_BASE = keccak256("storage.LendingVault");
-    uint256 internal constant SLOT_CURRENT_EPOCH_REWARDS        = 7;
-    uint256 internal constant SLOT_CURRENT_EPOCH_ACTUAL_REWARDS = 11;
+    uint256 internal constant SLOT_CURRENT_EPOCH_REWARDS        = 6;
+    uint256 internal constant SLOT_CURRENT_EPOCH_ACTUAL_REWARDS = 10;
 
     function setUp() public {
         vm.warp(EPOCH_START);

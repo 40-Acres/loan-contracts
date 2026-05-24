@@ -103,8 +103,11 @@ contract LendingVaultTreasuryTest is Test {
     // =====================================================================
 
     function test_setTreasury_revertsForNonOwner() public {
+        // setTreasury is guarded by OZ Ownable2Step's onlyOwner, which reverts
+        // with OwnableUnauthorizedAccount(address). LendingVault's own
+        // `error NotOwner()` declaration is unused here.
         vm.prank(stranger);
-        vm.expectRevert(LendingVault.NotOwner.selector);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", stranger));
         vault.setTreasury(treasuryA);
     }
 
