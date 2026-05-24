@@ -17,6 +17,13 @@ import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {IPortfolioManager} from "../../../accounts/IPortfolioManager.sol";
 
 interface ILendingFacet {
+    /// @notice Pay debt on the target portfolio. Pulls funds from the caller
+    ///         via safeTransferFrom and applies them to outstanding debt.
+    /// @param amount The amount the caller wants to apply to debt.
+    /// @return excess The unspent portion of `amount` (requestedAmount - actuallyPaid).
+    ///         Callers derive actuallyPaid as `amount - excess`. Implementations
+    ///         that cap internally MUST still report the full unspent portion
+    ///         (including the pre-cap delta), not just the post-pull excess.
     function pay(uint256 amount) external returns (uint256 excess);
 }
 
