@@ -154,43 +154,215 @@ contract VeHydrexFacetTest is VeHydrexDiamond {
     }
 
     // ----------------------------------------------------------------
-    // defaultVote / isElligibleForManualVoting
+    // defaultVote / isElligibleForManualVoting / setVotingMode (per-epoch + account-wide)
     // ----------------------------------------------------------------
 
-    function test_isElligibleForManualVoting_returnsFalseWhenLastVotedBeforeOrigin() public {
-        // No vote has occurred -> lastVoted == 0 -> originTimestamp gate triggers false.
+    /// @dev Votes don't carry over in Hydrex, so eligibility is unconditional.
+    ///      Replaces three pre-pivot tests that asserted false under stale conditions.
+    function test_isElligibleForManualVoting_alwaysTrue() public {
         uint256 tokenId = _seedRollingLock(2e18);
-        assertFalse(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
-    }
-
-    function test_isElligibleForManualVoting_trueAfterRecentAccountVote() public {
-        uint256 tokenId = _seedRollingLock(2e18);
-        // Drive lastVoted(account) forward via the voter mock so eligibility flips true.
-        voter.setLastVoted(portfolioAccount, block.timestamp + 1);
+        assertTrue(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+        // Even when nothing has voted yet
+        voter.setLastVoted(portfolioAccount, 0);
+        assertTrue(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+        // Even after the last vote is many epochs stale
+        voter.setLastVoted(portfolioAccount, block.timestamp);
+        vm.warp(block.timestamp + 10 weeks);
         assertTrue(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
     }
 
-    function test_isElligibleForManualVoting_falseWhenLastVoteIsTooStale() public {
-        // Origin at t0. Move forward many weeks. Hydrex does not carry votes across
-        // epochs, so any lastVoted older than the current epoch makes the account
-        // ineligible for manual mode.
+    /// @dev With no manual-mode preference set, operator can default-vote freely.
+    function test_defaultVote_succeedsWhenUserHasNotOptedIntoManualMode() public {
         uint256 tokenId = _seedRollingLock(2e18);
-        uint256 originLastVoted = block.timestamp + 1;
-        voter.setLastVoted(portfolioAccount, originLastVoted);
-        vm.warp(block.timestamp + 4 weeks);
-        assertFalse(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "operator default-vote landed");
     }
 
-    /// @dev Hydrex-specific: votes do NOT carry across epochs (weightsPerEpoch is
-    ///      keyed on the current epoch and zero-initialized each flip), so a
-    ///      vote cast in the previous epoch is NOT sufficient to keep manual mode
-    ///      this epoch. Distinguishes Hydrex from carry-over forks.
-    function test_isElligibleForManualVoting_falseWhenLastVoteWasPreviousEpoch() public {
+    /// @dev Once user has opted into manual mode, the per-epoch gate kicks in.
+    ///      If the account has already voted this epoch (e.g. via vote() or a prior
+    ///      defaultVote), the next defaultVote in the same epoch is blocked.
+    function test_defaultVote_blockedAfterAccountAlreadyVotedThisEpoch() public {
         uint256 tokenId = _seedRollingLock(2e18);
-        voter.setLastVoted(portfolioAccount, block.timestamp + 1);
-        // Advance one epoch boundary; the saved vote is now last-epoch.
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        // User manual-votes -> sets manual-mode flag AND bumps voter.lastVoted to now.
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.vote.selector, tokenId, pools, weights)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        // Operator's defaultVote in the same epoch should revert.
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+    }
+
+    /// @dev New epoch resets the gate; operator can default-vote again.
+    function test_defaultVote_succeedsAgainInNextEpoch() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        // User manual-votes in epoch N
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.vote.selector, tokenId, pools, weights)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        // Advance into epoch N+1
         vm.warp(block.timestamp + 1 weeks);
-        assertFalse(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+
+        // Operator default-vote succeeds because lastVoted is now stale relative
+        // to the current epoch.
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "default-vote allowed in next epoch");
+
+        // But a second defaultVote in the SAME epoch is now blocked
+        // (operator's own vote bumped lastVoted to current epoch).
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+    }
+
+    /// @dev Operator can only default-vote once per epoch even if user never
+    ///      opted into manual mode -- second call lands on the
+    ///      isManualVoting=true / lastVoted-current branch via vote()'s side-effect.
+    ///      Without manual opt-in, the gate returns true unconditionally; the
+    ///      Hydrex Voter itself prevents same-pool double-vote within an epoch.
+    function test_defaultVote_repeatedInSameEpoch_allowedWhenNoManualOptIn() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+
+        // No user opt-in -> the facet-side gate returns true and lets through.
+        // (Real Hydrex Voter would reject same-pool re-vote without reset; mock allows.)
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "second default-vote landed via mock");
+    }
+
+    /// @dev setVotingMode and isManualVoting are ACCOUNT-WIDE; tokenId argument
+    ///      is ignored and storage is keyed at slot 0.
+    function test_setVotingMode_isAccountWide_ignoresTokenIdArg() public {
+        uint256 t1 = _seedRollingLock(2e18);
+        uint256 t2 = _seedRollingLock(3e18);
+
+        // Flip via t1
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, t1, true)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        // Querying with ANY tokenId returns the account-wide flag.
+        assertTrue(VeHydrexFacet(portfolioAccount).isManualVoting(t1));
+        assertTrue(VeHydrexFacet(portfolioAccount).isManualVoting(t2));
+        assertTrue(VeHydrexFacet(portfolioAccount).isManualVoting(0));
+
+        // Flip off via t2; same observation
+        vm.prank(user);
+        (cd, fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, t2, false)
+        );
+        portfolioManager.multicall(cd, fac);
+        assertFalse(VeHydrexFacet(portfolioAccount).isManualVoting(t1));
+        assertFalse(VeHydrexFacet(portfolioAccount).isManualVoting(t2));
+        assertFalse(VeHydrexFacet(portfolioAccount).isManualVoting(0));
+    }
+
+    /// @dev Hydrex's _vote uses getPastVotes(account, epochStart). A veNFT that
+    ///      arrives in the account AFTER the operator's defaultVote in the same
+    ///      epoch contributes ZERO additional voting weight to the cast ballot,
+    ///      and our facet rejects a re-attempt (would be a wasted call anyway).
+    ///      The new weight is picked up automatically in the next epoch.
+    function test_midEpochTokenArrival_doesNotReopenDefaultVote() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        // Opt into manual mode so the per-epoch gate is active
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, uint256(0), true)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        // Operator default-votes early in the epoch
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+
+        // Mid-epoch: a brand-new ROLLING lock lands in the account (could equally
+        // be a safeTransferFrom from an external holder; both look like "new
+        // weight after voter.lastVoted is current").
+        _seedRollingLock(7e18);
+
+        // Operator cannot re-invoke defaultVote to fold in the new weight --
+        // the per-epoch gate blocks it. (Even if it didn't, Hydrex's getPastVotes
+        // would still read the epoch-start snapshot and ignore the new arrival.)
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+
+        // Next epoch resets the gate; the new weight will be included in the
+        // next ballot via getPastVotes(account, next epochStart).
+        vm.warp(block.timestamp + 1 weeks);
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "next-epoch default-vote picks up new weight");
+    }
+
+    /// @dev If the user opts into manual mode but never actually votes this
+    ///      epoch, the operator's defaultVote is still allowed (lastVoted has
+    ///      not yet been bumped to the current epoch).
+    function test_defaultVote_allowedWhenManualOptedInButNotYetVotedThisEpoch() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        // Opt into manual mode (account-wide) without voting yet
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, uint256(0), true)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        // Operator default-vote allowed because lastVoted == 0
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "default-vote allowed pre-first-vote");
+
+        // Now lastVoted is current; next default-vote in same epoch is blocked
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
     }
 
     // ----------------------------------------------------------------
