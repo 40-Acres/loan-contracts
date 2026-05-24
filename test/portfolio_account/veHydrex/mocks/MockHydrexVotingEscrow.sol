@@ -197,7 +197,6 @@ contract MockHydrexVotingEscrow is IHydrexVotingEscrow {
         mergeCalls++;
         _lockDetails[to].amount += _lockDetails[from].amount;
         _lockDetails[from].amount = 0;
-        _setOwner(from, address(0));
     }
 
     function totalNftsMinted() external view override returns (uint256) {

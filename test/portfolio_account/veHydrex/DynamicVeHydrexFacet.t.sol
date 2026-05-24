@@ -152,30 +152,167 @@ contract DynamicVeHydrexFacetTest is DynamicVeHydrexDiamond {
     // isElligibleForManualVoting
     // ----------------------------------------------------------------
 
-    function test_isElligibleForManualVoting_returnsFalseWhenLastVotedBeforeOrigin() public {
+    /// @dev Votes don't carry over in Hydrex, so eligibility is unconditional.
+    function test_isElligibleForManualVoting_alwaysTrue() public {
         uint256 tokenId = _seedRollingLock(2e18);
-        assertFalse(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
-    }
-
-    function test_isElligibleForManualVoting_trueAfterRecentAccountVote() public {
-        uint256 tokenId = _seedRollingLock(2e18);
-        voter.setLastVoted(portfolioAccount, block.timestamp + 1);
+        assertTrue(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+        voter.setLastVoted(portfolioAccount, 0);
+        assertTrue(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+        voter.setLastVoted(portfolioAccount, block.timestamp);
+        vm.warp(block.timestamp + 10 weeks);
         assertTrue(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
     }
 
-    function test_isElligibleForManualVoting_falseWhenLastVoteIsTooStale() public {
+    function test_defaultVote_succeedsWhenUserHasNotOptedIntoManualMode() public {
         uint256 tokenId = _seedRollingLock(2e18);
-        uint256 originLastVoted = block.timestamp + 1;
-        voter.setLastVoted(portfolioAccount, originLastVoted);
-        vm.warp(block.timestamp + 4 weeks);
-        assertFalse(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "operator default-vote landed");
     }
 
-    function test_isElligibleForManualVoting_falseWhenLastVoteWasPreviousEpoch() public {
+    function test_defaultVote_blockedAfterAccountAlreadyVotedThisEpoch() public {
         uint256 tokenId = _seedRollingLock(2e18);
-        voter.setLastVoted(portfolioAccount, block.timestamp + 1);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.vote.selector, tokenId, pools, weights)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+    }
+
+    function test_defaultVote_succeedsAgainInNextEpoch() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.vote.selector, tokenId, pools, weights)
+        );
+        portfolioManager.multicall(cd, fac);
+
         vm.warp(block.timestamp + 1 weeks);
-        assertFalse(VeHydrexFacet(portfolioAccount).isElligibleForManualVoting(tokenId));
+
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "default-vote allowed in next epoch");
+
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+    }
+
+    function test_defaultVote_repeatedInSameEpoch_allowedWhenNoManualOptIn() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "second default-vote landed via mock");
+    }
+
+    function test_setVotingMode_isAccountWide_ignoresTokenIdArg() public {
+        uint256 t1 = _seedRollingLock(2e18);
+        uint256 t2 = _seedRollingLock(3e18);
+
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, t1, true)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        assertTrue(VeHydrexFacet(portfolioAccount).isManualVoting(t1));
+        assertTrue(VeHydrexFacet(portfolioAccount).isManualVoting(t2));
+        assertTrue(VeHydrexFacet(portfolioAccount).isManualVoting(0));
+
+        vm.prank(user);
+        (cd, fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, t2, false)
+        );
+        portfolioManager.multicall(cd, fac);
+        assertFalse(VeHydrexFacet(portfolioAccount).isManualVoting(t1));
+        assertFalse(VeHydrexFacet(portfolioAccount).isManualVoting(t2));
+        assertFalse(VeHydrexFacet(portfolioAccount).isManualVoting(0));
+    }
+
+    /// @dev Hydrex's _vote uses getPastVotes(account, epochStart). A veNFT that
+    ///      arrives in the account AFTER the operator's defaultVote in the same
+    ///      epoch contributes ZERO additional voting weight to the cast ballot,
+    ///      and our facet rejects a re-attempt. New weight is picked up next epoch.
+    function test_midEpochTokenArrival_doesNotReopenDefaultVote() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, uint256(0), true)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+
+        _seedRollingLock(7e18);
+
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+
+        vm.warp(block.timestamp + 1 weeks);
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "next-epoch default-vote picks up new weight");
+    }
+
+    function test_defaultVote_allowedWhenManualOptedInButNotYetVotedThisEpoch() public {
+        uint256 tokenId = _seedRollingLock(2e18);
+        address[] memory pools = new address[](1);
+        pools[0] = pool1;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
+
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexFacet.setVotingMode.selector, uint256(0), true)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        uint256 callsBefore = voter.voteCallCount();
+        vm.prank(authorizedCaller);
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
+        assertEq(voter.voteCallCount(), callsBefore + 1, "default-vote allowed pre-first-vote");
+
+        vm.prank(authorizedCaller);
+        vm.expectRevert(bytes("Account already voted this epoch"));
+        VeHydrexFacet(portfolioAccount).defaultVote(tokenId, pools, weights);
     }
 
     // ----------------------------------------------------------------

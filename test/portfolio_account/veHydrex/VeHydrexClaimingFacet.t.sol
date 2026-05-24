@@ -8,6 +8,8 @@ import {VeHydrexVotingEscrowFacet} from "../../../src/facets/account/veHydrex/Ve
 import {IHydrexVotingEscrow} from "../../../src/interfaces/IHydrexVotingEscrow.sol";
 import {HydrexPortfolioFactoryConfig} from "../../../src/facets/account/veHydrex/HydrexPortfolioFactoryConfig.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
+import {MockReentrantHydrexDistributor} from "./mocks/MockReentrantHydrexDistributor.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /// @dev VeHydrexClaimingFacet tests.
 ///
@@ -15,6 +17,10 @@ import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollater
 ///      verify wiring (single voter call, distributor invocation, bucket
 ///      tracking after rebase) -- not Hydrex's actual claim/rebase semantics.
 contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
+    // Mirrors of facet events used for vm.expectEmit assertions.
+    event RebaseClaimed(uint256 indexed tokenId, uint256 amount);
+    event RebaseBucketAssigned(uint256 indexed tokenId, address indexed owner);
+
     function setUp() public {
         vm.warp(100 weeks);
         _bootstrap();
@@ -102,7 +108,7 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 7e18, "sum invariant");
     }
 
-    function test_claimRebase_nonPermanent_secondRebaseMergesIntoExistingBucket() public {
+    function test_claimRebase_nonPermanent_secondRebase_usesClaimInto_noNewMint() public {
         uint256 tokenId = _seedRollingLock(5e18);
         rewardsDistributor.setMintMode(true);
 
@@ -110,7 +116,14 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
         VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
         uint256 bucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount);
 
-        // Second rebase: another mint that should be merged into the same bucket.
+        // Snapshot pre-second-rebase state to prove the second emission goes
+        // through claimInto, not via another fresh mint.
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        uint256 mergesBefore = ve.mergeCalls();
+
+        // Second rebase: with the bucket already valid, the facet must use
+        // distributor.claimInto(tokenId, bucket) to deposit directly into the
+        // bucket -- no fresh NFT mint, no merge call.
         rewardsDistributor.setClaimable(tokenId, 2e18);
         VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
 
@@ -119,8 +132,10 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
             bucket,
             "bucket pointer stable"
         );
-        // bucket grew from 1 to 3
-        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(bucket), 3e18, "bucket grew");
+        assertEq(ve.balanceOf(portfolioAccount), balanceBefore, "no new mint");
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+        // bucket grew from 1 to 3 via claimInto
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(bucket), 3e18, "bucket grew via claimInto");
         // total = 5 + 3
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 8e18, "sum invariant");
     }
@@ -147,7 +162,7 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
         );
     }
 
-    function test_claimRebase_staleBucket_skipsBucketUpdate() public {
+    function test_claimRebase_zeroClaimableWithStaleBucket_isNoOp() public {
         // Establish a non-PERMANENT rebase cycle so the bucket pointer is set.
         uint256 tokenId = _seedRollingLock(5e18);
         rewardsDistributor.setMintMode(true);
@@ -173,12 +188,13 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
         );
     }
 
-    /// @dev Idempotency: in the same call frame, an external safeTransferFrom of a
-    ///      PERMANENT veNFT (hook fires + sets bucket + tracks) AND a claimRebase
-    ///      that triggers a fresh PERMANENT mint must not double-count collateral.
-    ///      The mint absorbs into the hook-established bucket; total collateral
-    ///      stays consistent.
-    function test_claimRebase_sameTx_hookPlusClaim_noDoubleCount() public {
+    /// @dev Idempotency: in the same setUp frame, an external safeTransferFrom of a
+    ///      PERMANENT veNFT (hook fires + sets bucket + tracks) AND a subsequent
+    ///      claimRebase on a ROLLING original must not double-count collateral.
+    ///      Because a valid bucket is now set, claimRebase takes the claimInto
+    ///      path: it deposits the rebase amount directly into the hook-established
+    ///      bucket. No new mint, no merge call.
+    function test_claimRebase_sameTx_hookPlusClaimInto_noDoubleCount() public {
         uint256 rolling = _seedRollingLock(5e18);
 
         // External PERMANENT veNFT enters via safeTransferFrom -> hook -> bucket.
@@ -188,9 +204,15 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
             .getRebaseTokenId(portfolioAccount);
         assertEq(bucketAfterHook, hookTok, "hook set bucket to incoming PERMANENT");
 
-        // Now claim rebase on the ROLLING original. Distributor mints a fresh
-        // PERMANENT in mint mode; the claimRebase loop should merge it into the
-        // existing bucket (hookTok), NOT mint a new bucket and double-track.
+        // Snapshot enumerable balance + merge counter. Account holds two veNFTs
+        // (rolling + hookTok). claimInto must not change either count.
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        assertEq(balanceBefore, 2, "rolling + hookTok present");
+        uint256 mergesBefore = ve.mergeCalls();
+
+        // Now claim rebase on the ROLLING original. mintMode is irrelevant for
+        // this path -- the facet sees a valid bucket and routes through
+        // distributor.claimInto, which deposits into hookTok with no new mint.
         rewardsDistributor.setMintMode(true);
         rewardsDistributor.setClaimable(rolling, 2e18);
         VeHydrexClaimingFacet(portfolioAccount).claimRebase(rolling);
@@ -201,8 +223,11 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
             hookTok,
             "bucket pointer preserved"
         );
-        // Bucket grew by the rebase mint (3 + 2 = 5).
-        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(hookTok), 5e18, "bucket absorbed rebase");
+        // No new mint into the account.
+        assertEq(ve.balanceOf(portfolioAccount), balanceBefore, "only rolling + hookTok, no fresh mint");
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+        // Bucket grew by the rebase deposit (3 + 2 = 5).
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(hookTok), 5e18, "bucket grew via claimInto");
         // Original ROLLING untouched.
         assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(rolling), 5e18, "rolling untouched");
         // Total = rolling 5 + bucket 5 = 10.
@@ -251,6 +276,162 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
         assertEq(hConfig.getRebaseTokenId(portfolioAccount), bucketB, "config holds B");
         assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(bucketB), 2e18, "B tracked");
         assertEq(ve.ownerOf(bucketB), portfolioAccount, "B owned by account");
+    }
+
+    // ----------------------------------------------------------------
+    // New regressions: claimInto, mint-sanity, fresh-seed pointer overwrite,
+    // bucket-equals-source guard, reentrancy guard
+    // ----------------------------------------------------------------
+
+    /// @dev The RebaseClaimed event in the claimInto path must report the amount
+    ///      that the distributor actually deposited (the return value of
+    ///      claimInto), not the pre-call claimable snapshot. With the mock these
+    ///      are equal, but the assertion locks in the source argument.
+    function test_claimRebase_nonPermanent_emitsActualDepositedAmount_fromClaimInto() public {
+        uint256 tokenId = _seedRollingLock(5e18);
+        rewardsDistributor.setMintMode(true);
+
+        // First rebase seeds the bucket.
+        rewardsDistributor.setClaimable(tokenId, 1e18);
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+
+        // Second rebase uses claimInto; the emitted amount must equal the value
+        // returned by claimInto (the deposited amount, here 7e18).
+        uint256 X = 7e18;
+        rewardsDistributor.setClaimable(tokenId, X);
+
+        vm.expectEmit(true, false, false, true, portfolioAccount);
+        emit RebaseClaimed(tokenId, X);
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+    }
+
+    /// @dev PERMANENT-source sanity: Hydrex applies the rebase in-place on
+    ///      the source lock. If the distributor ever drifts and mints a fresh
+    ///      NFT instead, the facet must revert (UnexpectedNewMint) rather than
+    ///      silently orphan the mint.
+    function test_claimRebase_permanentSource_revertsIfMintOccurs() public {
+        uint256 tokenId = _seedPermanentLock(5e18);
+        // Arm the distributor to mint a fresh NFT on claim() despite the source
+        // being PERMANENT. The facet's balance snapshot guard must catch this.
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setClaimable(tokenId, 1e18);
+
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VeHydrexClaimingFacet.UnexpectedNewMint.selector, balanceBefore, balanceBefore + 1
+            )
+        );
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+    }
+
+    /// @dev Non-PERMANENT fresh-seed sanity: the facet expects EXACTLY one
+    ///      new NFT to land in the account when distributor.claim runs in
+    ///      mintMode and no bucket exists yet. If the distributor ever mints
+    ///      more than one, the facet must revert.
+    function test_claimRebase_nonPermanent_firstTimeSeed_revertsIfMultipleMints() public {
+        uint256 tokenId = _seedRollingLock(5e18);
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setMintsPerClaim(2);
+        rewardsDistributor.setClaimable(tokenId, 1e18);
+
+        uint256 balanceBefore = ve.balanceOf(portfolioAccount);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VeHydrexClaimingFacet.UnexpectedNewMint.selector, balanceBefore + 1, balanceBefore + 2
+            )
+        );
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
+    }
+
+    /// @dev Stale-bucket fresh-seed: when the bucket pointer names a token the
+    ///      account no longer owns, claimRebase must NOT use claimInto on it.
+    ///      Instead the fresh-seed path runs (mint + setRebaseTokenId(newId) +
+    ///      track unchecked). Bucket pointer ends pointing at the newly minted
+    ///      id, not the stale id.
+    function test_claimRebase_staleBucket_fallsThroughToFreshSeed_overwritesPointer() public {
+        uint256 rolling = _seedRollingLock(5e18);
+
+        // Pre-set the bucket pointer to a stale token. We mint a PERMANENT and
+        // immediately move it out of the account, then write the pointer via
+        // setRebaseTokenId pranked as the portfolio account.
+        uint256 staleId = ve.mintTo(address(0xDEAD), 4e18, IHydrexVotingEscrow.LockType.PERMANENT);
+        vm.prank(portfolioAccount);
+        HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).setRebaseTokenId(staleId);
+        assertTrue(ve.ownerOf(staleId) != portfolioAccount, "stale bucket not in account");
+
+        // Arm distributor for the fresh-seed path.
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setClaimable(rolling, 2e18);
+
+        uint256 mergesBefore = ve.mergeCalls();
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(rolling);
+
+        uint256 newBucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig))
+            .getRebaseTokenId(portfolioAccount);
+        assertTrue(newBucket != staleId, "pointer overwritten away from stale id");
+        assertEq(ve.ownerOf(newBucket), portfolioAccount, "new bucket owned by account");
+        assertEq(
+            HydrexCollateralFacet(portfolioAccount).getLockedCollateral(newBucket), 2e18, "new bucket tracked"
+        );
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+    }
+
+    /// @dev Bucket-equals-source pathological case: if the bucket pointer
+    ///      happens to be set to the rebase source tokenId itself, the
+    ///      `bucket != tokenId` guard makes it invalid -> fresh-seed path runs.
+    function test_claimRebase_bucketEqualsSource_treatedAsInvalid_fallsThroughToFreshSeed() public {
+        uint256 rolling = _seedRollingLock(5e18);
+
+        // Point the bucket at the rolling source itself.
+        vm.prank(portfolioAccount);
+        HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).setRebaseTokenId(rolling);
+
+        rewardsDistributor.setMintMode(true);
+        rewardsDistributor.setClaimable(rolling, 2e18);
+
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(rolling);
+
+        uint256 newBucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig))
+            .getRebaseTokenId(portfolioAccount);
+        assertTrue(newBucket != rolling, "bucket pointer reassigned away from source");
+        assertGt(newBucket, 0, "new bucket assigned");
+        assertEq(ve.ownerOf(newBucket), portfolioAccount, "new bucket owned by account");
+        assertEq(
+            HydrexCollateralFacet(portfolioAccount).getLockedCollateral(newBucket), 2e18, "new bucket tracked"
+        );
+    }
+
+    /// @dev nonReentrant guard: an adversarial distributor that tries to call
+    ///      back into claimRebase synchronously while the outer call is still
+    ///      on the stack must be rejected by the ReentrancyGuardTransient on
+    ///      the public claimRebase entry point.
+    function test_claimRebase_reentrantDistributor_revertsViaNonReentrantGuard() public {
+        uint256 tokenId = _seedRollingLock(5e18);
+
+        // We can't swap the registered facet's immutable distributor pointer,
+        // so we deploy a fresh claim facet wired to a reentrant distributor and
+        // hot-swap it via replaceFacet (registerFacet would reject the
+        // already-mapped selectors).
+        MockReentrantHydrexDistributor reentrant = new MockReentrantHydrexDistributor(address(ve));
+        VeHydrexClaimingFacet reentrantFacet = new VeHydrexClaimingFacet(
+            address(portfolioFactory), address(ve), address(voter), address(reentrant)
+        );
+        vm.startPrank(owner_);
+        bytes4[] memory selectors = new bytes4[](2);
+        selectors[0] = bytes4(keccak256("claimFees(address[],address[][],uint256)"));
+        selectors[1] = bytes4(keccak256("claimRebase(uint256)"));
+        facetRegistry.replaceFacet(address(claimFacet), address(reentrantFacet), selectors, "ReentrantClaimingFacet");
+        vm.stopPrank();
+
+        reentrant.setClaimable(tokenId, 1e18);
+        reentrant.setTarget(portfolioAccount, tokenId);
+
+        // The outer claimRebase acquires the guard, then the distributor's
+        // claim() tries to re-enter claimRebase synchronously. The transient
+        // guard must reject with ReentrancyGuardReentrantCall.
+        vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(tokenId);
     }
 
     // ----------------------------------------------------------------

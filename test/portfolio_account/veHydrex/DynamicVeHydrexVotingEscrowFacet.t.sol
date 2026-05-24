@@ -152,7 +152,7 @@ contract DynamicVeHydrexVotingEscrowFacetTest is DynamicVeHydrexDiamond {
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 5e18, "tracked");
     }
 
-    function test_onERC721Received_permanent_secondArrivalMergesIntoBucket() public {
+    function test_onERC721Received_permanent_secondArrivalTracksStandalone_bucketUnchanged() public {
         uint256 first = ve.mintTo(address(this), 5e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, first);
 
@@ -165,8 +165,45 @@ contract DynamicVeHydrexVotingEscrowFacetTest is DynamicVeHydrexDiamond {
             first,
             "bucket unchanged"
         );
-        assertEq(ve.mergeCalls(), mergesBefore + 1, "merge call made");
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+        assertEq(ve.ownerOf(first), portfolioAccount, "first owned by account");
+        assertEq(ve.ownerOf(second), portfolioAccount, "second owned by account");
+        assertEq(DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(first), 5e18, "first tracked standalone");
+        assertEq(DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(second), 2e18, "second tracked standalone");
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 7e18, "tracked");
+    }
+
+    function test_onERC721Received_permanent_secondArrival_userCanCallMergeInternal_consolidates() public {
+        uint256 first = ve.mintTo(address(this), 5e18, IHydrexVotingEscrow.LockType.PERMANENT);
+        ve.safeTransferFrom(address(this), portfolioAccount, first);
+        uint256 second = ve.mintTo(address(this), 2e18, IHydrexVotingEscrow.LockType.PERMANENT);
+        ve.safeTransferFrom(address(this), portfolioAccount, second);
+
+        uint256 bucketBefore = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig))
+            .getRebaseTokenId(portfolioAccount);
+
+        vm.prank(user);
+        (bytes[] memory cd, address[] memory fac) = _mc(
+            abi.encodeWithSelector(VeHydrexVotingEscrowFacet.mergeInternal.selector, second, first)
+        );
+        portfolioManager.multicall(cd, fac);
+
+        assertEq(
+            HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount),
+            bucketBefore,
+            "bucket pointer unchanged"
+        );
+        assertEq(DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(first), 7e18, "first absorbed second");
+        assertEq(DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(second), 0, "second removed from tracking");
+        assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 7e18, "sum invariant");
+    }
+
+    function test_onERC721Received_permanent_belowMinimum_reverts() public {
+        uint256 dust = MIN_COLLATERAL / 2;
+        uint256 tokenId = ve.mintTo(address(this), dust, IHydrexVotingEscrow.LockType.PERMANENT);
+
+        vm.expectRevert(bytes("Amount below minimum collateral"));
+        ve.safeTransferFrom(address(this), portfolioAccount, tokenId);
     }
 
     function test_onERC721Received_permanent_staleBucket_resetsToIncoming() public {

@@ -5,6 +5,7 @@ import {VeHydrexDiamond, HydrexCollateralFacet} from "./helpers/VeHydrexDiamond.
 
 import {HydrexCollateralManager} from "../../../src/facets/account/veHydrex/HydrexCollateralManager.sol";
 import {VeHydrexVotingEscrowFacet} from "../../../src/facets/account/veHydrex/VeHydrexVotingEscrowFacet.sol";
+import {VeHydrexClaimingFacet} from "../../../src/facets/account/veHydrex/VeHydrexClaimingFacet.sol";
 import {HydrexPortfolioFactoryConfig} from "../../../src/facets/account/veHydrex/HydrexPortfolioFactoryConfig.sol";
 import {IHydrexVotingEscrow} from "../../../src/interfaces/IHydrexVotingEscrow.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
@@ -86,24 +87,23 @@ contract HydrexCollateralManagerTest is VeHydrexDiamond {
         assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(c), 4e18, "c tracked");
     }
 
-    function test_totalLockedCollateral_bucketMergeKeepsSumInvariant() public {
-        // Now exercise the bucket path explicitly via the receiver hook: two
-        // PERMANENT incoming tokens merge into one bucket; the sum tracks
-        // bucket amount only.
+    function test_totalLockedCollateral_twoStandalonePermanents_sumInvariantPreserved() public {
+        // Exercise the receiver-hook path with two PERMANENT incoming tokens:
+        // first sets the bucket pointer, second arrives as standalone collateral
+        // (no auto-merge -- Hydrex's merge() does not burn the from-token).
         uint256 rolling = _seedRollingLock(2e18);
 
-        // Mint two PERMANENT tokens externally and route them through the
-        // receiver hook to trigger bucket creation + absorption.
         uint256 first = ve.mintTo(address(this), 3e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, first);
         uint256 second = ve.mintTo(address(this), 4e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, second);
 
-        // Sum = rolling 2 + bucket 7 = 9
+        // Sum = rolling 2 + first 3 + second 4 = 9 (same total as the pre-refactor
+        // merged-bucket world, different mechanism).
         assertEq(ICollateralFacet(portfolioAccount).getTotalLockedCollateral(), 9e18, "sum invariant");
         assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(rolling), 2e18, "rolling untouched");
-        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(first), 7e18, "first is bucket");
-        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(second), 0, "second absorbed");
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(first), 3e18, "first standalone");
+        assertEq(HydrexCollateralFacet(portfolioAccount).getLockedCollateral(second), 4e18, "second standalone");
     }
 
     // ----------------------------------------------------------------
@@ -150,15 +150,27 @@ contract HydrexCollateralManagerTest is VeHydrexDiamond {
     ///      T == rebaseTokenIds[account] (bucket bypass via
     ///      addLockedCollateralUnchecked) OR T's amount is at or above
     ///      getMinimumCollateral() (regular addLockedCollateral path).
+    ///
+    ///      The post-refactor receiver hook uses the CHECKED add path even for
+    ///      the first incoming PERMANENT. Sub-minimum collateral can therefore
+    ///      only enter via the rebase fresh-seed path on the claiming facet,
+    ///      which writes through addLockedCollateralUnchecked after setting the
+    ///      rebase-bucket pointer. This test exercises that route.
     function test_invariant_subMinTracking_onlyViaBucket() public {
         // Lay down a non-bucket user-created lock at the minimum (passes the gate).
         uint256 userLock = _seedRollingLock(MIN_COLLATERAL);
-        // Spawn a sub-minimum bucket via the receiver hook: a PERMANENT veNFT of
-        // dust value enters and becomes the bucket.
-        uint256 dustBucket = ve.mintTo(address(this), MIN_COLLATERAL / 1000, IHydrexVotingEscrow.LockType.PERMANENT);
-        ve.safeTransferFrom(address(this), portfolioAccount, dustBucket);
 
-        // dustBucket is below MIN but tracked because it's the bucket pointer.
+        // Arm the distributor to mint a sub-minimum PERMANENT for the first
+        // rebase emission on the ROLLING source -- this exercises the unchecked
+        // bucket-seeding path inside _doClaimRebase.
+        rewardsDistributor.setMintMode(true);
+        uint256 dust = MIN_COLLATERAL / 1000;
+        rewardsDistributor.setClaimable(userLock, dust);
+
+        VeHydrexClaimingFacet(portfolioAccount).claimRebase(userLock);
+
+        uint256 dustBucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount);
+        assertGt(dustBucket, 0, "fresh bucket assigned");
         assertLt(
             HydrexCollateralFacet(portfolioAccount).getLockedCollateral(dustBucket),
             MIN_COLLATERAL,
@@ -171,13 +183,12 @@ contract HydrexCollateralManagerTest is VeHydrexDiamond {
         );
 
         // Invariant assertion: every tracked tokenId either is the bucket OR is >= min.
-        uint256 bucket = HydrexPortfolioFactoryConfig(address(portfolioFactoryConfig)).getRebaseTokenId(portfolioAccount);
         uint256[2] memory tracked = [userLock, dustBucket];
         for (uint256 i = 0; i < tracked.length; i++) {
             uint256 tid = tracked[i];
             uint256 amt = HydrexCollateralFacet(portfolioAccount).getLockedCollateral(tid);
             if (amt == 0) continue;
-            bool isBucket = tid == bucket;
+            bool isBucket = tid == dustBucket;
             bool atOrAboveMin = amt >= MIN_COLLATERAL;
             assertTrue(isBucket || atOrAboveMin, "tracked sub-min token is not the bucket");
         }

@@ -18,8 +18,4 @@ contract DynamicVeHydrexFacet is VeHydrexFacet {
             address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)
         );
     }
-
-    function _getOriginTimestamp(uint256 tokenId) internal view override returns (uint256) {
-        return DynamicHydrexCollateralManager.getOriginTimestamp(tokenId);
-    }
 }

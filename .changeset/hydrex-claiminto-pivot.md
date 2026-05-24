@@ -1,0 +1,5 @@
+---
+"@40-acres/contracts": minor
+---
+
+Hydrex on base: simplify rebase-bucket lifecycle. `VeHydrexClaimingFacet.claimRebase` now uses `RewardsDistributorV2.claimInto` to deposit non-PERMANENT-source rebase value directly into the account's existing bucket lock (no fresh mint, no merge). PERMANENT-source claims short-circuit to plain `claim()` since Hydrex auto-applies in place. First-time-seed mint still mints once to create the bucket. `VeHydrexVotingEscrowFacet` receiver hook no longer merges incoming PERMANENT veNFTs into the bucket — each is tracked as its own collateral entry; the first one (if no bucket yet) also gets designated as the bucket. `RebaseClaimed.amount` now reflects the actually-deposited value via `claimInto`'s return (previously emitted a pre-snapshot `claimable` that could undercount). Removes `HydrexBucketLib` and `RebaseBucketAbsorbed` event.

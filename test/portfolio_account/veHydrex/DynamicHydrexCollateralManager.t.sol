@@ -136,14 +136,12 @@ contract DynamicHydrexCollateralManagerTest is DynamicVeHydrexDiamond {
     // (3) addLockedCollateralUnchecked: rebase-bucket guard
     // ----------------------------------------------------------------
 
-    /// @dev The unchecked entry point is reachable only via the receiver hook
-    ///      when the bucket pointer matches the incoming token. We exercise
-    ///      the guard by seeding a bucket, then transferring in a fresh
-    ///      PERMANENT veNFT that should be merged into (not added as) the
-    ///      bucket. The bucket guard prevents the unchecked path from
-    ///      tracking the fresh token's id; the merge path absorbs it instead.
-    function test_addLockedCollateralUnchecked_secondPermanent_doesNotTrackAsBucket() public {
-        // First PERMANENT arrives -> becomes bucket via the unchecked path.
+    /// @dev Post-refactor: the receiver hook uses the CHECKED add path for the
+    ///      second PERMANENT arrival -- no merge call, no bucket overwrite. The
+    ///      first PERMANENT remains the bucket; the second is tracked as
+    ///      standalone collateral at its own amount.
+    function test_onERC721Received_secondPermanent_tracksStandalone_bucketUnchanged() public {
+        // First PERMANENT arrives -> becomes bucket via the CHECKED add path.
         uint256 first = ve.mintTo(address(this), 5e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, first);
         assertEq(
@@ -152,10 +150,10 @@ contract DynamicHydrexCollateralManagerTest is DynamicVeHydrexDiamond {
             "bucket assigned"
         );
 
-        // Second PERMANENT arrives -> the receiver hook routes to merge, not
-        // to addLockedCollateralUnchecked. The bucket pointer stays on
-        // `first`, and the locked-collateral mapping for `second` is zero
-        // (its amount was absorbed into `first` via merge).
+        // Second PERMANENT arrives -> receiver hook tracks it standalone (no
+        // merge call; the prior absorb-into-bucket behaviour created zombie
+        // zero-amount NFTs because Hydrex's merge() does not burn the from-token).
+        uint256 mergesBefore = ve.mergeCalls();
         uint256 second = ve.mintTo(address(this), 4e18, IHydrexVotingEscrow.LockType.PERMANENT);
         ve.safeTransferFrom(address(this), portfolioAccount, second);
 
@@ -164,16 +162,18 @@ contract DynamicHydrexCollateralManagerTest is DynamicVeHydrexDiamond {
             first,
             "bucket pointer stable"
         );
-        assertEq(
-            DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(second),
-            0,
-            "second token NOT individually tracked"
-        );
-        // The bucket absorbed the second token's amount.
+        assertEq(ve.mergeCalls(), mergesBefore, "no merge");
+        assertEq(ve.ownerOf(first), portfolioAccount, "first owned by account");
+        assertEq(ve.ownerOf(second), portfolioAccount, "second owned by account");
         assertEq(
             DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(first),
-            9e18,
-            "bucket grew via merge"
+            5e18,
+            "first standalone at original amount"
+        );
+        assertEq(
+            DynamicHydrexCollateralViewFacet(portfolioAccount).getLockedCollateral(second),
+            4e18,
+            "second standalone at original amount"
         );
     }
 

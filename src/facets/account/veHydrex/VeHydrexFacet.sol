@@ -17,6 +17,21 @@ import {HydrexCollateralManager} from "./HydrexCollateralManager.sol";
  *      tokenId argument on this facet's methods is used only for per-tokenId
  *      collateral tracking; the on-chain ballot covers every veNFT the
  *      account currently holds, regardless of which tokenId was named.
+ *
+ *      Manual-vote state is per-ACCOUNT, not per-tokenId, since the Hydrex
+ *      Voter is account-wide. UserVotingConfig.{set,get}VotingMode is keyed
+ *      on tokenId=0 to mean "the account's manual-mode preference".
+ *
+ *      defaultVote is gated by a per-epoch rule: if the user has opted into
+ *      manual mode (sticky flag, tokenId=0) AND the account has already voted
+ *      in the current epoch (per Voter.lastVoted), the operator's default-vote
+ *      is blocked. Each new epoch resets the gate naturally.
+ *
+ *      Note on mid-epoch weight changes: Hydrex's _vote computes the weight
+ *      via getPastVotes(voter, epochStart), so weight that arrives mid-epoch
+ *      (rebase claims, external arrivals) does NOT count toward the current
+ *      epoch's vote and CANNOT be picked up by poke. It counts in the next
+ *      epoch automatically when the new epoch-start snapshot is taken.
  */
 contract VeHydrexFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
@@ -46,7 +61,8 @@ contract VeHydrexFacet is AccessControl {
         onlyPortfolioManagerMulticall(_portfolioFactory)
     {
         _vote(tokenId, pools, weights);
-        UserVotingConfig.setVotingMode(tokenId, true);
+        // Account-wide manual-mode flag; tokenId=0 is the account slot.
+        UserVotingConfig.setVotingMode(0, true);
     }
 
     /// @notice One on-chain ballot covers all listed tokenIds
@@ -61,20 +77,22 @@ contract VeHydrexFacet is AccessControl {
         _voter.vote(pools, weights);
     }
 
-    /// @notice Operator-driven default vote. Allowed across the whole epoch because
-    ///         Hydrex's Voter.vote auto-resets the prior ballot, so a later manual
-    ///         vote in the same epoch can freely override the default.
+    /// @notice Operator-driven default vote. Blocked if the user has opted into
+    ///         manual mode AND the account has already voted in the current epoch.
+    ///         The next epoch resets the gate naturally via Voter.lastVoted.
     function defaultVote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights)
         external
         onlyAuthorizedCaller(_portfolioFactory)
     {
-        if (!isElligibleForManualVoting(tokenId) && UserVotingConfig.isManualVoting(tokenId)) {
-            UserVotingConfig.setVotingMode(tokenId, false);
-        }
-
-        require(!UserVotingConfig.isManualVoting(tokenId));
-
+        require(_canDefaultVote(), "Account already voted this epoch");
         _vote(tokenId, pools, weights);
+    }
+
+    function _canDefaultVote() internal view returns (bool) {
+        if (!UserVotingConfig.isManualVoting(0)) return true;
+        uint256 lastVoted = _voter.lastVoted(address(this));
+        if (lastVoted == 0) return true;
+        return ProtocolTimeLibrary.epochStart(lastVoted) < ProtocolTimeLibrary.epochStart(block.timestamp);
     }
 
     function _vote(uint256 tokenId, address[] calldata pools, uint256[] calldata weights) internal virtual {
@@ -94,43 +112,21 @@ contract VeHydrexFacet is AccessControl {
         );
     }
 
-    function _getOriginTimestamp(uint256 tokenId) internal view virtual returns (uint256) {
-        return HydrexCollateralManager.getOriginTimestamp(tokenId);
+    function isManualVoting(uint256 /* tokenId */) external view returns (bool) {
+        // Account-wide flag stored at tokenId=0.
+        return UserVotingConfig.isManualVoting(0);
     }
 
-    function isManualVoting(uint256 tokenId) external view returns (bool) {
-        if (!isElligibleForManualVoting(tokenId)) {
-            return false;
-        }
-        return UserVotingConfig.isManualVoting(tokenId);
-    }
-
-    function setVotingMode(uint256 tokenId, bool setToManualVoting)
+    function setVotingMode(uint256 /* tokenId */, bool setToManualVoting)
         external
         onlyPortfolioManagerMulticall(_portfolioFactory)
     {
-        if (setToManualVoting) {
-            require(isElligibleForManualVoting(tokenId));
-        }
-        UserVotingConfig.setVotingMode(tokenId, setToManualVoting);
+        UserVotingConfig.setVotingMode(0, setToManualVoting);
         address owner = _portfolioFactory.ownerOf(address(this));
-        emit VotingModeSet(tokenId, setToManualVoting, owner);
+        emit VotingModeSet(0, setToManualVoting, owner);
     }
 
-    function isElligibleForManualVoting(uint256 tokenId) public view returns (bool) {
-        // Hydrex Voter.lastVoted is per-account, not per-tokenId. Eligibility is account-wide;
-        // the tokenId argument here only drives the origin-timestamp gate.
-        //
-        // Hydrex does not carry votes across epochs: weightsPerEpoch is keyed on the
-        // current epoch and zero-initialized each flip. Manual mode therefore requires
-        // an active vote in the CURRENT epoch.
-        uint256 lastVoted = _voter.lastVoted(address(this));
-        if (lastVoted < _getOriginTimestamp(tokenId) || _getOriginTimestamp(tokenId) == 0) {
-            return false;
-        }
-        if (ProtocolTimeLibrary.epochStart(lastVoted) < ProtocolTimeLibrary.epochStart(block.timestamp)) {
-            return false;
-        }
+    function isElligibleForManualVoting(uint256 /* tokenId */) public pure returns (bool) {
         return true;
     }
 }

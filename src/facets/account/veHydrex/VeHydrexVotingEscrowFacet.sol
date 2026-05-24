@@ -9,7 +9,6 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {HydrexCollateralManager} from "./HydrexCollateralManager.sol";
 import {HydrexPortfolioFactoryConfig} from "./HydrexPortfolioFactoryConfig.sol";
-import {HydrexBucketLib} from "./HydrexBucketLib.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {UserMarketplaceModule} from "../marketplace/UserMarketplaceModule.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
@@ -23,12 +22,16 @@ import {AccessControl} from "../utils/AccessControl.sol";
  *      in the receiver hook; if the conversion call reverts, the whole transfer
  *      reverts.
  *
- *      Rebase emissions on a non-PERMANENT lock are minted by Hydrex's
- *      RewardsDistributor as a fresh PERMANENT veNFT to the lock owner. The
- *      receiver hook routes that new veNFT through a per-account "rebase
- *      bucket" pattern: either set as the bucket (if none exists yet) or
- *      merged into the existing bucket. PERMANENT originals have rebase
- *      auto-applied in-place by the RewardsDistributor (no new mint, no bucket).
+ *      Incoming PERMANENT veNFTs are tracked as their own collateral entry.
+ *      If the account has no rebase-bucket pointer set yet, the first
+ *      incoming PERMANENT also gets designated as the bucket so subsequent
+ *      rebase claims can use RewardsDistributor.claimInto to deposit directly
+ *      into it. Subsequent PERMANENT arrivals do NOT overwrite the bucket --
+ *      they land as standalone tracked collateral. Users who want consolidation
+ *      can call merge/mergeInternal/split themselves.
+ *
+ *      PERMANENT originals (as the rebase source) have rebase auto-applied
+ *      in-place by Hydrex's RewardsDistributor (no new mint).
  */
 contract VeHydrexVotingEscrowFacet is AccessControl, IERC721Receiver, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
@@ -41,7 +44,6 @@ contract VeHydrexVotingEscrowFacet is AccessControl, IERC721Receiver, Reentrancy
     event LockMerged(uint256 indexed from, uint256 indexed to, uint256 weightIncrease, address indexed owner);
     event LockSplit(uint256 indexed tokenId, uint256[] weights, uint256[] resultingTokenIds, address indexed owner);
     event RebaseBucketAssigned(uint256 indexed tokenId, address indexed owner);
-    event RebaseBucketAbsorbed(uint256 indexed from, uint256 indexed to, address indexed owner);
 
     error ListingActive(uint256 tokenId);
     error LockTypeNotAllowed(IHydrexVotingEscrow.LockType lockType);
@@ -109,7 +111,21 @@ contract VeHydrexVotingEscrowFacet is AccessControl, IERC721Receiver, Reentrancy
         } else if (lockType == IHydrexVotingEscrow.LockType.ROLLING) {
             _addLockedCollateral(tokenId);
         } else {
-            _absorbPermanentIntoBucket(tokenId);
+            // PERMANENT. If no rebase-bucket pointer is set yet, designate this
+            // incoming PERMANENT as the bucket so future claimInto calls can
+            // deposit directly into it. Otherwise just track as standalone
+            // collateral -- no merge into the existing bucket (that path
+            // created zombie zero-amount NFTs because Hydrex's merge() does
+            // not burn the from-token).
+            HydrexPortfolioFactoryConfig hConfig =
+                HydrexPortfolioFactoryConfig(address(_portfolioFactory.portfolioFactoryConfig()));
+            uint256 bucket = hConfig.getRebaseTokenId(address(this));
+            bool bucketValid = bucket != 0 && _votingEscrow.ownerOf(bucket) == address(this);
+            if (!bucketValid) {
+                hConfig.setRebaseTokenId(tokenId);
+                emit RebaseBucketAssigned(tokenId, _portfolioFactory.ownerOf(address(this)));
+            }
+            _addLockedCollateral(tokenId);
         }
 
         return IERC721Receiver.onERC721Received.selector;
@@ -206,28 +222,8 @@ contract VeHydrexVotingEscrowFacet is AccessControl, IERC721Receiver, Reentrancy
         emit LockSplit(tokenId, weights, resulting, owner);
     }
 
-    function _absorbPermanentIntoBucket(uint256 incomingTokenId) internal {
-        (uint256 trackId, uint256 updateId) = HydrexBucketLib.absorbMint(
-            address(_portfolioFactory.portfolioFactoryConfig()), address(_votingEscrow), incomingTokenId
-        );
-        address owner = _portfolioFactory.ownerOf(address(this));
-        if (trackId != 0) {
-            _addLockedCollateralUnchecked(trackId);
-            emit RebaseBucketAssigned(trackId, owner);
-        } else {
-            _updateLockedCollateral(updateId);
-            emit RebaseBucketAbsorbed(incomingTokenId, updateId, owner);
-        }
-    }
-
     function _addLockedCollateral(uint256 tokenId) internal virtual {
         HydrexCollateralManager.addLockedCollateral(
-            address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)
-        );
-    }
-
-    function _addLockedCollateralUnchecked(uint256 tokenId) internal virtual {
-        HydrexCollateralManager.addLockedCollateralUnchecked(
             address(_portfolioFactory.portfolioFactoryConfig()), tokenId, address(_votingEscrow)
         );
     }
