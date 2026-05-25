@@ -205,9 +205,9 @@ library ERC4626CollateralManager {
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
-        IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
+        IERC20(lendingPool.lendingAsset()).forceApprove(address(lendingPool), balancePayment);
         uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
-        IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
+        IERC20(lendingPool.lendingAsset()).forceApprove(address(lendingPool), 0);
 
         excess = amount - actualPaid;
 
