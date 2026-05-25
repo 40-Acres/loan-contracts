@@ -130,7 +130,9 @@ library YieldBasisCollateralManager {
         } else if (gauge != address(0) && data.gauge != gauge) {
             revert GaugeMismatch(data.gauge, gauge);
         }
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+
+        // Pass `shares` as incoming so the snapshot sees pre-deposit LP.
+        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying, shares);
 
         uint256 requiredBalance = data.shares + shares;
         uint256 actualBalance = _actualLp(vault, gauge);
@@ -438,13 +440,34 @@ library YieldBasisCollateralManager {
     ///      admin reconcile. Surplus from later gauge appreciation must be added back
     ///      via explicit addCollateral.
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault, address underlying) internal {
+        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying, 0);
+    }
+
+    /// @dev Drift-aware variant: subtracts `incomingShares` from `_actualLp`
+    ///      so a deposit-in-flight cannot mask drift. Inlined (not delegated
+    ///      to the public `reconcileSharesToBalance`) so the untrusted offset
+    ///      stays internal-only.
+    function _snapshotIfNeeded(
+        address portfolioFactoryConfig,
+        address vault,
+        address underlying,
+        uint256 incomingShares
+    ) internal {
         _syncDebt(portfolioFactoryConfig);
         YieldBasisCollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber == block.number) return;
         data.snapshotBlockNumber = block.number;
 
-        if (data.gauge != address(0)) {
-            reconcileSharesToBalance(portfolioFactoryConfig, vault, underlying, data.gauge);
+        if (data.shares > 0) {
+            uint256 actual = _actualLp(vault, data.gauge);
+            uint256 effective = actual > incomingShares ? actual - incomingShares : 0;
+            if (data.shares > effective) {
+                data.depositedAssetValue = (data.depositedAssetValue * effective) / data.shares;
+                data.shares = effective;
+                if (effective == 0) {
+                    _notifyCollateralRemoved(portfolioFactoryConfig, vault);
+                }
+            }
         }
 
         data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, underlying);

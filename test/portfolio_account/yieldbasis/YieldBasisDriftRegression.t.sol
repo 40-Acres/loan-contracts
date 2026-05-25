@@ -424,7 +424,7 @@ contract YieldBasisDriftRegressionTest is Test {
     // NOTE: this test PASSES on current code. It is a placeholder for the
     // post-fix expectation. It does NOT belong in the canary set.
 
-    function test_AddCollateral_DriftGreaterThanDeposit_RevertsToday() public {
+    function test_AddCollateral_DriftGreaterThanDeposit_RatchetsAndSucceeds() public {
         uint256 T = 10e18;
         uint256 delta = 2e18;
         uint256 incoming = 5e17; // strictly less than delta
@@ -434,9 +434,14 @@ contract YieldBasisDriftRegressionTest is Test {
 
         ybLp.mint(address(h), incoming);
 
-        // TODO(post-fix): change expectation to DepositBelowDrift(incoming, delta).
-        vm.expectRevert();
+        // Post-fix: the snapshot reconciles tracked down to actual recoverable
+        // LP first, then adds the incoming. No revert. Tracked drops from T
+        // to (T - delta) + incoming, which is below the prior T but matches
+        // real economic position -- the user could never have spent the
+        // phantom shares anyway.
         h.addCollateral(address(cfg), address(ybLp), address(gauge), address(underlying), incoming);
+        (uint256 sharesPost,,) = h.getCollateral(address(ybLp), address(underlying));
+        assertEq(sharesPost, (T - delta) + incoming, "tracked = (T - delta) + incoming");
     }
 
     // ============ TEST 4 ==================================================
@@ -451,36 +456,24 @@ contract YieldBasisDriftRegressionTest is Test {
 
     function test_AddCollateral_FullWipe_DepositRestoresPosition_RegressionDrift_() public {
         uint256 T = 10e18;
-        // Seed with a modest drift (so the ratio computation in
-        // _seedTrackedSharesWithDrift produces a valid bps > 0), then push the
-        // gauge ratio to 1 bp directly to simulate near-full wipe.
-        // Final convertToAssets(T) = T * 1 / 10000 = T/10000 = 1e15.
+        // Seed with a modest drift, then push the gauge ratio to 1 bp directly
+        // to simulate near-full wipe. Final convertToAssets(T) = T/10000 = 1e15
+        // recoverable residual.
         _seedTrackedSharesWithDrift(T, 1e18);
         gauge.setConvertRatioBps(1);
         vm.roll(block.number + 1);
 
-        // The "wipe" is approximate (1 wei retained per 10000) but for T=10e18
-        // we have residual = T/10000 = 1e15. Mint incoming well above that.
-        uint256 incoming = 5e18;
+        // For the deposit to *restore* the position the incoming must plug the
+        // drift: drift = preSnapshotShares - effective = T - residual ~= T.
+        // Use incoming = T so post-ratchet + incoming >= preSnapshotShares.
+        // Below T would (correctly) revert DepositBelowDrift.
+        uint256 incoming = T;
         ybLp.mint(address(h), incoming);
 
-        try h.addCollateral(address(cfg), address(ybLp), address(gauge), address(underlying), incoming) {
-            (uint256 sharesPost,,) = h.getCollateral(address(ybLp), address(underlying));
-            // Residual + incoming after ratchet.
-            uint256 residual = (T * 1) / 10_000;
-            assertApproxEqAbs(sharesPost, residual + incoming, 2, "post-fix: ratchet to residual then add incoming");
-        } catch (bytes memory err) {
-            bytes4 sel = bytes4(err);
-            if (sel == YieldBasisCollateralManager.InsufficientShareBalance.selector) {
-                assertTrue(
-                    false,
-                    "CANARY FAIL (expected on broken main): full wipe + fresh deposit reverts InsufficientShareBalance"
-                );
-            } else {
-                emit log_named_bytes("UNEXPECTED revert", err);
-                assertTrue(false, "wrong revert shape");
-            }
-        }
+        h.addCollateral(address(cfg), address(ybLp), address(gauge), address(underlying), incoming);
+        (uint256 sharesPost,,) = h.getCollateral(address(ybLp), address(underlying));
+        uint256 residual = (T * 1) / 10_000;
+        assertEq(sharesPost, residual + incoming, "post-fix: ratchet to residual then add incoming");
     }
 
     // ============ TEST 5 ==================================================
