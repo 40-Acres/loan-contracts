@@ -102,17 +102,37 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTr
         address config = _config();
         SequencerLivenessLib.assertUp(config);
 
+        // Reconcile-first
+        YieldBasisCollateralManager.reconcileSharesToBalance(
+            config,
+            address(_lpToken),
+            _underlying,
+            address(_gauge)
+        );
+
         // Cap to tracked: harvestLpFees may have reduced shares via removeSharesForYield.
         uint256 trackedShares = YieldBasisCollateralManager.getCollateralShares();
         uint256 toWithdraw = amount > trackedShares ? trackedShares : amount;
         if (toWithdraw == 0) return;
 
+        // Clamp to recoverable LP
+        uint256 directLp = _lpToken.balanceOf(address(this));
+        uint256 gaugeShares = IERC20(address(_gauge)).balanceOf(address(this));
+        uint256 redeemable = gaugeShares > 0 ? _gauge.convertToAssets(gaugeShares) : 0;
+        uint256 recoverable = directLp + redeemable;
+        if (toWithdraw > recoverable) toWithdraw = recoverable;
+        if (toWithdraw == 0) return;
+
         YieldBasisCollateralManager.removeCollateral(config, address(_lpToken), _underlying, toWithdraw);
 
-        uint256 directLp = _lpToken.balanceOf(address(this));
         if (toWithdraw > directLp) {
             uint256 shortfall = toWithdraw - directLp;
-            _gauge.withdraw(shortfall, address(this), address(this));
+            if (shortfall == redeemable) {
+                // Drain-all: redeem-by-shares to avoid Curve `!tokens` at the cap
+                _gauge.redeem(gaugeShares, address(this), address(this));
+            } else {
+                _gauge.withdraw(shortfall, address(this), address(this));
+            }
         }
 
         address owner = _portfolioFactory.ownerOf(address(this));

@@ -441,36 +441,32 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
     }
 
     /**
-     * @dev CRITICAL adversarial case: vault returns 0 from BOTH previewRedeem
-     *      and redeem. The absolute floor `assetsReceived * 100 >= previewed * 85`
-     *      becomes `0 >= 0`, which is TRUE — so the absolute floor does NOT
-     *      catch this. The caller floor must catch it:
-     *          minAssetsOut = sharesToRedeem * minAssetsPerShare / 1e18
-     *      For any non-zero minAssetsPerShare and non-zero sharesToRedeem,
-     *      this is > 0, so 0 < minAssetsOut → "Slippage" revert.
-     *
-     *      To make minAssetsOut > 0 we need sharesToRedeem * mPerS >= 1e18.
-     *      Our yieldShares is ~91e6, so mPerS = 1e12 yields minAssetsOut = 91 wei.
+     * @dev Adversarial case: vault returns 0 from both previewRedeem and redeem.
+     *      Under the conservative collateral valuation
+     *      (_resolveCollateralValue = min(convertToAssets, previewRedeem)),
+     *      getCollateral reports currentAssets = 0, so claimVaultYield reverts
+     *      at the "No yield to harvest" upstream guard before reaching the
+     *      slippage floors. The min() floor in ERC4626CollateralManager moved
+     *      the adversarial-vault guard upstream from the caller-slippage floor.
      */
-    function test_claimVaultYield_zeroPreviewZeroRedeem_callerFloorCatches() public {
+    function test_claimVaultYield_zeroPreview_revertsAtUpstreamGuard() public {
         _setupYieldClaim();
 
         // Force both previewRedeem and redeem to return 0.
         _mockVault.setForcePreviewRedeemZero(true);
         _mockVault.setForceRedeemReturn(0);
 
-        // Sanity: yieldShares is non-zero pre-config (we read getAvailableYield
-        // BEFORE forcing previewRedeem to 0 would be ideal, but getAvailableYield
-        // uses convertToAssets, not previewRedeem, so it still reports yield).
-        (, uint256 yieldShares) = ERC4626ClaimingFacet(_portfolioAccount).getAvailableYield();
-        assertGt(yieldShares, 0, "Setup must have redeemable shares");
+        // Under the conservative valuation, getAvailableYield reflects
+        // previewRedeem and correctly reports zero yield available.
+        (uint256 yieldAssets, uint256 yieldShares) = ERC4626ClaimingFacet(_portfolioAccount).getAvailableYield();
+        assertEq(yieldAssets, 0, "Yield must be reported as zero when redeem path is broken");
+        assertEq(yieldShares, 0, "Yield shares must be reported as zero when redeem path is broken");
 
-        // Pick mPerS such that floor > 0. With yieldShares ~ 91e6, mPerS = 1e12
-        // gives floor = 91e6 * 1e12 / 1e18 = 91 — strictly > 0.
+        // claimVaultYield reverts at the upstream currentAssets > depositedAssets check.
         uint256 mPerS = 1e12;
 
         vm.prank(_authorizedCaller);
-        vm.expectRevert(bytes("Slippage"));
+        vm.expectRevert(bytes("No yield to harvest"));
         ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(mPerS);
     }
 }

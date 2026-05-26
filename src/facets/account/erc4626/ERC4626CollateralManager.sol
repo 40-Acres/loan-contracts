@@ -51,12 +51,15 @@ library ERC4626CollateralManager {
     }
 
     /**
-     * @dev Resolve the collateral value of vault shares via standard ERC4626 conversion.
-     *      Returns vault.convertToAssets(shares) in the vault's underlying asset units.
+     * @dev Resolve the collateral value of vault shares via previewRedeem,
+     *      the EIP-4626 primitive that simulates redemption at current on-chain
+     *      conditions and includes any exit fee or under-delivery. A vault whose
+     *      previewRedeem reverts (e.g. paused) halts borrow-side reads; repay
+     *      paths are unaffected.
      */
     function _resolveCollateralValue(address vault, uint256 shares) internal view returns (uint256 value) {
         if (shares == 0 || vault == address(0)) return 0;
-        return IERC4626(vault).convertToAssets(shares);
+        return IERC4626(vault).previewRedeem(shares);
     }
 
     /**
@@ -202,9 +205,9 @@ library ERC4626CollateralManager {
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 
-        IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), balancePayment);
+        IERC20(lendingPool.lendingAsset()).forceApprove(address(lendingPool), balancePayment);
         uint256 actualPaid = lendingPool.payFromPortfolio(balancePayment, 0);
-        IERC20(lendingPool.lendingAsset()).approve(address(lendingPool), 0);
+        IERC20(lendingPool.lendingAsset()).forceApprove(address(lendingPool), 0);
 
         excess = amount - actualPaid;
 

@@ -73,7 +73,7 @@ contract ERC4626LendingFacet is AccessControl {
      * @dev Pay back debt
      * @param amount The amount to pay
      */
-    function pay(uint256 amount) external nonReentrant returns (uint256 excess) {
+    function pay(uint256 amount) external nonReentrant returns (uint256) {
         // If caller is portfolio manager, use portfolio owner as from address
         address from = msg.sender == address(_portfolioFactory.portfolioManager())
             ? _portfolioFactory.ownerOf(address(this))
@@ -82,6 +82,7 @@ contract ERC4626LendingFacet is AccessControl {
         // Cap to total debt before pulling funds. Excess-refund logic below
         // remains as defense-in-depth for race conditions where the vault
         // implicitly reduces debt during payFromPortfolio.
+        uint256 requestedAmount = amount;
         uint256 totalDebt = ICollateralFacet(address(this)).getTotalDebt();
         if (amount > totalDebt) {
             amount = totalDebt;
@@ -89,15 +90,20 @@ contract ERC4626LendingFacet is AccessControl {
 
         _lendingToken.safeTransferFrom(from, address(this), amount);
 
-        excess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _vault, amount);
+        uint256 postExcess = ERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _vault, amount);
+        uint256 actuallyPaid = amount - postExcess;
 
-        emit Paid(amount - excess, from);
+        emit Paid(actuallyPaid, from);
 
-        if (excess > 0) {
-            _lendingToken.safeTransfer(from, excess);
+        if (postExcess > 0) {
+            _lendingToken.safeTransfer(from, postExcess);
         }
 
-        return excess;
+        // Reported excess is the full unspent portion of the caller's request,
+        // including the part that was capped before the transfer. Callers
+        // (e.g. rewards-processing fan-out) rely on requestedAmount - excess
+        // to derive how much actually went toward debt.
+        return requestedAmount - actuallyPaid;
     }
 
     /**
