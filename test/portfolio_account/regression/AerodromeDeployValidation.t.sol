@@ -154,6 +154,9 @@ contract AerodromeDeployValidation is BaseDeploymentSetup {
         assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.getSaleAuthorization.selector), address(marketplaceFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.hasSaleAuthorization.selector), address(marketplaceFacet));
         assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.clearExpiredSaleAuthorization.selector), address(marketplaceFacet));
+        // 8th MarketplaceFacet selector. Omitting it from the registry is exactly the
+        // bug class that broke makeListing on Velodrome/OP (self-call to an unmapped selector).
+        assertEq(facetRegistry.getFacetForSelector(BaseMarketplaceFacet.isListingPurchasable.selector), address(marketplaceFacet));
     }
 
     function testRewardsProcessingSelectorsRouteCorrectly() public view {

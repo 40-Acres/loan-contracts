@@ -58,6 +58,7 @@ library DynamicYieldBasisCollateralManager {
     }
 
     error GaugeMismatch(address stored, address provided);
+    error BelowMinimumCollateral(uint256 remaining, uint256 minimum);
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.DynamicYieldBasisCollateralManager");
 
@@ -164,6 +165,12 @@ library DynamicYieldBasisCollateralManager {
         // by the actually-owed balance, not the optimistic effective view.
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
         require(getTotalDebt(portfolioFactoryConfig) <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+
+        // Disallow leaving a dust position below the configured minimum; a full exit is allowed.
+        // Remaining reads recoverable LP value, so an externally drained position reads 0 and exits cleanly.
+        uint256 remaining = getTotalCollateralValue(vault, underlying);
+        uint256 minimum = PortfolioFactoryConfig(portfolioFactoryConfig).getMinimumCollateral();
+        if (remaining != 0 && remaining < minimum) revert BelowMinimumCollateral(remaining, minimum);
 
         emit YieldBasisCollateralRemoved(vault, shares, assetValueToRemove, address(this));
 

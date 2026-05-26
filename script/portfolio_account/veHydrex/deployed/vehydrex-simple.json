@@ -1,0 +1,8 @@
+{
+  "facetRegistry": "0x60Ab719aa7e0De6797e1619FCeACaB29C2A9E24b",
+  "lendingVault": "0x16eDb4Dfc1d3368d051370699EDfB280e9a1b474",
+  "loanConfig": "0x66281608d5672C1BAa5601d1d2bBE2e0fFEc8ffc",
+  "portfolioFactory": "0x74488Ee5f1599CC4b89Fa42134b9c5a142Cba7D6",
+  "portfolioFactoryConfig": "0xC4735B52EEA7BBd4B7614CD5d64D7fFca68b284f",
+  "votingConfig": "0xc6944b22171492Db5211441Fdd297d75E9a60887"
+}
