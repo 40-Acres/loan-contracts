@@ -16,6 +16,7 @@ import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {SwapMod} from "../../../../src/facets/account/swap/SwapMod.sol";
 import {MockERC20} from "../../../mocks/MockERC20.sol";
+import {ProtocolTimeLibrary} from "../../../../src/libraries/ProtocolTimeLibrary.sol";
 
 /**
  * @dev Subclass that blocks specified tokens via the `_isSwapAllowed` override.
@@ -100,6 +101,8 @@ contract BridgeFacetTest is Test {
 
     // Re-declare for vm.expectEmit topic matching.
     event SwapFailed(uint256 inputAmount, address indexed inputToken, address outputToken, address indexed owner);
+    event GasReclamationPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event BridgeInitiated(address indexed tokenMessenger, uint32 indexed destinationDomain, uint256 amount, uint256 maxFee, address user, address asset);
 
     function setUp() public {
         // Fork Ink chain
@@ -164,12 +167,117 @@ contract BridgeFacetTest is Test {
         uint256 balanceBefore = _usdc.balanceOf(_portfolioAccount);
         assertEq(balanceBefore, BRIDGE_AMOUNT);
 
+        // Assert BridgeInitiated payload: indexed tokenMessenger + destinationDomain, data fields.
+        vm.expectEmit(true, true, false, true, _portfolioAccount);
+        emit BridgeInitiated(TOKEN_MESSENGER, 2, BRIDGE_AMOUNT, 0, _user, INK_USDC);
+
         vm.prank(_authorizedCaller);
-        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0);
+        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0, 0);
 
         // Verify USDC was transferred/burned by TokenMessenger
         uint256 balanceAfter = _usdc.balanceOf(_portfolioAccount);
         assertEq(balanceAfter, 0, "All USDC should be bridged");
+    }
+
+    function test_bridge_withGasReclamation_transfersAndBridgesRemainder() public {
+        uint256 gasReclamation = 10e6; // 10% of 100e6, under the 20% cap
+
+        uint256 callerBefore = _usdc.balanceOf(_authorizedCaller);
+        uint256 accountBefore = _usdc.balanceOf(_portfolioAccount);
+        assertEq(accountBefore, BRIDGE_AMOUNT);
+
+        uint256 expectedEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+
+        vm.expectEmit(true, true, true, true, _portfolioAccount);
+        emit GasReclamationPaid(expectedEpoch, 0, gasReclamation, _user, INK_USDC);
+
+        // BridgeInitiated amount is post-reclamation = 90e6.
+        vm.expectEmit(true, true, false, true, _portfolioAccount);
+        emit BridgeInitiated(TOKEN_MESSENGER, 2, BRIDGE_AMOUNT - gasReclamation, 0, _user, INK_USDC);
+
+        vm.prank(_authorizedCaller);
+        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0, gasReclamation);
+
+        assertEq(_usdc.balanceOf(_authorizedCaller), callerBefore + gasReclamation, "caller receives reclamation");
+        assertEq(_usdc.balanceOf(_portfolioAccount), 0, "remainder bridged");
+    }
+
+    function test_bridge_gasReclamationCappedAt20Percent() public {
+        uint256 requested = 50e6; // 50% of 100e6
+        uint256 expectedClamp = BRIDGE_AMOUNT * 20 / 100; // 20e6
+
+        uint256 callerBefore = _usdc.balanceOf(_authorizedCaller);
+        uint256 expectedEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
+
+        vm.expectEmit(true, true, true, true, _portfolioAccount);
+        emit GasReclamationPaid(expectedEpoch, 0, expectedClamp, _user, INK_USDC);
+
+        // BridgeInitiated amount = 100e6 - 20e6 clamp = 80e6.
+        vm.expectEmit(true, true, false, true, _portfolioAccount);
+        emit BridgeInitiated(TOKEN_MESSENGER, 2, BRIDGE_AMOUNT - expectedClamp, 0, _user, INK_USDC);
+
+        vm.prank(_authorizedCaller);
+        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0, requested);
+
+        assertEq(_usdc.balanceOf(_authorizedCaller), callerBefore + expectedClamp, "caller receives clamped amount");
+        // Remaining 80e6 bridged via _bridge, account drained.
+        assertEq(_usdc.balanceOf(_portfolioAccount), 0, "remainder bridged");
+    }
+
+    function test_bridge_zeroGasReclamation_noEvent() public {
+        uint256 callerBefore = _usdc.balanceOf(_authorizedCaller);
+        uint256 accountBefore = _usdc.balanceOf(_portfolioAccount);
+
+        vm.recordLogs();
+
+        // BridgeInitiated still fires for the full amount; only GasReclamationPaid must be absent.
+        vm.expectEmit(true, true, false, true, _portfolioAccount);
+        emit BridgeInitiated(TOKEN_MESSENGER, 2, BRIDGE_AMOUNT, 0, _user, INK_USDC);
+
+        vm.prank(_authorizedCaller);
+        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0, 0);
+
+        bytes32 gasReclamationTopic = keccak256("GasReclamationPaid(uint256,uint256,uint256,address,address)");
+        bytes32 bridgeInitiatedTopic = keccak256("BridgeInitiated(address,uint32,uint256,uint256,address,address)");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool sawBridgeInitiated;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length > 0) {
+                assertTrue(logs[i].topics[0] != gasReclamationTopic, "no GasReclamationPaid expected");
+                if (logs[i].topics[0] == bridgeInitiatedTopic && logs[i].emitter == _portfolioAccount) {
+                    sawBridgeInitiated = true;
+                }
+            }
+        }
+        assertTrue(sawBridgeInitiated, "BridgeInitiated must fire when gasReclamation=0");
+
+        assertEq(_usdc.balanceOf(_authorizedCaller), callerBefore, "caller receives nothing");
+        assertEq(_usdc.balanceOf(_portfolioAccount), accountBefore - BRIDGE_AMOUNT, "full amount bridged");
+    }
+
+    /// @notice If `_bridge` reverts (e.g. CCTP rejects amount=0), no BridgeInitiated topic
+    ///         must appear in the trace — the emit lives after depositForBurn.
+    function testRevert_bridge_initiatedEventNotEmittedOnRevert() public {
+        vm.recordLogs();
+
+        // CCTP TokenMessenger.depositForBurn rejects amount == 0.
+        vm.prank(_authorizedCaller);
+        vm.expectRevert();
+        BridgeFacet(_portfolioAccount).bridge(0, 0, 0);
+
+        bytes32 bridgeInitiatedTopic = keccak256("BridgeInitiated(address,uint32,uint256,uint256,address,address)");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length > 0) {
+                assertTrue(logs[i].topics[0] != bridgeInitiatedTopic, "BridgeInitiated must not fire on revert");
+            }
+        }
+    }
+
+    function testRevert_bridge_unauthorizedCaller() public {
+        vm.prank(address(0xbeef));
+        vm.expectRevert();
+        BridgeFacet(_portfolioAccount).bridge(BRIDGE_AMOUNT, 0, 0);
     }
 
     // ---------------------------------------------------------------------
