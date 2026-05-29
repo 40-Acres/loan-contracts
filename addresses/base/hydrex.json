@@ -11,6 +11,12 @@
       "dev": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264",
       "prod": "0xaE7B5751c370dC566a2BcD63bE3E20729d050264"
     },
+    "marketplaces": {
+      "native": {
+        "dev": "0xd6AAa965E720b3dc2bdbf7E625E6C79056dC70Bc",
+        "prod": "0xd6AAa965E720b3dc2bdbf7E625E6C79056dC70Bc"
+      }
+    },
     "strategies": {
       "usdc-loan": {
         "factory": {
