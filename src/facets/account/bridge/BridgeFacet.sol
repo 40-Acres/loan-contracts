@@ -3,10 +3,12 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ITokenMessenger} from "../../../interfaces/ITokenMessenger.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
 import {SwapConfig} from "../config/SwapConfig.sol";
+import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 
 /**
  * @title BridgeFacet
@@ -14,6 +16,8 @@ import {SwapConfig} from "../config/SwapConfig.sol";
  *      Non-USDC tokens are first converted to USDC in a separate `swapMultiple` call.
  */
 contract BridgeFacet is AccessControl {
+    using SafeERC20 for IERC20;
+
     PortfolioFactory public immutable _portfolioFactory;
     ITokenMessenger public immutable _tokenMessenger;
     IERC20 public immutable _token;
@@ -23,6 +27,8 @@ contract BridgeFacet is AccessControl {
     error NotApprovedBridge(address bridgeContract);
 
     event SwapFailed(uint256 inputAmount, address indexed inputToken, address outputToken, address indexed owner);
+    event GasReclamationPaid(uint256 epoch, uint256 indexed tokenId, uint256 amount, address user, address asset);
+    event BridgeInitiated(address indexed tokenMessenger, uint32 indexed destinationDomain, uint256 amount, uint256 maxFee, address user, address asset);
 
     constructor(address portfolioFactory, address token, address tokenMessenger, uint32 destinationDomain, address swapConfig) {
         require(portfolioFactory != address(0));
@@ -36,8 +42,16 @@ contract BridgeFacet is AccessControl {
         _swapConfig = SwapConfig(swapConfig);
     }
 
-    function bridge(uint256 amount, uint256 maxFee) external onlyAuthorizedCaller(_portfolioFactory) {
-        _bridge(amount, maxFee);
+    function bridge(uint256 amount, uint256 maxFee, uint256 gasReclamation) external onlyAuthorizedCaller(_portfolioFactory) {
+        if (gasReclamation > 0) {
+            uint256 gasReclamationCap = amount * 20 / 100;
+            if (gasReclamation > gasReclamationCap) {
+                gasReclamation = gasReclamationCap;
+            }
+            emit GasReclamationPaid(ProtocolTimeLibrary.epochStart(block.timestamp), 0, gasReclamation, _portfolioFactory.ownerOf(address(this)), address(_token));
+            _token.safeTransfer(msg.sender, gasReclamation);
+        }
+        _bridge(amount - gasReclamation, maxFee);
     }
 
     /**
@@ -76,7 +90,7 @@ contract BridgeFacet is AccessControl {
 
     function _bridge(uint256 amount, uint256 maxFee) internal {
         uint32 minFinalityThreshold = 2000;
-        _token.approve(address(_tokenMessenger), amount);
+        _token.forceApprove(address(_tokenMessenger), amount);
         _tokenMessenger.depositForBurn(
             amount,
             _destinationDomain, bytes32(uint256(uint160(address(this)))),
@@ -85,6 +99,7 @@ contract BridgeFacet is AccessControl {
             maxFee,
             minFinalityThreshold
         );
-        _token.approve(address(_tokenMessenger), 0);
+        _token.forceApprove(address(_tokenMessenger), 0);
+        emit BridgeInitiated(address(_tokenMessenger), _destinationDomain, amount, maxFee, _portfolioFactory.ownerOf(address(this)), address(_token));
     }
 }

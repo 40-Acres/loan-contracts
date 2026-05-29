@@ -27,6 +27,7 @@ library ERC4626CollateralManager {
     error UndercollateralizedDebt(uint256 debt);
     error NotPortfolioManager();
     error InsufficientShareBalance(uint256 required, uint256 actual);
+    error BelowMinimumCollateral(uint256 remaining, uint256 minimum);
 
     event ERC4626CollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event ERC4626CollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -105,6 +106,11 @@ library ERC4626CollateralManager {
 
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault);
         require(getTotalDebt() <= newMaxLoanIgnoreSupply, "Debt exceeds max loan");
+
+        // Disallow leaving a dust position below the configured minimum; a full exit is allowed.
+        uint256 remaining = getTotalCollateralValue(vault);
+        uint256 minimum = PortfolioFactoryConfig(portfolioFactoryConfig).getMinimumCollateral();
+        if (remaining != 0 && remaining < minimum) revert BelowMinimumCollateral(remaining, minimum);
 
         emit ERC4626CollateralRemoved(vault, shares, assetValueToRemove, address(this));
     }
