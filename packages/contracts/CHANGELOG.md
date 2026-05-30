@@ -1,5 +1,22 @@
 # @40-acres/contracts
 
+## 1.1.0
+
+### Minor Changes
+
+- f308e7f: Hydrex on base: simplify rebase-bucket lifecycle. `VeHydrexClaimingFacet.claimRebase` now uses `RewardsDistributorV2.claimInto` to deposit non-PERMANENT-source rebase value directly into the account's existing bucket lock (no fresh mint, no merge). PERMANENT-source claims short-circuit to plain `claim()` since Hydrex auto-applies in place. First-time-seed mint still mints once to create the bucket. `VeHydrexVotingEscrowFacet` receiver hook no longer merges incoming PERMANENT veNFTs into the bucket — each is tracked as its own collateral entry; the first one (if no bucket yet) also gets designated as the bucket. `RebaseClaimed.amount` now reflects the actually-deposited value via `claimInto`'s return (previously emitted a pre-snapshot `claimable` that could undercount). Removes `HydrexBucketLib` and `RebaseBucketAbsorbed` event.
+- e50a204: veHydrex marketplace on Base. Adds `marketplaces.native` (`0xd6AA…70Bc`) to `addresses/base/hydrex.json` -- the central `PortfolioMarketplace` for veHydrex listings (USDC / WETH / HYDX payment tokens, 100 bps fee). New seller-side `HydrexMarketplaceFacet` (`makeListing`, `cancelListing`, `receiveSaleProceeds`, `isListingPurchasable`, ...) routes collateral and debt through `HydrexCollateralManager`. To let the shared wallet factory buy from more than one marketplace, `FortyAcresMarketplaceFacet` gains `buyFortyAcresListingFrom(tokenId, nonce, marketplace)` (the original `buyFortyAcresListing(tokenId, nonce)` is unchanged), gated by a new `PortfolioFactoryConfig.setAllowedMarketplace` / `isAllowedMarketplace` allowlist. No Vexy / OpenX on Hydrex.
+- e50a204: Velodrome (optimism): add `marketplaces.vexy` (`0x6b47…6738`) to the address registry, matching the Aerodrome (base) Vexy marketplace entry. Pairs with on-chain registration of `VexyFacet` (`buyVexyListing`), `FortyAcresMarketplaceFacet` (`buyFortyAcresListing`), and the missing `isListingPurchasable` selector on the existing `MarketplaceFacet`.
+
+### Patch Changes
+
+- 492be4a: DynamicFeesVault: `totalAssets()` now simulates pending reward-stream vesting so ERC4626 preview/max views match the values mint/burn would see after settlement. Closes a stale-NAV gap where mid-epoch depositors could capture the already-vested fraction of lender premium they did not fund.
+- f29bed1: ERC4626CollateralManager: value collateral via `previewRedeem` instead of `convertToAssets` so exit fees are reflected in max-loan.
+- f29bed1: ERC4626LendingFacet: `pay()` now returns the full unspent portion of the request (matching `BaseLendingFacet`), so cross-portfolio debt fan-out via `RewardsProcessingFacet` doesn't over-report payments to low-debt targets.
+- e50a204: ERC4626 + YieldBasis collateral managers (ERC4626CollateralManager, YieldBasisCollateralManager, DynamicYieldBasisCollateralManager): `removeCollateral` now reverts `BelowMinimumCollateral` when a partial withdrawal would leave live collateral value in (0, `getMinimumCollateral()`); full exits (remaining value 0) still allowed. No-op when the minimum is unset (0). Reuses the existing single minimum config and applies regardless of debt. ABI unchanged (adds an error only).
+- f29bed1: YieldBasis collateral managers: fix `addCollateral` deadlock when gauge `convertToAssets` drift left tracked shares above actually-recoverable LP. The in-block snapshot now subtracts the incoming deposit from the observed LP balance before ratcheting, so deposits always succeed when LP is actually transferred. Tracked shares and basis end at the truth (`actual + shares`, basis haircut proportionally so per-share basis is preserved). Mirrored across `YieldBasisCollateralManager` and `DynamicYieldBasisCollateralManager`.
+- f29bed1: YieldBasisLpFacet / DynamicYieldBasisLpFacet: reconcile-first in `withdraw`, clamp `toWithdraw` to `directLp + gauge.convertToAssets(gaugeShares)`, and use `gauge.redeem(gaugeShares, ...)` instead of `gauge.withdraw(shortfall, ...)` when the request would consume the gauge's full convertToAssets value.
+
 ## 1.0.0
 
 ### Major Changes
