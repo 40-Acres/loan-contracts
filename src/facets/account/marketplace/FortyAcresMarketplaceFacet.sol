@@ -8,6 +8,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AccessControl} from "../utils/AccessControl.sol";
 import {IVotingEscrow} from "../../../interfaces/IVotingEscrow.sol";
 import {PortfolioMarketplace} from "../../marketplace/PortfolioMarketplace.sol";
+import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 
 /**
  * @title FortyAcresMarketplaceFacet
@@ -49,8 +50,31 @@ contract FortyAcresMarketplaceFacet is AccessControl {
         uint256 tokenId,
         uint256 nonce
     ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        _buy(_marketplace, tokenId, nonce);
+    }
+
+    /**
+     * @notice Buy a listing from a specific 40 Acres marketplace.
+     * @dev Marketplace must be allowlisted in PortfolioFactoryConfig.
+     * @param tokenId The token ID being purchased
+     * @param nonce The listing nonce for frontrunning protection
+     * @param marketplace The PortfolioMarketplace holding the listing
+     */
+    function buyFortyAcresListingFrom(
+        uint256 tokenId,
+        uint256 nonce,
+        address marketplace
+    ) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        require(
+            _portfolioFactory.portfolioFactoryConfig().isAllowedMarketplace(marketplace),
+            "Marketplace not allowed"
+        );
+        _buy(PortfolioMarketplace(marketplace), tokenId, nonce);
+    }
+
+    function _buy(PortfolioMarketplace marketplace, uint256 tokenId, uint256 nonce) internal {
         // Read listing from PortfolioMarketplace (centralized storage)
-        PortfolioMarketplace.Listing memory listing = _marketplace.getListing(tokenId);
+        PortfolioMarketplace.Listing memory listing = marketplace.getListing(tokenId);
         require(listing.price > 0, "Listing does not exist");
 
         uint256 price = listing.price;
@@ -59,12 +83,12 @@ contract FortyAcresMarketplaceFacet is AccessControl {
         require(paymentToken.balanceOf(address(this)) >= price, "Insufficient balance");
 
         // Approve marketplace to pull payment (forceApprove handles non-standard tokens like USDT)
-        paymentToken.forceApprove(address(_marketplace), price);
+        paymentToken.forceApprove(address(marketplace), price);
 
-        // Purchase through marketplace — nonce prevents frontrunning
-        _marketplace.purchaseListing(tokenId, nonce);
+        // Purchase through marketplace -- nonce prevents frontrunning
+        marketplace.purchaseListing(tokenId, nonce);
 
         // Clear remaining approval
-        paymentToken.forceApprove(address(_marketplace), 0);
+        paymentToken.forceApprove(address(marketplace), 0);
     }
 }

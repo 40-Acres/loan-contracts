@@ -39,6 +39,7 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
         uint256 minimumCollateral;
         address portfolioFactory;
         address sequencerLivenessCheck;
+        mapping(address marketplace => bool allowed) allowedMarketplaces;
     }
 
     // Named storage slot for account data
@@ -115,6 +116,15 @@ contract PortfolioFactoryConfig is Initializable, Ownable2StepUpgradeable, UUPSU
 
     function getSequencerLivenessCheck() public view returns (address) {
         return _getPortfolioFactoryConfig().sequencerLivenessCheck;
+    }
+
+    function setAllowedMarketplace(address marketplace, bool allowed) public onlyOwner {
+        require(marketplace != address(0), "Zero address");
+        _getPortfolioFactoryConfig().allowedMarketplaces[marketplace] = allowed;
+    }
+
+    function isAllowedMarketplace(address marketplace) public view returns (bool) {
+        return _getPortfolioFactoryConfig().allowedMarketplaces[marketplace];
     }
 
     function onCollateralAdded(address asset, uint256 id) external virtual {}
