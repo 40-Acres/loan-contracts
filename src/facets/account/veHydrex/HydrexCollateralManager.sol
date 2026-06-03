@@ -329,10 +329,7 @@ library HydrexCollateralManager {
             return;
         }
 
-        if (previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt = totalDebt - newMaxLoanIgnoreSupply;
-            return;
-        }
+        // prev == new means borrowing capacity is unchanged; leave the delta tracker alone (no-op).
 
         uint256 difference;
         if (isRemovingCollateral) {
