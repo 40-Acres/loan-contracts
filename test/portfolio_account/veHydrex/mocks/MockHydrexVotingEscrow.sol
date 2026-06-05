@@ -197,6 +197,10 @@ contract MockHydrexVotingEscrow is IHydrexVotingEscrow {
         mergeCalls++;
         _lockDetails[to].amount += _lockDetails[from].amount;
         _lockDetails[from].amount = 0;
+        // Real Hydrex merge does NOT burn `from`: it zeroes the amount but leaves
+        // `from` owned by the caller (proven against live bytecode via fork test).
+        // Callers that want to dispose of the zero-value husk must transfer it
+        // explicitly (see _doExecuteOption -> safeTransferFrom to BURN_ADDRESS).
     }
 
     function totalNftsMinted() external view override returns (uint256) {

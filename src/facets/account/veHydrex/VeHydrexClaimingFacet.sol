@@ -8,6 +8,12 @@ import {HydrexCollateralManager} from "./HydrexCollateralManager.sol";
 import {HydrexPortfolioFactoryConfig} from "./HydrexPortfolioFactoryConfig.sol";
 import {IERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+// oHYDX option execution interface.
+interface IOptionToken {
+    function exerciseVe(uint256 _amount,address _recipient) external returns (uint256);
+}
 
 /**
  * @title VeHydrexClaimingFacet
@@ -33,6 +39,9 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
  *      governance upgrades that could introduce malicious callbacks.
  */
 contract VeHydrexClaimingFacet is ClaimingFacet, ReentrancyGuardTransient {
+    IOptionToken constant public oHYDX = IOptionToken(0xA1136031150E50B015b41f1ca6B2e99e49D8cB78);
+    address constant internal BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
+
     event RebaseBucketAssigned(uint256 indexed tokenId, address indexed owner);
 
     error UnexpectedNewMint(uint256 expected, uint256 actual);
@@ -50,11 +59,34 @@ contract VeHydrexClaimingFacet is ClaimingFacet, ReentrancyGuardTransient {
         nonReentrant
     {
         _claimFees(fees, tokens, tokenId);
+        _doExecuteOption();
         _doClaimRebase(tokenId);
     }
 
     function claimRebase(uint256 tokenId) public virtual override nonReentrant {
         _doClaimRebase(tokenId);
+    }
+
+    /// @notice Execute oHYDX option to create a new veNFT, and merge the new token
+    function _doExecuteOption() internal {
+        IHydrexVotingEscrow ve = IHydrexVotingEscrow(address(_votingEscrow));
+        HydrexPortfolioFactoryConfig hConfig =
+            HydrexPortfolioFactoryConfig(address(_portfolioFactory.portfolioFactoryConfig()));
+        uint256 bucket = hConfig.getRebaseTokenId(address(this));
+        bool bucketValid = bucket != 0 && ve.ownerOf(bucket) == address(this);
+
+        uint256 oHYDXBalance = IERC20(address(oHYDX)).balanceOf(address(this));
+        if (oHYDXBalance > 0 && bucketValid) {
+            uint256 newVeNFTId = oHYDX.exerciseVe(oHYDXBalance, address(this));
+            ve.merge(newVeNFTId, bucket);
+            _updateLockedCollateral(bucket);
+            // merge folds value into the bucket and leaves a zero-value source
+            // lock. Only dispose of the husk once it holds no value, so a merge
+            // that did not move everything can never burn value.
+            if (ve.balanceOfNFT(newVeNFTId) == 0) {
+                ve.safeTransferFrom(address(this), BURN_ADDRESS, newVeNFTId);
+            }
+        }
     }
 
     function _doClaimRebase(uint256 tokenId) internal {
