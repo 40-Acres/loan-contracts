@@ -7,8 +7,8 @@ interface ILoanConfig {
     function getMultiplier() external view returns (uint256);
     function getLenderPremium() external view returns (uint256);
     function getLenderPremium(uint256 healthLtvBps) external view returns (uint256);
-    function setLenderPremiumCurve(uint256 base, uint256 slope, uint256 kink, uint256 cap) external;
-    function getLenderPremiumCurve() external view returns (uint256 base, uint256 slope, uint256 kink, uint256 cap);
+    function setLenderPremiumCurve(uint256 base, uint256 slope, uint256 kink, uint256 cap, uint256 slopeBelow) external;
+    function getLenderPremiumCurve() external view returns (uint256 base, uint256 slope, uint256 kink, uint256 cap, uint256 slopeBelow);
     function getTreasuryFee() external view returns (uint256);
     function getZeroBalanceFee() external view returns (uint256);
     function setRewardsRate(uint256 rewardsRate) external;

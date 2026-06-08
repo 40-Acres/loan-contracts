@@ -65,6 +65,7 @@ contract VeHydrexSimpleDeploy is PortfolioFactoryConfigDeploy {
     uint256 public constant CURVE_SLOPE = 2_550;
     uint256 public constant CURVE_KINK = 25_000;
     uint256 public constant CURVE_CAP = 9_000;
+    uint256 public constant CURVE_SLOPE_BELOW = 0; // flat below kink (<= CURVE_SLOPE)
     uint256 public constant TREASURY_BPS = 500;
     uint256 public constant ZERO_BALANCE_FEE_BPS = 100;
     uint256 public constant ORIGINATION_FEE_BPS = 80;
@@ -123,7 +124,7 @@ contract VeHydrexSimpleDeploy is PortfolioFactoryConfigDeploy {
                 )
             )
         );
-        _loanConfig.setLenderPremiumCurve(CURVE_BASE, CURVE_SLOPE, CURVE_KINK, CURVE_CAP);
+        _loanConfig.setLenderPremiumCurve(CURVE_BASE, CURVE_SLOPE, CURVE_KINK, CURVE_CAP, CURVE_SLOPE_BELOW);
 
         // VotingConfig — fresh, deployer-owned.
         VotingConfig votingConfigImpl = new VotingConfig();
