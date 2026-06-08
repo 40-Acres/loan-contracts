@@ -353,12 +353,7 @@ library CollateralManager {
             return;
         }
 
-        // When prev == new (no delta), the incremental logic would be a no-op,
-        // but debt > maxLoan means we're undercollateralized. Set the full shortfall.
-        if(previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply) {
-            collateralManagerData.undercollateralizedDebt = totalDebt - newMaxLoanIgnoreSupply;
-            return;
-        }
+        // prev == new means borrowing capacity is unchanged; leave the delta tracker alone (no-op).
 
         // Calculate the change in undercollateralized debt
         // The difference is simply the change in maxLoanIgnoreSupply:
