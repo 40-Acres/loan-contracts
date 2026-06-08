@@ -9,6 +9,7 @@ import {IHydrexVotingEscrow} from "../../../src/interfaces/IHydrexVotingEscrow.s
 import {HydrexPortfolioFactoryConfig} from "../../../src/facets/account/veHydrex/HydrexPortfolioFactoryConfig.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
 import {MockReentrantHydrexDistributor} from "./mocks/MockReentrantHydrexDistributor.sol";
+import {MockOptionToken} from "./mocks/MockOptionToken.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /// @dev VeHydrexClaimingFacet tests.
@@ -21,9 +22,17 @@ contract VeHydrexClaimingFacetTest is VeHydrexDiamond {
     event RebaseClaimed(uint256 indexed tokenId, uint256 amount);
     event RebaseBucketAssigned(uint256 indexed tokenId, address indexed owner);
 
+    // Hardcoded oHYDX address baked into VeHydrexClaimingFacet. On Base it always
+    // has code; etch a zero-balance mock so _doExecuteOption reads 0 and skips.
+    address internal constant OHYDX = 0xA1136031150E50B015b41f1ca6B2e99e49D8cB78;
+
     function setUp() public {
         vm.warp(100 weeks);
         _bootstrap();
+
+        MockOptionToken impl = new MockOptionToken();
+        vm.etch(OHYDX, address(impl).code);
+        MockOptionToken(OHYDX).setVe(address(ve));
     }
 
     // ----------------------------------------------------------------
