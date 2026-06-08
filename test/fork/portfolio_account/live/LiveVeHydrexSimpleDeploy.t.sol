@@ -243,7 +243,7 @@ contract LiveVeHydrexSimpleDeploy is VeHydrexSimpleDeploy, Test {
         assertEq(_portfolioFactoryConfig.owner(), MULTISIG_ADDRESS, "portfolioFactoryConfig.owner");
 
         // LoanConfig curve params survived ownership transfer.
-        (uint256 base, uint256 slope, uint256 kink, uint256 cap) = _loanConfig.getLenderPremiumCurve();
+        (uint256 base, uint256 slope, uint256 kink, uint256 cap,) = _loanConfig.getLenderPremiumCurve();
         assertEq(base, CURVE_BASE, "curve.base");
         assertEq(slope, CURVE_SLOPE, "curve.slope");
         assertEq(kink, CURVE_KINK, "curve.kink");
