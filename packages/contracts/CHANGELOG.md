@@ -1,5 +1,15 @@
 # @40-acres/contracts
 
+## 2.0.0
+
+### Major Changes
+
+- be4a2fe: LoanConfig: extend the lender-premium curve to two slopes. `setLenderPremiumCurve` now takes a 5th `slopeBelow` arg (ramp below the kink; existing `slope` stays the above-kink ramp) and `getLenderPremiumCurve` returns the matching 5-tuple. `getLenderPremium(ltv)` now ramps below the kink instead of staying flat at `base`; the curve disables (flat `lenderPremium`) only when both slopes are 0. Setter validates `slopeBelow <= MAX_LENDER_PREMIUM_SLOPE` and `slopeBelow <= slope` (curve must steepen past the kink). `LenderPremiumCurveUpdated` event gains a `slopeBelow` field. Existing deployed curves are unaffected (new field defaults to 0 = current flat-below-kink behavior). ABI changed: `setLenderPremiumCurve`, `getLenderPremiumCurve`, `LenderPremiumCurveUpdated`.
+
+### Patch Changes
+
+- 8fb0c87: CollateralManager (+ DynamicCollateralManager, HydrexCollateralManager, DynamicHydrexCollateralManager): fix `undercollateralizedDebt`. Removed the `previousMaxLoanIgnoreSupply == newMaxLoanIgnoreSupply` branch in `_updateUndercollateralizedDebt` that persisted the full debt-minus-maxLoan shortfall during a no-capacity-change collateral sync (e.g. reward compounding via `updateLockedCollateral`), which left the counter non-zero at rest. Restores multicall-local delta-tracker semantics. ABI unchanged. Velodrome (Optimism) redeploy of the collateral-linked facets to follow.
+
 ## 1.2.0
 
 ### Minor Changes
