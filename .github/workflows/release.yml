@@ -31,8 +31,8 @@ permissions:
   id-token: write          # provenance, optional
 
 jobs:
-  test:
-    name: Unit tests (gate)
+  build-contracts:
+    name: Build Contracts
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -50,6 +50,39 @@ jobs:
 
       - name: Cache Foundry build artifacts
         uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            out
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
+
+      - name: Run Forge build
+        run: |
+          forge --version
+          forge build --sizes
+
+  test:
+    name: Unit tests (gate)
+    needs: build-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FOUNDRY_PROFILE: ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.3
+          cache: true
+
+      - name: Restore Foundry build artifacts
+        uses: actions/cache/restore@v4
         with:
           path: |
             cache
@@ -84,13 +117,13 @@ jobs:
           version: v1.2.3
           cache: true
 
-      - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
+      - name: Restore Foundry build artifacts
+        uses: actions/cache/restore@v4
         with:
           path: |
             cache
             out
-          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'foundry.toml') }}
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml') }}
           restore-keys: |
             foundry-${{ runner.os }}-
 

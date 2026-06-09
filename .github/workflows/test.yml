@@ -27,20 +27,10 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  validate-addresses:
-    name: Validate Address Registry
+  build-contracts:
+    name: Build Contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run validator
-        run: bash addresses/validate.sh
-
-  build-package:
-    name: Build @40-acres/contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,7 +48,48 @@ jobs:
           path: |
             cache
             out
-          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'foundry.toml') }}
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
+
+      - name: Run Forge build
+        run: |
+          forge --version
+          forge build --sizes
+
+  validate-addresses:
+    name: Validate Address Registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run validator
+        run: bash addresses/validate.sh
+
+  build-package:
+    name: Build @40-acres/contracts
+    needs: build-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.3
+          cache: true
+
+      - name: Restore Foundry build artifacts
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            cache
+            out
+          key: foundry-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml') }}
           restore-keys: |
             foundry-${{ runner.os }}-
 
@@ -95,6 +126,7 @@ jobs:
 
   test:
     name: Local Tests
+    needs: build-contracts
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -108,8 +140,8 @@ jobs:
           version: v1.2.3
           cache: true
 
-      - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
+      - name: Restore Foundry build artifacts
+        uses: actions/cache/restore@v4
         with:
           path: |
             cache
@@ -118,18 +150,14 @@ jobs:
           restore-keys: |
             foundry-${{ runner.os }}-
 
-      - name: Run Forge build
-        run: |
-          forge --version
-          forge build --sizes
-        id: build
-
       - name: Run Forge tests
         run: |
+          forge --version
           forge test -vvv
 
   fork-test:
     name: Fork Tests
+    needs: build-contracts
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: inputs.run_fork_tests
@@ -144,8 +172,8 @@ jobs:
           version: v1.2.3
           cache: true
 
-      - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
+      - name: Restore Foundry build artifacts
+        uses: actions/cache/restore@v4
         with:
           path: |
             cache
