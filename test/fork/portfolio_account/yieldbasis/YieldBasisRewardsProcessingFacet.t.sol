@@ -103,6 +103,11 @@ contract MockVault {
         totalDeposited += assets;
         return assets;
     }
+
+    // Non-binding supply stub: large so the supply-side maxLoan cap never binds
+    // (matches pre-regression behavior where totalAssets was not read). maxLoanIgnoreSupply,
+    // used by the LTV/underwater path, does not depend on this.
+    function totalAssets() external pure returns (uint256) { return 1e36; }
 }
 
 contract YieldBasisRewardsProcessingFacetTest is Test {

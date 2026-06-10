@@ -59,7 +59,7 @@ import {SwapMod} from "../../../../src/facets/account/swap/SwapMod.sol";
 contract LiveYieldBasisLpETHTest is Test {
     // ─── Live addresses (hardcoded — these are the production deployment) ───
     address public constant LIVE_PORTFOLIO_MANAGER = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
-    address public constant LIVE_VAULT = 0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3;
+    address public constant LIVE_VAULT = 0xB543dBe91be1D34B5cEe98E8A4366dA7B999e4A1;
     // yb-WETH gauge on Ethereum mainnet.
     //   asset()   = 0x931d40dD07b25B91932b481B63631Ea86d236e09 (yb-WETH LP)
     //   symbol()  = "g(yb-WETH)"
@@ -123,15 +123,17 @@ contract LiveYieldBasisLpETHTest is Test {
             "[FAIL] PortfolioFactoryConfig.loanContract != live vault"
         );
 
-        // Sanity: LoanConfig wired with non-zero multiplier (borrowing enabled).
+        // Sanity: LoanConfig wired and borrowing enabled via the LTV model.
+        // YB-ETH uses the like-to-like LTV path (ltv != 0); multiplier==0 is
+        // intended -- getMaxLoan takes the LTV branch, not the cash-flow branch.
         assertTrue(
             address(portfolioFactoryConfig.getLoanConfig()) != address(0),
             "[FAIL] LoanConfig unset on production PortfolioFactoryConfig"
         );
         assertGt(
-            portfolioFactoryConfig.getLoanConfig().getMultiplier(),
+            portfolioFactoryConfig.getLoanConfig().getLtv(),
             0,
-            "[FAIL] LoanConfig.multiplier == 0 - borrowing disabled"
+            "[FAIL] LoanConfig.ltv == 0 - borrowing disabled (LTV model)"
         );
 
         // Patch FacetRegistry (Gap G0): the live registry has no selectors
@@ -432,28 +434,19 @@ contract LiveYieldBasisLpETHTest is Test {
 
         _multicallAsUser(abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, depositAmount));
 
-        // Under current semantics deposit() only pulls LP onto the account; it does
-        // NOT auto-stake into the gauge. The LP sits unstaked until stake() is called.
+        // Live config stakedGaugeMode == true, so deposit() auto-stakes: it
+        // forwards the pulled LP into the gauge in the same call. Assert that
+        // deployed behavior -- gauge shares minted, no raw LP left on account.
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertEq(staked, 0, "deposit should not auto-stake into gauge");
-        assertEq(unstaked, depositAmount, "full LP should sit unstaked on account after deposit");
-
-        // Flip directive=true and stake. ybConfig was probed at top of test.
-        vm.prank(ybConfig.owner());
-        ybConfig.setStakedGaugeMode(true);
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
-
-        (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
-        assertGt(staked, 0, "no gauge shares after explicit stake");
-        assertEq(unstaked, 0, "unexpected unstaked LP after full stake");
-        console.log("Staked shares after explicit stake:", staked);
+        assertGt(staked, 0, "deposit should auto-stake into gauge (mode==true)");
+        assertEq(unstaked, 0, "no raw LP should remain after auto-stake");
+        console.log("Staked shares after auto-stake deposit:", staked);
 
         uint256 collat = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
         (uint256 maxLoan, uint256 maxLoanIgnoreSupply) = ICollateralFacet(portfolioAccount).getMaxLoan();
         assertGt(collat, 0, "total locked collateral == 0 after deposit");
-        assertGt(maxLoanIgnoreSupply, 0, "maxLoanIgnoreSupply == 0; LoanConfig.multiplier wrong?");
-        assertGt(maxLoan, 0, "maxLoan == 0; vault underfunded or multiplier=0");
+        assertGt(maxLoanIgnoreSupply, 0, "maxLoanIgnoreSupply == 0; LoanConfig.ltv wrong?");
+        assertGt(maxLoan, 0, "maxLoan == 0; vault underfunded or ltv=0");
         console.log("Collateral value:", collat);
         console.log("Max loan:", maxLoan);
 
@@ -492,28 +485,76 @@ contract LiveYieldBasisLpETHTest is Test {
         console.log("Claimed YB:", claimed);
         console.log("Preview YB after claim (should be dust):", previewedAfter);
 
-        // ── 6b. processRewards debt-repayment path ────────────────────
-        // With debt active, getRewardsToken() returns vault asset (WETH). In
-        // production, YB would be swapped to WETH via swapToRewardsToken using
-        // SwapConfig; on a cold fork the swap target may not be approved for
-        // YB→WETH, so we simulate post-swap state by minting a representative
-        // WETH amount equal to the YB claimed (1:1 stand-in) to the portfolio.
-        // The debt-repayment assertion is what we're validating; the swap
-        // mechanics are covered by unit tests.
+        // ── 6b. processRewards fee-split path ─────────────────────────
+        // YB-ETH is an LTV market. Borrower rewards are split 95% lender
+        // premium + 5% treasury = 100% to fees, leaving 0% for debt paydown.
+        // Debt is carried by collateral value, not amortized by rewards. So
+        // processRewards must run cleanly, route the full reward to fees, and
+        // leave debt UNCHANGED. We simulate post-swap WETH on the account
+        // (production swaps YB->WETH via SwapConfig; covered by unit tests).
         address rewardsTokenForProc = RewardsProcessingFacet(portfolioAccount).getRewardsToken();
         assertEq(rewardsTokenForProc, WETH, "with debt, rewards token must be vault asset (WETH)");
 
+        // Read the live fee split (do not hardcode): treasuryFee and the flat
+        // lender premium at the current borrower LTV.
+        uint256 utilBps = ICollateralFacet(portfolioAccount).getLoanUtilization();
+        uint256 treasuryFeeBps = portfolioFactoryConfig.getLoanConfig().getTreasuryFee();
+        uint256 lenderPremiumBps = portfolioFactoryConfig.getLoanConfig().getLenderPremium(utilBps);
+        address treasury = portfolioFactoryConfig.getLoanConfig().getTreasury();
+        address loanContract = portfolioFactoryConfig.getLoanContract();
+        // Confirmed live: 9500 + 500 = 10000 bps (100% to fees, 0% to debt).
+        assertEq(treasuryFeeBps + lenderPremiumBps, 10000, "YB-ETH fee split must total 100% (LTV market)");
+
         uint256 simulatedWethRewards = 0.1 ether; // representative post-swap amount
+        uint256 expectedTreasuryFee = (simulatedWethRewards * treasuryFeeBps) / 10000;
+        uint256 expectedLenderPremium = (simulatedWethRewards * lenderPremiumBps) / 10000;
+
         deal(WETH, portfolioAccount, simulatedWethRewards);
         uint256 debtBeforeProc = ICollateralFacet(portfolioAccount).getTotalDebt();
+        uint256 treasuryWethBefore = IERC20(WETH).balanceOf(treasury);
+        // Lender premium is paid via depositRewards -> safeTransferFrom into the
+        // loan contract (vault), so its WETH balance rises by exactly the premium.
+        uint256 loanWethBefore = IERC20(WETH).balanceOf(loanContract);
+        uint256 acctWethBefore = IERC20(WETH).balanceOf(portfolioAccount);
 
         vm.prank(authorizedCaller);
         RewardsProcessingFacet(portfolioAccount).processRewards(
             0, simulatedWethRewards, _noSwap(), 0
         );
+
         uint256 debtAfterProc = ICollateralFacet(portfolioAccount).getTotalDebt();
-        assertLt(debtAfterProc, debtBeforeProc, "processRewards did not reduce debt");
-        console.log("processRewards debt delta (WETH):", debtBeforeProc - debtAfterProc);
+
+        // Debt unchanged: 100% of the reward went to fees, 0% to paydown.
+        assertEq(
+            debtAfterProc,
+            debtBeforeProc,
+            "YB-ETH: 100% of rewards go to fees (95% lender premium + 5% treasury), 0% to debt paydown -- intended"
+        );
+
+        // Treasury received exactly reward * treasuryFee/10000.
+        assertEq(
+            IERC20(WETH).balanceOf(treasury) - treasuryWethBefore,
+            expectedTreasuryFee,
+            "treasury WETH delta != reward * treasuryFee"
+        );
+
+        // Loan contract (vault) received exactly reward * lenderPremium/10000.
+        assertEq(
+            IERC20(WETH).balanceOf(loanContract) - loanWethBefore,
+            expectedLenderPremium,
+            "loan contract WETH delta != reward * lenderPremium"
+        );
+
+        // Fees consumed the whole reward: the account's WETH dropped by the full
+        // reward (nothing left over for paydown or residual-to-vault deposit).
+        assertEq(
+            acctWethBefore - IERC20(WETH).balanceOf(portfolioAccount),
+            simulatedWethRewards,
+            "account WETH delta != full reward (100% routed to fees)"
+        );
+        assertEq(expectedTreasuryFee + expectedLenderPremium, simulatedWethRewards, "fee legs must sum to reward");
+        console.log("processRewards treasury fee (WETH):", expectedTreasuryFee);
+        console.log("processRewards lender premium (WETH):", expectedLenderPremium);
 
         // ── 7. Harvest LP fees (may be 0 — log, don't fail) ───────────
         try YieldBasisLpClaimingFacet(portfolioAccount).getAvailableLpFeeYield()
@@ -563,16 +604,26 @@ contract LiveYieldBasisLpETHTest is Test {
             "debt not cleared after full pay"
         );
 
-        // ── 9. Accrue more rewards, then unstake (tests G6: unstake calls
-        //       gauge.claim(_rewardToken, ...) — _rewardToken MUST be YB for
-        //       this to succeed on the yb-WETH gauge). If the deploy script
-        //       passed `underlying` (WETH), gauge.claim(WETH, ...) would revert
-        //       because no WETH rewards are configured.
+        // ── 9. Accrue more rewards, claim, then unstake.
+        //       The setStakedMode() unstake path uses gauge.redeem(), which does
+        //       NOT sweep accrued gauge rewards. YB must be claimed explicitly
+        //       via claimGaugeRewards(YB) BEFORE unstaking, or the accrual is
+        //       left stranded in the gauge.
         vm.warp(block.timestamp + 3 days);
         vm.roll(block.number + 21600);
-        uint256 ybBeforeUnstake = IERC20(YB).balanceOf(portfolioAccount);
         uint256 previewBeforeUnstake = YieldBasisLpClaimingFacet(portfolioAccount).previewGaugeRewards(YB);
         assertGt(previewBeforeUnstake, 0, "no YB accrued in 3d gap before unstake");
+
+        // Explicit claim delivers the accrued YB to the portfolio.
+        uint256 ybBeforeClaim = IERC20(YB).balanceOf(portfolioAccount);
+        vm.prank(authorizedCaller);
+        uint256 claimedBeforeUnstake = YieldBasisLpClaimingFacet(portfolioAccount).claimGaugeRewards(YB);
+        uint256 ybAfterClaim = IERC20(YB).balanceOf(portfolioAccount);
+        assertEq(ybAfterClaim - ybBeforeClaim, claimedBeforeUnstake, "YB balance delta must match claimed");
+        // Claimed must match the pre-claim preview (allow sub-block accrual dust).
+        assertApproxEqAbs(claimedBeforeUnstake, previewBeforeUnstake, previewBeforeUnstake / 1000, "claimed YB != preview");
+        assertGt(claimedBeforeUnstake, 0, "explicit claim delivered no YB");
+        console.log("Claimed YB before unstake:", claimedBeforeUnstake);
 
         (staked,) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         // Flip directive to false before sweep — setStakedMode reads it.
@@ -580,9 +631,6 @@ contract LiveYieldBasisLpETHTest is Test {
         ybConfig.setStakedGaugeMode(false);
         vm.prank(authorizedCaller);
         YieldBasisLpFacet(portfolioAccount).setStakedMode();
-        uint256 ybAfterUnstake = IERC20(YB).balanceOf(portfolioAccount);
-        assertGt(ybAfterUnstake - ybBeforeUnstake, 0, "unstake did not claim YB (G6 regression: _rewardToken wrong?)");
-        console.log("unstake auto-claimed YB:", ybAfterUnstake - ybBeforeUnstake);
 
         (staked, unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(staked, 0, "gauge shares not zero after unstake");

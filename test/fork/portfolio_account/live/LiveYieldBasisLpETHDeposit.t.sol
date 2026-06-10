@@ -51,12 +51,13 @@ import {ICollateralFacet} from "../../../../src/facets/account/collateral/IColla
 // External
 import {LendingVault} from "../../../../src/facets/account/vault/LendingVault.sol";
 import {IYieldBasisGauge} from "../../../../src/interfaces/IYieldBasisGauge.sol";
+import {IYieldBasisLP} from "../../../../src/interfaces/IYieldBasisLP.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract LiveYieldBasisLpETHDepositTest is Test {
     // ─── Live addresses (hardcoded — the production deployment) ─────────────
     address public constant LIVE_PORTFOLIO_MANAGER = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
-    address public constant LIVE_VAULT = 0x204bEE4cFDAa7b318333bCA8f5612c8164F74Ba3;
+    address public constant LIVE_VAULT = 0xB543dBe91be1D34B5cEe98E8A4366dA7B999e4A1;
     address public constant LIVE_GAUGE = 0xe4e656B5215a82009969219b1bAbB7c0757A3315;
     address public constant YB_WETH_LP = 0x931d40dD07b25B91932b481B63631Ea86d236e09;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
@@ -267,6 +268,10 @@ contract LiveYieldBasisLpETHDepositTest is Test {
             YieldBasisLpFacet(portfolioAccount).getStakingState();
         uint256 collatAfter = ICollateralFacet(portfolioAccount).getTotalLockedCollateral();
 
+        // Live config stakedGaugeMode == true, so deposit() auto-stakes:
+        // it routes the pulled LP straight into the gauge via gauge.deposit().
+        // Assertions below reflect that deployed behavior, not a no-stake deposit.
+
         // User's LP was pulled: -depositAmount
         assertEq(
             lpBeforeUser - lpAfterUser,
@@ -274,39 +279,55 @@ contract LiveYieldBasisLpETHDepositTest is Test {
             "user LP debit != amount deposited"
         );
 
-        // Portfolio account received the LP
+        // Auto-stake: LP is forwarded into the gauge, so the account holds no
+        // raw LP after deposit. Account LP credit must be zero.
         assertEq(
             lpAfterAccount - lpBeforeAccount,
-            depositAmount,
-            "portfolio LP credit != amount deposited"
+            0,
+            "account should hold no raw LP after auto-stake"
         );
 
-        // Gauge balance on the portfolio account must NOT change — deposit does
-        // not stake into the gauge. Gauge shares only appear after explicit stake().
-        assertEq(
-            gaugeAfterAccount,
-            gaugeBeforeAccount,
-            "gauge share balance on portfolio must not change on LP deposit"
+        // Auto-stake mints gauge shares to the account. Gauge balance increased.
+        assertGt(
+            gaugeAfterAccount - gaugeBeforeAccount,
+            0,
+            "gauge share balance must increase on auto-stake deposit"
         );
 
-        // getStakingState(): staked tracks gauge.balanceOf(account), so must be unchanged.
-        // unstaked tracks lpToken.balanceOf(account), so must increase by exactly depositAmount.
+        // getStakingState(): staked tracks gauge.balanceOf(account) and must
+        // increase by exactly the minted shares; unstaked tracks raw LP and
+        // must stay flat (LP went into the gauge).
         assertEq(
-            stakedAfter,
-            stakedBefore,
-            "staked should not change on LP deposit (no auto-stake)"
+            stakedAfter - stakedBefore,
+            gaugeAfterAccount - gaugeBeforeAccount,
+            "staked delta must equal gauge shares minted"
         );
         assertEq(
-            unstakedAfter - unstakedBefore,
-            depositAmount,
-            "unstaked delta must equal amount deposited"
+            unstakedAfter,
+            unstakedBefore,
+            "unstaked must not change on auto-stake deposit"
         );
 
-        // Collateral tracked — must strictly increase from deposit.
+        // Collateral is value-denominated, not raw LP. The manager tracks
+        // min(shares*pps/1e18, preview_withdraw(shares)) for the deposited LP
+        // (WETH is 18-dec, so no rescale). Pin the delta to that formula.
+        uint256 pps = IYieldBasisLP(address(lpToken)).pricePerShare();
+        uint256 fundamental = (depositAmount * pps) / 1e18;
+        uint256 withdrawable = IYieldBasisLP(address(lpToken)).preview_withdraw(depositAmount);
+        uint256 expectedValue = fundamental < withdrawable ? fundamental : withdrawable;
         assertGt(collatAfter, collatBefore, "collateral did not increase after deposit");
+        // Small tolerance: sub-block pps drift between addCollateral and this read.
+        assertApproxEqAbs(
+            collatAfter - collatBefore,
+            expectedValue,
+            1e9,
+            "collateral delta != value-denominated formula"
+        );
 
         console.log("[OK] LP pulled:", depositAmount);
+        console.log("[OK] gauge shares minted:", gaugeAfterAccount - gaugeBeforeAccount);
         console.log("[OK] collateral delta:", collatAfter - collatBefore);
+        console.log("[OK] expected value:", expectedValue);
     }
 
     /// deposit(0) must revert (the facet guards "Zero amount"). The revert

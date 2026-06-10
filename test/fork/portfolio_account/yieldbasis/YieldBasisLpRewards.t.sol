@@ -47,6 +47,10 @@ contract MockVault {
     address public immutable _asset;
     constructor(address asset_) { _asset = asset_; }
     function asset() external view returns (address) { return _asset; }
+    // Non-binding supply stub: large so the supply-side maxLoan cap never binds
+    // (matches pre-regression behavior where totalAssets was not read). maxLoanIgnoreSupply,
+    // used by the LTV/underwater path, does not depend on this.
+    function totalAssets() external pure returns (uint256) { return 1e36; }
 }
 
 contract YieldBasisLpRewardsTest is Test {

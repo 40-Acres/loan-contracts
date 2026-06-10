@@ -10,7 +10,7 @@ solc = "0.8.30"
 bytecode_hash = "none"
 cbor_metadata = false
 always_use_create_2_factory = true
-fs_permissions = [{ access = "read-write", path = "./addresses" }]
+fs_permissions = [{ access = "read-write", path = "./addresses" }, { access = "read-write", path = "./script" }]
 no_match_path = "test/fork/**"
 
 

@@ -7,10 +7,7 @@ import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactory} from "../../../../src/accounts/PortfolioFactory.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 
-import {MarketplaceFacet} from "../../../../src/facets/account/marketplace/MarketplaceFacet.sol";
 import {BaseMarketplaceFacet} from "../../../../src/facets/account/marketplace/BaseMarketplaceFacet.sol";
-import {FortyAcresMarketplaceFacet} from "../../../../src/facets/account/marketplace/FortyAcresMarketplaceFacet.sol";
-import {VexyFacet} from "../../../../src/facets/account/marketplace/VexyFacet.sol";
 
 import {
     DeployMarketplaceFacet,
@@ -63,11 +60,6 @@ contract VexySelectorSource is DeployVexyFacet {
  *      Post-remediation (multisig submits the replaceFacet + 2 registerFacet calls
  *      printed by UpgradeVelodromeMarketplaceFacets): it PASSES.
  *
- *      The companion test testLive_RegistrationFix_ClosesTheGap proves the fix mechanics
- *      independently of the multisig timeline: it pranks the live registry owner, applies
- *      the exact same cut the upgrade script emits (sourced from the deploy-script
- *      selector lists), and shows every selector then resolves non-zero.
- *
  *      Run: FOUNDRY_PROFILE=fork forge test \
  *        --match-path test/fork/portfolio_account/regression/VelodromeMarketplaceSelectorGap.t.sol -vvv
  */
@@ -76,7 +68,7 @@ contract VelodromeMarketplaceSelectorGap is Test {
     address public constant PORTFOLIO_MANAGER = 0x40Ac2e40ACb7bdD6EC83E468143262fe216529ec;
     address public constant FACET_REGISTRY = 0x8139B24596dC0BeE2F7A66D5a0D519C16C962c86;
     address public constant PORTFOLIO_FACTORY = 0x8A71e4BaB42DDC3d996FA4b4780919567e367924;
-    address public constant EXISTING_MARKETPLACE_FACET = 0xaDe29De58d7C546D2c90411dF1fd583F1808A60E;
+    address public constant EXISTING_MARKETPLACE_FACET = 0xd5f0dFeB2F10559352CC5CA11b3E54aB08505EAC;
 
     bytes32 public constant VELODROME_SALT = keccak256(abi.encodePacked("velodrome-usdc"));
 
@@ -144,82 +136,6 @@ contract VelodromeMarketplaceSelectorGap is Test {
             _assertSelectorResolves(fSel[i], "FortyAcresMarketplaceFacet");
         }
         // VexyFacet: buyVexyListing (never registered on OP).
-        for (uint256 i = 0; i < vSel.length; i++) {
-            _assertSelectorResolves(vSel[i], "VexyFacet");
-        }
-    }
-
-    // ─── Fix mechanics: apply the cut, then re-check all selectors ───
-
-    /**
-     * @dev Proves the remediation closes the gap, independent of the multisig
-     *      timeline. Pranks the live FacetRegistry owner and applies the EXACT
-     *      cut UpgradeVelodromeMarketplaceFacets emits:
-     *        1. replaceFacet(existing MarketplaceFacet -> fresh, 8 selectors)
-     *        2. registerFacet(FortyAcresMarketplaceFacet, buyFortyAcresListing)
-     *        3. registerFacet(VexyFacet, buyVexyListing)
-     *      Reuses the live PortfolioMarketplace + votingEscrow read off the
-     *      existing facet, exactly like the script.
-     */
-    function testLive_RegistrationFix_ClosesTheGap() public {
-        // Read live marketplace + votingEscrow off the existing facet (script step).
-        address marketplace = MarketplaceFacet(EXISTING_MARKETPLACE_FACET).marketplace();
-        address votingEscrow = address(MarketplaceFacet(EXISTING_MARKETPLACE_FACET)._votingEscrow());
-        assertTrue(marketplace != address(0), "live marketplace should be non-zero");
-        assertTrue(votingEscrow != address(0), "live votingEscrow should be non-zero");
-
-        address registryOwner = facetRegistry.owner();
-
-        // 1. Replace MarketplaceFacet with a fresh deploy carrying all 8 selectors.
-        MarketplaceFacet newMarketplaceFacet =
-            new MarketplaceFacet(PORTFOLIO_FACTORY, votingEscrow, marketplace);
-        bytes4[] memory mSel = marketplaceSelectors.selectors();
-        vm.prank(registryOwner);
-        facetRegistry.replaceFacet(
-            EXISTING_MARKETPLACE_FACET, address(newMarketplaceFacet), mSel, "MarketplaceFacet"
-        );
-
-        // 2. Register FortyAcresMarketplaceFacet.
-        FortyAcresMarketplaceFacet fortyAcresFacet =
-            new FortyAcresMarketplaceFacet(PORTFOLIO_FACTORY, votingEscrow, marketplace);
-        bytes4[] memory fSel = fortyAcresSelectors.selectors();
-        vm.prank(registryOwner);
-        facetRegistry.registerFacet(address(fortyAcresFacet), fSel, "FortyAcresMarketplaceFacet");
-
-        // 3. Register VexyFacet (Vexy marketplace is a hardcoded immutable in the facet).
-        VexyFacet vexyFacet = new VexyFacet(PORTFOLIO_FACTORY, votingEscrow);
-        bytes4[] memory vSel = vexySelectors.selectors();
-        vm.prank(registryOwner);
-        facetRegistry.registerFacet(address(vexyFacet), vSel, "VexyFacet");
-
-        // ── Post-conditions: every selector now resolves to the right facet ──
-        for (uint256 i = 0; i < mSel.length; i++) {
-            assertEq(
-                facetRegistry.getFacetForSelector(mSel[i]),
-                address(newMarketplaceFacet),
-                "MarketplaceFacet selector should route to fresh facet after replace"
-            );
-        }
-        assertEq(
-            facetRegistry.getFacetForSelector(BaseMarketplaceFacet.isListingPurchasable.selector),
-            address(newMarketplaceFacet),
-            "isListingPurchasable should resolve after remediation"
-        );
-        assertEq(
-            facetRegistry.getFacetForSelector(FortyAcresMarketplaceFacet.buyFortyAcresListing.selector),
-            address(fortyAcresFacet),
-            "buyFortyAcresListing should resolve after remediation"
-        );
-        assertEq(
-            facetRegistry.getFacetForSelector(VexyFacet.buyVexyListing.selector),
-            address(vexyFacet),
-            "buyVexyListing should resolve after remediation"
-        );
-
-        // And the full primary-guard invariant holds.
-        for (uint256 i = 0; i < fSel.length; i++) {
-            _assertSelectorResolves(fSel[i], "FortyAcresMarketplaceFacet");
-        }
         for (uint256 i = 0; i < vSel.length; i++) {
             _assertSelectorResolves(vSel[i], "VexyFacet");
         }

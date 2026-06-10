@@ -59,7 +59,7 @@ contract LiveYbLegacyMigration is Test {
     bytes4[] selectors;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("ETH_RPC_URL"));
+        vm.createSelectFork(vm.envString("ETH_RPC_URL"), 25129973);
 
         // Sanity checks against the live state. If any of these fail the fork
         // has drifted and the test setup needs adjusting before re-running.
