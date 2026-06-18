@@ -72,6 +72,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 totalUnsettledRewards;
         uint256 globalBorrowerPending;
         uint256 borrowerCreditPerRate;
+
+        // Simulation helpers for view functions that need to mirror vesting logic without recursion:
+        uint256 newGlobalLastUpdateTime;
+        bool didVest;
+        bool epochEnded;
+        uint256 endingEpoch;
     }
 
     // ============ ERC-7201 Namespaced Storage ============
@@ -531,6 +537,33 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     ///         via getCurrentVaultRatioBps() -> getUtilizationPercent() ->
     ///         _totalAssetsRaw(). Matches the state-changing path, which reads
     ///         the ratio before mutating vesting state.
+    /// @notice Common vesting-step core shared by _simulateVesting,
+    ///         _processGlobalVesting (via the sim) and _simulateBorrowerCreditPerRateAt.
+    /// @dev    Pure accrual math, no state writes, no premium/epoch bookkeeping. The
+    ///         fee-split ratio is sampled from raw (pre-simulation) state. fullDrain
+    ///         selects the epoch-end behavior: true drains all unsettled rewards, false
+    ///         only caps globalVested at totalUnsettledRewards. didWork is false when there
+    ///         is no active stream or the cutoff has not advanced past lastUpdate.
+    function _computeVestStep(
+        uint256 currentRate,
+        uint256 lastUpdate,
+        uint256 cutoff,
+        uint256 totalUnsettledRewards,
+        bool fullDrain
+    ) internal view returns (uint256 globalVested, uint256 lenderPremium, uint256 borrowerCredit, bool didWork) {
+        if (currentRate == 0 || cutoff <= lastUpdate) return (0, 0, 0, false);
+
+        globalVested = currentRate * (cutoff - lastUpdate);
+        if (fullDrain || globalVested > totalUnsettledRewards) {
+            globalVested = totalUnsettledRewards;
+        }
+
+        uint256 ratio = getCurrentVaultRatioBps();
+        lenderPremium = (globalVested * ratio) / 10000;
+        borrowerCredit = globalVested - lenderPremium;
+        didWork = true;
+    }
+
     function _simulateVesting() internal view returns (VestingSimulation memory sim) {
         DynamicFeesVaultStorage storage $ = _getStorage();
 
@@ -541,23 +574,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         sim.borrowerCreditPerRate = $.borrowerCreditPerRate;
 
         uint256 currentRate = $.activeEpochRate;
-        if (currentRate == 0) return sim;
-
         uint256 epochEnd = $.activeEpochEnd;
         uint256 lastUpdate = $.globalLastUpdateTime;
         uint256 currentTime = block.timestamp < epochEnd ? block.timestamp : epochEnd;
-        if (currentTime <= lastUpdate) return sim;
-
-        uint256 globalVested = currentRate * (currentTime - lastUpdate);
         bool epochEnded = block.timestamp >= epochEnd;
-        if (epochEnded || globalVested > sim.totalUnsettledRewards) {
-            globalVested = sim.totalUnsettledRewards;
-        }
 
-        uint256 ratio = getCurrentVaultRatioBps();
-        uint256 lenderPremium = (globalVested * ratio) / 10000;
-        uint256 borrowerCredit = globalVested - lenderPremium;
+        (uint256 globalVested, uint256 lenderPremium, uint256 borrowerCredit, bool didWork) =
+            _computeVestStep(currentRate, lastUpdate, currentTime, sim.totalUnsettledRewards, epochEnded);
+        if (!didWork) return sim;
 
+        // Premium vests in the current epoch from epochStart(now). Accepted trade-off: a
+        // lender depositing mid-epoch after premium extraction captures the unvested share.
         if (lenderPremium > 0) {
             uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
             if (sim.vestingEpochStart > 0 && nowEpoch > sim.vestingEpochStart) {
@@ -580,6 +607,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         sim.globalVested = globalVested;
         sim.lenderPremium = lenderPremium;
         sim.borrowerCredit = borrowerCredit;
+
+        sim.newGlobalLastUpdateTime = currentTime;
+        sim.didVest = true;
+        sim.epochEnded = epochEnded;
+        sim.endingEpoch = epochEnd;
     }
 
     /// @notice Simulate borrowerCreditPerRate at a specified cutoff time (used by
@@ -589,16 +621,13 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 acc = $.borrowerCreditPerRate;
         uint256 currentRate = $.activeEpochRate;
-        uint256 lastUpdate = $.globalLastUpdateTime;
-        if (currentRate == 0 || cutoff <= lastUpdate) return acc;
 
-        uint256 vested = currentRate * (cutoff - lastUpdate);
-        if (vested > $.totalUnsettledRewards) {
-            vested = $.totalUnsettledRewards;
-        }
-        uint256 ratio = getCurrentVaultRatioBps();
-        uint256 lenderPremium = (vested * ratio) / 10000;
-        uint256 borrowerCredit = vested - lenderPremium;
+        // fullDrain=false preserves the cap-only behavior: this caller passes an arbitrary
+        // cutoff (a user's period finish) and must NOT drain all unsettled at an epoch end.
+        (, , uint256 borrowerCredit, bool didWork) =
+            _computeVestStep(currentRate, $.globalLastUpdateTime, cutoff, $.totalUnsettledRewards, false);
+        if (!didWork) return acc;
+
         if (borrowerCredit > 0) {
             acc += (borrowerCredit * 1e18) / currentRate;
         }
@@ -615,66 +644,30 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function _processGlobalVesting() internal {
         DynamicFeesVaultStorage storage $ = _getStorage();
 
-        uint256 currentRate = $.activeEpochRate;
-        // Stream math runs only when there's an active stream; fee accrual at the end
-        // ALWAYS runs so vestingEpochPremium decay during stream gaps still pays the
-        // recipient.
-        if (currentRate > 0) {
-            uint256 currentTime = block.timestamp < $.activeEpochEnd ? block.timestamp : $.activeEpochEnd;
-            if (currentTime > $.globalLastUpdateTime) {
-                uint256 globalVested = currentRate * (currentTime - $.globalLastUpdateTime);
-                $.globalLastUpdateTime = currentTime;
+        // _simulateVesting is the single source of truth for the vesting computation.
+        // Persist its result; didVest is false on the no-active-stream and no-elapsed-time
+        // paths, where there is nothing to write.
+        VestingSimulation memory sim = _simulateVesting();
+        if (sim.didVest) {
+            // Write in the original order: globalLastUpdateTime, premium fields, borrower
+            // accumulator, unsettled/pending, then the epoch-boundary freeze.
+            $.globalLastUpdateTime = sim.newGlobalLastUpdateTime;
+            $.vestingEpochPremium = sim.vestingEpochPremium;
+            $.vestingEpochStart = sim.vestingEpochStart;
+            $.borrowerCreditPerRate = sim.borrowerCreditPerRate;
+            $.totalUnsettledRewards = sim.totalUnsettledRewards;
+            $.globalBorrowerPending = sim.globalBorrowerPending;
 
-                bool epochEnded = block.timestamp >= $.activeEpochEnd;
-                uint256 endingEpoch = $.activeEpochEnd;
-
-                // Cap globalVested at totalUnsettledRewards to prevent underflow from rounding
-                if (epochEnded || globalVested > $.totalUnsettledRewards) {
-                    globalVested = $.totalUnsettledRewards;
-                }
-
-                // Compute fee split using current ratio
-                uint256 ratio = getCurrentVaultRatioBps();
-                uint256 lenderPremium = (globalVested * ratio) / 10000;
-                uint256 borrowerCredit = globalVested - lenderPremium;
-
-                // Lender premium vests in the CURRENT epoch from epochStart(now).
-                //
-                // ACCEPTED TRADE-OFF — RETROACTIVE SHARE-PRICE BOOST:
-                // A lender who deposits at time T inside an epoch where premium has already
-                // been extracted captures `(T - epochStart(now)) / WEEK` of the unvested
-                // premium they did not fund.
-                if (lenderPremium > 0) {
-                    uint256 nowEpoch = ProtocolTimeLibrary.epochStart(block.timestamp);
-                    if ($.vestingEpochStart > 0 && nowEpoch > $.vestingEpochStart) {
-                        $.vestingEpochPremium = 0;
-                        $.vestingEpochStart = 0;
-                    }
-                    $.vestingEpochPremium += lenderPremium;
-                    if ($.vestingEpochStart < nowEpoch) {
-                        $.vestingEpochStart = nowEpoch;
-                    }
-                }
-
-                // Accumulate borrower credit per unit of stream rate (Synthetix-style)
-                if (borrowerCredit > 0) {
-                    $.borrowerCreditPerRate += (borrowerCredit * 1e18) / currentRate;
-                }
-
-                $.totalUnsettledRewards -= globalVested;
-                $.globalBorrowerPending += borrowerCredit;
-
-                // Freeze the accumulator at epoch boundary so expired streams can only
-                // claim credit up to the epoch they participated in
-                if (epochEnded) {
-                    $.epochEndBorrowerCreditPerRate[endingEpoch] = $.borrowerCreditPerRate;
-                    $.activeEpochRate = 0;
-                    $.activeEpochEnd = 0;
-                }
+            // Freeze the accumulator at epoch boundary so expired streams can only
+            // claim credit up to the epoch they participated in.
+            if (sim.epochEnded) {
+                $.epochEndBorrowerCreditPerRate[sim.endingEpoch] = $.borrowerCreditPerRate;
+                $.activeEpochRate = 0;
+                $.activeEpochEnd = 0;
             }
         }
 
-        // Accrue performance fee on realized interest delta. Runs even when no active
+        // Accrue performance fee on realized totalAssets growth. Runs even when no active
         // stream so unvested-premium decay during stream gaps is not missed.
         _accrueFee();
     }
