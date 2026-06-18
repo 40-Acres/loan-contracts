@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
+import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {AccessControl} from "../utils/AccessControl.sol";
 import {ICollateralFacet} from "../collateral/ICollateralFacet.sol";
@@ -57,27 +58,43 @@ contract ERC4626CollateralFacet is AccessControl, ICollateralFacet {
     }
 
     /**
-     * @dev Remove ERC4626 vault shares from collateral
+     * @dev Remove ERC4626 vault shares from collateral to the owner's wallet
      * @param shares The amount of shares to remove
      */
     function removeCollateral(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
         address config = address(_portfolioFactory.portfolioFactoryConfig());
         SequencerLivenessLib.assertUp(config);
         ERC4626CollateralManager.removeCollateral(config, address(_vault), shares);
-    }
 
-    /**
-     * @dev Remove ERC4626 vault shares from collateral and transfer to owner
-     * @param shares The amount of shares to remove and transfer
-     */
-    function removeCollateralTo(uint256 shares) external onlyPortfolioManagerMulticall(_portfolioFactory) {
-        address config = address(_portfolioFactory.portfolioFactoryConfig());
-        SequencerLivenessLib.assertUp(config);
-
-        ERC4626CollateralManager.removeCollateral(config, address(_vault), shares);
 
         address owner = _portfolioFactory.ownerOf(address(this));
         IERC20(address(_vault)).safeTransfer(owner, shares);
+    }
+
+    /**
+     * @dev Remove ERC4626 vault shares from collateral and transfer to the owner's account in another factory
+     * @param shares The amount of shares to remove and transfer
+     * @param targetPortfolioFactory The destination factory; shares go to the owner's account within it
+     */
+    function removeCollateralTo(uint256 shares, address targetPortfolioFactory) external onlyPortfolioManagerMulticall(_portfolioFactory) {
+        address config = address(_portfolioFactory.portfolioFactoryConfig());
+        SequencerLivenessLib.assertUp(config);
+
+        // Validate target factory is registered in the same PortfolioManager
+        PortfolioManager portfolioManager = _portfolioFactory.portfolioManager();
+        require(portfolioManager.isRegisteredFactory(targetPortfolioFactory), "Target factory not registered");
+
+        address owner = _portfolioFactory.ownerOf(address(this));
+        PortfolioFactory targetFactory = PortfolioFactory(targetPortfolioFactory);
+
+        // Resolve the owner's account in the target factory, creating it if needed
+        address toPortfolio = targetFactory.portfolioOf(owner);
+        if (toPortfolio == address(0)) {
+            toPortfolio = targetFactory.createAccount(owner);
+        }
+
+        ERC4626CollateralManager.removeCollateral(config, address(_vault), shares);
+        IERC20(address(_vault)).safeTransfer(toPortfolio, shares);
     }
 
     // ============ View Functions ============

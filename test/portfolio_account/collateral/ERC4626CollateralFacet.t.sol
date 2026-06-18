@@ -166,13 +166,20 @@ contract ERC4626CollateralFacetTest is Test {
         vm.stopPrank();
     }
 
-    function removeCollateralToViaMulticall(uint256 shares) internal {
+    function removeCollateralToViaMulticall(uint256 shares, address targetFactory) internal {
         vm.startPrank(_user);
         address[] memory portfolioFactories = new address[](1);
         portfolioFactories[0] = address(_portfolioFactory);
         bytes[] memory calldatas = new bytes[](1);
-        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateralTo.selector, shares);
+        calldatas[0] = abi.encodeWithSelector(ERC4626CollateralFacet.removeCollateralTo.selector, shares, targetFactory);
         _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+    }
+
+    // Deploy + register a second factory in the same PortfolioManager. Owner-gated.
+    function deploySecondFactory(bytes32 salt) internal returns (PortfolioFactory targetFactory) {
+        vm.startPrank(_owner);
+        (targetFactory, ) = _portfolioManager.deployFactory(salt);
         vm.stopPrank();
     }
 
@@ -280,19 +287,96 @@ contract ERC4626CollateralFacetTest is Test {
         assertEq(ERC4626CollateralFacet(_portfolioAccount).getCollateralShares(), 0);
     }
 
+    // removeCollateralTo moves freed shares into the OWNER's account in a second
+    // registered factory (NOT the owner's EOA). Rewritten from the prior assertion
+    // that checked _user's wallet balance, which no longer matches the function.
     function testRemoveCollateralTo() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
         addCollateralViaMulticall(shares);
 
-        uint256 userSharesBefore = _mockVault.balanceOf(_user);
+        // Second registered factory; account is created on demand by removeCollateralTo.
+        PortfolioFactory factoryB = deploySecondFactory(keccak256("erc4626-collateral-test-B"));
+        assertEq(factoryB.portfolioOf(_user), address(0));
 
-        // Remove collateral and transfer to owner
-        removeCollateralToViaMulticall(shares);
+        uint256 userWalletBefore = _mockVault.balanceOf(_user);
 
+        removeCollateralToViaMulticall(shares, address(factoryB));
+
+        // Source account is drained.
         assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
-        assertEq(_mockVault.balanceOf(_user), userSharesBefore + shares);
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getCollateralShares(), 0);
         assertEq(_mockVault.balanceOf(_portfolioAccount), 0);
+
+        // Shares landed in the owner's destination account, not the EOA wallet.
+        address destAccount = factoryB.portfolioOf(_user);
+        assertTrue(destAccount != address(0));
+        assertEq(_mockVault.balanceOf(destAccount), shares);
+        assertEq(_mockVault.balanceOf(_user), userWalletBefore);
+    }
+
+    function testRemoveCollateralToExistingAccount() public {
+        uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
+        transferSharesToPortfolio(shares);
+        addCollateralViaMulticall(shares);
+
+        // Owner already has an account in the second factory before the move.
+        PortfolioFactory factoryB = deploySecondFactory(keccak256("erc4626-collateral-test-B"));
+        address destAccount = factoryB.createAccount(_user);
+        assertEq(factoryB.portfolioOf(_user), destAccount);
+        uint256 destBalanceBefore = _mockVault.balanceOf(destAccount);
+
+        removeCollateralToViaMulticall(shares, address(factoryB));
+
+        // Existing account balance increases by the removed shares; no new account created.
+        assertEq(factoryB.portfolioOf(_user), destAccount);
+        assertEq(_mockVault.balanceOf(destAccount), destBalanceBefore + shares);
+
+        // Source account fully drained.
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral(), 0);
+        assertEq(_mockVault.balanceOf(_portfolioAccount), 0);
+    }
+
+    function testRemoveCollateralToCreatesAccountWhenAbsent() public {
+        uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
+        transferSharesToPortfolio(shares);
+        addCollateralViaMulticall(shares);
+
+        PortfolioFactory factoryB = deploySecondFactory(keccak256("erc4626-collateral-test-B"));
+
+        // No account exists for the owner in factory B yet.
+        assertEq(factoryB.portfolioOf(_user), address(0));
+
+        removeCollateralToViaMulticall(shares, address(factoryB));
+
+        // Account was created on demand and holds the shares.
+        address destAccount = factoryB.portfolioOf(_user);
+        assertTrue(destAccount != address(0));
+        assertEq(_mockVault.balanceOf(destAccount), shares);
+    }
+
+    function testRemoveCollateralToRevertsWhenFactoryNotRegistered() public {
+        uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
+        transferSharesToPortfolio(shares);
+        addCollateralViaMulticall(shares);
+
+        // Arbitrary address never registered with the PortfolioManager.
+        address unregistered = address(0xBEEF);
+
+        vm.startPrank(_user);
+        address[] memory portfolioFactories = new address[](1);
+        portfolioFactories[0] = address(_portfolioFactory);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSelector(
+            ERC4626CollateralFacet.removeCollateralTo.selector, shares, unregistered
+        );
+
+        vm.expectRevert("Target factory not registered");
+        _portfolioManager.multicall(calldatas, portfolioFactories);
+        vm.stopPrank();
+
+        // Collateral untouched on the revert.
+        assertEq(ERC4626CollateralFacet(_portfolioAccount).getCollateralShares(), shares);
     }
 
     function testRemovePartialCollateral() public {
