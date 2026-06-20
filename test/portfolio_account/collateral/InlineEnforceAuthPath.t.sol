@@ -110,6 +110,7 @@ contract MockPool {
     function lendingAsset() external view returns (address) { return address(assetToken); }
     function lendingVault() external view returns (address) { return address(this); }
     function activeAssets() external view returns (uint256) { return _activeAssets; }
+    function activeAssetsConservative() external view returns (uint256) { return _activeAssets; }
     function getDebtBalance(address b) external view returns (uint256) { return debt[b]; }
     function getEffectiveDebtBalance(address b) external view returns (uint256) { return debt[b]; }
     function totalAssets() external view returns (uint256) { return _totalAssets; }

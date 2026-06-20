@@ -124,6 +124,11 @@ contract MockDynPool {
     function lendingAsset() external view returns (address) { return address(assetToken); }
     function lendingVault() external view returns (address) { return address(this); }
     function activeAssets() external view returns (uint256) { return _activeAssets; }
+    // Mirrors DynamicFeesVault's conservative read. This harness models a vault with
+    // no unsettled borrower pending, so the conservative figure equals activeAssets().
+    // Required because DynamicCollateralManager.getMaxLoan now hard-casts the lending
+    // pool to IDynamicLendingPool and reads activeAssetsConservative().
+    function activeAssetsConservative() external view returns (uint256) { return _activeAssets; }
     function getDebtBalance(address b) external view returns (uint256) { return debt[b]; }
     function getEffectiveDebtBalance(address b) external view returns (uint256) { return debt[b]; }
     function totalAssets() external view returns (uint256) { return _totalAssets; }

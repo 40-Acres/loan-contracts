@@ -27,7 +27,8 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
-import {LendingVault} from "../../../src/facets/account/vault/LendingVault.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
+import {FeeCalculator} from "../../../src/facets/account/vault/FeeCalculator.sol";
 
 // Interfaces
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
@@ -166,6 +167,10 @@ contract MockDynPool {
     function lendingAsset() external view returns (address) { return _asset; }
     function lendingVault() external view returns (address) { return address(this); }
     function activeAssets() external view returns (uint256) { return _activeAssetsToReport; }
+    // Mirrors DynamicFeesVault's conservative read; this mock models zero unsettled
+    // borrower pending, so it equals activeAssets(). Needed because getMaxLoan now
+    // hard-casts to IDynamicLendingPool.activeAssetsConservative().
+    function activeAssetsConservative() external view returns (uint256) { return _activeAssetsToReport; }
     function asset() external view returns (address) { return _asset; }
     function totalAssets() external view returns (uint256) {
         return IERC20(_asset).balanceOf(address(this)) + _activeAssetsToReport;
@@ -200,7 +205,7 @@ contract DynamicYieldBasisDriftRegressionTest is Test {
     FacetRegistry internal registry;
     PortfolioFactoryConfig internal cfg;
     LoanConfig internal loanConfig;
-    LendingVault internal lendingVault;
+    DynamicFeesVault internal lendingVault;
 
     MockYieldBasisLP internal ybLp;
     MockTunableYieldBasisGauge internal gauge;
@@ -228,15 +233,16 @@ contract DynamicYieldBasisDriftRegressionTest is Test {
         underlying = new MockERC20("WETH", "WETH", 18);
         gauge = new MockTunableYieldBasisGauge(address(ybLp));
 
-        LendingVault impl = new LendingVault();
+        DynamicFeesVault impl = new DynamicFeesVault();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
-                LendingVault.initialize,
-                (address(underlying), address(factory), OWNER, "Lending Vault", "lVAULT", 0)
+                DynamicFeesVault.initialize,
+                (address(underlying), "Lending Vault", "lVAULT", address(factory), OWNER, 0)
             )
         );
-        lendingVault = LendingVault(address(proxy));
+        lendingVault = DynamicFeesVault(address(proxy));
+        lendingVault.setFeeCalculator(address(new FeeCalculator()));
         underlying.mint(address(lendingVault), VAULT_LIQUIDITY);
 
         loanConfig.setMultiplier(LTV_BPS);

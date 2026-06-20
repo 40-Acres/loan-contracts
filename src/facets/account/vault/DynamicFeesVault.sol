@@ -15,7 +15,7 @@ import {ReentrancyGuardTransientUpgradeable} from "@openzeppelin/contracts-upgra
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
-import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
+import {IDynamicLendingPool} from "../../../interfaces/IDynamicLendingPool.sol";
 
 /**
  * @title DynamicFeesVault
@@ -23,7 +23,7 @@ import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
  * @dev Combines vault functionality with debt token accounting for reward distribution
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
-contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardTransientUpgradeable, ILendingPool {
+contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardTransientUpgradeable, IDynamicLendingPool {
     using SafeERC20 for IERC20;
 
     // ============ Events ============
@@ -1017,6 +1017,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
         return $.totalLoanedAssets > totalReduction
             ? $.totalLoanedAssets - totalReduction
+            : 0;
+    }
+
+    /// @notice Outstanding loaned assets credited only with reward credit already applied to debt.
+    /// @dev    Excludes unsettled globalBorrowerPending, whose per-borrower debt reduction is not
+    ///         yet known. Result only ever over-states outstanding, so borrow-cap consumers never
+    ///         see inflated headroom from pending credit.
+    function activeAssetsConservative() external view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        return $.totalLoanedAssets > $.totalVestedRewardsApplied
+            ? $.totalLoanedAssets - $.totalVestedRewardsApplied
             : 0;
     }
 

@@ -5,6 +5,7 @@ import {IHydrexVotingEscrow} from "../../../interfaces/IHydrexVotingEscrow.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
+import {IDynamicLendingPool} from "../../../interfaces/IDynamicLendingPool.sol";
 import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {HydrexPortfolioFactoryConfig} from "./HydrexPortfolioFactoryConfig.sol";
@@ -242,7 +243,8 @@ library DynamicHydrexCollateralManager {
         uint256 multiplier = loanConfig.getMultiplier();
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        uint256 outstandingCapital = lendingPool.activeAssets();
+        // Conservative read: excludes unsettled borrower credit so the cap never over-states headroom.
+        uint256 outstandingCapital = IDynamicLendingPool(address(lendingPool)).activeAssetsConservative();
 
         uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
         uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
