@@ -792,14 +792,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     /**
      * @notice Attempt transfer, escrow on failure (e.g. USDC blacklist)
      */
-    function _transferOrEscrow(DynamicFeesVaultStorage storage $, address user, uint256 amount) internal {
+    function _transferOrEscrow(DynamicFeesVaultStorage storage $, address account, uint256 amount) internal {
         if (amount == 0) return;
-        if (IERC20(asset()).trySafeTransfer(user, amount)) {
-            emit ExcessRewardsPaid(user, amount);
+        // Route excess to the portfolio owner; the account contract cannot claim or forward it.
+        address recipient = IPortfolioFactory($.portfolioFactory).ownerOf(account);
+        if (IERC20(asset()).trySafeTransfer(recipient, amount)) {
+            emit ExcessRewardsPaid(recipient, amount);
         } else {
-            $.escrowedExcess[user] += amount;
+            $.escrowedExcess[recipient] += amount;
             $.escrowedExcessTotal += amount;
-            emit ExcessRewardsEscrowed(user, amount);
+            emit ExcessRewardsEscrowed(recipient, amount);
         }
     }
 
