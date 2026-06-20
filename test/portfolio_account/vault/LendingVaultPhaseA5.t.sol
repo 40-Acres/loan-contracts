@@ -387,28 +387,77 @@ contract LendingVaultPhaseA5Test is Test {
         assertEq(usdc.balanceOf(depositor1) - balBefore, maxW, "withdraw must succeed next block");
     }
 
-    /// Catches: a regression that bumped lastDepositBlock on every _update
-    /// (not just mints). If a transferred recipient inherited the donor's
-    /// fresh deposit block, a flash-loan attacker could push other holders'
-    /// withdraws by sending them dust shares. Verify recipient is unaffected.
-    function test_ShareTransfer_DoesNotResetLastDepositBlock() public {
-        // depositor1 deposits and advances a block so they can transfer.
-        _depositAndAdvance(depositor1, 1_000e6);
+    /// Catches: the pin failing to cover transfer-in (a recipient could redeem
+    /// flash-acquired shares same block), AND the inverse over-pin regression
+    /// where a dust transfer freezes a holder's entire pre-existing balance --
+    /// the flash-loan grief the original test guarded against. Under Candidate 3
+    /// only the shares ACQUIRED this block are pinned: transfer-in to a fresh
+    /// recipient is locked one block, but a dust transfer to an existing holder
+    /// leaves their pre-existing balance fully withdrawable.
+    /// Absolute block numbers avoid via-ir block.number caching across rolls.
+    function test_ShareTransfer_PinsJustReceivedShares_NotPreExisting() public {
+        uint256 base = 1000;
+        vm.roll(base);
 
+        // depositor1 deposits at `base`; advance so its shares are unpinned.
+        _depositSameBlock(depositor1, 1_000e6);
+        vm.roll(base + 1);
+
+        // --- Part 1: fresh recipient's just-received shares are PINNED. ---
         uint256 sharesToSend = vault.balanceOf(depositor1) / 4;
 
-        // depositor2 has never deposited — lastDepositBlock should stay at 0.
+        // depositor2 has never deposited (zero prior balance).
+        assertEq(vault.balanceOf(depositor2), 0, "depositor2 starts with zero shares");
+
         vm.prank(depositor1);
         vault.transfer(depositor2, sharesToSend);
 
-        // depositor2 should still be able to withdraw in this same block.
-        // If transfer had bumped depositor2's lastDepositBlock, maxWithdraw
-        // would short-circuit to 0 and the withdraw would revert.
-        uint256 maxW = vault.maxWithdraw(depositor2);
-        assertGt(maxW, 0, "recipient of share transfer must not be flash-deposit-locked");
+        // Same block: the received shares are pinned -- maxWithdraw is 0 and
+        // a redeem of those shares reverts.
+        assertEq(vault.maxWithdraw(depositor2), 0, "just-received shares pinned this block");
+        assertEq(vault.maxRedeem(depositor2), 0, "maxRedeem=0 for just-received shares");
+        vm.prank(depositor2);
+        vm.expectRevert();
+        vault.redeem(sharesToSend, depositor2, depositor2);
+
+        // Next block: the pin clears and depositor2 can withdraw.
+        vm.roll(base + 2);
+        uint256 maxW2 = vault.maxWithdraw(depositor2);
+        assertGt(maxW2, 0, "recipient can withdraw next block");
+        vm.prank(depositor2);
+        vault.withdraw(maxW2, depositor2, depositor2);
+
+        // --- Part 2: a dust transfer must NOT freeze a pre-existing balance. ---
+        // depositor1 still holds its (now unpinned, prior-block) shares. Source
+        // a dust amount from depositor2 (re-funded in a prior block so its dust
+        // is itself unpinned), then transfer it to depositor1 this block.
+        _depositSameBlock(depositor2, 1e6);
+        vm.roll(base + 3);
+
+        uint256 d1PreExisting = vault.balanceOf(depositor1);
+        assertGt(d1PreExisting, 0, "depositor1 has pre-existing shares");
+
+        uint256 dust = vault.balanceOf(depositor2) / 100; // tiny slice
+        assertGt(dust, 0, "dust slice is non-zero");
 
         vm.prank(depositor2);
-        vault.withdraw(maxW, depositor2, depositor2);
+        vault.transfer(depositor1, dust);
+
+        // depositor1's pre-existing balance stays fully withdrawable; only the
+        // newly received dust is pinned.
+        assertEq(
+            vault.maxRedeem(depositor1),
+            d1PreExisting,
+            "dust transfer pins only the dust, not the pre-existing balance"
+        );
+        uint256 preExistingAssets = vault.convertToAssets(d1PreExisting);
+        vm.prank(depositor1);
+        vault.withdraw(preExistingAssets, depositor1, depositor1);
+        assertEq(
+            vault.balanceOf(depositor1),
+            dust,
+            "depositor1 withdrew full pre-existing balance same block; only dust remains"
+        );
     }
 
     /// Catches: removing the lastDepositBlock write in `_update`. Asserts via

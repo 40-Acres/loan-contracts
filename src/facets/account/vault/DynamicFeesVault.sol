@@ -96,8 +96,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Track vested rewards that have been applied to individual user debts
         uint256 totalVestedRewardsApplied;
 
-        // Flash loan protection: block same-block deposit+withdraw
-        mapping(address => uint256) lastDepositBlock;
+        // Flash loan protection: block of the last share acquisition (mint or transfer-in) per holder
+        mapping(address => uint256) lastMintBlock;
 
         // Running sum of all debtBalance
         uint256 totalDebtBalance;
@@ -137,6 +137,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address treasury;
 
         uint256 originationFeeBps;
+
+        // Shares acquired in lastMintBlock per holder; pinned until the next block
+        mapping(address => uint256) sameBlockAcquiredShares;
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -1067,12 +1070,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function maxWithdraw(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
-        if ($.lastDepositBlock[owner] >= block.number) return 0;
         // Mirror previewWithdraw's accrual so withdraw(maxWithdraw(owner)) cannot revert in _burn.
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
         uint256 newTotalSupply = totalSupply() + pending;
         uint256 assets = Math.mulDiv(
-            balanceOf(owner),
+            _withdrawableShares($, owner),
             newTotalAssets + 1,
             newTotalSupply + 10 ** _decimalsOffset(),
             Math.Rounding.Floor
@@ -1084,10 +1086,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function maxRedeem(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
-        if ($.lastDepositBlock[owner] >= block.number) return 0;
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
         uint256 newTotalSupply = totalSupply() + pending;
-        uint256 shares = balanceOf(owner);
+        uint256 shares = _withdrawableShares($, owner);
         uint256 liquid = IERC20(asset()).balanceOf(address(this));
         uint256 maxShares = Math.mulDiv(
             liquid,
@@ -1098,15 +1099,31 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return shares < maxShares ? shares : maxShares;
     }
 
+    // Shares held by `owner` that are free to leave this block (excludes shares acquired this block).
+    function _withdrawableShares(DynamicFeesVaultStorage storage $, address owner) private view returns (uint256) {
+        uint256 ownerShares = balanceOf(owner);
+        uint256 locked = $.lastMintBlock[owner] == block.number ? $.sameBlockAcquiredShares[owner] : 0;
+        return ownerShares > locked ? ownerShares - locked : 0;
+    }
+
+    // Pin shares acquired this block (mint or transfer-in) so they cannot round-trip out the same block.
+    function _update(address from, address to, uint256 value) internal virtual override {
+        super._update(from, to, value);
+        if (to == address(0) || to == from || value == 0) return;
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        if ($.lastMintBlock[to] != block.number) {
+            $.lastMintBlock[to] = block.number;
+            $.sameBlockAcquiredShares[to] = value;
+        } else {
+            $.sameBlockAcquiredShares[to] += value;
+        }
+    }
+
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         _processGlobalVesting();
 
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
-
-        if (caller == receiver) {
-            $.lastDepositBlock[receiver] = block.number;
-        }
 
         super._deposit(caller, receiver, assets, shares);
 
@@ -1126,7 +1143,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
 
-        require($.lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
+        uint256 locked = $.lastMintBlock[_owner] == block.number ? $.sameBlockAcquiredShares[_owner] : 0;
+        require(balanceOf(_owner) >= shares + locked, "Cannot withdraw shares acquired this block");
 
         super._withdraw(caller, receiver, _owner, assets, shares);
 
