@@ -48,12 +48,14 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
         // Not a token count; read currentEpochActualRewards / lastEpochReward() for that.
         uint256 currentEpochRewards;
         uint256 currentEpochStart;   // start timestamp of current epoch
-        mapping(address => uint256) lastDepositBlock; // flash-deposit protection
+        mapping(address => uint256) lastMintBlock; // block of last share acquisition (mint or transfer-in) per holder
         uint8 sharesDecimalsOffset; // asset decimals cached at init for inflation-attack-resistant offset
         address treasury; // recipient of protocol/origination fees; zero falls back to owner()
         // Appended slot: truthful sum of reward tokens deposited this epoch.
         // Resets on the first depositRewards() of each new epoch. Used by lastEpochReward().
         uint256 currentEpochActualRewards;
+        // Shares acquired in lastMintBlock per holder; pinned until the next block
+        mapping(address => uint256) sameBlockAcquiredShares;
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.LendingVault");
@@ -196,19 +198,18 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
 
     // Override ERC4626 view functions to cap at liquid asset balance
     function maxWithdraw(address owner) public view override returns (uint256) {
-        if (_getStorage().lastDepositBlock[owner] >= block.number) return 0;
+        uint256 maxAssets = convertToAssets(_withdrawableShares(owner));
         uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));
-        uint256 maxAssets = super.maxWithdraw(owner);
         return liquidAssets < maxAssets ? liquidAssets : maxAssets;
     }
 
     function maxRedeem(address owner) public view override returns (uint256) {
-        if (_getStorage().lastDepositBlock[owner] >= block.number) return 0;
+        uint256 maxShares = _withdrawableShares(owner);
         uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));
-        uint256 maxShares = super.maxRedeem(owner);
         uint256 maxAssets = convertToAssets(maxShares);
         if (maxAssets > liquidAssets) {
-            return convertToShares(liquidAssets);
+            uint256 liquidShares = convertToShares(liquidAssets);
+            return liquidShares < maxShares ? liquidShares : maxShares;
         }
         return maxShares;
     }
@@ -217,11 +218,25 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
         return _getStorage().sharesDecimalsOffset;
     }
 
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        if (caller == receiver) {
-            _getStorage().lastDepositBlock[receiver] = block.number;
+    // Shares held by `owner` that are free to leave this block (excludes shares acquired this block).
+    function _withdrawableShares(address owner) private view returns (uint256) {
+        LendingVaultStorage storage $ = _getStorage();
+        uint256 ownerShares = balanceOf(owner);
+        uint256 locked = $.lastMintBlock[owner] == block.number ? $.sameBlockAcquiredShares[owner] : 0;
+        return ownerShares > locked ? ownerShares - locked : 0;
+    }
+
+    // Pin shares acquired this block (mint or transfer-in) so they cannot round-trip out the same block.
+    function _update(address from, address to, uint256 value) internal virtual override {
+        super._update(from, to, value);
+        if (to == address(0) || to == from || value == 0) return;
+        LendingVaultStorage storage $ = _getStorage();
+        if ($.lastMintBlock[to] != block.number) {
+            $.lastMintBlock[to] = block.number;
+            $.sameBlockAcquiredShares[to] = value;
+        } else {
+            $.sameBlockAcquiredShares[to] += value;
         }
-        super._deposit(caller, receiver, assets, shares);
     }
 
     function _withdraw(
@@ -231,7 +246,9 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
         uint256 assets,
         uint256 shares
     ) internal virtual override {
-        require(_getStorage().lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
+        LendingVaultStorage storage $ = _getStorage();
+        uint256 locked = $.lastMintBlock[_owner] == block.number ? $.sameBlockAcquiredShares[_owner] : 0;
+        require(balanceOf(_owner) >= shares + locked, "Cannot withdraw shares acquired this block");
         super._withdraw(caller, receiver, _owner, assets, shares);
     }
 
