@@ -120,12 +120,4 @@ contract DynamicYieldBasisLpLendingFacet is AccessControl {
 
         emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
-
-    function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return DynamicYieldBasisCollateralManager.getMaxLoan(_config(), _lpToken, _underlying);
-    }
-
-    function getTotalDebt() external view returns (uint256) {
-        return DynamicYieldBasisCollateralManager.getTotalDebt(_config());
-    }
 }

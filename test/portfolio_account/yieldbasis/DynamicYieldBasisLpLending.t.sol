@@ -116,7 +116,7 @@ contract DynamicYieldBasisLpLendingTest is DynamicYbDiamond {
         // Borrower received funds, debt is live-read via the dynamic manager.
         assertEq(underlying.balanceOf(user), toBorrow, "user received borrow proceeds");
         // No origination fee configured (0 bps) -> totalDebt == borrowed.
-        assertEq(DynamicYieldBasisLpLendingFacet(portfolioAccount).getTotalDebt(), toBorrow, "live debt");
+        assertEq(DynamicYieldBasisLpFacet(portfolioAccount).getTotalDebt(), toBorrow, "live debt");
     }
 
     function test_pay_happyPath_clearsDebt_liveRead() public {
@@ -137,7 +137,7 @@ contract DynamicYieldBasisLpLendingTest is DynamicYbDiamond {
         portfolioManager.multicall(cd, factories);
         vm.stopPrank();
 
-        assertEq(DynamicYieldBasisLpLendingFacet(portfolioAccount).getTotalDebt(), 0, "debt cleared");
+        assertEq(DynamicYieldBasisLpFacet(portfolioAccount).getTotalDebt(), 0, "debt cleared");
     }
 
     function test_pay_excessReturnedToCaller() public {
@@ -166,7 +166,7 @@ contract DynamicYieldBasisLpLendingTest is DynamicYbDiamond {
 
         // Net delta: -8 paid, +3 returned, +0 from debt clearing. Net -5.
         assertEq(userPre - userPost, 5e18, "net 5 paid -- 3 excess returned");
-        assertEq(DynamicYieldBasisLpLendingFacet(portfolioAccount).getTotalDebt(), 0, "debt cleared");
+        assertEq(DynamicYieldBasisLpFacet(portfolioAccount).getTotalDebt(), 0, "debt cleared");
     }
 
     // -----------------------------------------------------------------------
@@ -244,7 +244,7 @@ contract DynamicYieldBasisLpLendingTest is DynamicYbDiamond {
         // proxy (pa) so address(this) inside the manager is the portfolio
         // account, not the bare facet.
         assertEq(
-            DynamicYieldBasisLpLendingFacet(pa).getTotalDebt(),
+            DynamicYieldBasisLpFacet(pa).getTotalDebt(),
             5e18,
             "outer pay reverted -- debt untouched"
         );
@@ -304,7 +304,7 @@ contract DynamicYieldBasisLpLendingTest is DynamicYbDiamond {
         vm.prank(authorizedCaller);
         DynamicYieldBasisLpLendingFacet(portfolioAccount).topUp();
         assertEq(underlying.balanceOf(user), userPre, "no funds moved when topUp disabled");
-        assertEq(DynamicYieldBasisLpLendingFacet(portfolioAccount).getTotalDebt(), 0, "no debt added");
+        assertEq(DynamicYieldBasisLpFacet(portfolioAccount).getTotalDebt(), 0, "no debt added");
     }
 
     function test_topUp_borrowsMaxLoanWhenEnabled() public {
@@ -326,7 +326,7 @@ contract DynamicYieldBasisLpLendingTest is DynamicYbDiamond {
         // No prior debt, supply abundant -> borrowed = 70.
         uint256 expectedBorrow = (DEPOSIT * LTV_BPS) / 10_000;
         assertEq(
-            DynamicYieldBasisLpLendingFacet(portfolioAccount).getTotalDebt(),
+            DynamicYieldBasisLpFacet(portfolioAccount).getTotalDebt(),
             expectedBorrow,
             "topUp borrowed full maxLoan"
         );
