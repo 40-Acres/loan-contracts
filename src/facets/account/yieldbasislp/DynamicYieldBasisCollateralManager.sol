@@ -492,16 +492,16 @@ library DynamicYieldBasisCollateralManager {
     }
 
     /**
-     * @dev Burn `shares` of tracked LP and deduct basis proportionally so per-share
-     *      basis D/S is preserved across the burn. Caller must validate the yield
-     *      precondition S*p > D before calling; given that, S'*p >= D' follows
-     *      automatically and no post-burn invariant check is needed here.
+     * @dev Burn `shares` of tracked LP for yield harvest. depositedAssetValue is
+     *      held fixed; the remaining LP must still cover the original basis,
+     *      enforced by the "Would remove principal" check. Holding the basis
+     *      fixed stops a re-harvest at unchanged pps from walking principal out
+     *      as fake yield.
      *
-     *      Gated by isAuthorizedCaller (mirrors AccessControl.onlyAuthorizedCaller).
-     *      The PortfolioManager is intentionally NOT bypassed; it does not call this
-     *      path. The yield-precondition above is enforced by the caller, so an
-     *      unauthorized caller could otherwise zero out depositedAssetValue without
-     *      burning real LP and unlock fictitious borrow capacity.
+     *      Gated by isAuthorizedCaller. The PortfolioManager is intentionally NOT
+     *      bypassed; it does not call this path. An unauthorized caller could
+     *      otherwise burn share tracking without burning real LP and unlock
+     *      fictitious borrow capacity.
      */
     function removeSharesForYield(
         address portfolioFactoryConfig,
@@ -520,9 +520,11 @@ library DynamicYieldBasisCollateralManager {
 
         require(data.shares >= shares, "Insufficient shares");
 
-        uint256 valueToRemove = (data.depositedAssetValue * shares) / data.shares;
-        data.shares -= shares;
-        data.depositedAssetValue -= valueToRemove;
+        uint256 remainingShares = data.shares - shares;
+        uint256 remainingValue = _resolveBasisValue(vault, remainingShares);
+        require(remainingValue >= data.depositedAssetValue, "Would remove principal");
+
+        data.shares = remainingShares;
 
         // Solvency revert uses raw debt: pending reward credits may unwind.
         (, uint256 newMaxLoanIgnoreSupply) = getMaxLoan(portfolioFactoryConfig, vault, underlying);
