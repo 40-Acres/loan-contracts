@@ -118,12 +118,4 @@ contract DynamicERC4626LendingFacet is AccessControl {
 
         emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
-
-    function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return DynamicERC4626CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()), _vault);
-    }
-
-    function getTotalDebt() external view returns (uint256) {
-        return DynamicERC4626CollateralManager.getTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()));
-    }
 }
