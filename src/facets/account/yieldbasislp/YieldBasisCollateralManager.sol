@@ -91,6 +91,8 @@ library YieldBasisCollateralManager {
             uint8 dec = IERC20Metadata(underlying).decimals();
             if (dec < 18) {
                 withdrawable = withdrawable * (10 ** (18 - dec));
+            } else if (dec > 18) {
+                withdrawable = withdrawable / (10 ** (dec - 18));
             }
         }
         return fundamental < withdrawable ? fundamental : withdrawable;
