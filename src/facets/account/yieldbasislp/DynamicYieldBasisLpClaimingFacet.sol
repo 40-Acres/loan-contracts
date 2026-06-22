@@ -152,15 +152,32 @@ contract DynamicYieldBasisLpClaimingFacet is AccessControl {
 
         if (effectiveCurrentValue <= effectiveDepositedValue) return (0, 0);
 
-        yieldUnderlying = effectiveCurrentValue - effectiveDepositedValue;
-        yieldGaugeShares = (effectiveShares * yieldUnderlying) / effectiveCurrentValue;
+        // yieldGaugeShares is a share count; derive it from the 18-dec ratio
+        // before denormalizing the value field so the units stay consistent.
+        uint256 yield18d = effectiveCurrentValue - effectiveDepositedValue;
+        yieldGaugeShares = (effectiveShares * yield18d) / effectiveCurrentValue;
+        yieldUnderlying = _toUnderlying(yield18d);
     }
 
+    /// @dev Value fields are in the underlying token's native decimals, matching
+    ///      the ERC4626 collateral views. The share count is left as-is.
     function getDepositInfo() external view returns (
         uint256 shares,
         uint256 depositedUnderlyingValue,
         uint256 currentUnderlyingValue
     ) {
-        return DynamicYieldBasisCollateralManager.getCollateral(address(_lpToken), _underlying);
+        (shares, depositedUnderlyingValue, currentUnderlyingValue) =
+            DynamicYieldBasisCollateralManager.getCollateral(address(_lpToken), _underlying);
+        depositedUnderlyingValue = _toUnderlying(depositedUnderlyingValue);
+        currentUnderlyingValue = _toUnderlying(currentUnderlyingValue);
+    }
+
+    /// @dev Denormalize an 18-dec collateral value to the underlying's native
+    ///      decimals. Inverse of the manager's internal 18-dec convention.
+    function _toUnderlying(uint256 value18d) private view returns (uint256) {
+        uint8 dec = _underlyingDecimals;
+        if (dec < 18) return value18d / (10 ** (18 - dec));
+        if (dec > 18) return value18d * (10 ** (dec - 18));
+        return value18d;
     }
 }
