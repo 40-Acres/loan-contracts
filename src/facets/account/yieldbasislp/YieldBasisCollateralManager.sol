@@ -35,8 +35,7 @@ import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
  * separate ERC20 representing staked LP 1:1) toward the required balance — without it,
  * deposits while in staked mode would revert because prior LP has left the account.
  *
- * Uses its own ERC-7201 storage slot, distinct from ERC4626CollateralManager, so this
- * manager and the ERC4626 one can be installed side-by-side on different diamonds.
+ * Uses its own ERC-7201 storage slot, distinct from ERC4626CollateralManager
  */
 library YieldBasisCollateralManager {
     using SafeERC20 for IERC20;
