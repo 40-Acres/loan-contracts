@@ -299,9 +299,10 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
         assertGt(yieldShares, 0, "Need yield shares for test");
 
         // assetsReceived expected ~= yieldAssets. minAssetsPerShare =
-        // floor(assetsReceived * 1e18 / yieldShares) makes the floor equal to
-        // floor(yieldShares * mPerS / 1e18) <= assetsReceived.
-        uint256 minAssetsPerShare = (yieldAssets * 1e18) / yieldShares;
+        // floor(assetsReceived * 1e6 / yieldShares) makes the floor equal to
+        // floor(yieldShares * mPerS / 1e6) <= assetsReceived. Share unit is 1e6
+        // (6-decimal shares), matching the facet's _shareUnit divisor.
+        uint256 minAssetsPerShare = (yieldAssets * 1e6) / yieldShares;
         assertGt(minAssetsPerShare, 0, "boundary must be > 0");
 
         vm.prank(_authorizedCaller);
@@ -323,9 +324,10 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
             ERC4626ClaimingFacet(_portfolioAccount).getAvailableYield();
         assertGt(yieldShares, 0, "Need yield shares for test");
 
-        uint256 baseline = (yieldAssets * 1e18) / yieldShares;
-        // Add ceil(1e18 / yieldShares) + 1 to guarantee floor exceeds assetsReceived by >=1.
-        uint256 stepUp = (1e18 + yieldShares - 1) / yieldShares + 1;
+        uint256 baseline = (yieldAssets * 1e6) / yieldShares;
+        // Add ceil(1e6 / yieldShares) + 1 to guarantee floor exceeds assetsReceived by >=1.
+        // Share unit is 1e6 (6-decimal shares), matching the facet's _shareUnit divisor.
+        uint256 stepUp = (1e6 + yieldShares - 1) / yieldShares + 1;
         uint256 tooTight = baseline + stepUp;
 
         vm.prank(_authorizedCaller);
@@ -334,22 +336,17 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
     }
 
     /**
-     * @dev Decimals concrete check: 6-decimal vault/asset, minAssetsPerShare=1e6
-     *      enforces "≥ 1 USDC per 1.0 share burned" (where 1.0 share = 1e6 share-wei
-     *      since the vault is 6d, but the floor is computed over 1e18 share-wei).
-     *      For our setup: 1000e6 deposit, 100e6 yield → 100% gain,
-     *      yieldShares ≈ 100e6/2 = ~91e6 share-wei (exact value depends on rounding).
+     * @dev Decimals concrete check: 6-decimal vault/asset. minAssetsPerShare is
+     *      asset-native wei per 1.0 WHOLE share, and a whole share is 1e6 share-wei
+     *      here (6-decimal shares), so the floor divides by the 1e6 share unit.
+     *      For our setup: 1000e6 deposit, 100e6 yield -- 100% gain on yield slice;
+     *      vault price moves to 1100e6 / 1000e6 == 1.10 USDC per whole share.
      *
-     *      With minAssetsPerShare = 1 (smallest possible non-zero value),
-     *      minAssetsOut = sharesToRedeem * 1 / 1e18 ≈ 0 (rounds down).
-     *      With mPerS = 1e18, minAssetsOut = sharesToRedeem (1:1 floor).
-     *
-     *      A useful concrete decimals test: in a 1:1 pre-yield vault, after 100e6
-     *      yield is added to a 1000e6-asset vault that issued 1000e6 shares,
-     *      the share price becomes 1100e6 / 1000e6 = 1.1 USDC per share. So
-     *      previewRedeem(shares) = shares * 1.1 / 1e0 (with 6-decimal share ≈
-     *      6-decimal asset). Setting minAssetsPerShare = 1.05e18 (1.05 USDC /share)
-     *      should pass; setting minAssetsPerShare = 1.2e18 should fail.
+     *      minAssetsOut = sharesToRedeem * minAssetsPerShare / 1e6. Setting
+     *      minAssetsPerShare = 1.05e6 (1.05 USDC per whole share) is below the
+     *      ~1.10 actual, so the floor does not bind and the claim succeeds.
+     *      Setting 1.20e6 (1.20 USDC per whole share, above 1.10) reverts -- see
+     *      the tightFloor test below.
      */
     function test_claimVaultYield_decimals_concreteFloors() public {
         _setupYieldClaim();
@@ -358,11 +355,11 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
             ERC4626ClaimingFacet(_portfolioAccount).getAvailableYield();
         assertGt(yieldShares, 0, "Need yield shares");
 
-        // Pass 1.05 USDC-wei per share-wei (scaled by 1e18).
-        // assetsReceived ≈ yieldShares * 1.1 (since price went 1.0 → 1.1 USDC/share).
-        // floor = yieldShares * 1.05e18 / 1e18 = yieldShares * 1.05.
-        // 1.10 >= 1.05 → passes.
-        uint256 looseFloor = 1.05e18; // 1.05 USDC per share (6d asset, 18-scale)
+        // Pass 1.05 USDC per whole share, 6d share unit => 1.05e6.
+        // assetsReceived ~= yieldShares * 1.10 (price went 1.0 -> 1.10 USDC/share).
+        // floor = yieldShares * 1.05e6 / 1e6 = yieldShares * 1.05.
+        // 1.10 >= 1.05 -> passes.
+        uint256 looseFloor = 1.05e6; // 1.05 USDC per whole share (6d share unit)
         // Reset state by creating new portfolio account would be tedious, so we
         // just exercise the "passes" case here. The "too tight" case was tested
         // above with the boundary computation. For decimals correctness, use
@@ -373,14 +370,15 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
     }
 
     /**
-     * @dev Decimals: same setup, but tightening floor to 1.20 USDC per share
-     *      should revert with "Slippage" — the actual is 1.10.
+     * @dev Decimals: same setup, but tightening floor to 1.20 USDC per whole
+     *      share (6d share unit => 1.20e6) should revert with "Slippage" -- the
+     *      actual is 1.10 USDC per whole share.
      */
     function test_claimVaultYield_decimals_tightFloor_reverts() public {
         _setupYieldClaim();
 
-        // 1.20 USDC per share — strictly above the 1.10 actual.
-        uint256 tightFloor = 1.20e18;
+        // 1.20 USDC per whole share (6d share unit) -- strictly above the 1.10 actual.
+        uint256 tightFloor = 1.20e6;
 
         vm.prank(_authorizedCaller);
         vm.expectRevert(bytes("Slippage"));
@@ -468,5 +466,54 @@ contract ERC4626ClaimingFacetHardeningTest is Test {
         vm.prank(_authorizedCaller);
         vm.expectRevert(bytes("No yield to harvest"));
         ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(mPerS);
+    }
+
+    // =====================================================================
+    // ITEM 3 -- Share-decimal scaling bug in caller-side floor (line 110)
+    // =====================================================================
+    //
+    // The docstring defines minAssetsPerShare as asset-native wei per 1.0
+    // WHOLE share. This vault is 6-decimal SHARES, so one whole share is
+    // 1e6 share-wei, not 1e18. The correct floor divides by 10**vault.decimals()
+    // (== 1e6 here). The code divides by a hardcoded 1e18, so the caller floor
+    // collapses toward 0 and the primary slippage defense silently disappears.
+    //
+    // Vault state after _setupYieldClaim: 1100e6 assets / 1000e6 shares ~= 1.10
+    // USDC per whole share. A floor of 1.2e6 (1.2 USDC per whole share) is ABOVE
+    // the actual 1.10, so under the CORRECT per-whole-share semantic it MUST bind
+    // and revert with "Slippage".
+
+    /**
+     * @dev Failing-first reproduction. Floor of 1.2 USDC per whole share is above
+     *      the ~1.10 actual, so the correct semantic must revert with "Slippage".
+     *      On the CURRENT broken code: 1.2e6 / 1e18 makes minAssetsOut ~= 0, so
+     *      the floor never binds and the claim succeeds -- expectRevert is not
+     *      satisfied and this test FAILS for the right reason.
+     */
+    function test_claimVaultYield_shareUnit_tightFloor_reverts() public {
+        _setupYieldClaim();
+
+        // 1.2 USDC per whole share, 6d share unit => 1.2e6. Above the 1.10 actual.
+        uint256 tightFloor = 1.2e6;
+
+        vm.prank(_authorizedCaller);
+        vm.expectRevert(bytes("Slippage"));
+        ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(tightFloor);
+    }
+
+    /**
+     * @dev Companion regression guard. Floor of 1.0 USDC per whole share (6d
+     *      share unit => 1.0e6) is BELOW the ~1.10 actual, so it must succeed.
+     *      Passes on both broken and fixed code; pins the correct semantic.
+     */
+    function test_claimVaultYield_shareUnit_looseFloor_succeeds() public {
+        _setupYieldClaim();
+
+        // 1.0 USDC per whole share, 6d share unit => 1.0e6. Below the 1.10 actual.
+        uint256 looseFloor = 1.0e6;
+
+        vm.prank(_authorizedCaller);
+        uint256 claimed = ERC4626ClaimingFacet(_portfolioAccount).claimVaultYield(looseFloor);
+        assertGt(claimed, 0, "Should claim with 1.0 USDC/whole-share floor when actual is 1.10");
     }
 }

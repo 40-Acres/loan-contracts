@@ -22,6 +22,8 @@ contract DynamicERC4626ClaimingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     IERC4626 public immutable _vault;
     uint8 public immutable _assetDecimals;
+    // One whole share in share-wei (10 ** share decimals); share decimals need not be 18
+    uint256 public immutable _shareUnit;
 
     error ReentrantCall();
 
@@ -45,6 +47,7 @@ contract DynamicERC4626ClaimingFacet is AccessControl {
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _vault = IERC4626(vault);
         _assetDecimals = IERC20Metadata(IERC4626(vault).asset()).decimals();
+        _shareUnit = 10 ** IERC20Metadata(vault).decimals();
     }
 
     // ============ Yield Claiming ============
@@ -78,7 +81,8 @@ contract DynamicERC4626ClaimingFacet is AccessControl {
         uint256 previewedAssets = IERC4626(vault).previewRedeem(sharesToRedeem);
         uint256 assetsReceived = IERC4626(vault).redeem(sharesToRedeem, address(this), address(this));
 
-        uint256 minAssetsOut = (sharesToRedeem * minAssetsPerShare) / 1e18;
+        // Caller-side floor (primary defense). Normalize by the real share unit.
+        uint256 minAssetsOut = (sharesToRedeem * minAssetsPerShare) / _shareUnit;
         require(assetsReceived >= minAssetsOut, "Slippage");
 
         require(assetsReceived * 100 >= previewedAssets * 85, "Slippage floor < 85%");

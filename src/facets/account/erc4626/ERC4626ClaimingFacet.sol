@@ -30,6 +30,8 @@ contract ERC4626ClaimingFacet is AccessControl {
     PortfolioFactory public immutable _portfolioFactory;
     IERC4626 public immutable _vault;
     uint8 public immutable _assetDecimals;
+    // One whole share in share-wei (10 ** share decimals); share decimals need not be 18
+    uint256 public immutable _shareUnit;
 
     error ReentrantCall();
 
@@ -57,6 +59,7 @@ contract ERC4626ClaimingFacet is AccessControl {
         _portfolioFactory = PortfolioFactory(portfolioFactory);
         _vault = IERC4626(vault);
         _assetDecimals = IERC20Metadata(IERC4626(vault).asset()).decimals();
+        _shareUnit = 10 ** IERC20Metadata(vault).decimals();
     }
 
     // ============ Yield Claiming ============
@@ -65,12 +68,13 @@ contract ERC4626ClaimingFacet is AccessControl {
      * @dev Claim vault yield - redeems shares representing accumulated yield.
      *      Returns the underlying assets to this contract for further processing.
      *
-     * @param minAssetsPerShare Minimum asset-native wei delivered per 1.0 share
-     *        burned (per 1e18 share wei). Caller pre-scales to the asset's own
-     *        decimals. Examples:
-     *          - WETH (18d) vault: pass 0.99e18 → require ≥ 0.99 WETH per share.
-     *          - USDC (6d) vault: pass 0.99e6  → require ≥ 0.99 USDC per share.
-     *        Enforced as: minAssetsOut = (sharesToRedeem * minAssetsPerShare) / 1e18.
+     * @param minAssetsPerShare Minimum asset-native wei delivered per 1.0 whole
+     *        share burned. Caller pre-scales to the asset's own decimals.
+     *        Examples:
+     *          - WETH (18d) vault: pass 0.99e18 to require >= 0.99 WETH per share.
+     *          - USDC (6d) vault: pass 0.99e6  to require >= 0.99 USDC per share.
+     *        Enforced as: minAssetsOut = (sharesToRedeem * minAssetsPerShare) / _shareUnit,
+     *        where _shareUnit = 10 ** share decimals (not assumed to be 18).
      *        Must be > 0; callers cannot opt out of slippage protection.
      *
      * @dev Defense-in-depth: an 85%-of-previewRedeem absolute floor rejects
@@ -106,8 +110,8 @@ contract ERC4626ClaimingFacet is AccessControl {
         uint256 previewedAssets = IERC4626(vault).previewRedeem(sharesToRedeem);
         uint256 assetsReceived = IERC4626(vault).redeem(sharesToRedeem, address(this), address(this));
 
-        // Caller-side floor (primary defense)
-        uint256 minAssetsOut = (sharesToRedeem * minAssetsPerShare) / 1e18;
+        // Caller-side floor (primary defense). Normalize by the real share unit.
+        uint256 minAssetsOut = (sharesToRedeem * minAssetsPerShare) / _shareUnit;
         require(assetsReceived >= minAssetsOut, "Slippage");
 
         // Absolute floor: 85% of previewRedeem — rejects vaults under-delivering vs their own quote
