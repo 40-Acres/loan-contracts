@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardTransientUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
@@ -23,7 +23,7 @@ import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
  * @dev Combines vault functionality with debt token accounting for reward distribution
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
-contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardUpgradeable, ILendingPool {
+contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardTransientUpgradeable, ILendingPool {
     using SafeERC20 for IERC20;
 
     // ============ Events ============
@@ -175,7 +175,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         __ERC20_init(_name, _symbol);
         __UUPSUpgradeable_init();
         __Ownable2Step_init();
-        __ReentrancyGuard_init();
         _transferOwnership(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -822,12 +821,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @notice Public wrapper to settle rewards for any user
      * @param user The user whose rewards to settle
      */
-    function settleRewards(address user) external {
+    function settleRewards(address user) external nonReentrant {
         _settleRewards(user);
     }
 
     // ============ Core Vault Functions ============
-    function repay(uint256 amount) external whenNotPaused {
+    function repay(uint256 amount) external nonReentrant whenNotPaused {
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -840,7 +839,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         emit Repaid(msg.sender, amountToRepay, $.debtBalance[msg.sender]);
     }
 
-    function depositRewards(uint256 amount) external whenNotPaused onlyPortfolio {
+    function depositRewards(uint256 amount) external nonReentrant whenNotPaused onlyPortfolio {
         if (amount == 0) revert ZeroAmount();
         require(_getStorage().debtBalance[msg.sender] > 0, "No debt to repay");
 
@@ -911,7 +910,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ ILendingPool Implementation ============
-    function borrowFromPortfolio(uint256 amount) external onlyPortfolio whenNotPaused returns (uint256 originationFee) {
+    function borrowFromPortfolio(uint256 amount) external nonReentrant onlyPortfolio whenNotPaused returns (uint256 originationFee) {
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -931,7 +930,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         emit Borrowed(msg.sender, amount);
     }
 
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused returns (uint256 actualPaid) {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external nonReentrant whenNotPaused returns (uint256 actualPaid) {
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -1121,7 +1120,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         }
     }
 
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override nonReentrant {
         _processGlobalVesting();
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -1139,7 +1138,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address _owner,
         uint256 assets,
         uint256 shares
-    ) internal virtual override {
+    ) internal virtual override nonReentrant {
         _processGlobalVesting();
 
         DynamicFeesVaultStorage storage $ = _getStorage();
