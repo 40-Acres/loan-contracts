@@ -435,8 +435,8 @@ contract YieldBasisMaxLoanLtvBranchingTest is MaxLoanBranchingBase {
     }
 
     /// @notice Pricing pivot — collateral value is shares * pps / 1e18.
-    ///         When ltv path is active and pps moves, the result must move
-    ///         linearly. Locks the pricing-then-branch composition.
+    ///         When ltv path is active and pps rises, borrow capacity is capped
+    ///         at cost basis: appreciation is reserved for harvest, not borrowable.
     function test_yb_ltv_respondsToPricePerShareChanges() public {
         vm.prank(OWNER);
         loanConfig.setLtv(7000);
@@ -445,9 +445,9 @@ contract YieldBasisMaxLoanLtvBranchingTest is MaxLoanBranchingBase {
         (, uint256 m1) = h.getMaxLoan(address(cfg), address(ybLp), address(underlyingAsset));
         assertEq(m1, 7e18, "pps=1: 70% of 10e18");
 
-        ybLp.setPricePerShare(2e18); // collateral value doubles
+        ybLp.setPricePerShare(2e18); // pps doubles; appreciation not borrowable
 
         (, uint256 m2) = h.getMaxLoan(address(cfg), address(ybLp), address(underlyingAsset));
-        assertEq(m2, 14e18, "pps=2: 70% of 20e18");
+        assertEq(m2, 7e18, "pps=2: capped at cost basis, 70% of 10e18");
     }
 }
