@@ -196,6 +196,15 @@ library YieldBasisCollateralManager {
         totalValue = _resolveCollateralValue(vault, underlying, shares);
     }
 
+    /// @dev Borrow/health basis: appreciation above cost basis is reserved for
+    ///      yield, so cap at min(depositedAssetValue, current). Falls to current
+    ///      on depreciation so health still reacts to losses. Both sides 18-dec.
+    function getBorrowableCollateralValue(address vault, address underlying) internal view returns (uint256) {
+        uint256 current = getTotalCollateralValue(vault, underlying);
+        uint256 basis = _getStorage().depositedAssetValue;
+        return current < basis ? current : basis;
+    }
+
     function getCollateral(address vault, address underlying) public view returns (
         uint256 shares,
         uint256 depositedAssetValue,
@@ -288,7 +297,7 @@ library YieldBasisCollateralManager {
         address vault,
         address underlying
     ) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        uint256 totalCollateralValue = getTotalCollateralValue(vault, underlying);
+        uint256 totalCollateralValue = getBorrowableCollateralValue(vault, underlying);
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
 

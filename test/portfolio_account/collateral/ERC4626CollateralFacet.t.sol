@@ -481,7 +481,7 @@ contract ERC4626CollateralFacetTest is Test {
         assertEq(newValue, INITIAL_DEPOSIT + yieldAmount);
     }
 
-    function testMaxLoanIncreasesWithYield() public {
+    function testMaxLoanCappedAtCostBasisWithYield() public {
         uint256 shares = prepareUserWithVaultShares(INITIAL_DEPOSIT);
         transferSharesToPortfolio(shares);
         addCollateralViaMulticall(shares);
@@ -498,10 +498,10 @@ contract ERC4626CollateralFacetTest is Test {
 
         (, uint256 newMaxLoanIgnoreSupply) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
 
-        // Max loan should have increased proportionally
-        assertGt(newMaxLoanIgnoreSupply, initialMaxLoanIgnoreSupply);
-        // New max = (1000 + 100) * 70% = 770
-        assertEq(newMaxLoanIgnoreSupply, 770e6);
+        // Appreciation is reserved for harvest, not borrowable: max loan stays at cost basis.
+        assertEq(newMaxLoanIgnoreSupply, initialMaxLoanIgnoreSupply);
+        // Capped at min(1000, 1100) * 70% = 700
+        assertEq(newMaxLoanIgnoreSupply, 700e6);
     }
 
     // ============ Debt and Unpaid Fees Tests ============

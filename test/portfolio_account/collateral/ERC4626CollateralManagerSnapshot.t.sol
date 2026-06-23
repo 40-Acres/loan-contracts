@@ -575,16 +575,16 @@ contract ERC4626SnapshotTest is Test {
         vm.stopPrank();
 
         // Now collateral value = 1200 USDC (1000 deposit + 200 yield)
-        // maxLoanIgnoreSupply = 1200 * 70% = 840
-        // debt = 650. 650 < 840, so yield claiming should work
+        // maxLoanIgnoreSupply = min(1000, 1200) * 70% = 700 (appreciation reserved for harvest)
+        // debt = 650. 650 < 700, so yield claiming should work
 
         // Verify the collateral value increased with yield
         uint256 collateralAfterYield = ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterYield, 1200e6, "Collateral should include yield");
 
-        // Verify maxLoan accounts for the yield
+        // Verify maxLoan is capped at cost basis, not the appreciated value
         (, uint256 maxLoanIgnoreSupply) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
-        assertEq(maxLoanIgnoreSupply, 840e6, "MaxLoan should reflect 70% of 1200");
+        assertEq(maxLoanIgnoreSupply, 700e6, "MaxLoan should cap at 70% of cost basis 1000");
 
         // Debt is still within new maxLoan
         uint256 debt = ERC4626CollateralFacet(_portfolioAccount).getTotalDebt();

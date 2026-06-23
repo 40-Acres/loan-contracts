@@ -123,6 +123,15 @@ library ERC4626CollateralManager {
         totalValue = _resolveCollateralValue(vault, data.shares);
     }
 
+    /// @dev Borrow/health basis: appreciation above cost basis is reserved for
+    ///      yield, so cap at min(depositedAssetValue, current). Falls to current
+    ///      on depreciation so health still reacts to losses.
+    function getBorrowableCollateralValue(address vault) internal view returns (uint256) {
+        uint256 current = getTotalCollateralValue(vault);
+        uint256 basis = _getStorage().depositedAssetValue;
+        return current < basis ? current : basis;
+    }
+
     /**
      * @dev Get collateral info
      */
@@ -236,7 +245,7 @@ library ERC4626CollateralManager {
      * @dev Get the maximum loan amount based on collateral value
      */
     function getMaxLoan(address portfolioFactoryConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        uint256 totalCollateralValue = getTotalCollateralValue(vault);
+        uint256 totalCollateralValue = getBorrowableCollateralValue(vault);
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
 
         uint256 ltv = loanConfig.getLtv();
