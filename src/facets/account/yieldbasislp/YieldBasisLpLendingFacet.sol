@@ -26,6 +26,21 @@ contract YieldBasisLpLendingFacet is AccessControl {
     address public immutable _lpToken;
     address public immutable _underlying;
 
+    error ReentrantCall();
+
+    // Shared with the claiming facet so harvest and repay cannot interleave.
+    bytes32 private constant _LENDING_REENTRANCY_SLOT = keccak256("fortyacres.lending.reentrancy");
+
+    modifier nonReentrant() {
+        bytes32 slot = _LENDING_REENTRANCY_SLOT;
+        uint256 status;
+        assembly { status := sload(slot) }
+        if (status == 2) revert ReentrantCall();
+        assembly { sstore(slot, 2) }
+        _;
+        assembly { sstore(slot, 1) }
+    }
+
     event Borrowed(uint256 amount, uint256 amountAfterFees, uint256 originationFee, address indexed owner);
     event Paid(uint256 amount, address indexed owner);
     event TopUpSet(bool topUpEnabled, address indexed owner);
@@ -70,7 +85,7 @@ contract YieldBasisLpLendingFacet is AccessControl {
     /**
      * @dev Pay back debt
      */
-    function pay(uint256 amount) external returns (uint256 excess) {
+    function pay(uint256 amount) external nonReentrant returns (uint256 excess) {
         address from = msg.sender == address(_portfolioFactory.portfolioManager())
             ? _portfolioFactory.ownerOf(address(this))
             : msg.sender;
