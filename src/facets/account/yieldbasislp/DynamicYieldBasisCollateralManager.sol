@@ -79,10 +79,30 @@ library DynamicYieldBasisCollateralManager {
      *      up to 18-dec so the min() compares like with like. Output is always
      *      18-dec -- the convention every downstream caller already expects.
      */
-    function _resolveCollateralValue(address vault, address underlying, uint256 shares) internal view returns (uint256) {
-        if (shares == 0 || vault == address(0)) return 0;
-        uint256 fundamental = (shares * IYieldBasisLP(vault).pricePerShare()) / 1e18;
-        uint256 withdrawable = IYieldBasisLP(vault).preview_withdraw(shares);
+    ///      revertOnFail governs a reverting pricePerShare/preview_withdraw (e.g.
+    ///      paused YB market): borrow-side reads pass true and re-bubble the
+    ///      revert; the repay path passes false and gets ok=false so it can skip
+    ///      the shortfall snapshot instead of blocking debt reduction.
+    function _resolveCollateralValue(address vault, address underlying, uint256 shares, bool revertOnFail) internal view returns (uint256 value, bool ok) {
+        if (shares == 0 || vault == address(0)) return (0, true);
+        uint256 fundamental;
+        uint256 withdrawable;
+        try IYieldBasisLP(vault).pricePerShare() returns (uint256 pps) {
+            fundamental = (shares * pps) / 1e18;
+        } catch (bytes memory reason) {
+            if (revertOnFail) {
+                assembly { revert(add(reason, 0x20), mload(reason)) }
+            }
+            return (0, false);
+        }
+        try IYieldBasisLP(vault).preview_withdraw(shares) returns (uint256 w) {
+            withdrawable = w;
+        } catch (bytes memory reason) {
+            if (revertOnFail) {
+                assembly { revert(add(reason, 0x20), mload(reason)) }
+            }
+            return (0, false);
+        }
         if (underlying != address(0)) {
             uint8 dec = IERC20Metadata(underlying).decimals();
             if (dec < 18) {
@@ -91,7 +111,7 @@ library DynamicYieldBasisCollateralManager {
                 withdrawable = withdrawable / (10 ** (dec - 18));
             }
         }
-        return fundamental < withdrawable ? fundamental : withdrawable;
+        return (fundamental < withdrawable ? fundamental : withdrawable, true);
     }
 
     /**
@@ -110,14 +130,26 @@ library DynamicYieldBasisCollateralManager {
     ///      shares converted to LP via `convertToAssets`. Shared between the
     ///      mutating ratchet in `_snapshotIfNeeded` and the in-memory clamp in
     ///      `getTotalCollateralValue` so the two paths cannot drift.
-    function _actualLp(address vault, address gauge) internal view returns (uint256 lp) {
+    ///      revertOnFail governs a reverting gauge convertToAssets (e.g. paused
+    ///      gauge): borrow-side reads pass true and re-bubble the revert; the
+    ///      repay path passes false and gets ok=false so it can skip the ratchet
+    ///      and snapshot instead of blocking debt reduction.
+    function _actualLp(address vault, address gauge, bool revertOnFail) internal view returns (uint256 lp, bool ok) {
         lp = IERC20(vault).balanceOf(address(this));
         if (gauge != address(0)) {
             uint256 gaugeShares = IERC20(gauge).balanceOf(address(this));
             if (gaugeShares > 0) {
-                lp += IYieldBasisGauge(gauge).convertToAssets(gaugeShares);
+                try IYieldBasisGauge(gauge).convertToAssets(gaugeShares) returns (uint256 assets) {
+                    lp += assets;
+                } catch (bytes memory reason) {
+                    if (revertOnFail) {
+                        assembly { revert(add(reason, 0x20), mload(reason)) }
+                    }
+                    return (0, false);
+                }
             }
         }
+        ok = true;
     }
 
     function addCollateral(address portfolioFactoryConfig, address vault, address gauge, address underlying, uint256 shares) public {
@@ -134,7 +166,7 @@ library DynamicYieldBasisCollateralManager {
         _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying, shares);
 
         uint256 requiredBalance = data.shares + shares;
-        uint256 actualBalance = _actualLp(vault, gauge);
+        (uint256 actualBalance, ) = _actualLp(vault, gauge, true);
         if (actualBalance < requiredBalance) {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
@@ -190,10 +222,10 @@ library DynamicYieldBasisCollateralManager {
         DynamicYieldBasisCollateralData storage data = _getStorage();
         uint256 shares = data.shares;
         if (shares > 0 && data.gauge != address(0)) {
-            uint256 actual = _actualLp(vault, data.gauge);
+            (uint256 actual, ) = _actualLp(vault, data.gauge, true);
             if (shares > actual) shares = actual;
         }
-        totalValue = _resolveCollateralValue(vault, underlying, shares);
+        (totalValue, ) = _resolveCollateralValue(vault, underlying, shares, true);
     }
 
     /// @dev Borrow/health basis: appreciation above cost basis is reserved for
@@ -272,7 +304,7 @@ library DynamicYieldBasisCollateralManager {
         address underlying,
         uint256 amount
     ) public returns (uint256 excess) {
-        _snapshotIfNeeded(portfolioFactoryConfig, vault, underlying);
+        _snapshotIfNeededRepay(portfolioFactoryConfig, vault, underlying);
         DynamicYieldBasisCollateralData storage data = _getStorage();
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
@@ -301,15 +333,15 @@ library DynamicYieldBasisCollateralManager {
         return excess;
     }
 
-    function getMaxLoan(
+    /// @dev maxLoanIgnoreSupply from a collateral value. Single source of truth
+    ///      shared by getMaxLoan and the repay-path shortfall computation. Reads
+    ///      lending-asset config only, never the collateral source.
+    function _maxLoanIgnoreSupply(
         address portfolioFactoryConfig,
-        address vault,
-        address underlying
-    ) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        uint256 totalCollateralValue = getBorrowableCollateralValue(vault, underlying);
+        address underlying,
+        uint256 totalCollateralValue
+    ) internal view returns (uint256 maxLoanIgnoreSupply) {
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
-        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-
         uint256 ltv = loanConfig.getLtv();
 
         if (ltv == 0) {
@@ -326,6 +358,7 @@ library DynamicYieldBasisCollateralManager {
             // are in lending-asset native decimals, so we (a) enforce that lending asset
             // matches the LP underlying and (b) rescale to lending-asset decimals before
             // applying the LTV bps. Rescale floors -- favors protocol.
+            ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
             address lendingAsset = lendingPool.lendingAsset();
             if (lendingAsset != underlying) revert LtvRequiresLikeToLike();
             uint8 ld = IERC20Metadata(lendingAsset).decimals();
@@ -336,6 +369,18 @@ library DynamicYieldBasisCollateralManager {
                     : totalCollateralValue * (10 ** (ld - 18)));
             maxLoanIgnoreSupply = (valueNative * ltv) / 10000;
         }
+    }
+
+    function getMaxLoan(
+        address portfolioFactoryConfig,
+        address vault,
+        address underlying
+    ) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
+        uint256 totalCollateralValue = getBorrowableCollateralValue(vault, underlying);
+        ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
+        ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
+
+        maxLoanIgnoreSupply = _maxLoanIgnoreSupply(portfolioFactoryConfig, underlying, totalCollateralValue);
 
         uint256 outstandingCapital = lendingPool.activeAssets();
 
@@ -428,7 +473,7 @@ library DynamicYieldBasisCollateralManager {
             revert GaugeMismatch(data.gauge, gauge);
         }
         if (data.shares == 0 || data.gauge == address(0)) return;
-        uint256 actual = _actualLp(vault, data.gauge);
+        (uint256 actual, ) = _actualLp(vault, data.gauge, true);
         if (data.shares <= actual) return;
         data.depositedAssetValue = (data.depositedAssetValue * actual) / data.shares;
         data.shares = actual;
@@ -486,7 +531,7 @@ library DynamicYieldBasisCollateralManager {
         data.snapshotBlockNumber = block.number;
 
         if (data.shares > 0) {
-            uint256 actual = _actualLp(vault, data.gauge);
+            (uint256 actual, ) = _actualLp(vault, data.gauge, true);
             uint256 effective = actual > incomingShares ? actual - incomingShares : 0;
             if (data.shares > effective) {
                 data.depositedAssetValue = (data.depositedAssetValue * effective) / data.shares;
@@ -500,17 +545,49 @@ library DynamicYieldBasisCollateralManager {
         data.startShortfall = _currentShortfall(portfolioFactoryConfig, vault, underlying);
     }
 
+    /// @dev Repay-path snapshot. Ratchets shares and records the shortfall baseline
+    ///      only if the collateral reads succeed; a paused gauge (ratchet read) or
+    ///      paused YB market (shortfall read) skips the snapshot instead of blocking
+    ///      the repay. Debt is read live, so no sync is needed. A later borrow-side op
+    ///      in the same block re-attempts the strict reads and still reverts. The
+    ///      snapshot block is marked only after both reads succeed. Shortfall uses raw
+    ///      debt, matching _currentShortfall.
+    function _snapshotIfNeededRepay(address portfolioFactoryConfig, address vault, address underlying) internal {
+        DynamicYieldBasisCollateralData storage data = _getStorage();
+        if (data.snapshotBlockNumber == block.number) return;
+
+        if (data.shares > 0) {
+            (uint256 actual, bool lpOk) = _actualLp(vault, data.gauge, false);
+            if (!lpOk) return;
+            if (data.shares > actual) {
+                data.depositedAssetValue = (data.depositedAssetValue * actual) / data.shares;
+                data.shares = actual;
+                if (actual == 0) {
+                    _notifyCollateralRemoved(portfolioFactoryConfig, vault);
+                }
+            }
+        }
+
+        (uint256 collateralValue, bool valOk) = _resolveCollateralValue(vault, underlying, data.shares, false);
+        if (!valOk) return;
+        // Mirror getBorrowableCollateralValue: cap at cost basis so the repay
+        // baseline matches the borrow-side shortfall computation.
+        uint256 basis = data.depositedAssetValue;
+        uint256 borrowable = collateralValue < basis ? collateralValue : basis;
+        uint256 maxLoanIgnoreSupply = _maxLoanIgnoreSupply(portfolioFactoryConfig, underlying, borrowable);
+        uint256 debt = getTotalDebt(portfolioFactoryConfig);
+        data.snapshotBlockNumber = block.number;
+        data.startShortfall = debt > maxLoanIgnoreSupply ? debt - maxLoanIgnoreSupply : 0;
+    }
+
     /**
-     * @dev Burn `shares` of tracked LP for yield harvest. depositedAssetValue is
-     *      held fixed; the remaining LP must still cover the original basis,
-     *      enforced by the "Would remove principal" check. Holding the basis
-     *      fixed stops a re-harvest at unchanged pps from walking principal out
-     *      as fake yield.
-     *
-     *      Gated by isAuthorizedCaller. The PortfolioManager is intentionally NOT
-     *      bypassed; it does not call this path. An unauthorized caller could
-     *      otherwise burn share tracking without burning real LP and unlock
-     *      fictitious borrow capacity.
+     * @dev Reduce tracked LP shares to reflect harvested yield, holding
+     *      depositedAssetValue fixed. Accounting only; the paired LP burn lives in
+     *      the claiming facet. Three checks bound any caller: remaining basis must
+     *      still cover depositedAssetValue (no principal removal), the fixed basis
+     *      blocks re-harvesting principal as fake yield at flat pps, and debt must
+     *      stay within max-loan. isAuthorizedCaller-gated; a standalone call can
+     *      only desync tracking downward (recoverable via addCollateral), never up.
      */
     function removeSharesForYield(
         address portfolioFactoryConfig,
