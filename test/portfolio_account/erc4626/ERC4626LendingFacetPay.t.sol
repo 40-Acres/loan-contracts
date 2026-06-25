@@ -41,6 +41,8 @@ import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626Le
 import {DeployERC4626CollateralFacet} from "../../../script/portfolio_account/facets/DeployERC4626CollateralFacet.s.sol";
 import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -94,7 +96,7 @@ contract ERC4626LendingFacetPayTest is Test {
         _portfolioFactory = factory;
         _facetRegistry = registry;
 
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig configDeployer = new DeployERC4626PortfolioFactoryConfig();
         (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         _underlyingAsset = new MockERC20("Mock USDC", "mUSDC", 6);
@@ -116,6 +118,7 @@ contract ERC4626LendingFacetPayTest is Test {
         _loanConfig.setZeroBalanceFee(100);
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
+        ERC4626PortfolioFactoryConfig(address(_portfolioFactoryConfig)).setCollateralVault(address(_mockVault));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
 
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);

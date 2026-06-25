@@ -8,6 +8,7 @@ import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
+import {IERC4626CollateralVaultConfig} from "./ERC4626PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
@@ -28,6 +29,7 @@ library ERC4626CollateralManager {
     error NotPortfolioManager();
     error InsufficientShareBalance(uint256 required, uint256 actual);
     error BelowMinimumCollateral(uint256 remaining, uint256 minimum);
+    error VaultMismatch(address stored, address provided);
 
     event ERC4626CollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event ERC4626CollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -353,7 +355,14 @@ library ERC4626CollateralManager {
         _getStorage().debt = lendingPool.getDebtBalance(address(this));
     }
 
+    /// @dev Revert if the facet vault disagrees with the set-once canonical vault in config; skipped while unset.
+    function _enforceVault(address portfolioFactoryConfig, address vault) internal view {
+        address canonical = IERC4626CollateralVaultConfig(portfolioFactoryConfig).getCollateralVault();
+        if (canonical != address(0) && canonical != vault) revert VaultMismatch(canonical, vault);
+    }
+
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault) internal {
+        _enforceVault(portfolioFactoryConfig, vault);
         _syncDebt(portfolioFactoryConfig);
         ERC4626CollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber != block.number) {
