@@ -33,6 +33,8 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
@@ -142,7 +144,7 @@ contract ERC4626UtilizationCapTest is Test {
         (PortfolioFactory f, ) = pm.deployFactory(keccak256("erc4626-utilcap-test"));
         factory = f;
 
-        DeployPortfolioFactoryConfig deployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig deployer = new DeployERC4626PortfolioFactoryConfig();
         (cfg, , loanConfig, ) = deployer.deploy(address(factory), OWNER);
 
         usdc = new MockERC20("USDC", "USDC", 6);
@@ -151,6 +153,7 @@ contract ERC4626UtilizationCapTest is Test {
         pool = new MockUtilPool4626(address(usdc), address(factory));
         cfg.setLoanContract(address(pool));
         factory.setPortfolioFactoryConfig(address(cfg));
+        ERC4626PortfolioFactoryConfig(address(cfg)).setCollateralVault(address(collatVault));
 
         // Like-to-like LTV path: lending asset == collateral asset.
         loanConfig.setLtv(7000); // 70%
