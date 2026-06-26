@@ -36,6 +36,8 @@ import {DeployERC4626CollateralFacet} from "../../../script/portfolio_account/fa
 import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
 import {DeployERC4626ClaimingFacet} from "../../../script/portfolio_account/facets/DeployERC4626ClaimingFacet.s.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -102,7 +104,7 @@ contract ERC4626SnapshotTest is Test {
         _facetRegistry = facetRegistry;
 
         // Deploy config contracts
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig configDeployer = new DeployERC4626PortfolioFactoryConfig();
         (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         // Deploy mock underlying asset (USDC-like with 6 decimals)
@@ -132,6 +134,7 @@ contract ERC4626SnapshotTest is Test {
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
+        ERC4626PortfolioFactoryConfig(address(_portfolioFactoryConfig)).setCollateralVault(address(_mockVault));
 
         // Set authorized caller
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);

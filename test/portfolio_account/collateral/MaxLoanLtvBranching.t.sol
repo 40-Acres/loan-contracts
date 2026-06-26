@@ -57,6 +57,8 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
@@ -152,7 +154,7 @@ abstract contract MaxLoanBranchingBase is Test {
         factory = f;
         registry = r;
 
-        DeployPortfolioFactoryConfig deployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig deployer = new DeployERC4626PortfolioFactoryConfig();
         (cfg, , loanConfig, ) = deployer.deploy(address(factory), OWNER);
 
         lendingAsset = new MockERC20("USDC", "USDC", 6);
@@ -191,6 +193,9 @@ contract ERC4626MaxLoanLtvBranchingTest is MaxLoanBranchingBase {
         underlyingAsset.mint(address(this), 1_000_000e18);
         underlyingAsset.approve(address(vault), 1_000_000e18);
         vault.deposit(1_000_000e18, address(h));
+
+        vm.prank(OWNER);
+        ERC4626PortfolioFactoryConfig(address(cfg)).setCollateralVault(address(vault));
     }
 
     function _seedCollateral(uint256 shares) internal {

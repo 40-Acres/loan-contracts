@@ -29,6 +29,8 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
@@ -180,7 +182,7 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
         factory = f;
         registry = r;
 
-        DeployPortfolioFactoryConfig deployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig deployer = new DeployERC4626PortfolioFactoryConfig();
         (cfg, , loanConfig, ) = deployer.deploy(address(factory), OWNER);
 
         collatAsset = new MockERC20("CASS", "CASS", 18);
@@ -194,6 +196,7 @@ contract ERC4626CollateralManagerSyncRegressionTest is Test {
         loanConfig.setLtv(LTV_BPS); // like-to-like ERC4626 market uses LTV branch
         cfg.setLoanContract(address(pool));
         factory.setPortfolioFactoryConfig(address(cfg));
+        ERC4626PortfolioFactoryConfig(address(cfg)).setCollateralVault(address(vault));
 
         pm.setAuthorizedCaller(AUTH, true);
         MANAGER = address(pm);

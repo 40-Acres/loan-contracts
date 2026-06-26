@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 
-/// @dev Minimal probe interface: managers try/catch this so base configs (no such function) skip enforcement.
+/// @dev Canonical collateral vault accessor
 interface IERC4626CollateralVaultConfig {
     function getCollateralVault() external view returns (address);
 }
