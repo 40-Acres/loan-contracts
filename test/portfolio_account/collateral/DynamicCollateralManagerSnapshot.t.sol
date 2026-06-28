@@ -178,8 +178,13 @@ contract MockDynamicVault {
     /// @dev Mirrors the IERC4626 surface the production managers now call to derive
     /// the cap denominator (`vault.totalAssets() * loanConfig.maxUtilizationBps / 10000`).
     /// Returns liquid balance + active loans -- vesting/escrow ignored in the mock.
-    function totalAssets() external view returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         return _underlyingAsset.balanceOf(address(this)) + totalLoaned;
+    }
+
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view returns (uint256) {
+        return totalAssets();
     }
 
     function depositRewards(uint256) external {}

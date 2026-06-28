@@ -100,6 +100,7 @@ contract DynamicERC4626RewardsProcessingFacetTest is Test {
     address public _owner = address(0x40FecA5f7156030b78200450852792ea93f7c6cd);
 
     uint256 constant INITIAL_DEPOSIT = 1000e6;
+    uint256 constant SETUP_FUND_BLOCK = 100;
     uint256 constant BORROW_AMOUNT = 30e6;
     uint256 constant REWARDS_AMOUNT = 10e6;
 
@@ -165,10 +166,12 @@ contract DynamicERC4626RewardsProcessingFacetTest is Test {
 
         _portfolioAccount = _portfolioFactory.createAccount(_user);
 
-        // Fund lending vault so there's borrow capacity.
+        // Fund vault, then settle one block so it counts toward borrow capacity.
+        vm.roll(SETUP_FUND_BLOCK);
         _underlyingAsset.mint(address(this), 10_000e6);
         _underlyingAsset.approve(_lendingVault, 10_000e6);
         DynamicFeesVault(payable(_lendingVault)).deposit(10_000e6, address(this));
+        vm.roll(SETUP_FUND_BLOCK + 1);
     }
 
     function _setupLendingInfrastructure() internal {

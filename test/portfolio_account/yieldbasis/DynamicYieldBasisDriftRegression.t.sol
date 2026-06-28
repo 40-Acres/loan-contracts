@@ -167,8 +167,13 @@ contract MockDynPool {
     function lendingVault() external view returns (address) { return address(this); }
     function activeAssets() external view returns (uint256) { return _activeAssetsToReport; }
     function asset() external view returns (address) { return _asset; }
-    function totalAssets() external view returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         return IERC20(_asset).balanceOf(address(this)) + _activeAssetsToReport;
+    }
+
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view returns (uint256) {
+        return totalAssets();
     }
 
     function borrowFromPortfolio(uint256 /*amount*/) external pure returns (uint256) { return 0; }

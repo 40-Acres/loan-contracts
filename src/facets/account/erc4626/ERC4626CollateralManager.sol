@@ -287,7 +287,7 @@ library ERC4626CollateralManager {
         // Supply source: vault.totalAssets() (already accounts for vesting/escrowed liabilities).
         // Cap source: LoanConfig.getMaxUtilizationBps() (single home for the cap; vault no
         // longer enforces, only the manager-side overSuppliedVaultDebt flag does).
-        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
+        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).borrowableTotalAssets();
         uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
 
         uint256 currentLoanBalance = getTotalDebt();

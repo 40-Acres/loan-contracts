@@ -40,6 +40,11 @@ contract MockERC4626 is ERC20, IERC4626 {
         return _asset.balanceOf(address(this));
     }
 
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view virtual returns (uint256) {
+        return totalAssets();
+    }
+
     function convertToShares(uint256 assets) public view virtual override returns (uint256) {
         uint256 supply = totalSupply();
         uint256 total = totalAssets();
