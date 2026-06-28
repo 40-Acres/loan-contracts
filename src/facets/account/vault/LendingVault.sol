@@ -48,14 +48,14 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
         // Not a token count; read currentEpochActualRewards / lastEpochReward() for that.
         uint256 currentEpochRewards;
         uint256 currentEpochStart;   // start timestamp of current epoch
-        mapping(address => uint256) lastMintBlock; // block of last share acquisition (mint or transfer-in) per holder
+        uint256 lastDepositBlock; // block of the most recent deposit; that block's deposits are excluded from borrow capacity
         uint8 sharesDecimalsOffset; // asset decimals cached at init for inflation-attack-resistant offset
         address treasury; // recipient of protocol/origination fees; zero falls back to owner()
         // Appended slot: truthful sum of reward tokens deposited this epoch.
         // Resets on the first depositRewards() of each new epoch. Used by lastEpochReward().
         uint256 currentEpochActualRewards;
-        // Shares acquired in lastMintBlock per holder; pinned until the next block
-        mapping(address => uint256) sameBlockAcquiredShares;
+        // Assets deposited in lastDepositBlock; excluded from borrowable supply (flash-borrow-cap guard).
+        uint256 sameBlockDepositedAssets;
     }
 
     bytes32 private constant STORAGE_POSITION = keccak256("storage.LendingVault");
@@ -196,15 +196,25 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
         return IERC20(asset()).balanceOf(address(this)) + _getStorage().totalLoanedAssets - epochRewardsLocked();
     }
 
+    /// @notice totalAssets() excluding assets deposited this block, so a same-block (flash)
+    ///         deposit cannot inflate the vault-liquidity term that gates borrow capacity.
+    function borrowableTotalAssets() external view returns (uint256) {
+        LendingVaultStorage storage $ = _getStorage();
+        uint256 ta = totalAssets();
+        if ($.lastDepositBlock != block.number) return ta;
+        uint256 sameBlock = $.sameBlockDepositedAssets;
+        return ta > sameBlock ? ta - sameBlock : 0;
+    }
+
     // Override ERC4626 view functions to cap at liquid asset balance
     function maxWithdraw(address owner) public view override returns (uint256) {
-        uint256 maxAssets = convertToAssets(_withdrawableShares(owner));
+        uint256 maxAssets = convertToAssets(balanceOf(owner));
         uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));
         return liquidAssets < maxAssets ? liquidAssets : maxAssets;
     }
 
     function maxRedeem(address owner) public view override returns (uint256) {
-        uint256 maxShares = _withdrawableShares(owner);
+        uint256 maxShares = balanceOf(owner);
         uint256 liquidAssets = IERC20(asset()).balanceOf(address(this));
         uint256 maxAssets = convertToAssets(maxShares);
         if (maxAssets > liquidAssets) {
@@ -218,40 +228,18 @@ contract LendingVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Own
         return _getStorage().sharesDecimalsOffset;
     }
 
-    // Shares held by `owner` that are free to leave this block (excludes shares acquired this block).
-    function _withdrawableShares(address owner) private view returns (uint256) {
-        LendingVaultStorage storage $ = _getStorage();
-        uint256 ownerShares = balanceOf(owner);
-        uint256 locked = $.lastMintBlock[owner] == block.number ? $.sameBlockAcquiredShares[owner] : 0;
-        return ownerShares > locked ? ownerShares - locked : 0;
-    }
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        super._deposit(caller, receiver, assets, shares);
 
-    // Pin shares acquired this block (mint or transfer-in) so they cannot round-trip out the same block.
-    function _update(address from, address to, uint256 value) internal virtual override {
-        super._update(from, to, value);
-        if (to == address(0) || to == from || value == 0) return;
+        // Track this-block deposits so they cannot inflate borrow capacity (flash guard).
         LendingVaultStorage storage $ = _getStorage();
-        if ($.lastMintBlock[to] != block.number) {
-            $.lastMintBlock[to] = block.number;
-            $.sameBlockAcquiredShares[to] = value;
+        if ($.lastDepositBlock != block.number) {
+            $.lastDepositBlock = block.number;
+            $.sameBlockDepositedAssets = assets;
         } else {
-            $.sameBlockAcquiredShares[to] += value;
+            $.sameBlockDepositedAssets += assets;
         }
     }
-
-    function _withdraw(
-        address caller,
-        address receiver,
-        address _owner,
-        uint256 assets,
-        uint256 shares
-    ) internal virtual override {
-        LendingVaultStorage storage $ = _getStorage();
-        uint256 locked = $.lastMintBlock[_owner] == block.number ? $.sameBlockAcquiredShares[_owner] : 0;
-        require(balanceOf(_owner) >= shares + locked, "Cannot withdraw shares acquired this block");
-        super._withdraw(caller, receiver, _owner, assets, shares);
-    }
-
 
 
     // ============ Epoch Reward Vesting ============

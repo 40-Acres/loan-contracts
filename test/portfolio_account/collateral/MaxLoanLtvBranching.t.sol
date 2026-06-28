@@ -99,8 +99,13 @@ contract MaxLoanMockPool {
 
     // totalAssets() shim -- managers call ILendingVault(lendingPool.lendingVault()).totalAssets()
     // from getMaxLoan. Mock plays both pool and vault, so report idle + active.
-    function totalAssets() external view returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         return IERC20(_asset).balanceOf(address(this)) + _activeAssets;
+    }
+
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view returns (uint256) {
+        return totalAssets();
     }
 }
 

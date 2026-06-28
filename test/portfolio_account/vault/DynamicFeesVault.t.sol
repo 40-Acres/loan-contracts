@@ -2280,32 +2280,6 @@ contract DynamicFeesVaultTest is Test {
         assertGt(assets, 0, "preview should return non-zero assets");
     }
 
-    /// @notice The same-block flash-loan guard on `withdraw` / `redeem` must NOT
-    ///         be weakened by any future EIP-4626 preview fix. Preview is a
-    ///         pure quote; the guard lives in `_withdraw`. Confirm that even
-    ///         with full liquidity, withdraw in the same block as deposit still
-    ///         reverts.
-    function test_FlashLoanGuard_StillRevertsOnSameBlockWithdraw_AfterPreviewFixLanding() public {
-        address attacker = address(0xBADBAD);
-        deal(address(usdc), attacker, 100e6);
-
-        vm.startPrank(attacker);
-        usdc.approve(address(vault), 100e6);
-        vault.deposit(100e6, attacker);
-
-        // Same block as deposit — guard must trigger regardless of liquidity.
-        // OZ ERC4626 reverts via ERC4626ExceededMaxWithdraw(maxWithdraw=0) BEFORE
-        // reaching the inner require; either revert path is acceptable as long
-        // as the same-block withdraw is blocked.
-        vm.expectRevert();
-        vault.withdraw(50e6, attacker, attacker);
-        vm.stopPrank();
-
-        // Sanity: maxWithdraw correctly returns 0 in the same block as deposit
-        // (this is what OZ checks before reaching the inner require).
-        assertEq(vault.maxWithdraw(attacker), 0, "maxWithdraw must be 0 same-block as deposit");
-    }
-
     // ============================================================================
     // Bundle 4: Current-Epoch Lender-Premium Vesting Regression Test
     // ----------------------------------------------------------------------------

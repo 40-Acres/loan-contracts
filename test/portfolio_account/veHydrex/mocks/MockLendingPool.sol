@@ -76,8 +76,12 @@ contract MockVaultShell is IERC4626 {
 
     constructor(address asset_) { _asset = asset_; }
     function asset() external view override returns (address) { return _asset; }
-    function totalAssets() external view override returns (uint256) {
+    function totalAssets() public view override returns (uint256) {
         return IERC20(_asset).balanceOf(address(this));
+    }
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view returns (uint256) {
+        return totalAssets();
     }
     function convertToShares(uint256 a) external pure override returns (uint256) { return a; }
     function convertToAssets(uint256 s) external pure override returns (uint256) { return s; }
