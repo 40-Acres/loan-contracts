@@ -419,7 +419,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     ///         getUtilizationPercent() to break the recursion
     ///         totalAssets -> _simulateVesting -> getCurrentVaultRatioBps -> getUtilizationPercent.
     function totalAssets() public view override returns (uint256) {
-        return _totalAssetsFromSim(_simulateVesting());
+        (uint256 totalAssets_, ) = _navFromSim(_simulateVesting());
+        return totalAssets_;
     }
 
     /// @notice Raw NAV from current storage, without simulating pending vesting.
@@ -449,12 +450,15 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return gross > deductions ? gross - deductions : 0;
     }
 
-    /// @notice Compose the simulated NAV from a VestingSimulation snapshot.
-    function _totalAssetsFromSim(VestingSimulation memory sim) internal view returns (uint256) {
+    /// @notice NAV and outstanding debt from one snapshot, so the two always describe the same state.
+    function _navFromSim(VestingSimulation memory sim)
+        internal
+        view
+        returns (uint256 totalAssets_, uint256 outstandingDebt)
+    {
         DynamicFeesVaultStorage storage $ = _getStorage();
         uint256 totalReduction = $.totalVestedRewardsApplied + sim.globalBorrowerPending;
 
-        uint256 outstandingDebt;
         uint256 excessPendingOwedToBorrowers;
         if ($.totalLoanedAssets >= totalReduction) {
             outstandingDebt = $.totalLoanedAssets - totalReduction;
@@ -467,7 +471,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             + excessPendingOwedToBorrowers
             + $.escrowedExcessTotal;
         uint256 gross = IERC20(asset()).balanceOf(address(this)) + outstandingDebt;
-        return gross > deductions ? gross - deductions : 0;
+        totalAssets_ = gross > deductions ? gross - deductions : 0;
     }
 
     // ============ Fee Calculator Functions ============
@@ -706,8 +710,17 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @notice View-only mirror of _accrueFee. Returns (newTotalAssets, feeSharesIfAccruedNow).
      */
     function _accrueFeeView() internal view returns (uint256 newTotalAssets, uint256 feeShares) {
+        return _accrueFeeViewFromSim(_simulateVesting());
+    }
+
+    /// @notice _accrueFeeView from a caller-supplied snapshot, to simulate vesting only once.
+    function _accrueFeeViewFromSim(VestingSimulation memory sim)
+        internal
+        view
+        returns (uint256 newTotalAssets, uint256 feeShares)
+    {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        newTotalAssets = totalAssets();
+        (newTotalAssets, ) = _navFromSim(sim);
         uint256 last = $.lastTotalAssetsForFee;
         uint256 feeBpsLocal = $.feeBps;
         address recipient = $.feeRecipient;
@@ -1088,8 +1101,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function maxWithdraw(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
-        // Mirror previewWithdraw's accrual so withdraw(maxWithdraw(owner)) cannot revert in _burn.
-        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        // One snapshot feeds both the entitlement and the free-liquidity cap so they agree.
+        VestingSimulation memory sim = _simulateVesting();
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeViewFromSim(sim);
         uint256 newTotalSupply = totalSupply() + pending;
         uint256 assets = Math.mulDiv(
             _withdrawableShares($, owner),
@@ -1097,19 +1111,24 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             newTotalSupply + 10 ** _decimalsOffset(),
             Math.Rounding.Floor
         );
-        uint256 liquid = IERC20(asset()).balanceOf(address(this));
-        return assets < liquid ? assets : liquid;
+        // Cap at free liquidity (NAV minus debt on loan), not raw balance, to skip earmarked funds.
+        (, uint256 outstandingDebt) = _navFromSim(sim);
+        uint256 free = newTotalAssets > outstandingDebt ? newTotalAssets - outstandingDebt : 0;
+        return assets < free ? assets : free;
     }
 
     function maxRedeem(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
-        (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
+        VestingSimulation memory sim = _simulateVesting();
+        (uint256 newTotalAssets, uint256 pending) = _accrueFeeViewFromSim(sim);
         uint256 newTotalSupply = totalSupply() + pending;
         uint256 shares = _withdrawableShares($, owner);
-        uint256 liquid = IERC20(asset()).balanceOf(address(this));
+        // Cap at free liquidity (NAV minus debt on loan); Floor keeps redeem(maxRedeem) within it.
+        (, uint256 outstandingDebt) = _navFromSim(sim);
+        uint256 free = newTotalAssets > outstandingDebt ? newTotalAssets - outstandingDebt : 0;
         uint256 maxShares = Math.mulDiv(
-            liquid,
+            free,
             newTotalSupply + 10 ** _decimalsOffset(),
             newTotalAssets + 1,
             Math.Rounding.Floor
