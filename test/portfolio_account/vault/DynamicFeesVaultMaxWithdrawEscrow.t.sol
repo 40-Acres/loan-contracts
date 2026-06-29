@@ -54,7 +54,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPortfolioFactory} from "../../../src/interfaces/IPortfolioFactory.sol";
 import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
-import {IFeeCalculator} from "../../../src/facets/account/vault/IFeeCalculator.sol";
+import {FeeCalculator} from "../../../src/facets/account/vault/FeeCalculator.sol";
 
 // =====================================================================
 // Mocks (mirrored from DynamicFeesVaultEscrowAccounting.t.sol)
@@ -94,18 +94,11 @@ contract MockPortfolioFactoryMaxWithdraw is IPortfolioFactory {
     function owners(address) external pure override returns (address) { return address(0); }
     function createAccount(address) external pure override returns (address) { return address(0); }
     function getRegistryVersion() external pure override returns (uint256) { return 0; }
-    function ownerOf(address) external pure override returns (address) { return address(0); }
+    function ownerOf(address portfolio) external pure override returns (address) { return portfolio; }
     function portfolioOf(address) external pure override returns (address) { return address(0); }
     function getAllPortfolios() external pure override returns (address[] memory) { return new address[](0); }
     function getPortfoliosLength() external pure override returns (uint256) { return 0; }
     function getPortfolio(uint256) external pure override returns (address) { return address(0); }
-}
-
-/// @dev Pinned 20% lender ratio: 80% of vested rewards reduce debt, 20% lender premium.
-contract FlatFeeCalculator is IFeeCalculator {
-    uint256 public immutable flat;
-    constructor(uint256 _flat) { flat = _flat; }
-    function getVaultRatioBps(uint256) external view override returns (uint256) { return flat; }
 }
 
 // =====================================================================
@@ -152,7 +145,10 @@ contract DynamicFeesVaultMaxWithdrawEscrowTest is Test {
         vm.prank(owner);
         vault.acceptOwnership();
 
-        FlatFeeCalculator fc = new FlatFeeCalculator(2000);
+        // Production fee curve. At this suite's ~1% utilization the borrower share is
+        // high, so an over-deposit (capped at debt/worstBorrowerFraction by the pull cap)
+        // still vests into excess that reaches the escrow path under test.
+        FeeCalculator fc = new FeeCalculator();
         vm.prank(owner);
         vault.setFeeCalculator(address(fc));
 

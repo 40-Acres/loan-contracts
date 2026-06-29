@@ -36,6 +36,8 @@ import {DeployERC4626CollateralFacet} from "../../../script/portfolio_account/fa
 import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
 import {DeployERC4626ClaimingFacet} from "../../../script/portfolio_account/facets/DeployERC4626ClaimingFacet.s.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -102,7 +104,7 @@ contract ERC4626SnapshotTest is Test {
         _facetRegistry = facetRegistry;
 
         // Deploy config contracts
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig configDeployer = new DeployERC4626PortfolioFactoryConfig();
         (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         // Deploy mock underlying asset (USDC-like with 6 decimals)
@@ -132,6 +134,7 @@ contract ERC4626SnapshotTest is Test {
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
+        ERC4626PortfolioFactoryConfig(address(_portfolioFactoryConfig)).setCollateralVault(address(_mockVault));
 
         // Set authorized caller
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
@@ -575,16 +578,16 @@ contract ERC4626SnapshotTest is Test {
         vm.stopPrank();
 
         // Now collateral value = 1200 USDC (1000 deposit + 200 yield)
-        // maxLoanIgnoreSupply = 1200 * 70% = 840
-        // debt = 650. 650 < 840, so yield claiming should work
+        // maxLoanIgnoreSupply = min(1000, 1200) * 70% = 700 (appreciation reserved for harvest)
+        // debt = 650. 650 < 700, so yield claiming should work
 
         // Verify the collateral value increased with yield
         uint256 collateralAfterYield = ERC4626CollateralFacet(_portfolioAccount).getTotalLockedCollateral();
         assertEq(collateralAfterYield, 1200e6, "Collateral should include yield");
 
-        // Verify maxLoan accounts for the yield
+        // Verify maxLoan is capped at cost basis, not the appreciated value
         (, uint256 maxLoanIgnoreSupply) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
-        assertEq(maxLoanIgnoreSupply, 840e6, "MaxLoan should reflect 70% of 1200");
+        assertEq(maxLoanIgnoreSupply, 700e6, "MaxLoan should cap at 70% of cost basis 1000");
 
         // Debt is still within new maxLoan
         uint256 debt = ERC4626CollateralFacet(_portfolioAccount).getTotalDebt();

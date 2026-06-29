@@ -681,35 +681,20 @@ contract YieldBasisCollateralManagerTest is Test {
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 2e18);
     }
 
-    /// @notice Option-(ii) replacement for the deprecated "Would remove
-    ///         principal" check: under proportional basis deduction, calling
-    ///         removeSharesForYield with no pps growth doesn't revert — it
-    ///         burns shares and basis pro-rata, preserving D/S. Value is
-    ///         conserved (caller is liquidating, not extracting fictional
-    ///         yield). The harvest layer is responsible for refusing to call
-    ///         when no yield exists; the library itself doesn't enforce that.
-    function test_removeSharesForYield_proportionalDeductionPreservesPerShareBasis() public {
+    /// @notice removeSharesForYield holds depositedAssetValue fixed: the
+    ///         remaining LP must still cover the original basis. Burning shares
+    ///         with no pps growth drops remaining value below the basis, so it
+    ///         reverts "Would remove principal". The harvest layer never calls
+    ///         it in that state (its "No yield to harvest" gate fires first).
+    function test_removeSharesForYield_revertsWhenWouldRemovePrincipal() public {
         ybLp.setPricePerShare(1e18);
         ybLp.mint(address(h), 10e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(underlying), 10e18);
 
-        // Pre-state.
-        (uint256 sharesPre, uint256 depPre,) =
-            h.getCollateral(address(ybLp), address(underlying));
-
-        // Burn 1e18 shares — no revert (option-(ii) doesn't gate this).
+        // Burn 1e18 shares at unchanged pps: remaining 9e18 value < basis 10e18.
         vm.prank(AUTH_CALLER);
+        vm.expectRevert(bytes("Would remove principal"));
         h.removeSharesForYield(address(cfg), address(ybLp), address(underlying), 1e18);
-
-        (uint256 sharesPost, uint256 depPost,) =
-            h.getCollateral(address(ybLp), address(underlying));
-
-        // Per-share basis preserved (D/S unchanged within rounding).
-        uint256 basisPerSharePre = (depPre * 1e18) / sharesPre;
-        uint256 basisPerSharePost = (depPost * 1e18) / sharesPost;
-        assertApproxEqAbs(basisPerSharePost, basisPerSharePre, 1, "D/S preserved across removeSharesForYield");
-        // Shares strictly decreased.
-        assertEq(sharesPost, sharesPre - 1e18, "shares decremented exactly");
     }
 
     function test_removeSharesForYield_revertsDebtExceedsMaxLoan() public {

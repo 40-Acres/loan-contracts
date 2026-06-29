@@ -819,8 +819,8 @@ contract YieldBasisConservativeMarkHarvestTest is Test, HarvestFloor85 {
         // Inequality is strict because 9.09 > 4.76.
         assertLt(sharesAfter, 100e18 - surplusIfMin, "hybrid burned MORE shares than min() would");
 
-        // Per-share basis preserved: D'/S' == 1.0 (the original D/S).
-        assertApproxEqAbs(depAfter, sharesAfter, 2, "per-share basis preserved across burn");
+        // depositedAssetValue held fixed at the original basis across the burn.
+        assertApproxEqAbs(depAfter, 100e18, 2, "deposited basis held fixed across burn");
 
         // Realized underlying: surplus × pps (mock has no Curve haircut here).
         assertGt(received, 0, "harvest delivered yield");

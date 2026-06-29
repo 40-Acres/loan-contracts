@@ -230,9 +230,9 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
     /* =====================================================================
      * Test 1: fully-unstaked, pps grew, no haircut → fair yield delivered.
      *
-     * Per-share basis invariant: D'/S' = D/S (option-ii proportional deduct).
-     * The spec wording "preserved within 1 wei" applies to the RATIO, not to
-     * the absolute depositedAssetValue (which scales down with shares).
+     * depositedAssetValue is held fixed across the harvest burn (option-(i)).
+     * Shares drop by the surplus; the basis stays at the original deposit so a
+     * re-harvest at unchanged pps finds no yield.
      * =====================================================================*/
     function test_FullyUnstaked_PpsGrew_DeliversFairYield() public {
         _deposit(DEPOSIT); // pps=1.0, deposited basis = 100
@@ -251,9 +251,8 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
         (uint256 sharesAfter, uint256 depAfter,) = _getDepositInfo();
         assertEq(sharesAfter, DEPOSIT - expectedSurplus, "tracked shares dropped by exactly surplus");
 
-        // Per-share basis preserved: D'/S' == D/S (== 1.0 here).
-        // depositedAssetValue scales pro-rata with shares, NOT held at 100.
-        assertEq(depAfter, sharesAfter, "per-share basis preserved (D'/S' == D/S)");
+        // depositedAssetValue held fixed at the original deposit (not scaled down).
+        assertEq(depAfter, DEPOSIT, "deposited basis held fixed across harvest");
 
         // Sanity: post-harvest collateral value == original deposited value.
         // S' * pps = (D/pps) * pps = D = 100. (Within 1 wei rounding.)
@@ -277,10 +276,10 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
         uint256 received = _harvest(_floor85());
         assertApproxEqAbs(received, expectedReceived, 2, "delivered = fair * (1 - haircut)");
 
-        (uint256 sharesAfter, uint256 depAfter,) = _getDepositInfo();
-        // Per-share basis preserved: D'/S' == 1.0 (initial ratio).
-        // The Curve haircut affects underlying delivered, not collateral basis.
-        assertEq(depAfter, sharesAfter, "per-share basis preserved (haircut affects delivery only)");
+        (, uint256 depAfter,) = _getDepositInfo();
+        // depositedAssetValue held fixed; the Curve haircut affects underlying
+        // delivered, not the collateral basis.
+        assertEq(depAfter, DEPOSIT, "deposited basis held fixed (haircut affects delivery only)");
     }
 
     /* =====================================================================
@@ -324,9 +323,9 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
 
         (uint256 sharesAfter, uint256 depAfter,) = _getDepositInfo();
         assertApproxEqAbs(sharesAfter, trackedAfter - expectedSurplus, 2, "shares reduced by surplus");
-        // Per-share basis preservation: deposited' = deposited * (S - surplus)/S
-        uint256 expectedDep = trackedAfter - (trackedAfter * expectedSurplus) / trackedAfter;
-        assertApproxEqAbs(depAfter, expectedDep, 2, "basis preserved per-share");
+        // depositedAssetValue held fixed at the post-reconcile basis (99e18); the
+        // skim reconcile already shrank it 1:1, harvest does not shrink it further.
+        assertApproxEqAbs(depAfter, trackedAfter, 2, "deposited basis held fixed across harvest");
     }
 
     /* =====================================================================
@@ -466,37 +465,33 @@ contract YieldBasisLpHarvestHardSplitTest is Test, HarvestFloor85 {
     }
 
     /* =====================================================================
-     * Test 9: re-harvest in the same block.
+     * Regression: re-harvest at the same pps must find no yield.
      *
-     * Under option-(ii) proportional basis deduction, per-share basis D/S is
-     * preserved across the burn. After harvest #1 at pps=p:
-     *   S' = D/p, D' = D²/(S·p), D'/S' = D/S, currentValue' = S'·p = D.
-     * Harvest #2 finds currentValue' − D' > 0 whenever p > 1, so it succeeds
-     * and piecewise-liquidates the position at fair pps. Total value is
-     * conserved (received1 + received2 + remaining ≈ S·p) — no illusory
-     * yield, just an alternative unwind path bounded by the LTV-debt check.
+     * After one harvest the remaining LP equals the original principal, so
+     * the tracked basis stays fixed and a second harvest at the same pps
+     * reverts "No yield to harvest". Under the prior proportional-basis
+     * deduction the basis shrank and harvest #2 burned real principal.
      * =====================================================================*/
-    function test_ReHarvestSameBlock_HarvestRepeatsWithValueConservation() public {
+    function test_ReHarvestSameBlock_NoFurtherGrowth_FindsNoYield() public {
         _deposit(DEPOSIT);
         ybLp.setPricePerShare(1.10e18);
 
         uint256 received1 = _harvest(_floor85());
+        assertGt(received1, 0, "harvest #1 delivers the appreciation");
 
-        // Harvest #2 in same block, no pps change.
-        uint256 received2 = _harvest(_floor85());
+        // Basis held fixed across harvest; remaining LP still backs principal.
+        (uint256 sharesAfter, uint256 depositedAfter,) = _getDepositInfo();
+        assertApproxEqAbs(depositedAfter, DEPOSIT, 2, "deposited basis unchanged by harvest");
+        uint256 remainingValue = (sharesAfter * 1.10e18) / 1e18;
+        assertApproxEqAbs(remainingValue, DEPOSIT, 5, "remaining LP still covers full principal");
 
-        // Both succeed under proportional-basis option-(ii). received2 < received1
-        // because the position has shrunk.
-        assertGt(received2, 0, "current impl: re-harvest succeeds");
-        assertLt(received2, received1, "second harvest is strictly smaller (smaller position)");
+        // No harvestable yield without further pps growth.
+        (uint256 yieldUnderlying,) =
+            YieldBasisLpClaimingFacet(portfolioAccount).getAvailableLpFeeYield();
+        assertEq(yieldUnderlying, 0, "no yield available at same pps");
 
-        // Total value delivered = received1 + received2; the position is being
-        // liquidated, not extracting illusory yield. Compute remaining position
-        // value to prove conservation.
-        (uint256 sharesEnd,,) = _getDepositInfo();
-        uint256 remainingValue = (sharesEnd * 1.10e18) / 1e18;
-        // received1 + received2 + remainingValue == 110 (original-at-pps) within rounding.
-        assertApproxEqAbs(received1 + received2 + remainingValue, 110e18, 5, "value conserved across harvests");
+        // Second harvest must refuse; the leak burned principal here.
+        _harvestExpectRevert(_floor85(), bytes("No yield to harvest"));
     }
 
     /* =====================================================================

@@ -25,6 +25,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IPortfolioFactory} from "../../../src/interfaces/IPortfolioFactory.sol";
 import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
 import {IFeeCalculator} from "../../../src/facets/account/vault/IFeeCalculator.sol";
+import {FeeCalculator} from "../../../src/facets/account/vault/FeeCalculator.sol";
 
 contract MockUSDC is ERC20 {
     constructor() ERC20("USD Coin", "USDC") {}
@@ -275,16 +276,21 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
     // =========================================================================
 
     function test_activeAssets_saturatesAtZero_whenReductionExceedsLoaned() public {
-        _setFlatRatio(0);
+        // Production curve: Part A caps the pull at debt/worstBorrowerFraction (20x debt
+        // here), so the deposit below streams in full and vests at this suite's high
+        // borrower fraction, over-crediting well past the small principal.
+        FeeCalculator fc = new FeeCalculator();
+        vm.prank(owner);
+        vault.setFeeCalculator(address(fc));
 
         // Small principal so a large reward stream can over-saturate it.
         uint256 smallBorrow = 500e6;
         _borrow(smallBorrow);
 
-        // Stream a reward amount strictly greater than principal. With ratio=0
-        // and a full epoch of vesting, globalBorrowerPending will exceed
-        // totalLoanedAssets, hitting the excessPendingOwedToBorrowers branch in
-        // totalAssets() and the saturate-at-zero branch in activeAssets().
+        // Stream a reward amount strictly greater than principal. A full epoch of vesting
+        // drives globalBorrowerPending above totalLoanedAssets, hitting the
+        // excessPendingOwedToBorrowers branch in totalAssets() and the saturate-at-zero
+        // branch in activeAssets().
         uint256 rewardAmount = 1_500e6; // 3x principal
         _streamRewardsAsBorrower(rewardAmount);
 

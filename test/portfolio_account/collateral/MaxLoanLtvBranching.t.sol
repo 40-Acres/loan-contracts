@@ -57,6 +57,8 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
@@ -152,7 +154,7 @@ abstract contract MaxLoanBranchingBase is Test {
         factory = f;
         registry = r;
 
-        DeployPortfolioFactoryConfig deployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig deployer = new DeployERC4626PortfolioFactoryConfig();
         (cfg, , loanConfig, ) = deployer.deploy(address(factory), OWNER);
 
         lendingAsset = new MockERC20("USDC", "USDC", 6);
@@ -191,6 +193,9 @@ contract ERC4626MaxLoanLtvBranchingTest is MaxLoanBranchingBase {
         underlyingAsset.mint(address(this), 1_000_000e18);
         underlyingAsset.approve(address(vault), 1_000_000e18);
         vault.deposit(1_000_000e18, address(h));
+
+        vm.prank(OWNER);
+        ERC4626PortfolioFactoryConfig(address(cfg)).setCollateralVault(address(vault));
     }
 
     function _seedCollateral(uint256 shares) internal {
@@ -435,8 +440,8 @@ contract YieldBasisMaxLoanLtvBranchingTest is MaxLoanBranchingBase {
     }
 
     /// @notice Pricing pivot — collateral value is shares * pps / 1e18.
-    ///         When ltv path is active and pps moves, the result must move
-    ///         linearly. Locks the pricing-then-branch composition.
+    ///         When ltv path is active and pps rises, borrow capacity is capped
+    ///         at cost basis: appreciation is reserved for harvest, not borrowable.
     function test_yb_ltv_respondsToPricePerShareChanges() public {
         vm.prank(OWNER);
         loanConfig.setLtv(7000);
@@ -445,9 +450,9 @@ contract YieldBasisMaxLoanLtvBranchingTest is MaxLoanBranchingBase {
         (, uint256 m1) = h.getMaxLoan(address(cfg), address(ybLp), address(underlyingAsset));
         assertEq(m1, 7e18, "pps=1: 70% of 10e18");
 
-        ybLp.setPricePerShare(2e18); // collateral value doubles
+        ybLp.setPricePerShare(2e18); // pps doubles; appreciation not borrowable
 
         (, uint256 m2) = h.getMaxLoan(address(cfg), address(ybLp), address(underlyingAsset));
-        assertEq(m2, 14e18, "pps=2: 70% of 20e18");
+        assertEq(m2, 7e18, "pps=2: capped at cost basis, 70% of 10e18");
     }
 }

@@ -13,23 +13,29 @@ import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.so
  * =============================================================
  * LendingVaultSameBlockGuard
  * =============================================================
- * Targeted tests for the same-block flash-deposit guard after the
- * fix that consolidates the flag write into `_deposit` gated on
- * `caller == receiver` and removes the `_update` override.
+ * Targeted tests for the same-block flash-deposit guard.
  *
- * Pre-fix bug: ERC4626 `_update` wrote `lastDepositBlock[receiver]
- * = block.number` on every mint (including `deposit(0, victim)`),
- * allowing any third party to DoS a victim's withdraw/redeem for
- * one block by pinning their lastDepositBlock to the current
- * block.
+ * Design: shares ACQUIRED this block by an address -- whether via
+ * mint (deposit/mint) OR via ERC20 transfer-in -- are "pinned" and
+ * cannot be withdrawn/redeemed until the next block. Implemented in
+ * the `_update` override, which records `lastMintBlock[to]` and
+ * accumulates `sameBlockAcquiredShares[to]` for every inbound
+ * transfer. `_withdraw` then requires
+ *   balanceOf(owner) >= shares + locked
+ * where `locked` is the amount acquired this block.
  *
- * Post-fix invariants verified here:
- *   - Self-deposit pins the depositor's block.
- *   - Third-party deposits (zero OR non-zero) do NOT pin the
- *     receiver's block.
- *   - maxWithdraw/maxRedeem reflect those semantics.
- *   - Plain share transfers do NOT pin the recipient's block
- *     (regression lock — _update no longer writes the flag).
+ * Only the just-acquired amount is pinned, so the guard is
+ * griefing-resistant: a dust deposit/transfer to a victim pins only
+ * the dust, never the victim's pre-existing balance (acquired in a
+ * prior block), which stays fully withdrawable.
+ *
+ * Invariants verified here:
+ *   - Self-deposit/self-mint pins the freshly minted shares this block.
+ *   - A third-party deposit/mint/transfer to a holder pins ONLY the
+ *     newly acquired amount; pre-existing balance stays withdrawable.
+ *   - A transfer to a fresh (zero-balance) receiver pins the whole
+ *     received amount this block, released next block.
+ *   - maxWithdraw / maxRedeem cap at balanceOf - locked.
  * =============================================================
  */
 
@@ -79,8 +85,14 @@ contract LendingVaultSameBlockGuardTest is Test {
     uint256 constant MAX_UTIL_BPS = 8000;
     uint256 constant ORIG_FEE_BPS = 0; // keep math clean
 
+    // Absolute base block. via-ir may cache block.number across vm.roll calls
+    // within a function, so multi-roll tests use hardcoded absolute numbers
+    // (BLOCK_START + N) rather than block.number + 1.
+    uint256 constant BLOCK_START = 1000;
+
     function setUp() public {
         vm.warp(EPOCH_2);
+        vm.roll(BLOCK_START);
 
         vm.label(vaultOwner, "VaultOwner");
         vm.label(victim, "Victim");
@@ -266,58 +278,187 @@ contract LendingVaultSameBlockGuardTest is Test {
     }
 
     // ----------------------------------------------------------
-    // (5) Share transfers do NOT pin the recipient's block.
-    //     Locks the new semantics — _update no longer writes the flag.
+    // (5) Transfer-in pins the receiver's freshly-received shares
+    //     this block (the _update override fires on every inbound
+    //     transfer, not just mints). Released next block.
     // ----------------------------------------------------------
 
-    function test_shareTransfer_doesNotPinRecipient() public {
+    function test_shareTransfer_pinsJustReceivedShares_sameBlock() public {
+        // Alice deposits at BLOCK_START so her shares are unpinned by the
+        // transfer block. Absolute block numbers dodge via-ir block.number caching.
         _selfDeposit(alice, 500e6);
-        vm.roll(block.number + 1);
+        vm.roll(BLOCK_START + 1);
 
-        // Alice transfers shares to Bob in block N+1.
         uint256 aliceShares = vault.balanceOf(alice);
+
+        // Transfer block: alice transfers all shares to a FRESH bob (zero prior balance).
         vm.prank(alice);
         IERC20(address(vault)).transfer(bob, aliceShares);
 
-        // Bob's lastDepositBlock should be untouched (0). Bob can redeem in the
-        // same block he received the shares.
+        // (a) Pinned this block: bob cannot redeem the just-received shares.
+        assertEq(vault.maxRedeem(bob), 0, "maxRedeem=0 -- received shares pinned this block");
+        assertEq(vault.maxWithdraw(bob), 0, "maxWithdraw=0 -- received shares pinned this block");
+        vm.prank(bob);
+        vm.expectRevert();
+        vault.redeem(aliceShares, bob, bob);
+
+        // (b) Released next block: bob can now redeem and receives assets.
+        vm.roll(BLOCK_START + 2);
+        assertEq(vault.maxRedeem(bob), aliceShares, "maxRedeem unlocked next block");
         vm.prank(bob);
         uint256 assets = vault.redeem(aliceShares, bob, bob);
-        assertGt(assets, 0, "bob redeemed received shares same block");
+        assertGt(assets, 0, "bob redeemed received shares next block");
         assertEq(usdc.balanceOf(bob), assets, "bob received assets from redeem");
     }
 
-    function test_transferFrom_doesNotPinRecipient() public {
+    function test_transferFrom_pinsJustReceivedShares_sameBlock() public {
         _selfDeposit(alice, 500e6);
-        vm.roll(block.number + 1);
+        vm.roll(BLOCK_START + 1);
 
         uint256 aliceShares = vault.balanceOf(alice);
         vm.prank(alice);
         IERC20(address(vault)).approve(attacker, aliceShares);
 
-        // Attacker pulls Alice's shares into Bob — exercises ERC20 transferFrom
-        // (the path that previously hit the _update flag write).
+        // Transfer block: attacker pulls alice's shares into a FRESH bob.
         vm.prank(attacker);
         IERC20(address(vault)).transferFrom(alice, bob, aliceShares);
 
-        // Bob must be able to redeem in the same block.
+        // (a) Pinned this block.
+        assertEq(vault.maxRedeem(bob), 0, "maxRedeem=0 -- pulled shares pinned this block");
+        assertEq(vault.maxWithdraw(bob), 0, "maxWithdraw=0 -- pulled shares pinned this block");
+        vm.prank(bob);
+        vm.expectRevert();
+        vault.redeem(aliceShares, bob, bob);
+
+        // (b) Released next block.
+        vm.roll(BLOCK_START + 2);
+        assertEq(vault.maxRedeem(bob), aliceShares, "maxRedeem unlocked next block");
         vm.prank(bob);
         uint256 assets = vault.redeem(aliceShares, bob, bob);
-        assertGt(assets, 0, "bob redeemed pulled shares same block");
+        assertGt(assets, 0, "bob redeemed pulled shares next block");
     }
 
     // ----------------------------------------------------------
-    // (6) Zero-share self-deposit edge case: caller == receiver,
-    //     so the flag bumps and the depositor must wait one block.
+    // (5b) Griefing-resistance over the transfer path: a dust
+    //      transfer pins ONLY the dust, never the recipient's
+    //      pre-existing balance.
+    // ----------------------------------------------------------
+
+    function test_shareTransfer_doesNotPinPreExistingBalance() public {
+        // Bob self-deposits in block N, then the block advances so his
+        // balance is fully unpinned (acquired in a prior block).
+        _selfDeposit(bob, 500e6);
+        vm.roll(block.number + 1);
+
+        uint256 bobPreExisting = vault.balanceOf(bob);
+        assertGt(bobPreExisting, 0, "bob has pre-existing shares");
+
+        // Alice deposited in a prior block so she has unpinned shares to send.
+        _selfDeposit(alice, 10e6);
+        vm.roll(block.number + 1);
+        uint256 dustShares = vault.balanceOf(alice) / 100; // tiny slice
+        assertGt(dustShares, 0, "dust slice is non-zero");
+
+        // Block M: alice transfers dust shares to bob.
+        vm.prank(alice);
+        IERC20(address(vault)).transfer(bob, dustShares);
+
+        // Only the dust is pinned: maxRedeem caps at pre-existing balance.
+        assertEq(vault.maxRedeem(bob), bobPreExisting, "only dust pinned; pre-existing redeemable");
+
+        // Bob can STILL withdraw up to his pre-existing balance, same block.
+        uint256 preExistingAssets = vault.convertToAssets(bobPreExisting);
+        vm.prank(bob);
+        vault.withdraw(preExistingAssets, bob, bob);
+        assertEq(usdc.balanceOf(bob), preExistingAssets, "bob withdrew full pre-existing balance same block");
+        // The dust shares remain (pinned this block).
+        assertEq(vault.balanceOf(bob), dustShares, "only the pinned dust remains");
+    }
+
+    // ----------------------------------------------------------
+    // (6) Zero-share self-deposit edge case. Under the pin-acquired
+    //     design a zero-amount deposit acquires 0 shares, so it pins
+    //     NOTHING. The assertion holds only trivially: victim has no
+    //     shares at all, so maxWithdraw is 0 regardless of the guard.
+    //     (Test name retained; the "pins block" claim is vacuous here.)
     // ----------------------------------------------------------
 
     function test_zeroShareSelfDeposit_stillPinsBlock() public {
-        // Self-deposit of 0 — passes through _deposit; flag bumps.
         vm.prank(victim);
         vault.deposit(0, victim);
 
-        // Victim has no shares to withdraw — but the guard should still fire
-        // if anything is attempted, and maxWithdraw should be 0 this block.
-        assertEq(vault.maxWithdraw(victim), 0, "maxWithdraw=0 same block as zero-amount self-deposit");
+        assertEq(vault.maxWithdraw(victim), 0, "maxWithdraw=0 -- victim has no shares (zero acquisition pins nothing)");
+    }
+
+    function test_zeroShareSelfDeposit_doesNotPinPreExistingBalance() public {
+        // Victim self-deposits in a prior block; balance becomes unpinned.
+        _selfDeposit(victim, 1000e6);
+        vm.roll(block.number + 1);
+
+        uint256 preExisting = vault.balanceOf(victim);
+        assertGt(preExisting, 0, "victim has pre-existing shares");
+
+        // A zero-amount self-deposit this block acquires 0 shares, so it must
+        // pin nothing -- the pre-existing balance stays fully withdrawable.
+        vm.prank(victim);
+        vault.deposit(0, victim);
+
+        assertEq(vault.maxRedeem(victim), preExisting, "zero deposit pins nothing; full balance redeemable");
+
+        vm.prank(victim);
+        vault.redeem(preExisting, victim, victim);
+        assertEq(vault.balanceOf(victim), 0, "victim redeemed full pre-existing balance same block");
+    }
+
+    // ----------------------------------------------------------
+    // (7) Third-party deposit/mint bypass on a FRESH zero-balance
+    //     account. The pin is gated on caller==receiver, so a
+    //     deposit/mint TO alice (caller=attacker) never pins alice.
+    //     With NO pre-existing balance, alice withdraws EXACTLY the
+    //     shares acquired this block -- the guard must catch that.
+    //     POST-FIX expectation: redeem reverts. Current code: it
+    //     succeeds (bypass), so these tests FAIL today.
+    // ----------------------------------------------------------
+
+    function test_thirdPartyDeposit_bypass_freshAccountRedeemsSameBlock() public {
+        // alice has ZERO prior vault balance.
+        assertEq(vault.balanceOf(alice), 0, "alice starts with zero shares");
+
+        // Attacker deposits to alice (caller=attacker != receiver=alice),
+        // all in the current block (no vm.roll).
+        usdc.mint(attacker, 1000e6);
+        vm.startPrank(attacker);
+        usdc.approve(address(vault), 1000e6);
+        vault.deposit(1000e6, alice);
+        vm.stopPrank();
+
+        uint256 aliceShares = vault.balanceOf(alice);
+        assertGt(aliceShares, 0, "alice received freshly-acquired shares this block");
+
+        // Same block: alice redeems exactly the just-acquired shares.
+        // Post-fix this must revert (shares acquired this block are pinned).
+        vm.prank(alice);
+        vm.expectRevert();
+        vault.redeem(aliceShares, alice, alice);
+    }
+
+    function test_thirdPartyMint_bypass_freshAccountRedeemsSameBlock() public {
+        assertEq(vault.balanceOf(alice), 0, "alice starts with zero shares");
+
+        // Attacker mints shares to alice (caller=attacker != receiver=alice).
+        uint256 mintShares = 1000e6;
+        uint256 assetsNeeded = vault.previewMint(mintShares);
+        usdc.mint(attacker, assetsNeeded);
+        vm.startPrank(attacker);
+        usdc.approve(address(vault), assetsNeeded);
+        vault.mint(mintShares, alice);
+        vm.stopPrank();
+
+        uint256 aliceShares = vault.balanceOf(alice);
+        assertGt(aliceShares, 0, "alice received freshly-minted shares this block");
+
+        vm.prank(alice);
+        vm.expectRevert();
+        vault.redeem(aliceShares, alice, alice);
     }
 }
