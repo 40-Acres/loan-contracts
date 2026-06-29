@@ -111,7 +111,7 @@ contract MockPortfolioFactoryEscrowAcct is IPortfolioFactory {
     function owners(address) external pure override returns (address) { return address(0); }
     function createAccount(address) external pure override returns (address) { return address(0); }
     function getRegistryVersion() external pure override returns (uint256) { return 0; }
-    function ownerOf(address) external pure override returns (address) { return address(0); }
+    function ownerOf(address portfolio) external pure override returns (address) { return portfolio; }
     function portfolioOf(address) external pure override returns (address) { return address(0); }
     function getAllPortfolios() external pure override returns (address[] memory) { return new address[](0); }
     function getPortfoliosLength() external pure override returns (uint256) { return 0; }

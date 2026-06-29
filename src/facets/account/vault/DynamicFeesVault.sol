@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ProtocolTimeLibrary} from "../../../libraries/ProtocolTimeLibrary.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardTransientUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
@@ -23,7 +23,7 @@ import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
  * @dev Combines vault functionality with debt token accounting for reward distribution
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
-contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardUpgradeable, ILendingPool {
+contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardTransientUpgradeable, ILendingPool {
     using SafeERC20 for IERC20;
 
     // ============ Events ============
@@ -97,8 +97,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Track vested rewards that have been applied to individual user debts
         uint256 totalVestedRewardsApplied;
 
-        // Flash loan protection: block same-block deposit+withdraw
-        mapping(address => uint256) lastDepositBlock;
+        // Flash loan protection: block of the last share acquisition (mint or transfer-in) per holder
+        mapping(address => uint256) lastMintBlock;
 
         // Running sum of all debtBalance
         uint256 totalDebtBalance;
@@ -138,6 +138,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address treasury;
 
         uint256 originationFeeBps;
+
+        // Shares acquired in lastMintBlock per holder; pinned until the next block
+        mapping(address => uint256) sameBlockAcquiredShares;
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -173,7 +176,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         __ERC20_init(_name, _symbol);
         __UUPSUpgradeable_init();
         __Ownable2Step_init();
-        __ReentrancyGuard_init();
         _transferOwnership(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -790,14 +792,16 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     /**
      * @notice Attempt transfer, escrow on failure (e.g. USDC blacklist)
      */
-    function _transferOrEscrow(DynamicFeesVaultStorage storage $, address user, uint256 amount) internal {
+    function _transferOrEscrow(DynamicFeesVaultStorage storage $, address account, uint256 amount) internal {
         if (amount == 0) return;
-        if (IERC20(asset()).trySafeTransfer(user, amount)) {
-            emit ExcessRewardsPaid(user, amount);
+        // Route excess to the portfolio owner; the account contract cannot claim or forward it.
+        address recipient = IPortfolioFactory($.portfolioFactory).ownerOf(account);
+        if (IERC20(asset()).trySafeTransfer(recipient, amount)) {
+            emit ExcessRewardsPaid(recipient, amount);
         } else {
-            $.escrowedExcess[user] += amount;
+            $.escrowedExcess[recipient] += amount;
             $.escrowedExcessTotal += amount;
-            emit ExcessRewardsEscrowed(user, amount);
+            emit ExcessRewardsEscrowed(recipient, amount);
         }
     }
 
@@ -818,12 +822,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
      * @notice Public wrapper to settle rewards for any user
      * @param user The user whose rewards to settle
      */
-    function settleRewards(address user) external {
+    function settleRewards(address user) external nonReentrant {
         _settleRewards(user);
     }
 
     // ============ Core Vault Functions ============
-    function repay(uint256 amount) external whenNotPaused {
+    function repay(uint256 amount) external nonReentrant whenNotPaused {
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -836,7 +840,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         emit Repaid(msg.sender, amountToRepay, $.debtBalance[msg.sender]);
     }
 
-    function depositRewards(uint256 amount) external whenNotPaused onlyPortfolio {
+    function depositRewards(uint256 amount) external nonReentrant whenNotPaused onlyPortfolio {
         if (amount == 0) revert ZeroAmount();
         require(_getStorage().debtBalance[msg.sender] > 0, "No debt to repay");
 
@@ -923,7 +927,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     }
 
     // ============ ILendingPool Implementation ============
-    function borrowFromPortfolio(uint256 amount) external onlyPortfolio whenNotPaused returns (uint256 originationFee) {
+    function borrowFromPortfolio(uint256 amount) external nonReentrant onlyPortfolio whenNotPaused returns (uint256 originationFee) {
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -943,7 +947,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         emit Borrowed(msg.sender, amount);
     }
 
-    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external whenNotPaused returns (uint256 actualPaid) {
+    function payFromPortfolio(uint256 totalPayment, uint256 feesToPay) external nonReentrant whenNotPaused returns (uint256 actualPaid) {
         _settleRewards(msg.sender);
 
         DynamicFeesVaultStorage storage $ = _getStorage();
@@ -1084,12 +1088,11 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function maxWithdraw(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
-        if ($.lastDepositBlock[owner] >= block.number) return 0;
         // Mirror previewWithdraw's accrual so withdraw(maxWithdraw(owner)) cannot revert in _burn.
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
         uint256 newTotalSupply = totalSupply() + pending;
         uint256 assets = Math.mulDiv(
-            balanceOf(owner),
+            _withdrawableShares($, owner),
             newTotalAssets + 1,
             newTotalSupply + 10 ** _decimalsOffset(),
             Math.Rounding.Floor
@@ -1101,10 +1104,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     function maxRedeem(address owner) public view override returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) return 0;
-        if ($.lastDepositBlock[owner] >= block.number) return 0;
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeView();
         uint256 newTotalSupply = totalSupply() + pending;
-        uint256 shares = balanceOf(owner);
+        uint256 shares = _withdrawableShares($, owner);
         uint256 liquid = IERC20(asset()).balanceOf(address(this));
         uint256 maxShares = Math.mulDiv(
             liquid,
@@ -1115,15 +1117,31 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return shares < maxShares ? shares : maxShares;
     }
 
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+    // Shares held by `owner` that are free to leave this block (excludes shares acquired this block).
+    function _withdrawableShares(DynamicFeesVaultStorage storage $, address owner) private view returns (uint256) {
+        uint256 ownerShares = balanceOf(owner);
+        uint256 locked = $.lastMintBlock[owner] == block.number ? $.sameBlockAcquiredShares[owner] : 0;
+        return ownerShares > locked ? ownerShares - locked : 0;
+    }
+
+    // Pin shares acquired this block (mint or transfer-in) so they cannot round-trip out the same block.
+    function _update(address from, address to, uint256 value) internal virtual override {
+        super._update(from, to, value);
+        if (to == address(0) || to == from || value == 0) return;
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        if ($.lastMintBlock[to] != block.number) {
+            $.lastMintBlock[to] = block.number;
+            $.sameBlockAcquiredShares[to] = value;
+        } else {
+            $.sameBlockAcquiredShares[to] += value;
+        }
+    }
+
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override nonReentrant {
         _processGlobalVesting();
 
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
-
-        if (caller == receiver) {
-            $.lastDepositBlock[receiver] = block.number;
-        }
 
         super._deposit(caller, receiver, assets, shares);
 
@@ -1137,13 +1155,14 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         address _owner,
         uint256 assets,
         uint256 shares
-    ) internal virtual override {
+    ) internal virtual override nonReentrant {
         _processGlobalVesting();
 
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
 
-        require($.lastDepositBlock[_owner] < block.number, "Cannot withdraw in same block as deposit");
+        uint256 locked = $.lastMintBlock[_owner] == block.number ? $.sameBlockAcquiredShares[_owner] : 0;
+        require(balanceOf(_owner) >= shares + locked, "Cannot withdraw shares acquired this block");
 
         super._withdraw(caller, receiver, _owner, assets, shares);
 

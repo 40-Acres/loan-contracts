@@ -278,6 +278,8 @@ contract YieldBasisLtvLikeToLikeRescaleTest is Test {
         // shares = 1e18, pps = 1e18 → value18 = 1e18 (representing 1 BTC).
         // Rescale to 8-dec: 1e18 / 10^(18-8) = 1e8.
         // LTV 70%: maxLoanIgnoreSupply = 1e8 * 7000 / 10000 = 7e7.
+        // Mark the LP's underlying as 8-dec so preview_withdraw delivers native.
+        ybLp.setUnderlyingDecimals(8);
         ybLp.mint(address(h), 1e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(lendingAsset8), 1e18);
 
@@ -303,6 +305,9 @@ contract YieldBasisLtvLikeToLikeRescaleTest is Test {
 
         // value18 = 1e18 → upscale to 24-dec: 1e18 * 10^(24-18) = 1e24.
         // LTV 70%: maxLoanIgnoreSupply = 1e24 * 7000 / 10000 = 0.7e24.
+        // Mark the LP's underlying as 24-dec so preview_withdraw delivers native;
+        // otherwise the conservative min() in _resolveCollateralValue under-marks.
+        ybLp.setUnderlyingDecimals(24);
         ybLp.mint(address(h), 1e18);
         h.addCollateral(address(cfg), address(ybLp), address(0), address(lendingAsset24), 1e18);
 

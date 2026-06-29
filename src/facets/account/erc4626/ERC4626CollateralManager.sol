@@ -8,6 +8,7 @@ import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
+import {IERC4626CollateralVaultConfig} from "./ERC4626PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
 import {PortfolioManager} from "../../../accounts/PortfolioManager.sol";
 
@@ -28,6 +29,7 @@ library ERC4626CollateralManager {
     error NotPortfolioManager();
     error InsufficientShareBalance(uint256 required, uint256 actual);
     error BelowMinimumCollateral(uint256 remaining, uint256 minimum);
+    error VaultMismatch(address stored, address provided);
 
     event ERC4626CollateralAdded(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
     event ERC4626CollateralRemoved(address indexed vault, uint256 shares, uint256 assetValue, address indexed owner);
@@ -54,13 +56,22 @@ library ERC4626CollateralManager {
     /**
      * @dev Resolve the collateral value of vault shares via previewRedeem,
      *      the EIP-4626 primitive that simulates redemption at current on-chain
-     *      conditions and includes any exit fee or under-delivery. A vault whose
-     *      previewRedeem reverts (e.g. paused) halts borrow-side reads; repay
-     *      paths are unaffected.
+     *      conditions and includes any exit fee or under-delivery. revertOnFail
+     *      governs a reverting previewRedeem (e.g. paused vault): borrow-side
+     *      reads pass true and re-bubble the revert; the repay path passes false
+     *      and gets ok=false so it can skip the shortfall snapshot instead of
+     *      blocking debt reduction.
      */
-    function _resolveCollateralValue(address vault, uint256 shares) internal view returns (uint256 value) {
-        if (shares == 0 || vault == address(0)) return 0;
-        return IERC4626(vault).previewRedeem(shares);
+    function _resolveCollateralValue(address vault, uint256 shares, bool revertOnFail) internal view returns (uint256 value, bool ok) {
+        if (shares == 0 || vault == address(0)) return (0, true);
+        try IERC4626(vault).previewRedeem(shares) returns (uint256 v) {
+            return (v, true);
+        } catch (bytes memory reason) {
+            if (revertOnFail) {
+                assembly { revert(add(reason, 0x20), mload(reason)) }
+            }
+            return (0, false);
+        }
     }
 
     /**
@@ -81,7 +92,7 @@ library ERC4626CollateralManager {
             revert InsufficientShareBalance(requiredBalance, actualBalance);
         }
 
-        uint256 assetValue = _resolveCollateralValue(vault, shares);
+        (uint256 assetValue, ) = _resolveCollateralValue(vault, shares, true);
 
         data.shares += shares;
         data.depositedAssetValue += assetValue;
@@ -120,7 +131,16 @@ library ERC4626CollateralManager {
      */
     function getTotalCollateralValue(address vault) public view returns (uint256 totalValue) {
         ERC4626CollateralData storage data = _getStorage();
-        totalValue = _resolveCollateralValue(vault, data.shares);
+        (totalValue, ) = _resolveCollateralValue(vault, data.shares, true);
+    }
+
+    /// @dev Borrow/health basis: appreciation above cost basis is reserved for
+    ///      yield, so cap at min(depositedAssetValue, current). Falls to current
+    ///      on depreciation so health still reacts to losses.
+    function getBorrowableCollateralValue(address vault) internal view returns (uint256) {
+        uint256 current = getTotalCollateralValue(vault);
+        uint256 basis = _getStorage().depositedAssetValue;
+        return current < basis ? current : basis;
     }
 
     /**
@@ -134,7 +154,7 @@ library ERC4626CollateralManager {
         ERC4626CollateralData storage data = _getStorage();
         shares = data.shares;
         depositedAssetValue = data.depositedAssetValue;
-        currentAssetValue = _resolveCollateralValue(vault, shares);
+        (currentAssetValue, ) = _resolveCollateralValue(vault, shares, true);
     }
 
     /**
@@ -199,7 +219,7 @@ library ERC4626CollateralManager {
      * @return excess Any excess amount after fully paying debt
      */
     function decreaseTotalDebt(address portfolioFactoryConfig, address vault, uint256 amount) public returns (uint256 excess) {
-        _snapshotIfNeeded(portfolioFactoryConfig, vault);
+        _snapshotIfNeededRepay(portfolioFactoryConfig, vault);
         return _decreaseTotalDebt(portfolioFactoryConfig, amount);
     }
 
@@ -232,15 +252,11 @@ library ERC4626CollateralManager {
         return excess;
     }
 
-    /**
-     * @dev Get the maximum loan amount based on collateral value
-     */
-    function getMaxLoan(address portfolioFactoryConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        uint256 totalCollateralValue = getTotalCollateralValue(vault);
+    /// @dev maxLoanIgnoreSupply from a collateral value. Single source of truth
+    ///      shared by getMaxLoan and the repay-path shortfall computation.
+    function _maxLoanIgnoreSupply(address portfolioFactoryConfig, uint256 totalCollateralValue) internal view returns (uint256 maxLoanIgnoreSupply) {
         ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
-
         uint256 ltv = loanConfig.getLtv();
-
         if (ltv == 0) {
             // Cash-flow path: operator calibrates rewardsRate*multiplier to bake in
             // periodic rate plus any cross-asset price. The 1e12 divisor absorbs
@@ -254,6 +270,16 @@ library ERC4626CollateralManager {
             // for this branch to be correct the lending asset must match the vault asset.
             maxLoanIgnoreSupply = (totalCollateralValue * ltv) / 10000;
         }
+    }
+
+    /**
+     * @dev Get the maximum loan amount based on collateral value
+     */
+    function getMaxLoan(address portfolioFactoryConfig, address vault) public view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
+        uint256 totalCollateralValue = getBorrowableCollateralValue(vault);
+        ILoanConfig loanConfig = PortfolioFactoryConfig(portfolioFactoryConfig).getLoanConfig();
+
+        maxLoanIgnoreSupply = _maxLoanIgnoreSupply(portfolioFactoryConfig, totalCollateralValue);
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();
@@ -353,7 +379,14 @@ library ERC4626CollateralManager {
         _getStorage().debt = lendingPool.getDebtBalance(address(this));
     }
 
+    /// @dev Revert if the facet vault disagrees with the set-once canonical vault in config; skipped while unset.
+    function _enforceVault(address portfolioFactoryConfig, address vault) internal view {
+        address canonical = IERC4626CollateralVaultConfig(portfolioFactoryConfig).getCollateralVault();
+        if (canonical != address(0) && canonical != vault) revert VaultMismatch(canonical, vault);
+    }
+
     function _snapshotIfNeeded(address portfolioFactoryConfig, address vault) internal {
+        _enforceVault(portfolioFactoryConfig, vault);
         _syncDebt(portfolioFactoryConfig);
         ERC4626CollateralData storage data = _getStorage();
         if (data.snapshotBlockNumber != block.number) {
@@ -362,12 +395,34 @@ library ERC4626CollateralManager {
         }
     }
 
+    /// @dev Repay-path snapshot. Always syncs debt; records the shortfall baseline
+    ///      only if the collateral read succeeds. A paused collateral vault skips
+    ///      the snapshot instead of blocking the repay; a later borrow-side op in
+    ///      the same block re-attempts the strict read and still reverts.
+    function _snapshotIfNeededRepay(address portfolioFactoryConfig, address vault) internal {
+        _syncDebt(portfolioFactoryConfig);
+        ERC4626CollateralData storage data = _getStorage();
+        if (data.snapshotBlockNumber == block.number) return;
+        (uint256 collateralValue, bool ok) = _resolveCollateralValue(vault, data.shares, false);
+        if (!ok) return;
+        // Mirror getBorrowableCollateralValue: cap at cost basis so the repay
+        // baseline matches the borrow-side shortfall computation.
+        uint256 basis = data.depositedAssetValue;
+        uint256 borrowable = collateralValue < basis ? collateralValue : basis;
+        uint256 maxLoanIgnoreSupply = _maxLoanIgnoreSupply(portfolioFactoryConfig, borrowable);
+        uint256 debt = getTotalDebt();
+        data.snapshotBlockNumber = block.number;
+        data.startShortfall = debt > maxLoanIgnoreSupply ? debt - maxLoanIgnoreSupply : 0;
+    }
+
     /**
-     * @dev Remove shares for yield claiming without affecting depositedAssetValue.
-     *      Gated by isAuthorizedCaller. The PortfolioManager is intentionally NOT
-     *      bypassed — it does not call this path. An unauthorized caller could
-     *      otherwise burn share tracking without burning real shares and unlock
-     *      fictitious borrow capacity.
+     * @dev Reduce tracked shares to reflect harvested yield, holding
+     *      depositedAssetValue fixed. Accounting only; the paired share redeem
+     *      lives in the claiming facet. Three checks bound any caller: remaining
+     *      value must still cover depositedAssetValue (no principal removal), the
+     *      fixed basis blocks re-harvesting principal as fake yield, and debt must
+     *      stay within max-loan. isAuthorizedCaller-gated; a standalone call can
+     *      only desync tracking downward, which addCollateral re-syncs.
      */
     function removeSharesForYield(address portfolioFactoryConfig, address vault, uint256 shares) public {
         _snapshotIfNeeded(portfolioFactoryConfig, vault);
@@ -382,7 +437,7 @@ library ERC4626CollateralManager {
         require(data.shares >= shares, "Insufficient shares");
 
         uint256 remainingShares = data.shares - shares;
-        uint256 remainingValue = _resolveCollateralValue(vault, remainingShares);
+        (uint256 remainingValue, ) = _resolveCollateralValue(vault, remainingShares, true);
         require(remainingValue >= data.depositedAssetValue, "Would remove principal");
 
         data.shares = remainingShares;

@@ -38,6 +38,8 @@ import {ERC4626LendingFacet} from "../../../src/facets/account/erc4626/ERC4626Le
 import {DeployERC4626CollateralFacet} from "../../../script/portfolio_account/facets/DeployERC4626CollateralFacet.s.sol";
 import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facets/DeployERC4626LendingFacet.s.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -92,7 +94,7 @@ contract ERC4626LendingFacetTopUpTest is Test {
         _portfolioFactory = factory;
         _facetRegistry = registry;
 
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        DeployPortfolioFactoryConfig configDeployer = new DeployERC4626PortfolioFactoryConfig();
         (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         _underlyingAsset = new MockERC20("Mock USDC", "mUSDC", 6);
@@ -115,6 +117,7 @@ contract ERC4626LendingFacetTopUpTest is Test {
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
+        ERC4626PortfolioFactoryConfig(address(_portfolioFactoryConfig)).setCollateralVault(address(_mockVault));
 
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
 
@@ -197,7 +200,7 @@ contract ERC4626LendingFacetTopUpTest is Test {
         _addCollateral(shares);
         _setTopUp(true);
 
-        (uint256 maxLoanBefore, ) = ERC4626LendingFacet(_portfolioAccount).getMaxLoan();
+        (uint256 maxLoanBefore, ) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
         assertGt(maxLoanBefore, 0, "preconditions: maxLoan > 0");
 
         uint256 ownerBalBefore = _underlyingAsset.balanceOf(_user);
@@ -217,7 +220,7 @@ contract ERC4626LendingFacetTopUpTest is Test {
         assertGt(ownerBalAfter, ownerBalBefore, "owner balance grew by amountAfterFees");
 
         // After borrowing maxLoan, there is no further headroom.
-        (uint256 maxLoanAfter, ) = ERC4626LendingFacet(_portfolioAccount).getMaxLoan();
+        (uint256 maxLoanAfter, ) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
         assertEq(maxLoanAfter, 0, "no more headroom post-topUp");
     }
 
@@ -258,7 +261,7 @@ contract ERC4626LendingFacetTopUpTest is Test {
         // Opt in but skip collateral so maxLoan = 0.
         _setTopUp(true);
 
-        (uint256 maxLoan, ) = ERC4626LendingFacet(_portfolioAccount).getMaxLoan();
+        (uint256 maxLoan, ) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
         assertEq(maxLoan, 0, "preconditions: maxLoan must be 0 with no collateral");
 
         uint256 debtBefore = ERC4626CollateralFacet(_portfolioAccount).getTotalDebt();
@@ -385,7 +388,7 @@ contract ERC4626LendingFacetTopUpTest is Test {
         // were stripped AND topUp's maxLoan==0 guard were also broken, a stray
         // call could re-mint debt against a now-violated cap. This belt-and-
         // suspenders assertion is the production failure-mode pin.
-        (uint256 maxLoanAfterDrop, ) = ERC4626LendingFacet(_portfolioAccount).getMaxLoan();
+        (uint256 maxLoanAfterDrop, ) = ERC4626CollateralFacet(_portfolioAccount).getMaxLoan();
         assertEq(maxLoanAfterDrop, 0, "post-cap-drop: no headroom");
 
         vm.prank(_authorizedCaller);

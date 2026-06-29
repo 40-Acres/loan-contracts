@@ -180,17 +180,11 @@ contract DynamicYieldBasisLpClaimingTest is DynamicYbDiamond {
         assertEq(underlyingPost - underlyingPre, received, "underlying credited to account");
         assertApproxEqAbs(received, 10e18, 10, "approximate 10% of DEPOSIT");
 
-        // depositedAssetValue should now be approximately re-balanced so D/S
-        // remains preserved (within rounding).
+        // depositedAssetValue is held fixed across the harvest burn.
         (uint256 shares, uint256 deposited, uint256 current) =
             DynamicYieldBasisLpClaimingFacet(portfolioAccount).getDepositInfo();
         assertLt(shares, DEPOSIT, "shares reduced");
-        // D/S preserved (approx). After harvest at pps=1.10:
-        //   D' = D * shares' / shares, with surplus = shares - shares'.
-        // Per-share basis = D/S preserved within wei rounding.
-        uint256 perShareBefore = (DEPOSIT * 1e18) / DEPOSIT; // = 1e18
-        uint256 perShareAfter = (deposited * 1e18) / shares;
-        assertApproxEqAbs(perShareAfter, perShareBefore, 1, "per-share basis preserved");
+        assertApproxEqAbs(deposited, DEPOSIT, 2, "deposited basis held fixed across harvest");
         // current reflects new pps on the remaining shares.
         assertGt(current, 0, "current value positive");
     }

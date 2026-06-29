@@ -404,17 +404,11 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(received, 0, "Should receive yield");
 
-        // Under option-(ii) proportional deduction, depositedValue can shrink
-        // proportionally with the burn. Per-share basis D/S is preserved; the
-        // remaining collateral value still covers the (smaller) deposited basis.
-        (uint256 sharesAfter, uint256 depositedValueAfter, uint256 currentValueAfter) =
+        // depositedAssetValue is held fixed across the harvest burn; the
+        // remaining collateral value still covers the (unchanged) basis.
+        (, uint256 depositedValueAfter, uint256 currentValueAfter) =
             YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
-        assertLe(depositedValueAfter, depositedValueBefore, "Deposited value can only shrink");
-        if (sharesAfter > 0) {
-            uint256 basisPerShareBefore = (depositedValueBefore * 1e18) / DEPOSIT_AMOUNT;
-            uint256 basisPerShareAfter = (depositedValueAfter * 1e18) / sharesAfter;
-            assertApproxEqAbs(basisPerShareAfter, basisPerShareBefore, 1, "Per-share basis preserved");
-        }
+        assertEq(depositedValueAfter, depositedValueBefore, "deposited basis held fixed across harvest");
         assertGe(currentValueAfter, depositedValueAfter, "Current value still covers deposited value");
 
         // maxLoan after harvest >= original maxLoan → debt is still covered
@@ -732,15 +726,16 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
             YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
 
         assertEq(shares, 10e8, "Should have 10e8 total shares");
-        // Values are 18-dec under the post-refactor pps scaling. With PPS_DEC_SCALE=1e28:
-        //   deposited = 5e8*1e28/1e18 + 5e8*1.5e28/1e18 = 5e18 + 7.5e18 = 12.5e18
-        //   current   = 10e8 * 1.5e28/1e18 = 15e18
-        //   yield     = 15e18 - 12.5e18 = 2.5e18
-        assertEq(depositedValue, 12.5e18, "Deposited value (18-dec) is shares-weighted by PPS at deposit time");
-        assertEq(currentValue, 15e18, "Current value (18-dec) at PPS=1.5x");
+        // Value fields are denormalized to the underlying's native decimals (8d here),
+        // matching the ERC4626 collateral views. With an 8-dec underlying:
+        //   deposited = 5e8*1.0 + 5e8*1.5 = 5e8 + 7.5e8 = 12.5e8
+        //   current   = 10e8 * 1.5 = 15e8
+        //   yield     = 15e8 - 12.5e8 = 2.5e8
+        assertEq(depositedValue, 12.5e8, "Deposited value (native 8-dec) is shares-weighted by PPS at deposit time");
+        assertEq(currentValue, 15e8, "Current value (native 8-dec) at PPS=1.5x");
 
         (uint256 yieldUnderlying, ) = YieldBasisLpClaimingFacet(_portfolioAccount).getAvailableLpFeeYield();
-        assertEq(yieldUnderlying, 2.5e18, "Yield (18-dec) = currentValue - depositedValue");
+        assertEq(yieldUnderlying, 2.5e8, "Yield (native 8-dec) = currentValue - depositedValue");
 
         // Harvest should work and only take yield, not principal
         uint256 floor = _harvestFloor();
@@ -748,12 +743,12 @@ contract YieldBasisLpCollateralEnforcementTest is Test {
         uint256 received = YieldBasisLpClaimingFacet(_portfolioAccount).harvestLpFees(floor);
         assertGt(received, 0, "Should receive yield");
 
-        // Under option-(ii): D shrinks proportionally with the burn so per-share
-        // basis D/S is preserved. Remaining value still covers (smaller) basis.
+        // depositedAssetValue is held fixed across the harvest burn; remaining
+        // value still covers the (unchanged) basis.
         (, uint256 depositedValueAfter, uint256 currentValueAfter) =
             YieldBasisLpClaimingFacet(_portfolioAccount).getDepositInfo();
         assertGe(currentValueAfter, depositedValueAfter, "Remaining value must cover deposited value after harvest");
-        assertLe(depositedValueAfter, depositedValue, "Deposited value can only shrink across harvest");
+        assertEq(depositedValueAfter, depositedValue, "deposited basis held fixed across harvest");
     }
 
     /**

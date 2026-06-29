@@ -12,8 +12,9 @@ pragma solidity ^0.8.30;
  *   P1 — slippage cap: delivered >= (lpToBurn * minPerShare) / 1e18.
  *        Enforced inside _lpToken.withdraw via min_assets; we re-check
  *        externally as a defense-in-depth.
- *   P2 — basis preserved: post-harvest sharesPost*pps + tolerance >= depPost,
- *        i.e. per-share basis D'/S' is preserved (S'*p >= D').
+ *   P2 — principal covered: post-harvest sharesPost*pps + tolerance >= depPost.
+ *        depositedAssetValue is held fixed across the burn, so remaining LP
+ *        value must still cover the original basis (S'*p >= D).
  *   P3 — no over-tracking: sharesPost <= directLpPost +
  *        gauge.convertToAssets(gaugeBalPost) within rounding. Tracked LP must
  *        never exceed actually-recoverable LP.
@@ -313,9 +314,9 @@ contract YieldBasisLpHarvestFuzzTest is Test, HarvestFloor85 {
             // Underlying balance delta matches `received` return.
             assertEq(underlyingPost - underlyingPre, received, "underlying delta == received");
 
-            // P2: per-share basis preserved (S'*p >= D' within tolerance).
+            // P2: remaining LP value still covers the fixed basis (S'*p >= D).
             uint256 sharesPostValue = (sharesPost * newPps) / 1e18;
-            assertGe(sharesPostValue + 2, depPost, "P2: S'*p >= D' (basis preserved)");
+            assertGe(sharesPostValue + 2, depPost, "P2: S'*p >= D (principal covered)");
 
             // P3: tracked shares <= recoverable LP within rounding.
             assertLe(sharesPost, actualLpPost + 2, "P3: tracked <= recoverable + tolerance");

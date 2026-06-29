@@ -136,18 +136,4 @@ contract ERC4626LendingFacet is AccessControl {
 
         emit ToppedUp(maxLoan, amountAfterFees, originationFee, portfolioOwner);
     }
-
-    /**
-     * @dev Get the maximum loan amount
-     */
-    function getMaxLoan() external view returns (uint256 maxLoan, uint256 maxLoanIgnoreSupply) {
-        return ERC4626CollateralManager.getMaxLoan(address(_portfolioFactory.portfolioFactoryConfig()), _vault);
-    }
-
-    /**
-     * @dev Get total debt
-     */
-    function getTotalDebt() external view returns (uint256) {
-        return ERC4626CollateralManager.getTotalDebt();
-    }
 }
