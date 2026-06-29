@@ -151,11 +151,21 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTr
      *      on affected accounts, and (if needed) flips the flag back.
      */
     function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) nonReentrant {
+        address config = _config();
         bool staked = getStakedMode();
         if (staked) {
             uint256 lpBalance = _lpToken.balanceOf(address(this));
             require(lpBalance > 0, "Nothing to stake");
+
+            YieldBasisCollateralManager.snapshotShortfall(config, address(_lpToken), _underlying);
             _stake(lpBalance);
+            YieldBasisCollateralManager.reconcileSharesToBalance(
+                config,
+                address(_lpToken),
+                _underlying,
+                address(_gauge)
+            );
+            YieldBasisCollateralManager.enforceCollateralRequirements(config, address(_lpToken), _underlying);
         } else {
             uint256 shares = _gauge.balanceOf(address(this));
             require(shares > 0, "Nothing staked");
@@ -168,7 +178,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTr
             // Absorbs ERC4626 1-wei rounding or any future YB gauge fee/rebase as
             // accounting truth instead of locking users out of subsequent withdraw.
             YieldBasisCollateralManager.reconcileSharesToBalance(
-                _config(),
+                config,
                 address(_lpToken),
                 _underlying,
                 address(_gauge)
