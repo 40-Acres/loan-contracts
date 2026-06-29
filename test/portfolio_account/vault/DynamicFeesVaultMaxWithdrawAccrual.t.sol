@@ -296,11 +296,20 @@ contract DynamicFeesVaultMaxWithdrawAccrualTest is Test {
         // The assets received must not exceed liquidity that was available.
         assertLe(received, liquidBefore, "redeemed assets must not exceed prior liquid balance");
 
-        // And we should drain it tightly: the leftover is at most one
-        // share's worth of asset (floor-rounding from share->asset math).
-        // Use a generous tolerance of one whole share unit (1e6 USDC) which
-        // is far larger than the actual rounding error but still tiny
-        // relative to the liquid balance.
-        assertGe(received + 1e6, liquidBefore, "should drain liquid within one share's rounding");
+        // maxRedeem caps at FREE liquidity (raw balance minus earmarked liabilities:
+        // unvested premium, unsettled rewards, escrow, aggregate excess), not raw cash.
+        // So the LP drains all currently-free liquidity within one share's rounding...
+        assertApproxEqAbs(
+            vault.maxWithdraw(address(this)),
+            0,
+            1e6,
+            "free liquidity drained within one share's rounding"
+        );
+        // ...while the earmarked cash (here, unsettled reward stream) stays in the vault.
+        assertGt(
+            usdc.balanceOf(address(vault)),
+            0,
+            "earmarked liabilities must remain in the vault, not be drained by the LP"
+        );
     }
 }
