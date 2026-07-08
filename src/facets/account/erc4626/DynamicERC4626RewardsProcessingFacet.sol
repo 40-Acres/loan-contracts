@@ -47,6 +47,11 @@ contract DynamicERC4626RewardsProcessingFacet is RewardsProcessingFacet {
         return DynamicERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _collateralVault, amount);
     }
 
+    /// @dev Block swapping the vault share token (collateral); underlying asset stays swappable.
+    function _isSwapAllowed(address inputToken) internal view override returns (bool) {
+        return inputToken != _collateralVault;
+    }
+
     /// @dev IncreaseCollateral is unsupported for ERC4626 collateral; use InvestToVault.
     function _increaseCollateral(uint256, address, uint256, SwapMod.RouteParams memory) internal pure override returns (uint256 amountUsed) {
         return 0;
