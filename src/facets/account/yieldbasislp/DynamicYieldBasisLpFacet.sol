@@ -117,11 +117,23 @@ contract DynamicYieldBasisLpFacet is AccessControl, ICollateralFacet, Reentrancy
     }
 
     function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) nonReentrant {
+        address config = _config();
         bool staked = getStakedMode();
         if (staked) {
             uint256 lpBalance = _lpToken.balanceOf(address(this));
             require(lpBalance > 0, "Nothing to stake");
-            _stake(lpBalance);
+
+            DynamicYieldBasisCollateralManager.snapshotShortfall(config, address(_lpToken), _underlying);
+            (uint256 lpSent, uint256 sharesMinted) = _stake(lpBalance);
+            // Reject a lossy sweep: minted shares must be worth at least the LP staked.
+            require(_gauge.convertToAssets(sharesMinted) >= lpSent, "Lossy stake");
+            DynamicYieldBasisCollateralManager.reconcileSharesToBalance(
+                config,
+                address(_lpToken),
+                _underlying,
+                address(_gauge)
+            );
+            DynamicYieldBasisCollateralManager.enforceCollateralRequirements(config, address(_lpToken), _underlying);
         } else {
             uint256 shares = _gauge.balanceOf(address(this));
             require(shares > 0, "Nothing staked");
@@ -131,7 +143,7 @@ contract DynamicYieldBasisLpFacet is AccessControl, ICollateralFacet, Reentrancy
             uint256 lpReceived = _lpToken.balanceOf(address(this)) - lpBefore;
 
             DynamicYieldBasisCollateralManager.reconcileSharesToBalance(
-                _config(),
+                config,
                 address(_lpToken),
                 _underlying,
                 address(_gauge)
@@ -141,12 +153,12 @@ contract DynamicYieldBasisLpFacet is AccessControl, ICollateralFacet, Reentrancy
         }
     }
 
-    function _stake(uint256 amount) internal {
+    function _stake(uint256 amount) internal returns (uint256 lpSent, uint256 sharesMinted) {
         uint256 lpBefore = _lpToken.balanceOf(address(this));
         _lpToken.approve(address(_gauge), amount);
-        uint256 sharesMinted = _gauge.deposit(amount, address(this));
+        sharesMinted = _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
-        uint256 lpSent = lpBefore - _lpToken.balanceOf(address(this));
+        lpSent = lpBefore - _lpToken.balanceOf(address(this));
         emit Staked(lpSent, sharesMinted);
     }
 

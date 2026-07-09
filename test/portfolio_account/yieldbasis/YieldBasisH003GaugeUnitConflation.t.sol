@@ -713,23 +713,33 @@ contract YBFacetH003Test is Test {
      * Scenario 4: _stake event accuracy under deposit fee
      *
      * Gauge takes a deposit fee (mints fewer shares than LP given).
-     * Staked event emits (lpSent, sharesMinted) — these are different now.
+     * Staked event emits (lpSent, sharesMinted) -- these differ under a fee.
+     *
+     * Exercised via the deposit() auto-stake path: the setStakedMode() sweep
+     * now rejects a lossy stake ("Lossy stake"), but deposit() auto-stake stays
+     * open (deadlock-free), so event-field accuracy is asserted there.
      * ------------------------------------------------------------------ */
     function test_stake_event_reflectsActualSharesMinted_underDepositFee() public {
-        // 1% deposit fee — gauge.deposit(1e18) mints 0.99e18 shares, but pulls
+        // 1% deposit fee -- gauge.deposit(1e18) mints 0.99e18 shares, but pulls
         // the full 1e18 LP from the account.
         gauge.setDepositFeeBps(100);
 
-        // Deposit holds LP on account.
-        _deposit(DEPOSIT);
-
         uint256 expectedShares = (DEPOSIT * 9_900) / 10_000;
+
+        // Staked mode on -> deposit() auto-stakes and emits Staked(lpSent, sharesMinted).
         vm.prank(owner_);
         portfolioFactoryConfig.setStakedGaugeMode(true);
+
+        vm.startPrank(user);
+        ybLp.approve(portfolioAccount, DEPOSIT);
+        address[] memory factories = new address[](1);
+        factories[0] = address(portfolioFactory);
+        bytes[] memory cd = new bytes[](1);
+        cd[0] = abi.encodeWithSelector(YieldBasisLpFacet.deposit.selector, DEPOSIT);
         vm.expectEmit(false, false, false, true, portfolioAccount);
         emit YieldBasisLpFacet.Staked(DEPOSIT, expectedShares);
-        vm.prank(authorizedCaller);
-        YieldBasisLpFacet(portfolioAccount).setStakedMode();
+        portfolioManager.multicall(cd, factories);
+        vm.stopPrank();
 
         // Gauge received full 1e18 LP, minted 0.99e18 shares.
         (uint256 staked, uint256 unstaked) = YieldBasisLpFacet(portfolioAccount).getStakingState();
