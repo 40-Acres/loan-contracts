@@ -151,11 +151,23 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTr
      *      on affected accounts, and (if needed) flips the flag back.
      */
     function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) nonReentrant {
+        address config = _config();
         bool staked = getStakedMode();
         if (staked) {
             uint256 lpBalance = _lpToken.balanceOf(address(this));
             require(lpBalance > 0, "Nothing to stake");
-            _stake(lpBalance);
+
+            YieldBasisCollateralManager.snapshotShortfall(config, address(_lpToken), _underlying);
+            (uint256 lpSent, uint256 sharesMinted) = _stake(lpBalance);
+            // Reject a lossy sweep: minted shares must be worth at least the LP staked.
+            require(_gauge.convertToAssets(sharesMinted) >= lpSent, "Lossy stake");
+            YieldBasisCollateralManager.reconcileSharesToBalance(
+                config,
+                address(_lpToken),
+                _underlying,
+                address(_gauge)
+            );
+            YieldBasisCollateralManager.enforceCollateralRequirements(config, address(_lpToken), _underlying);
         } else {
             uint256 shares = _gauge.balanceOf(address(this));
             require(shares > 0, "Nothing staked");
@@ -168,7 +180,7 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTr
             // Absorbs ERC4626 1-wei rounding or any future YB gauge fee/rebase as
             // accounting truth instead of locking users out of subsequent withdraw.
             YieldBasisCollateralManager.reconcileSharesToBalance(
-                _config(),
+                config,
                 address(_lpToken),
                 _underlying,
                 address(_gauge)
@@ -178,12 +190,12 @@ contract YieldBasisLpFacet is AccessControl, ICollateralFacet, ReentrancyGuardTr
         }
     }
 
-    function _stake(uint256 amount) internal {
+    function _stake(uint256 amount) internal returns (uint256 lpSent, uint256 sharesMinted) {
         uint256 lpBefore = _lpToken.balanceOf(address(this));
         _lpToken.approve(address(_gauge), amount);
-        uint256 sharesMinted = _gauge.deposit(amount, address(this));
+        sharesMinted = _gauge.deposit(amount, address(this));
         _lpToken.approve(address(_gauge), 0);
-        uint256 lpSent = lpBefore - _lpToken.balanceOf(address(this));
+        lpSent = lpBefore - _lpToken.balanceOf(address(this));
         emit Staked(lpSent, sharesMinted);
     }
 
