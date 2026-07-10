@@ -13,14 +13,27 @@ import {IFeeCalculator} from "../../../src/facets/account/vault/IFeeCalculator.s
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract MockUSDC is ERC20 {
+    // Simulates a USDC-style transfer blocklist (e.g. blacklisted address) so tests can
+    // force the trySafeTransfer inside _transferOrEscrow to fail and hit the escrow branch.
+    mapping(address => bool) public blocked;
+
     constructor() ERC20("USD Coin", "USDC") {
         _mint(msg.sender, 1000e6);
     }
     function decimals() public pure override returns (uint8) { return 6; }
     function mint(address to, uint256 amount) external { _mint(to, amount); }
+    function setBlocked(address who, bool isBlocked) external { blocked[who] = isBlocked; }
+    function _update(address from, address to, uint256 value) internal override {
+        require(!blocked[from] && !blocked[to], "USDC: blocked");
+        super._update(from, to, value);
+    }
 }
 
 contract MockPortfolioFactory is IPortfolioFactory {
+    // Excess is routed to ownerOf(account); a real nonzero owner is required so the
+    // trySafeTransfer succeeds (owner receives the excess) instead of escrowing.
+    address public constant ACCOUNT_OWNER = address(0x0FFE12);
+
     function isPortfolio(address _portfolio) external pure override returns (bool) { return _portfolio != address(0); }
     function facetRegistry() external pure override returns (address) { return address(0); }
     function portfolioManager() external pure override returns (address) { return address(0); }
@@ -28,7 +41,7 @@ contract MockPortfolioFactory is IPortfolioFactory {
     function owners(address) external pure override returns (address) { return address(0); }
     function createAccount(address) external pure override returns (address) { return address(0); }
     function getRegistryVersion() external pure override returns (uint256) { return 0; }
-    function ownerOf(address) external pure override returns (address) { return address(0); }
+    function ownerOf(address) external pure override returns (address) { return ACCOUNT_OWNER; }
     function portfolioOf(address) external pure override returns (address) { return address(0); }
     function getAllPortfolios() external pure override returns (address[] memory) { return new address[](0); }
     function getPortfoliosLength() external pure override returns (uint256) { return 0; }
@@ -49,9 +62,13 @@ contract FlatFeeCalculator is IFeeCalculator {
  *  Part A: after settling the depositor, depositRewards computes
  *      worstBorrowerBps = 10000 - getVaultRatioBps(10000)   // smallest borrower credit fraction
  *      retain          = min(amount, ceilDiv(debt * 10000, worstBorrowerBps))  // debt read AFTER settle
- *  and pulls in only `retain`. The excess stays in the depositor's wallet.
- *  Emits RewardsDepositCapped(borrower, requested, retained) when retain < amount.
- *  Returns early (no pull, no stream) when retain == 0.
+ *  and streams in only `retain`. The excess (amount - retain), INCLUDING the fully-settled
+ *  retain == 0 case, is pulled in then forwarded to the portfolio owner via _transferOrEscrow
+ *  (trySafeTransfer to ownerOf(account); escrow on failure). So the depositor account always
+ *  spends the FULL `amount`; the owner receives the excess.
+ *  Emits RewardsDepositCapped(borrower, requested, retained) whenever excess > 0 (retain < amount).
+ *  Net vault USDC delta == retain when the owner transfer SUCCEEDS (excess in then out); it
+ *  becomes the full `amount` when the owner cannot receive and the excess escrows in the vault.
  */
 contract DynamicFeesVaultDepositRewardsCapTest is Test {
     DynamicFeesVault public vault;
@@ -61,6 +78,8 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
     address public owner = address(0x1);
     address public alice = address(0xA11CE);
     address public bob = address(0xB0B);
+    // Mirror of MockPortfolioFactory.ACCOUNT_OWNER; excess is forwarded here.
+    address public constant ACCOUNT_OWNER = address(0x0FFE12);
 
     uint256 constant WEEK = ProtocolTimeLibrary.WEEK;
     uint256 constant EPOCH_2 = 2 * WEEK;
@@ -132,6 +151,7 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
 
         uint256 vaultBalBefore = usdc.balanceOf(address(vault));
         uint256 aliceBalBefore = usdc.balanceOf(alice);
+        uint256 ownerBalBefore = usdc.balanceOf(ACCOUNT_OWNER);
         uint256 unsettledBefore = vault.getTotalUnsettledRewards();
 
         // RewardsDepositCapped(alice, requested=deposit, retained=expectedRetain)
@@ -142,16 +162,23 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
         vault.depositRewards(deposit);
 
         uint256 pulled = usdc.balanceOf(address(vault)) - vaultBalBefore;
-        uint256 refundKept = usdc.balanceOf(alice) - (aliceBalBefore - deposit); // deposit not spent
 
         console.log("worstBorrowerBps :", worstBorrowerBps);
         console.log("expectedRetain   :", expectedRetain);
         console.log("vault pulled     :", pulled);
-        console.log("depositor kept   :", aliceBalBefore - usdc.balanceOf(alice));
+        console.log("account spent    :", aliceBalBefore - usdc.balanceOf(alice));
+        console.log("owner received   :", usdc.balanceOf(ACCOUNT_OWNER) - ownerBalBefore);
 
+        // Excess is pulled in then forwarded to the owner, so net vault delta == retain.
         assertEq(pulled, expectedRetain, "vault USDC balance delta must equal retain");
-        assertEq(usdc.balanceOf(alice), aliceBalBefore - expectedRetain, "depositor only spends retain");
-        assertEq(refundKept, deposit - expectedRetain, "depositor keeps amount - retain");
+        // Account now spends the FULL deposit (excess forwarded out, not kept).
+        assertEq(usdc.balanceOf(alice), aliceBalBefore - deposit, "depositor account spends the full deposit");
+        // The owner receives the capped excess (amount - retain).
+        assertEq(
+            usdc.balanceOf(ACCOUNT_OWNER) - ownerBalBefore,
+            deposit - expectedRetain,
+            "owner receives the capped excess (amount - retain)"
+        );
         assertEq(
             vault.getTotalUnsettledRewards() - unsettledBefore,
             expectedRetain,
@@ -200,13 +227,15 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
     }
 
     // ----------------------------------------------------------------------
-    // Test 3: Debt cleared by in-function settlement -> early return (retain==0).
+    // Test 3: Debt cleared by in-function settlement -> retain==0, whole amount
+    //         is excess routed to the portfolio owner (no early return, no stream).
     // ----------------------------------------------------------------------
     // We use a 0% lender calculator so 100% of a first stream is borrower credit.
     // Alice deposits a first stream sized exactly to her debt; by the time it has
     // fully vested, a second depositRewards call settles her debt to zero, so the
-    // cap computes retain = ceilDiv(0 * 10000, 10000) = 0 and returns early.
-    function test_depositRewards_debtClearedBySettle_earlyReturn() public {
+    // cap computes retain = ceilDiv(0 * 10000, 10000) = 0. Nothing is streamed, but
+    // the entire `amount` is now excess: pulled in then forwarded to the owner.
+    function test_depositRewards_debtClearedBySettle_excessRoutedToOwner() public {
         _useFlatCalculator(0); // 0% lender -> worstBorrowerBps = 10000, 100% borrower credit
 
         // Debt chosen as an exact multiple of the epoch duration (WEEK = 604800s) so
@@ -228,7 +257,7 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
         // Advance past the stream's period finish so the full borrower credit vests.
         // Do NOT pre-settle: stored debt must still be > 0 at function entry so the
         // require(debtBalance > 0) guard passes, and the in-function _settleRewards is
-        // what clears it to zero -- driving retain == 0 and the early return.
+        // what clears it to zero -- driving retain == 0 and the excess-to-owner route.
         vm.warp(EPOCH_3);
 
         // Sanity: effective debt is now zero (vesting fully credited), but the STORED
@@ -236,21 +265,34 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
         assertEq(vault.getEffectiveDebtBalance(alice), 0, "effective debt cleared by vested credit");
         assertEq(vault.getDebtBalance(alice), debt, "stored debt still nonzero pre-settle (guard passes)");
 
+        // Fund alice for the second deposit: the FIRST deposit now spent her full 100e6
+        // (retain streamed + excess forwarded to owner), unlike the old behavior where the
+        // excess stayed in her wallet.
+        _fund(alice, 50e6);
+
         uint256 vaultBalBefore = usdc.balanceOf(address(vault));
         uint256 aliceBalBefore = usdc.balanceOf(alice);
+        uint256 ownerBalBefore = usdc.balanceOf(ACCOUNT_OWNER);
 
         // Second depositRewards: _settleRewards inside clears the debt to zero, so the
-        // cap computes retain = ceilDiv(0 * 10000, worstBorrowerBps) = 0 -> early return.
-        // No revert, no USDC pulled, no new stream created.
+        // cap computes retain = ceilDiv(0 * 10000, worstBorrowerBps) = 0. Nothing is
+        // streamed, but the whole 50e6 is excess: pulled in then forwarded to the owner.
         vm.prank(alice);
         vault.depositRewards(50e6);
 
         assertEq(vault.getDebtBalance(alice), 0, "in-function settle cleared the debt to zero");
-        assertEq(usdc.balanceOf(address(vault)), vaultBalBefore, "no USDC pulled on retain==0 early return");
-        assertEq(usdc.balanceOf(alice), aliceBalBefore, "depositor keeps full amount on early return");
-        // No NEW stream: the expired stream is zeroed by settlement and the early
-        // return adds nothing, so the depositor has no live reward rate.
-        assertEq(vault.getPendingRewards(alice), 0, "no live stream after early return");
+        // Net vault delta 0: excess pulled in then forwarded straight out to the owner.
+        assertEq(usdc.balanceOf(address(vault)), vaultBalBefore, "net vault USDC delta 0 (excess pulled in then out)");
+        // Account spends the full 50e6; the owner receives it as excess.
+        assertEq(usdc.balanceOf(alice), aliceBalBefore - 50e6, "depositor account spends the full amount");
+        assertEq(
+            usdc.balanceOf(ACCOUNT_OWNER) - ownerBalBefore,
+            50e6,
+            "owner receives the full amount as excess (retain == 0)"
+        );
+        // No NEW stream: the expired stream is zeroed by settlement and retain == 0
+        // adds nothing, so the depositor has no live reward rate.
+        assertEq(vault.getPendingRewards(alice), 0, "no live stream when retain == 0");
     }
 
     // ----------------------------------------------------------------------
@@ -317,8 +359,8 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
         vm.prank(alice);
         vault.depositRewards(deposit);
 
-        // NAV right after the (capped) deposit. Capping leaves the excess in the
-        // wallet, so the deposit must not move NAV beyond floor-division dust.
+        // NAV right after the (capped) deposit. The excess is pulled in then forwarded
+        // to the owner, so the deposit must not move NAV beyond floor-division dust.
         uint256 navAfterDeposit = vault.totalAssets();
 
         // Advance partway through the epoch and settle: NAV must be invariant
@@ -392,5 +434,125 @@ contract DynamicFeesVaultDepositRewardsCapTest is Test {
 
         assertEq(pulled, ceilRetain, "retain must round UP (toward the vault), never down");
         assertGt(pulled, floorRetain, "retain strictly greater than floor division");
+    }
+
+    // ----------------------------------------------------------------------
+    // Test 7 (new): Capped excess is forwarded to the portfolio owner.
+    // ----------------------------------------------------------------------
+    // Real curve: worstBorrowerBps = 500 -> retain = 200e6 for a 10e6 debt.
+    // Deposit 1000e6 -> excess = 800e6 routed to the owner (transfer succeeds).
+    function test_depositRewards_cappedExcess_routedToOwner() public {
+        uint256 debt = 10e6;
+        uint256 deposit = 1000e6;
+
+        vm.prank(alice);
+        vault.borrowFromPortfolio(debt);
+
+        uint256 worstBorrowerBps = 10000 - vault.getVaultRatioBps(10000);
+        assertEq(worstBorrowerBps, 500, "worstBorrowerBps = 10000 - 9500 (real curve at max util)");
+
+        uint256 retain = Math.ceilDiv(debt * 10000, worstBorrowerBps);
+        assertEq(retain, 200e6, "retain = ceilDiv(10e6*10000, 500) = 200e6");
+        uint256 expectedExcess = deposit - retain; // 800e6
+
+        _fund(alice, deposit);
+
+        uint256 vaultBalBefore = usdc.balanceOf(address(vault));
+        uint256 aliceBalBefore = usdc.balanceOf(alice);
+        uint256 ownerBalBefore = usdc.balanceOf(ACCOUNT_OWNER);
+        uint256 unsettledBefore = vault.getTotalUnsettledRewards();
+        uint256 escrowTotalBefore = vault.escrowedExcessTotal();
+
+        vm.prank(alice);
+        vault.depositRewards(deposit);
+
+        // Owner receives the entire excess; the account spends the full deposit.
+        assertEq(
+            usdc.balanceOf(ACCOUNT_OWNER) - ownerBalBefore,
+            expectedExcess,
+            "owner receives 800e6 excess"
+        );
+        assertEq(aliceBalBefore - usdc.balanceOf(alice), deposit, "account spends the full 1000e6 deposit");
+        // Net vault delta == retain: excess pulled in then forwarded out.
+        assertEq(usdc.balanceOf(address(vault)) - vaultBalBefore, retain, "net vault delta == retain (200e6)");
+        // Only the retained portion is streamed; excess is never counted as reward.
+        assertEq(
+            vault.getTotalUnsettledRewards() - unsettledBefore,
+            retain,
+            "totalUnsettledRewards delta == retain (excess not streamed)"
+        );
+        // Successful forward -> nothing escrowed.
+        assertEq(vault.escrowedExcessTotal(), escrowTotalBefore, "no escrow when owner transfer succeeds");
+    }
+
+    // ----------------------------------------------------------------------
+    // Test 8 (new): When the owner cannot receive USDC (blacklist), the excess
+    //               escrows in the vault and is later claimable.
+    // ----------------------------------------------------------------------
+    function test_depositRewards_cappedExcess_escrowedWhenOwnerCannotReceive() public {
+        uint256 debt = 10e6;
+        uint256 deposit = 1000e6;
+
+        vm.prank(alice);
+        vault.borrowFromPortfolio(debt);
+
+        uint256 worstBorrowerBps = 10000 - vault.getVaultRatioBps(10000);
+        uint256 retain = Math.ceilDiv(debt * 10000, worstBorrowerBps); // 200e6
+        uint256 expectedExcess = deposit - retain;                     // 800e6
+
+        _fund(alice, deposit);
+
+        // Block the owner so trySafeTransfer inside _transferOrEscrow fails -> escrow branch.
+        usdc.setBlocked(ACCOUNT_OWNER, true);
+
+        uint256 vaultBalBefore = usdc.balanceOf(address(vault));
+        uint256 aliceBalBefore = usdc.balanceOf(alice);
+        uint256 escrowOwnerBefore = vault.escrowedExcessOf(ACCOUNT_OWNER);
+        uint256 escrowTotalBefore = vault.escrowedExcessTotal();
+        uint256 navBefore = vault.totalAssets();
+
+        vm.prank(alice);
+        vault.depositRewards(deposit);
+
+        // Account still spends the full deposit; the excess could not be forwarded.
+        assertEq(aliceBalBefore - usdc.balanceOf(alice), deposit, "account spends the full deposit even on escrow");
+        // Excess is escrowed to the owner's escrow bucket.
+        assertEq(
+            vault.escrowedExcessOf(ACCOUNT_OWNER) - escrowOwnerBefore,
+            expectedExcess,
+            "excess escrowed to owner bucket"
+        );
+        assertEq(
+            vault.escrowedExcessTotal() - escrowTotalBefore,
+            expectedExcess,
+            "escrowedExcessTotal increased by excess"
+        );
+        // Escrowed excess STAYS in the vault, so net vault delta is the FULL amount.
+        assertEq(
+            usdc.balanceOf(address(vault)) - vaultBalBefore,
+            deposit,
+            "full deposit remains in vault (retain streamed + excess escrowed)"
+        );
+        // NAV neutral: the escrowed balance is offset one-for-one by escrowedExcessTotal.
+        assertApproxEqAbs(vault.totalAssets(), navBefore, 2, "totalAssets invariant across escrowing deposit");
+
+        // Now unblock and let the owner claim the escrowed excess.
+        usdc.setBlocked(ACCOUNT_OWNER, false);
+        uint256 ownerBalBeforeClaim = usdc.balanceOf(ACCOUNT_OWNER);
+
+        vm.prank(ACCOUNT_OWNER);
+        vault.claimEscrow();
+
+        assertEq(
+            usdc.balanceOf(ACCOUNT_OWNER) - ownerBalBeforeClaim,
+            expectedExcess,
+            "owner receives the escrowed excess on claim"
+        );
+        assertEq(vault.escrowedExcessOf(ACCOUNT_OWNER), 0, "owner escrow bucket zeroed after claim");
+        assertEq(
+            vault.escrowedExcessTotal(),
+            escrowTotalBefore,
+            "escrowedExcessTotal returns to its pre-deposit level after claim"
+        );
     }
 }
