@@ -253,29 +253,63 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
         uint256 borrowedAmt = 5_000e6;
         _borrow(borrowedAmt);
 
-        // Reward stream that, once vested, increases globalBorrowerPending.
+        // Reward stream that, once vested, becomes globalBorrowerPending.
         _streamRewardsAsBorrower(1_200e6);
 
         vm.warp(EPOCH_3);
         vault.sync();
 
         uint256 rawLoaned = vault.totalLoanedAssets();
-        uint256 reduction = _totalReduction();
 
-        // Drift must be live.
-        assertGt(reduction, 0, "reduction must be non-zero (rewards settled)");
-        assertGt(rawLoaned, reduction, "raw loaned still exceeds reduction in this scenario");
+        // PRE-SETTLEMENT PIN: after sync the reward has vested into
+        // globalBorrowerPending, but no per-borrower settlement has run, so
+        // totalVestedRewardsApplied is still 0. activeAssets() nets only
+        // totalVestedRewardsApplied -- NOT the unsettled pending -- so it must
+        // still equal the raw loaned. This is the whole point of the collapsed
+        // getter: mere vesting/pending does not net.
+        assertGt(vault.getGlobalBorrowerPending(), 0, "pending must be live pre-settlement");
+        assertEq(vault.totalVestedRewardsApplied(), 0, "no vested-applied rewards before settlement");
+        assertEq(vault.activeAssets(), rawLoaned, "activeAssets == rawLoaned pre-settlement (pending does not net)");
 
-        uint256 expected = rawLoaned - reduction;
-        assertEq(vault.activeAssets(), expected, "activeAssets must equal effective form");
+        uint256 activeBefore = vault.activeAssets();
+
+        // Settle the borrower: moves the vested borrower credit out of
+        // globalBorrowerPending and into totalVestedRewardsApplied (applied to debt).
+        // Only now does activeAssets() net anything.
+        vault.settleRewards(borrower);
+
+        uint256 vestedApplied = vault.totalVestedRewardsApplied();
+
+        // Netting must be live post-settlement.
+        assertGt(vestedApplied, 0, "vested-applied rewards must be non-zero after settlement");
+        assertGt(rawLoaned, vestedApplied, "raw loaned still exceeds vested-applied in this scenario");
+
+        uint256 expected = rawLoaned - vestedApplied;
+        assertEq(vault.activeAssets(), expected, "activeAssets must equal loaned minus vested-applied");
         assertLt(vault.activeAssets(), rawLoaned, "activeAssets must be strictly less than raw");
+
+        // activeAssets() dropped by exactly the settled (vested-applied) amount.
+        assertEq(
+            activeBefore - vault.activeAssets(),
+            vestedApplied,
+            "activeAssets dropped by exactly the settled amount"
+        );
     }
 
     // =========================================================================
-    // 5. activeAssets(): saturates at zero when reduction exceeds raw loaned.
+    // 5. activeAssets(): reaches zero when all outstanding debt is reward-settled.
+    //    activeAssets() = totalLoanedAssets - totalVestedRewardsApplied. When every
+    //    unit of debt is cleared by rewards, the excess-settlement branch credits
+    //    totalVestedRewardsApplied up to the borrower's entire principal (excess is
+    //    routed to the owner), so the two values MEET and activeAssets() hits 0.
+    //    The strict `>` saturation branch (vestedApplied > loaned) is purely
+    //    defensive and unreachable via public flows: each unit of debt is either
+    //    repaid (decrementing totalLoanedAssets) or reward-settled (incrementing
+    //    totalVestedRewardsApplied), so the two can meet but vestedApplied never
+    //    outruns loaned. This test exercises the reachable equality case.
     // =========================================================================
 
-    function test_activeAssets_saturatesAtZero_whenReductionExceedsLoaned() public {
+    function test_activeAssets_reachesZero_whenAllDebtRewardSettled() public {
         // Production curve: Part A caps the pull at debt/worstBorrowerFraction (20x debt
         // here), so the deposit below streams in full and vests at this suite's high
         // borrower fraction, over-crediting well past the small principal.
@@ -283,26 +317,31 @@ contract DynamicFeesVaultBorrowDriftTest is Test {
         vm.prank(owner);
         vault.setFeeCalculator(address(fc));
 
-        // Small principal so a large reward stream can over-saturate it.
+        // Small principal so a large reward stream can fully extinguish it.
         uint256 smallBorrow = 500e6;
         _borrow(smallBorrow);
 
         // Stream a reward amount strictly greater than principal. A full epoch of vesting
-        // drives globalBorrowerPending above totalLoanedAssets, hitting the
-        // excessPendingOwedToBorrowers branch in totalAssets() and the saturate-at-zero
-        // branch in activeAssets().
+        // drives the vested borrower credit above the debt, so settlement clears the debt
+        // entirely and routes the excess to the owner.
         uint256 rewardAmount = 1_500e6; // 3x principal
         _streamRewardsAsBorrower(rewardAmount);
 
         vm.warp(EPOCH_3);
         vault.sync();
 
+        // Settle the borrower: the excess branch credits totalVestedRewardsApplied up to
+        // the full principal and zeroes the debt.
+        vault.settleRewards(borrower);
+
         uint256 rawLoaned = vault.totalLoanedAssets();
-        uint256 reduction = _totalReduction();
-        assertGt(reduction, rawLoaned, "precondition: reduction must exceed raw loaned to exercise saturation");
+        uint256 vestedApplied = vault.totalVestedRewardsApplied();
+        // Reachable equality case: vested-applied rewards exactly meet raw loaned.
+        assertEq(vestedApplied, rawLoaned, "vested-applied rewards exactly meet raw loaned (all debt reward-settled)");
+        assertEq(vault.getDebtBalance(borrower), 0, "borrower debt fully extinguished by rewards");
 
         // No revert; returns 0 cleanly.
-        assertEq(vault.activeAssets(), 0, "activeAssets saturates at zero, does not revert or underflow");
+        assertEq(vault.activeAssets(), 0, "activeAssets reaches zero, does not revert or underflow");
     }
 
     // =========================================================================

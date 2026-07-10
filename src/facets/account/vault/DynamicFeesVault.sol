@@ -15,7 +15,7 @@ import {ReentrancyGuardTransientUpgradeable} from "@openzeppelin/contracts-upgra
 import {IFeeCalculator} from "./IFeeCalculator.sol";
 import {FeeCalculator} from "./FeeCalculator.sol";
 import {IPortfolioFactory} from "../../../interfaces/IPortfolioFactory.sol";
-import {IDynamicLendingPool} from "../../../interfaces/IDynamicLendingPool.sol";
+import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
 
 /**
  * @title DynamicFeesVault
@@ -23,7 +23,7 @@ import {IDynamicLendingPool} from "../../../interfaces/IDynamicLendingPool.sol";
  * @dev Combines vault functionality with debt token accounting for reward distribution
  * @dev Uses epoch-based reward vesting with swappable fee calculators
  */
-contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardTransientUpgradeable, IDynamicLendingPool {
+contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable, Ownable2StepUpgradeable, ReentrancyGuardTransientUpgradeable, ILendingPool {
     using SafeERC20 for IERC20;
 
     // ============ Events ============
@@ -863,11 +863,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // doesn't treat the inflow as interest. Mirrors repay / borrow / payFromPortfolio.
         _settleRewards(msg.sender);
 
-        // Cap the streamed portion at the worst-case amount needed to cover this borrower's
-        // own debt. At the highest possible lender share the borrower keeps the smallest credit
-        // fraction, so retain = debt / worstBorrowerFraction is the most a stream could need.
-        // Only `retain` is streamed as pending credit; the rest is excess paid straight to the
-        // owner below, so it is never counted as debt reduction.
+        // Cap the streamed portion at the worst-case amount needed to cover this borrower's debt
+        // (smallest borrower credit fraction = highest lender share); the rest is excess to the owner.
         uint256 retain = amount;
         uint256 worstBorrowerBps = 10000 - getVaultRatioBps(10000);
         if (worstBorrowerBps > 0) {
@@ -915,9 +912,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             emit RewardsMinted(msg.sender, retain);
         }
 
-        // Route the capped excess to the portfolio owner; never streamed, so it cannot
-        // understate debt. _transferOrEscrow keeps the blacklist-escrow + NAV offset consistent.
-        // Payout is the last action (CEI); nonReentrant guards the outbound transfer.
+        // Excess is never streamed; forward it to the owner via _transferOrEscrow (CEI-last).
         if (excess > 0) {
             emit RewardsDepositCapped(msg.sender, amount, retain);
             IERC20(asset()).safeTransferFrom(msg.sender, address(this), excess);
@@ -1012,19 +1007,9 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return address(this);
     }
 
+    /// @notice Outstanding loaned assets, excluding unsettled globalBorrowerPending, so borrow-cap
+    ///         consumers only ever over-state outstanding (never inflated headroom from pending credit).
     function activeAssets() external view returns (uint256) {
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
-        return $.totalLoanedAssets > totalReduction
-            ? $.totalLoanedAssets - totalReduction
-            : 0;
-    }
-
-    /// @notice Outstanding loaned assets credited only with reward credit already applied to debt.
-    /// @dev    Excludes unsettled globalBorrowerPending, whose per-borrower debt reduction is not
-    ///         yet known. Result only ever over-states outstanding, so borrow-cap consumers never
-    ///         see inflated headroom from pending credit.
-    function activeAssetsConservative() external view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
         return $.totalLoanedAssets > $.totalVestedRewardsApplied
             ? $.totalLoanedAssets - $.totalVestedRewardsApplied

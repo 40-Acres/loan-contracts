@@ -87,7 +87,6 @@ contract MockPoolForRewards {
     function lendingAsset() external view returns (address) { return _asset; }
     function lendingVault() external view returns (address) { return _vaultSelf; }
     function activeAssets() external view returns (uint256) { return _activeAssets; }
-    function activeAssetsConservative() external view returns (uint256) { return _activeAssets; }
     function asset() external view returns (address) { return _asset; }
     function totalAssets() external view returns (uint256) {
         return IERC20(_asset).balanceOf(address(this)) + _activeAssets;

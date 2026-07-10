@@ -6,7 +6,6 @@ import { LoanUtils } from "../../../LoanUtils.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
-import {IDynamicLendingPool} from "../../../interfaces/IDynamicLendingPool.sol";
 import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
@@ -258,8 +257,7 @@ library DynamicCollateralManager {
         uint256 multiplier = loanConfig.getMultiplier();
 
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
-        // Conservative read: excludes unsettled borrower credit so the cap never over-states headroom.
-        uint256 outstandingCapital = IDynamicLendingPool(address(lendingPool)).activeAssetsConservative();
+        uint256 outstandingCapital = lendingPool.activeAssets();
 
         // Supply source: vault.totalAssets() (already accounts for vesting/escrowed liabilities).
         // Cap source: LoanConfig.getMaxUtilizationBps() (single home for the cap; vault no

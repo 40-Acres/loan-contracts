@@ -76,9 +76,8 @@ abstract contract DynamicYbDiamond is Test {
         (portfolioFactoryConfig, , loanConfig, ) = deployer.deployYb(address(portfolioFactory), owner_);
 
         // Production backing for the Dynamic YB collateral manager: a real
-        // DynamicFeesVault (implements activeAssetsConservative natively). With
-        // feeBps = 0 and no rewards deposited, totalAssets() and the conservative
-        // read match what a funded LendingVault returned for these fixtures.
+        // DynamicFeesVault. With feeBps = 0 and no rewards deposited, totalAssets()
+        // and activeAssets() match what a funded LendingVault returned for these fixtures.
         DynamicFeesVault impl = new DynamicFeesVault();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),

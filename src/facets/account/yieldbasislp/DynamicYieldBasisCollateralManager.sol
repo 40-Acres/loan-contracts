@@ -6,7 +6,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ILoanConfig} from "../config/ILoanConfig.sol";
 import {ILendingPool} from "../../../interfaces/ILendingPool.sol";
-import {IDynamicLendingPool} from "../../../interfaces/IDynamicLendingPool.sol";
 import {ILendingVault} from "../../../interfaces/ILendingVault.sol";
 import {PortfolioFactoryConfig} from "../config/PortfolioFactoryConfig.sol";
 import {PortfolioFactory} from "../../../accounts/PortfolioFactory.sol";
@@ -379,8 +378,7 @@ library DynamicYieldBasisCollateralManager {
 
         maxLoanIgnoreSupply = _maxLoanIgnoreSupply(portfolioFactoryConfig, underlying, totalCollateralValue);
 
-        // Conservative read: excludes unsettled borrower credit so the cap never over-states headroom.
-        uint256 outstandingCapital = IDynamicLendingPool(address(lendingPool)).activeAssetsConservative();
+        uint256 outstandingCapital = lendingPool.activeAssets();
 
         // Supply source: vault.totalAssets() (already accounts for vesting/escrowed liabilities).
         // Cap source: LoanConfig.getMaxUtilizationBps() (single home for the cap; vault no

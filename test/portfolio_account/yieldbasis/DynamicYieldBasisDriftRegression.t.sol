@@ -167,10 +167,6 @@ contract MockDynPool {
     function lendingAsset() external view returns (address) { return _asset; }
     function lendingVault() external view returns (address) { return address(this); }
     function activeAssets() external view returns (uint256) { return _activeAssetsToReport; }
-    // Mirrors DynamicFeesVault's conservative read; this mock models zero unsettled
-    // borrower pending, so it equals activeAssets(). Needed because getMaxLoan now
-    // hard-casts to IDynamicLendingPool.activeAssetsConservative().
-    function activeAssetsConservative() external view returns (uint256) { return _activeAssetsToReport; }
     function asset() external view returns (address) { return _asset; }
     function totalAssets() external view returns (uint256) {
         return IERC20(_asset).balanceOf(address(this)) + _activeAssetsToReport;
