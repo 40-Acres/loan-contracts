@@ -119,11 +119,11 @@ contract DynamicYieldBasisLpFacet is AccessControl, ICollateralFacet, Reentrancy
     function setStakedMode() external onlyAuthorizedCaller(_portfolioFactory) nonReentrant {
         address config = _config();
         bool staked = getStakedMode();
+        DynamicYieldBasisCollateralManager.snapshotShortfall(config, address(_lpToken), _underlying);
         if (staked) {
             uint256 lpBalance = _lpToken.balanceOf(address(this));
             require(lpBalance > 0, "Nothing to stake");
 
-            DynamicYieldBasisCollateralManager.snapshotShortfall(config, address(_lpToken), _underlying);
             (uint256 lpSent, uint256 sharesMinted) = _stake(lpBalance);
             // Reject a lossy sweep: minted shares must be worth at least the LP staked.
             require(_gauge.convertToAssets(sharesMinted) >= lpSent, "Lossy stake");
@@ -133,7 +133,6 @@ contract DynamicYieldBasisLpFacet is AccessControl, ICollateralFacet, Reentrancy
                 _underlying,
                 address(_gauge)
             );
-            DynamicYieldBasisCollateralManager.enforceCollateralRequirements(config, address(_lpToken), _underlying);
         } else {
             uint256 shares = _gauge.balanceOf(address(this));
             require(shares > 0, "Nothing staked");
@@ -151,6 +150,7 @@ contract DynamicYieldBasisLpFacet is AccessControl, ICollateralFacet, Reentrancy
 
             emit Unstaked(lpReceived, shares);
         }
+        DynamicYieldBasisCollateralManager.enforceCollateralRequirements(config, address(_lpToken), _underlying);
     }
 
     function _stake(uint256 amount) internal returns (uint256 lpSent, uint256 sharesMinted) {
