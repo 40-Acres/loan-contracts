@@ -5,7 +5,6 @@ import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFac
 import {DynamicERC4626CollateralManager} from "./DynamicERC4626CollateralManager.sol";
 import {UserRewardsConfig} from "../rewards_processing/UserRewardsConfig.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /**
  * @title DynamicERC4626RewardsProcessingFacet
@@ -27,7 +26,7 @@ contract DynamicERC4626RewardsProcessingFacet is RewardsProcessingFacet {
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
-        IERC4626(collateralVault).asset(),
+        collateralVault,
         lendingVault,
         defaultToken
     ) {

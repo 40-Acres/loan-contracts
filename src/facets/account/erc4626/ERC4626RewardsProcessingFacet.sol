@@ -5,7 +5,6 @@ import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFac
 import {ERC4626CollateralManager} from "./ERC4626CollateralManager.sol";
 import {UserRewardsConfig} from "../rewards_processing/UserRewardsConfig.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /**
  * @title ERC4626RewardsProcessingFacet
@@ -33,7 +32,7 @@ contract ERC4626RewardsProcessingFacet is RewardsProcessingFacet {
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
-        IERC4626(collateralVault).asset(),
+        collateralVault,
         lendingVault,
         defaultToken
     ) {
