@@ -6,6 +6,7 @@ import {DynamicYbDiamond} from "./helpers/DynamicYbDiamond.sol";
 import {DynamicYieldBasisLpFacet} from "../../../src/facets/account/yieldbasislp/DynamicYieldBasisLpFacet.sol";
 import {DynamicYieldBasisLpLendingFacet} from "../../../src/facets/account/yieldbasislp/DynamicYieldBasisLpLendingFacet.sol";
 import {ICollateralFacet} from "../../../src/facets/account/collateral/ICollateralFacet.sol";
+import {DynamicYieldBasisCollateralManager} from "../../../src/facets/account/yieldbasislp/DynamicYieldBasisCollateralManager.sol";
 
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockTunableYieldBasisLP} from "../../mocks/MockTunableYieldBasisLP.sol";
@@ -180,8 +181,13 @@ contract DynamicYieldBasisStakeCollateralNeutralityTest is DynamicYbDiamond {
     // Test 5: unstake while underwater -> stays lenient
     // ============================================================
 
-    /// @notice De-risking (unstake) must never revert, even underwater. The fix
-    ///         only hardens the stake branch; the unstake branch stays lenient.
+    /// @notice De-risking (unstake) must stay lenient to PRE-EXISTING
+    ///         undercollateralization. The unstake branch now ALSO enforces
+    ///         collateral-neutrality, but with a fresh per-block baseline an
+    ///         underwater-but-honest unstake is neutral (end == start), so it must
+    ///         NOT revert -- it only rejects an unstake that REALIZES NEW loss
+    ///         (covered by test_setStakedMode_lossyUnstake_atLtvLimit_reverts).
+    ///         Passes on CURRENT code (unstake never reverts) and after the fix.
     function test_setStakedMode_unstake_underwater_staysLenient() public {
         _depositLP(DEPOSIT);
 
@@ -198,12 +204,105 @@ contract DynamicYieldBasisStakeCollateralNeutralityTest is DynamicYbDiamond {
         // Drop pps to push the position underwater (0.8x).
         lp.setPricePerShare(8e17);
 
-        // Unstake must SUCCEED despite being underwater.
+        // Fresh block so the unstake snapshots the (already-underwater) shortfall
+        // as its baseline; an honest redeem realizes no new loss (end == start).
+        vm.roll(block.number + 1);
+
+        // Unstake must SUCCEED despite being underwater (pre-existing shortfall
+        // is tolerated; only newly-realized loss is rejected).
         _syncAndSetStake(false);
 
         (uint256 stakedAfterUnstake, uint256 unstakedAfterUnstake) =
             DynamicYieldBasisLpFacet(portfolioAccount).getStakingState();
         assertEq(stakedAfterUnstake, 0, "Should have 0 staked after unstake");
         assertGt(unstakedAfterUnstake, 0, "LP should be back on the account after unstake");
+    }
+
+    // ============================================================
+    // Test 6: lossy-redeem unstake at the LTV limit -> must revert (GAP)
+    // ============================================================
+
+    /// @notice At the LTV limit, an unstake whose gauge.redeem() delivers fewer LP
+    ///         than convertToAssets(shares) implied REALIZES new loss: reconcile
+    ///         ratchets tracked collateral down, dropping maxLoan below the debt.
+    ///         The unstake branch must snapshot a per-block baseline and enforce
+    ///         collateral-neutrality, reverting UndercollateralizedDebt(700000).
+    ///
+    ///         GAP (current code): the unstake branch takes NO shortfall baseline
+    ///         and runs NO enforce, so it silently writes down collateral without
+    ///         reverting. This test therefore FAILS on current code with "call did
+    ///         not revert as expected" -- that failure IS the bug. The src fix
+    ///         (snapshot -> redeem -> reconcile -> enforce on the unstake branch)
+    ///         flips it to passing.
+    function test_setStakedMode_lossyUnstake_atLtvLimit_reverts() public {
+        _depositLP(DEPOSIT);
+
+        // Stake lossless (honest 1:1) so there are gauge shares to unstake.
+        _syncAndSetStake(true);
+        (uint256 staked, ) = DynamicYieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertGt(staked, 0, "Precondition: LP staked lossless");
+
+        // Borrow exactly max: position sits precisely at the LTV limit.
+        (uint256 maxLoan, ) = ICollateralFacet(portfolioAccount).getMaxLoan();
+        _borrow(maxLoan);
+        uint256 debt = ICollateralFacet(portfolioAccount).getTotalDebt();
+        assertEq(debt, maxLoan, "Debt should equal maxLoan (exactly at the limit)");
+        assertGt(debt, 0, "Sanity: there must be debt");
+
+        // Make redeem lossy: delivers convertToAssets(shares) - 1e6 LP. reconcile
+        // ratchets tracked collateral down by 1e6 -> maxLoan drops by
+        // 0.7 * 1e6 = 700000 -> shortfall becomes 700000 (nonzero).
+        vm.prank(owner_);
+        gauge.setRedeemShortfallWei(1e6);
+
+        // Flip the protocol directive to unstaked.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
+
+        // Fresh block so the unstake snapshots its own (healthy) baseline, then
+        // realizes the redeem loss within the same block -> end > start.
+        vm.roll(block.number + 1);
+
+        // Exact delta computes to 700000 (verified: debt 70e18 vs maxLoan 70e18 - 700000).
+        vm.expectRevert(
+            abi.encodeWithSelector(DynamicYieldBasisCollateralManager.UndercollateralizedDebt.selector, 700000)
+        );
+        vm.prank(authorizedCaller);
+        DynamicYieldBasisLpFacet(portfolioAccount).setStakedMode();
+    }
+
+    // ============================================================
+    // Test 7: lossless-redeem unstake at the limit across a fresh block -> succeeds
+    // ============================================================
+
+    /// @notice An honest 1:1 unstake at the LTV limit must NOT revert. With a fresh
+    ///         per-block baseline the unstake realizes no new loss (end == start),
+    ///         so collateral-neutrality holds. Guards the upcoming unstake-branch
+    ///         enforce against over-strictness; passes on current code too.
+    function test_setStakedMode_losslessUnstake_atLtvLimit_succeeds() public {
+        _depositLP(DEPOSIT);
+
+        _syncAndSetStake(true);
+        (uint256 stakedBefore, ) = DynamicYieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertGt(stakedBefore, 0, "Precondition: LP staked lossless");
+
+        (uint256 maxLoan, ) = ICollateralFacet(portfolioAccount).getMaxLoan();
+        _borrow(maxLoan);
+        assertEq(ICollateralFacet(portfolioAccount).getTotalDebt(), maxLoan, "Debt at the limit");
+
+        // redeemShortfallWei stays 0 -> honest 1:1 redeem.
+        vm.prank(owner_);
+        portfolioFactoryConfig.setStakedGaugeMode(false);
+
+        // Fresh block: honest unstake is neutral (end == start).
+        vm.roll(block.number + 1);
+
+        vm.prank(authorizedCaller);
+        DynamicYieldBasisLpFacet(portfolioAccount).setStakedMode();
+
+        (uint256 stakedAfter, uint256 unstakedAfter) =
+            DynamicYieldBasisLpFacet(portfolioAccount).getStakingState();
+        assertEq(stakedAfter, 0, "Should have 0 staked after honest unstake");
+        assertGt(unstakedAfter, 0, "LP should be back on the account after unstake");
     }
 }
