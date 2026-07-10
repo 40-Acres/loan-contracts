@@ -1123,7 +1123,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         VestingSimulation memory sim = _simulateVesting();
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeViewFromSim(sim);
         uint256 newTotalSupply = totalSupply() + pending;
-        uint256 shares = _withdrawableShares($, owner);
+        uint256 shares = balanceOf(owner);
         // Cap at free liquidity (NAV minus debt on loan); Floor keeps redeem(maxRedeem) within it.
         (, uint256 outstandingDebt) = _navFromSim(sim);
         uint256 free = newTotalAssets > outstandingDebt ? newTotalAssets - outstandingDebt : 0;
