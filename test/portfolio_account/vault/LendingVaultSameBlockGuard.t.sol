@@ -10,33 +10,11 @@ import {IPortfolioFactory} from "../../../src/interfaces/IPortfolioFactory.sol";
 import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.sol";
 
 /*
- * =============================================================
- * LendingVaultSameBlockGuard
- * =============================================================
- * Targeted tests for the same-block flash-deposit guard.
- *
- * Design: shares ACQUIRED this block by an address -- whether via
- * mint (deposit/mint) OR via ERC20 transfer-in -- are "pinned" and
- * cannot be withdrawn/redeemed until the next block. Implemented in
- * the `_update` override, which records `lastMintBlock[to]` and
- * accumulates `sameBlockAcquiredShares[to]` for every inbound
- * transfer. `_withdraw` then requires
- *   balanceOf(owner) >= shares + locked
- * where `locked` is the amount acquired this block.
- *
- * Only the just-acquired amount is pinned, so the guard is
- * griefing-resistant: a dust deposit/transfer to a victim pins only
- * the dust, never the victim's pre-existing balance (acquired in a
- * prior block), which stays fully withdrawable.
- *
- * Invariants verified here:
- *   - Self-deposit/self-mint pins the freshly minted shares this block.
- *   - A third-party deposit/mint/transfer to a holder pins ONLY the
- *     newly acquired amount; pre-existing balance stays withdrawable.
- *   - A transfer to a fresh (zero-balance) receiver pins the whole
- *     received amount this block, released next block.
- *   - maxWithdraw / maxRedeem cap at balanceOf - locked.
- * =============================================================
+ * LendingVaultSameBlockGuard: covers the borrow-cap guard. borrowableTotalAssets()
+ * excludes assets deposited this block (so a flash deposit can't inflate borrow capacity)
+ * and includes them next block; depositRewards must not register as a same-block deposit.
+ * (The #243 lender-side same-block withdraw guard was removed; deposit->withdraw same block
+ * now succeeds, covered by one positive round-trip test.)
  */
 
 contract MockUSDC is ERC20 {
@@ -140,325 +118,138 @@ contract LendingVaultSameBlockGuardTest is Test {
     }
 
     // ----------------------------------------------------------
-    // (1) Self-deposit pins; same-block withdraw reverts;
-    //     next block, withdraw succeeds.
+    // Positive round-trip: same-block deposit -> withdraw now SUCCEEDS.
+    // Locks in the post-#243-removal behavior (no lender-side same-block
+    // guard). The depositor gets their assets back in the same block.
     // ----------------------------------------------------------
 
-    function test_selfDeposit_pinsBlock_sameBlockWithdrawReverts() public {
-        _selfDeposit(victim, 1000e6);
+    function test_selfDeposit_sameBlockWithdraw_succeeds() public {
+        _selfDeposit(alice, 1000e6);
 
-        // Same-block guard pins lastDepositBlock => maxWithdraw returns 0
-        // => ERC4626 reverts on the maxWithdraw check before reaching _withdraw.
-        // (Either revert path is acceptable; we just need to confirm the call
-        // fails in the same block as the self-deposit.)
-        vm.prank(victim);
-        vm.expectRevert();
-        vault.withdraw(100e6, victim, victim);
+        // Same block, no vm.roll: withdraw must succeed now that the #243
+        // lender-side guard is gone.
+        vm.prank(alice);
+        vault.withdraw(400e6, alice, alice);
+        assertEq(usdc.balanceOf(alice), 400e6, "alice withdrew assets in the same block as deposit");
 
-        // And maxWithdraw confirms it's the guard, not e.g. a balance issue.
-        assertEq(vault.maxWithdraw(victim), 0, "maxWithdraw=0 confirms same-block guard active");
+        // And maxWithdraw is no longer short-circuited to 0 in the deposit block.
+        assertGt(vault.maxWithdraw(alice), 0, "maxWithdraw non-zero same block (guard removed)");
+
+        // Redeem the remainder in the same block too.
+        uint256 remaining = vault.balanceOf(alice);
+        vm.prank(alice);
+        uint256 assetsOut = vault.redeem(remaining, alice, alice);
+        assertGt(assetsOut, 0, "alice redeemed remaining shares same block");
+        assertEq(vault.balanceOf(alice), 0, "all shares redeemed same block");
     }
 
-    function test_selfDeposit_nextBlock_withdrawSucceeds() public {
-        _selfDeposit(victim, 1000e6);
+    function test_selfMint_sameBlockRedeem_succeeds() public {
+        _selfMint(alice, 1000e6); // 1000 shares
+        uint256 shares = vault.balanceOf(alice);
+        assertGt(shares, 0, "alice minted shares");
 
-        vm.roll(block.number + 1);
-
-        vm.prank(victim);
-        vault.withdraw(100e6, victim, victim);
-        assertEq(usdc.balanceOf(victim), 100e6, "victim received 100 USDC");
-    }
-
-    // ----------------------------------------------------------
-    // (2) Third-party deposit does NOT pin victim's block.
-    //     This is the actual grief-fix assertion.
-    // ----------------------------------------------------------
-
-    function test_thirdParty_zeroDeposit_doesNotPinVictim() public {
-        // Victim self-deposits in block N, then time advances.
-        _selfDeposit(victim, 1000e6);
-        vm.roll(block.number + 1); // block N+1
-
-        // Attacker tries the grief: deposit(0, victim) in block N+1.
-        vm.prank(attacker);
-        vault.deposit(0, victim);
-
-        // Victim must still be able to redeem/withdraw in the same block.
-        uint256 victimShares = vault.balanceOf(victim);
-        assertGt(victimShares, 0, "victim has shares");
-
-        vm.prank(victim);
-        uint256 assets = vault.redeem(victimShares, victim, victim);
-        assertGt(assets, 0, "victim redeem produced assets");
-        assertEq(vault.balanceOf(victim), 0, "all shares redeemed");
-    }
-
-    function test_thirdParty_nonZeroDeposit_doesNotPinVictim() public {
-        _selfDeposit(victim, 1000e6);
-        vm.roll(block.number + 1);
-
-        // Attacker funds itself and front-deposits to victim's address.
-        usdc.mint(attacker, 50e6);
-        vm.startPrank(attacker);
-        usdc.approve(address(vault), 50e6);
-        vault.deposit(50e6, victim);
-        vm.stopPrank();
-
-        // Victim's lastDepositBlock should still be the original (block N),
-        // not the current block (N+1). Same-block withdraw must succeed.
-        vm.prank(victim);
-        vault.withdraw(100e6, victim, victim);
-        assertEq(usdc.balanceOf(victim), 100e6, "victim withdrew 100 USDC same block as third-party deposit");
+        // Same block redeem now succeeds.
+        vm.prank(alice);
+        uint256 assetsOut = vault.redeem(shares, alice, alice);
+        assertGt(assetsOut, 0, "alice redeemed minted shares same block");
+        assertEq(usdc.balanceOf(alice), assetsOut, "alice received assets from same-block redeem");
     }
 
     // ----------------------------------------------------------
-    // (3) maxWithdraw / maxRedeem reflect the new semantics.
+    // borrowableTotalAssets(): direct view tests against the
+    // REAL LendingVault. This is the supply term the borrow-cap
+    // managers read; it must exclude assets deposited THIS block
+    // so a same-block (flash) deposit cannot inflate borrow cap,
+    // yet include them once the block advances.
+    //
+    // via-ir caches block.number across vm.roll within a function;
+    // use hardcoded absolute block numbers (BLOCK_START + N).
     // ----------------------------------------------------------
 
-    function test_maxWithdraw_zero_afterSelfDeposit_sameBlock() public {
-        _selfDeposit(victim, 1000e6);
-        assertEq(vault.maxWithdraw(victim), 0, "maxWithdraw=0 same block as self-deposit");
-        assertEq(vault.maxRedeem(victim), 0, "maxRedeem=0 same block as self-deposit");
+    function test_borrowableTotalAssets_excludesSameBlockDeposit() public {
+        // Pre-deposit baseline at BLOCK_START.
+        uint256 taBefore = vault.totalAssets();
+
+        _selfDeposit(alice, 1000e6);
+
+        // Same block: totalAssets rose by the deposit, but borrowableTotalAssets
+        // must exclude it -- equal to the pre-deposit value.
+        assertEq(vault.totalAssets(), taBefore + 1000e6, "totalAssets includes the deposit");
+        assertEq(
+            vault.borrowableTotalAssets(),
+            vault.totalAssets() - 1000e6,
+            "borrowableTotalAssets excludes the same-block deposit"
+        );
+        assertEq(vault.borrowableTotalAssets(), taBefore, "borrowable equals pre-deposit value");
     }
 
-    function test_maxWithdraw_nonZero_afterThirdPartyDeposit_sameBlock() public {
-        _selfDeposit(victim, 1000e6);
-        vm.roll(block.number + 1);
+    function test_borrowableTotalAssets_includesDepositNextBlock() public {
+        _selfDeposit(alice, 1000e6);
 
-        // Third-party tries to grief.
-        vm.prank(attacker);
-        vault.deposit(0, victim);
-
-        // maxWithdraw should reflect the real liquid value, not zero.
-        uint256 maxW = vault.maxWithdraw(victim);
-        assertGt(maxW, 0, "maxWithdraw should be non-zero -- third-party deposit must not pin victim");
-        // With zero loans, liquid == totalAssets and victim owns all shares,
-        // so maxWithdraw equals the original deposit (no fees, no interest).
-        assertEq(maxW, 1000e6, "maxWithdraw equals original deposit");
-
-        uint256 maxR = vault.maxRedeem(victim);
-        assertGt(maxR, 0, "maxRedeem should be non-zero after third-party deposit");
-    }
-
-    // ----------------------------------------------------------
-    // (4) mint() variant of the same checks.
-    // ----------------------------------------------------------
-
-    function test_selfMint_pinsBlock_sameBlockRedeemReverts() public {
-        _selfMint(victim, 1000e6); // 1000 shares
-        uint256 shares = vault.balanceOf(victim);
-
-        // mint() funnels through _deposit just like deposit(); the flag is
-        // bumped because caller == receiver.
-        vm.prank(victim);
-        vm.expectRevert();
-        vault.redeem(shares, victim, victim);
-
-        assertEq(vault.maxRedeem(victim), 0, "maxRedeem=0 same block as self-mint");
-    }
-
-    function test_thirdPartyMint_doesNotPinVictim() public {
-        _selfDeposit(victim, 1000e6);
-        vm.roll(block.number + 1);
-
-        // Attacker mints shares to victim — still passes through _deposit, but
-        // caller != receiver, so the flag must NOT be written.
-        uint256 mintShares = 1e6; // tiny mint
-        uint256 assetsNeeded = vault.previewMint(mintShares);
-        usdc.mint(attacker, assetsNeeded);
-        vm.startPrank(attacker);
-        usdc.approve(address(vault), assetsNeeded);
-        vault.mint(mintShares, victim);
-        vm.stopPrank();
-
-        // Victim can still withdraw same block.
-        vm.prank(victim);
-        vault.withdraw(100e6, victim, victim);
-        assertEq(usdc.balanceOf(victim), 100e6, "victim withdrew same block as third-party mint");
-    }
-
-    // ----------------------------------------------------------
-    // (5) Transfer-in pins the receiver's freshly-received shares
-    //     this block (the _update override fires on every inbound
-    //     transfer, not just mints). Released next block.
-    // ----------------------------------------------------------
-
-    function test_shareTransfer_pinsJustReceivedShares_sameBlock() public {
-        // Alice deposits at BLOCK_START so her shares are unpinned by the
-        // transfer block. Absolute block numbers dodge via-ir block.number caching.
-        _selfDeposit(alice, 500e6);
+        // Next block: the deposit is no longer same-block, so it counts.
         vm.roll(BLOCK_START + 1);
 
-        uint256 aliceShares = vault.balanceOf(alice);
-
-        // Transfer block: alice transfers all shares to a FRESH bob (zero prior balance).
-        vm.prank(alice);
-        IERC20(address(vault)).transfer(bob, aliceShares);
-
-        // (a) Pinned this block: bob cannot redeem the just-received shares.
-        assertEq(vault.maxRedeem(bob), 0, "maxRedeem=0 -- received shares pinned this block");
-        assertEq(vault.maxWithdraw(bob), 0, "maxWithdraw=0 -- received shares pinned this block");
-        vm.prank(bob);
-        vm.expectRevert();
-        vault.redeem(aliceShares, bob, bob);
-
-        // (b) Released next block: bob can now redeem and receives assets.
-        vm.roll(BLOCK_START + 2);
-        assertEq(vault.maxRedeem(bob), aliceShares, "maxRedeem unlocked next block");
-        vm.prank(bob);
-        uint256 assets = vault.redeem(aliceShares, bob, bob);
-        assertGt(assets, 0, "bob redeemed received shares next block");
-        assertEq(usdc.balanceOf(bob), assets, "bob received assets from redeem");
+        assertEq(
+            vault.borrowableTotalAssets(),
+            vault.totalAssets(),
+            "next block: borrowableTotalAssets equals totalAssets"
+        );
+        assertEq(vault.borrowableTotalAssets(), 1000e6, "deposit fully counted next block");
     }
 
-    function test_transferFrom_pinsJustReceivedShares_sameBlock() public {
-        _selfDeposit(alice, 500e6);
-        vm.roll(BLOCK_START + 1);
+    function test_borrowableTotalAssets_multipleSameBlockDepositsAllExcluded() public {
+        uint256 taBefore = vault.totalAssets();
 
-        uint256 aliceShares = vault.balanceOf(alice);
-        vm.prank(alice);
-        IERC20(address(vault)).approve(attacker, aliceShares);
-
-        // Transfer block: attacker pulls alice's shares into a FRESH bob.
-        vm.prank(attacker);
-        IERC20(address(vault)).transferFrom(alice, bob, aliceShares);
-
-        // (a) Pinned this block.
-        assertEq(vault.maxRedeem(bob), 0, "maxRedeem=0 -- pulled shares pinned this block");
-        assertEq(vault.maxWithdraw(bob), 0, "maxWithdraw=0 -- pulled shares pinned this block");
-        vm.prank(bob);
-        vm.expectRevert();
-        vault.redeem(aliceShares, bob, bob);
-
-        // (b) Released next block.
-        vm.roll(BLOCK_START + 2);
-        assertEq(vault.maxRedeem(bob), aliceShares, "maxRedeem unlocked next block");
-        vm.prank(bob);
-        uint256 assets = vault.redeem(aliceShares, bob, bob);
-        assertGt(assets, 0, "bob redeemed pulled shares next block");
-    }
-
-    // ----------------------------------------------------------
-    // (5b) Griefing-resistance over the transfer path: a dust
-    //      transfer pins ONLY the dust, never the recipient's
-    //      pre-existing balance.
-    // ----------------------------------------------------------
-
-    function test_shareTransfer_doesNotPinPreExistingBalance() public {
-        // Bob self-deposits in block N, then the block advances so his
-        // balance is fully unpinned (acquired in a prior block).
+        // Three deposits from different accounts, all in BLOCK_START.
+        _selfDeposit(alice, 1000e6);
         _selfDeposit(bob, 500e6);
-        vm.roll(block.number + 1);
+        _selfDeposit(victim, 250e6);
 
-        uint256 bobPreExisting = vault.balanceOf(bob);
-        assertGt(bobPreExisting, 0, "bob has pre-existing shares");
-
-        // Alice deposited in a prior block so she has unpinned shares to send.
-        _selfDeposit(alice, 10e6);
-        vm.roll(block.number + 1);
-        uint256 dustShares = vault.balanceOf(alice) / 100; // tiny slice
-        assertGt(dustShares, 0, "dust slice is non-zero");
-
-        // Block M: alice transfers dust shares to bob.
-        vm.prank(alice);
-        IERC20(address(vault)).transfer(bob, dustShares);
-
-        // Only the dust is pinned: maxRedeem caps at pre-existing balance.
-        assertEq(vault.maxRedeem(bob), bobPreExisting, "only dust pinned; pre-existing redeemable");
-
-        // Bob can STILL withdraw up to his pre-existing balance, same block.
-        uint256 preExistingAssets = vault.convertToAssets(bobPreExisting);
-        vm.prank(bob);
-        vault.withdraw(preExistingAssets, bob, bob);
-        assertEq(usdc.balanceOf(bob), preExistingAssets, "bob withdrew full pre-existing balance same block");
-        // The dust shares remain (pinned this block).
-        assertEq(vault.balanceOf(bob), dustShares, "only the pinned dust remains");
+        uint256 totalDeposited = 1000e6 + 500e6 + 250e6;
+        assertEq(vault.totalAssets(), taBefore + totalDeposited, "totalAssets includes all three");
+        // All three accumulate into sameBlockDepositedAssets and are excluded.
+        assertEq(
+            vault.borrowableTotalAssets(),
+            taBefore,
+            "all same-block deposits excluded; borrowable back to pre-deposit"
+        );
     }
 
-    // ----------------------------------------------------------
-    // (6) Zero-share self-deposit edge case. Under the pin-acquired
-    //     design a zero-amount deposit acquires 0 shares, so it pins
-    //     NOTHING. The assertion holds only trivially: victim has no
-    //     shares at all, so maxWithdraw is 0 regardless of the guard.
-    //     (Test name retained; the "pins block" claim is vacuous here.)
-    // ----------------------------------------------------------
-
-    function test_zeroShareSelfDeposit_stillPinsBlock() public {
-        vm.prank(victim);
-        vault.deposit(0, victim);
-
-        assertEq(vault.maxWithdraw(victim), 0, "maxWithdraw=0 -- victim has no shares (zero acquisition pins nothing)");
+    function test_borrowableTotalAssets_zeroFloor_neverUnderflows() public view {
+        // Empty vault, no deposits this block: must return 0 (not revert/underflow).
+        assertEq(vault.totalAssets(), 0, "fresh vault has zero assets");
+        assertEq(vault.borrowableTotalAssets(), 0, "borrowableTotalAssets zero-floors on empty vault");
     }
 
-    function test_zeroShareSelfDeposit_doesNotPinPreExistingBalance() public {
-        // Victim self-deposits in a prior block; balance becomes unpinned.
-        _selfDeposit(victim, 1000e6);
-        vm.roll(block.number + 1);
+    function test_borrowableTotalAssets_depositRewardsNotCountedAsSameBlockDeposit() public {
+        // Seed liquidity in a PRIOR block so it is fully borrowable.
+        _selfDeposit(alice, 1000e6);
+        vm.roll(BLOCK_START + 1);
+        uint256 borrowableBefore = vault.borrowableTotalAssets();
+        assertEq(borrowableBefore, 1000e6, "seeded liquidity fully borrowable next block");
 
-        uint256 preExisting = vault.balanceOf(victim);
-        assertGt(preExisting, 0, "victim has pre-existing shares");
+        // depositRewards flows through safeTransferFrom directly, NOT _deposit,
+        // so it must NOT register as a same-block deposit. (The reward inflow
+        // vests over the epoch; totalAssets is unchanged at the moment of deposit,
+        // and borrowableTotalAssets must NOT be reduced by the reward path.)
+        uint256 rewardAmount = 200e6;
+        usdc.mint(address(this), rewardAmount);
+        usdc.approve(address(vault), rewardAmount);
+        // This test contract is treated as a portfolio by MockPortfolioFactory.
+        vault.depositRewards(rewardAmount);
 
-        // A zero-amount self-deposit this block acquires 0 shares, so it must
-        // pin nothing -- the pre-existing balance stays fully withdrawable.
-        vm.prank(victim);
-        vault.deposit(0, victim);
-
-        assertEq(vault.maxRedeem(victim), preExisting, "zero deposit pins nothing; full balance redeemable");
-
-        vm.prank(victim);
-        vault.redeem(preExisting, victim, victim);
-        assertEq(vault.balanceOf(victim), 0, "victim redeemed full pre-existing balance same block");
-    }
-
-    // ----------------------------------------------------------
-    // (7) Third-party deposit/mint bypass on a FRESH zero-balance
-    //     account. The pin is gated on caller==receiver, so a
-    //     deposit/mint TO alice (caller=attacker) never pins alice.
-    //     With NO pre-existing balance, alice withdraws EXACTLY the
-    //     shares acquired this block -- the guard must catch that.
-    //     POST-FIX expectation: redeem reverts. Current code: it
-    //     succeeds (bypass), so these tests FAIL today.
-    // ----------------------------------------------------------
-
-    function test_thirdPartyDeposit_bypass_freshAccountRedeemsSameBlock() public {
-        // alice has ZERO prior vault balance.
-        assertEq(vault.balanceOf(alice), 0, "alice starts with zero shares");
-
-        // Attacker deposits to alice (caller=attacker != receiver=alice),
-        // all in the current block (no vm.roll).
-        usdc.mint(attacker, 1000e6);
-        vm.startPrank(attacker);
-        usdc.approve(address(vault), 1000e6);
-        vault.deposit(1000e6, alice);
-        vm.stopPrank();
-
-        uint256 aliceShares = vault.balanceOf(alice);
-        assertGt(aliceShares, 0, "alice received freshly-acquired shares this block");
-
-        // Same block: alice redeems exactly the just-acquired shares.
-        // Post-fix this must revert (shares acquired this block are pinned).
-        vm.prank(alice);
-        vm.expectRevert();
-        vault.redeem(aliceShares, alice, alice);
-    }
-
-    function test_thirdPartyMint_bypass_freshAccountRedeemsSameBlock() public {
-        assertEq(vault.balanceOf(alice), 0, "alice starts with zero shares");
-
-        // Attacker mints shares to alice (caller=attacker != receiver=alice).
-        uint256 mintShares = 1000e6;
-        uint256 assetsNeeded = vault.previewMint(mintShares);
-        usdc.mint(attacker, assetsNeeded);
-        vm.startPrank(attacker);
-        usdc.approve(address(vault), assetsNeeded);
-        vault.mint(mintShares, alice);
-        vm.stopPrank();
-
-        uint256 aliceShares = vault.balanceOf(alice);
-        assertGt(aliceShares, 0, "alice received freshly-minted shares this block");
-
-        vm.prank(alice);
-        vm.expectRevert();
-        vault.redeem(aliceShares, alice, alice);
+        // borrowableTotalAssets must equal totalAssets (no same-block-deposit
+        // exclusion triggered by the reward inflow).
+        assertEq(
+            vault.borrowableTotalAssets(),
+            vault.totalAssets(),
+            "depositRewards must not register as a same-block deposit"
+        );
+        // And the pre-existing borrowable liquidity is not reduced by the reward path.
+        assertEq(
+            vault.borrowableTotalAssets(),
+            borrowableBefore,
+            "reward inflow does not shrink borrowable supply (vests over epoch)"
+        );
     }
 }

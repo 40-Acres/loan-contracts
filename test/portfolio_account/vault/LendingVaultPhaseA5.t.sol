@@ -15,12 +15,15 @@ import {ProtocolTimeLibrary} from "../../../src/libraries/ProtocolTimeLibrary.so
  * =============================================================
  * Locks in fixes shipped in src/facets/account/vault/LendingVault.sol:
  *   1. nonReentrant on borrowFromPortfolio / payFromPortfolio / depositRewards
- *   2. Flash-deposit protection (lastDepositBlock + _withdraw guard +
- *      maxWithdraw/maxRedeem same-block short-circuit)
- *   3. originationFeeBps upper bound (MAX_FEE_BPS = 1000) on initialize and
+ *   2. originationFeeBps upper bound (MAX_FEE_BPS = 1000) on initialize and
  *      setOriginationFee
- *   4. Design choice: payFromPortfolio MUST work while paused; borrowFromPortfolio
+ *   3. Design choice: payFromPortfolio MUST work while paused; borrowFromPortfolio
  *      must NOT.
+ *
+ * Note: the lender-side same-block withdraw/redeem guard (PR #243) was
+ * REMOVED; its tests were deleted. The independent borrow-cap guard
+ * (borrowableTotalAssets / lastDepositBlock) is covered in
+ * LendingVaultSameBlockGuard.t.sol.
  *
  * Each test comment names a falsifiable mutation it would catch.
  * =============================================================
@@ -324,56 +327,10 @@ contract LendingVaultPhaseA5Test is Test {
     }
 
     // =============================================================
-    // (2) Flash-deposit protection
-    //     Catches: removing the _withdraw override or the _update mint hook.
+    // (2) Withdraw sanity
     // =============================================================
 
-    /// Catches: removing flash-deposit protection from the public withdraw path.
-    /// The vault has TWO layered defences for same-block withdraw:
-    ///   (a) `maxWithdraw` short-circuits to 0 — OZ's withdraw() checks
-    ///       `assets > maxWithdraw(owner)` first and reverts with
-    ///       `ERC4626ExceededMaxWithdraw`.
-    ///   (b) `_withdraw` reverts with the explicit string if (a) is somehow
-    ///       bypassed (e.g. caller-side override).
-    /// Removing EITHER alone still leaves the other; removing BOTH (or the
-    /// underlying `_update` write) lets the call through. We assert the
-    /// observable property (the call must revert) — using a generic revert
-    /// matcher so the test stays robust to which layer fires first while
-    /// still failing if all flash-deposit protection is gone.
-    function test_DepositThenWithdraw_SameBlock_Reverts() public {
-        _depositSameBlock(depositor1, 1_000e6);
-
-        vm.prank(depositor1);
-        vm.expectRevert(); // any revert — see comment above
-        vault.withdraw(1, depositor1, depositor1);
-    }
-
-    /// Same regression as above via the redeem path.
-    function test_DepositThenRedeem_SameBlock_Reverts() public {
-        _depositSameBlock(depositor1, 1_000e6);
-
-        vm.prank(depositor1);
-        vm.expectRevert();
-        vault.redeem(1, depositor1, depositor1);
-    }
-
-    /// Catches: removing the same-block short-circuit at the top of maxWithdraw.
-    /// Without it, maxWithdraw would happily report a positive number even
-    /// though _withdraw would revert — a misleading view that breaks
-    /// integrators who trust ERC4626 max* invariants.
-    function test_MaxWithdraw_ReturnsZero_SameBlock() public {
-        _depositSameBlock(depositor1, 1_000e6);
-        assertEq(vault.maxWithdraw(depositor1), 0, "maxWithdraw must be 0 in deposit block");
-    }
-
-    /// Catches: removing the same-block short-circuit at the top of maxRedeem.
-    function test_MaxRedeem_ReturnsZero_SameBlock() public {
-        _depositSameBlock(depositor1, 1_000e6);
-        assertEq(vault.maxRedeem(depositor1), 0, "maxRedeem must be 0 in deposit block");
-    }
-
-    /// Catches: replacing the strict `<` with `<=` (off-by-one). With `<=`,
-    /// withdraw would still revert one block later.
+    /// Next-block withdraw succeeds (sanity; not a #243 same-block assertion).
     function test_NextBlock_WithdrawSucceeds() public {
         _depositSameBlock(depositor1, 1_000e6);
         vm.roll(block.number + 1);
@@ -385,100 +342,6 @@ contract LendingVaultPhaseA5Test is Test {
         vm.prank(depositor1);
         vault.withdraw(maxW, depositor1, depositor1);
         assertEq(usdc.balanceOf(depositor1) - balBefore, maxW, "withdraw must succeed next block");
-    }
-
-    /// Catches: the pin failing to cover transfer-in (a recipient could redeem
-    /// flash-acquired shares same block), AND the inverse over-pin regression
-    /// where a dust transfer freezes a holder's entire pre-existing balance --
-    /// the flash-loan grief the original test guarded against. Under Candidate 3
-    /// only the shares ACQUIRED this block are pinned: transfer-in to a fresh
-    /// recipient is locked one block, but a dust transfer to an existing holder
-    /// leaves their pre-existing balance fully withdrawable.
-    /// Absolute block numbers avoid via-ir block.number caching across rolls.
-    function test_ShareTransfer_PinsJustReceivedShares_NotPreExisting() public {
-        uint256 base = 1000;
-        vm.roll(base);
-
-        // depositor1 deposits at `base`; advance so its shares are unpinned.
-        _depositSameBlock(depositor1, 1_000e6);
-        vm.roll(base + 1);
-
-        // --- Part 1: fresh recipient's just-received shares are PINNED. ---
-        uint256 sharesToSend = vault.balanceOf(depositor1) / 4;
-
-        // depositor2 has never deposited (zero prior balance).
-        assertEq(vault.balanceOf(depositor2), 0, "depositor2 starts with zero shares");
-
-        vm.prank(depositor1);
-        vault.transfer(depositor2, sharesToSend);
-
-        // Same block: the received shares are pinned -- maxWithdraw is 0 and
-        // a redeem of those shares reverts.
-        assertEq(vault.maxWithdraw(depositor2), 0, "just-received shares pinned this block");
-        assertEq(vault.maxRedeem(depositor2), 0, "maxRedeem=0 for just-received shares");
-        vm.prank(depositor2);
-        vm.expectRevert();
-        vault.redeem(sharesToSend, depositor2, depositor2);
-
-        // Next block: the pin clears and depositor2 can withdraw.
-        vm.roll(base + 2);
-        uint256 maxW2 = vault.maxWithdraw(depositor2);
-        assertGt(maxW2, 0, "recipient can withdraw next block");
-        vm.prank(depositor2);
-        vault.withdraw(maxW2, depositor2, depositor2);
-
-        // --- Part 2: a dust transfer must NOT freeze a pre-existing balance. ---
-        // depositor1 still holds its (now unpinned, prior-block) shares. Source
-        // a dust amount from depositor2 (re-funded in a prior block so its dust
-        // is itself unpinned), then transfer it to depositor1 this block.
-        _depositSameBlock(depositor2, 1e6);
-        vm.roll(base + 3);
-
-        uint256 d1PreExisting = vault.balanceOf(depositor1);
-        assertGt(d1PreExisting, 0, "depositor1 has pre-existing shares");
-
-        uint256 dust = vault.balanceOf(depositor2) / 100; // tiny slice
-        assertGt(dust, 0, "dust slice is non-zero");
-
-        vm.prank(depositor2);
-        vault.transfer(depositor1, dust);
-
-        // depositor1's pre-existing balance stays fully withdrawable; only the
-        // newly received dust is pinned.
-        assertEq(
-            vault.maxRedeem(depositor1),
-            d1PreExisting,
-            "dust transfer pins only the dust, not the pre-existing balance"
-        );
-        uint256 preExistingAssets = vault.convertToAssets(d1PreExisting);
-        vm.prank(depositor1);
-        vault.withdraw(preExistingAssets, depositor1, depositor1);
-        assertEq(
-            vault.balanceOf(depositor1),
-            dust,
-            "depositor1 withdrew full pre-existing balance same block; only dust remains"
-        );
-    }
-
-    /// Catches: removing the lastDepositBlock write in `_update`. Asserts via
-    /// behaviour — maxWithdraw == 0 in deposit block, withdraw reverts, and
-    /// the lock clears next block. If `_update` no longer bumps the block,
-    /// maxWithdraw would not short-circuit and the assertion `== 0` fails.
-    function test_ShareMintViaDeposit_BumpsLastDepositBlock() public {
-        _depositSameBlock(depositor1, 1_000e6);
-
-        // (1) Behavioural inference: if the mint hook fired, maxWithdraw
-        // short-circuits to 0.
-        assertEq(vault.maxWithdraw(depositor1), 0, "maxWithdraw must reflect lastDepositBlock bump");
-
-        // (2) Withdraw reverts (either layer of protection is fine here).
-        vm.prank(depositor1);
-        vm.expectRevert();
-        vault.withdraw(1, depositor1, depositor1);
-
-        // (3) Bump tied to block.number (not permanent): clears next block.
-        vm.roll(block.number + 1);
-        assertGt(vault.maxWithdraw(depositor1), 0, "lock must clear next block");
     }
 
     // =============================================================

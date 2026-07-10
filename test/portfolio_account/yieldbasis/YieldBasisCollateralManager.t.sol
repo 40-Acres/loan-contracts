@@ -222,8 +222,13 @@ contract MockLendingPoolSync {
     /// @dev Mirrors the IERC4626 surface the production manager now calls to derive
     /// the cap denominator. Returns liquid asset balance + active loans -- the mock
     /// has no vesting/escrow concept so it is a faithful approximation.
-    function totalAssets() external view returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         return IERC20(_asset).balanceOf(address(this)) + _activeAssetsToReport;
+    }
+
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view returns (uint256) {
+        return totalAssets();
     }
 
     function borrowFromPortfolio(uint256 /*amount*/) external pure returns (uint256) {

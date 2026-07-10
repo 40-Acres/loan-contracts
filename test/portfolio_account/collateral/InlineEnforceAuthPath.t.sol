@@ -113,6 +113,8 @@ contract MockPool {
     function getDebtBalance(address b) external view returns (uint256) { return debt[b]; }
     function getEffectiveDebtBalance(address b) external view returns (uint256) { return debt[b]; }
     function totalAssets() external view returns (uint256) { return _totalAssets; }
+    // Value-neutral mock: no same-block exclusion needed for these tests.
+    function borrowableTotalAssets() external view returns (uint256) { return _totalAssets; }
     function asset() external view returns (address) { return address(assetToken); }
     function decimals() external pure returns (uint8) { return 18; }
     function getPortfolioFactory() external view returns (address) { return portfolioFactory; }

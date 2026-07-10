@@ -97,8 +97,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // Track vested rewards that have been applied to individual user debts
         uint256 totalVestedRewardsApplied;
 
-        // Flash loan protection: block of the last share acquisition (mint or transfer-in) per holder
-        mapping(address => uint256) lastMintBlock;
+        // Block of the most recent deposit; that block's deposits are excluded from borrow capacity.
+        uint256 lastDepositBlock;
 
         // Running sum of all debtBalance
         uint256 totalDebtBalance;
@@ -139,8 +139,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         uint256 originationFeeBps;
 
-        // Shares acquired in lastMintBlock per holder; pinned until the next block
-        mapping(address => uint256) sameBlockAcquiredShares;
+        // Assets deposited in lastDepositBlock; excluded from borrowable supply (flash-borrow-cap guard).
+        uint256 sameBlockDepositedAssets;
     }
 
     // keccak256(abi.encode(uint256(keccak256("dynamicfeesvault.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -1106,7 +1106,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeViewFromSim(sim);
         uint256 newTotalSupply = totalSupply() + pending;
         uint256 assets = Math.mulDiv(
-            _withdrawableShares($, owner),
+            balanceOf(owner),
             newTotalAssets + 1,
             newTotalSupply + 10 ** _decimalsOffset(),
             Math.Rounding.Floor
@@ -1123,7 +1123,7 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         VestingSimulation memory sim = _simulateVesting();
         (uint256 newTotalAssets, uint256 pending) = _accrueFeeViewFromSim(sim);
         uint256 newTotalSupply = totalSupply() + pending;
-        uint256 shares = _withdrawableShares($, owner);
+        uint256 shares = balanceOf(owner);
         // Cap at free liquidity (NAV minus debt on loan); Floor keeps redeem(maxRedeem) within it.
         (, uint256 outstandingDebt) = _navFromSim(sim);
         uint256 free = newTotalAssets > outstandingDebt ? newTotalAssets - outstandingDebt : 0;
@@ -1136,26 +1136,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return shares < maxShares ? shares : maxShares;
     }
 
-    // Shares held by `owner` that are free to leave this block (excludes shares acquired this block).
-    function _withdrawableShares(DynamicFeesVaultStorage storage $, address owner) private view returns (uint256) {
-        uint256 ownerShares = balanceOf(owner);
-        uint256 locked = $.lastMintBlock[owner] == block.number ? $.sameBlockAcquiredShares[owner] : 0;
-        return ownerShares > locked ? ownerShares - locked : 0;
-    }
-
-    // Pin shares acquired this block (mint or transfer-in) so they cannot round-trip out the same block.
-    function _update(address from, address to, uint256 value) internal virtual override {
-        super._update(from, to, value);
-        if (to == address(0) || to == from || value == 0) return;
-        DynamicFeesVaultStorage storage $ = _getStorage();
-        if ($.lastMintBlock[to] != block.number) {
-            $.lastMintBlock[to] = block.number;
-            $.sameBlockAcquiredShares[to] = value;
-        } else {
-            $.sameBlockAcquiredShares[to] += value;
-        }
-    }
-
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override nonReentrant {
         _processGlobalVesting();
 
@@ -1166,6 +1146,24 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         // totalAssets() rose by `assets`; not interest, so bump the snapshot.
         $.lastTotalAssetsForFee += assets;
+
+        // Track this-block deposits so they cannot inflate borrow capacity (flash guard).
+        if ($.lastDepositBlock != block.number) {
+            $.lastDepositBlock = block.number;
+            $.sameBlockDepositedAssets = assets;
+        } else {
+            $.sameBlockDepositedAssets += assets;
+        }
+    }
+
+    /// @notice totalAssets() excluding assets deposited this block, so a same-block (flash)
+    ///         deposit cannot inflate the vault-liquidity term that gates borrow capacity.
+    function borrowableTotalAssets() external view returns (uint256) {
+        DynamicFeesVaultStorage storage $ = _getStorage();
+        uint256 ta = totalAssets();
+        if ($.lastDepositBlock != block.number) return ta;
+        uint256 sameBlock = $.sameBlockDepositedAssets;
+        return ta > sameBlock ? ta - sameBlock : 0;
     }
 
     function _withdraw(
@@ -1179,9 +1177,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
 
         DynamicFeesVaultStorage storage $ = _getStorage();
         if ($.paused) revert ContractPaused();
-
-        uint256 locked = $.lastMintBlock[_owner] == block.number ? $.sameBlockAcquiredShares[_owner] : 0;
-        require(balanceOf(_owner) >= shares + locked, "Cannot withdraw shares acquired this block");
 
         super._withdraw(caller, receiver, _owner, assets, shares);
 

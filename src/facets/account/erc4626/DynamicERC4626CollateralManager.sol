@@ -252,7 +252,7 @@ library DynamicERC4626CollateralManager {
         ILendingPool lendingPool = ILendingPool(PortfolioFactoryConfig(portfolioFactoryConfig).getLoanContract());
         uint256 outstandingCapital = lendingPool.activeAssets();
 
-        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).totalAssets();
+        uint256 vaultTotalAssets = ILendingVault(lendingPool.lendingVault()).borrowableTotalAssets();
         uint256 maxUtilizationBps = loanConfig.getMaxUtilizationBps();
 
         // Headroom uses effective debt: surfaces in-flight reward credit so available
