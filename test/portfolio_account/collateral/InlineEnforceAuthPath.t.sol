@@ -46,6 +46,8 @@ import {PortfolioManager} from "../../../src/accounts/PortfolioManager.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 
 import {MockERC20} from "../../mocks/MockERC20.sol";
 import {MockERC4626} from "../../mocks/MockERC4626.sol";
@@ -142,7 +144,7 @@ contract InlineEnforceAuthPathTest is Test {
         pm = new PortfolioManager(OWNER);
         (PortfolioFactory factory, ) = pm.deployFactory(salt);
 
-        DeployPortfolioFactoryConfig deployer = new DeployPortfolioFactoryConfig();
+        DeployERC4626PortfolioFactoryConfig deployer = new DeployERC4626PortfolioFactoryConfig();
         (cfg, , loanConfig, ) = deployer.deploy(address(factory), OWNER);
 
         token = new MockERC20("WETH18", "WETH18", 18);
@@ -203,6 +205,8 @@ contract InlineEnforceAuthPathTest is Test {
 
         ERC4626Harness h = new ERC4626Harness();
         MockERC4626 collat = new MockERC4626(address(token), "cV", "cV", 18);
+        vm.prank(OWNER);
+        ERC4626PortfolioFactoryConfig(address(cfg)).setCollateralVault(address(collat));
 
         // Stage lots of collateral so the LTV-side never pins maxLoan first.
         token.mint(address(h), 10_000e18);

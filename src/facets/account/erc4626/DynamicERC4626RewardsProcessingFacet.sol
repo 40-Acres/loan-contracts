@@ -5,7 +5,6 @@ import {RewardsProcessingFacet} from "../rewards_processing/RewardsProcessingFac
 import {DynamicERC4626CollateralManager} from "./DynamicERC4626CollateralManager.sol";
 import {UserRewardsConfig} from "../rewards_processing/UserRewardsConfig.sol";
 import {SwapMod} from "../swap/SwapMod.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /**
  * @title DynamicERC4626RewardsProcessingFacet
@@ -27,7 +26,7 @@ contract DynamicERC4626RewardsProcessingFacet is RewardsProcessingFacet {
     ) RewardsProcessingFacet(
         portfolioFactory,
         swapConfig,
-        IERC4626(collateralVault).asset(),
+        collateralVault,
         lendingVault,
         defaultToken
     ) {
@@ -45,6 +44,11 @@ contract DynamicERC4626RewardsProcessingFacet is RewardsProcessingFacet {
 
     function _decreaseTotalDebt(uint256 amount) internal override returns (uint256 excess) {
         return DynamicERC4626CollateralManager.decreaseTotalDebt(address(_portfolioFactory.portfolioFactoryConfig()), _collateralVault, amount);
+    }
+
+    /// @dev Block swapping the vault share token (collateral); underlying asset stays swappable.
+    function _isSwapAllowed(address inputToken) internal view override returns (bool) {
+        return inputToken != _collateralVault;
     }
 
     /// @dev IncreaseCollateral is unsupported for ERC4626 collateral; use InvestToVault.

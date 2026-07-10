@@ -30,10 +30,6 @@ import {IYieldBasisGauge} from "../../../interfaces/IYieldBasisGauge.sol";
  *        (getEffectiveTotalDebt). Surfaces the in-flight reward credit so
  *        max-loan availability reflects the pool's streaming benefit before
  *        the next settlement call.
- *
- *      Uses its own storage slot, distinct from YieldBasisCollateralManager,
- *      so the cached-debt and live-read variants can be installed on
- *      different diamonds without slot collision.
  */
 library DynamicYieldBasisCollateralManager {
     using SafeERC20 for IERC20;

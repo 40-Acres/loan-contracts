@@ -49,6 +49,8 @@ import {DeployERC4626LendingFacet} from "../../../script/portfolio_account/facet
 import {DeployERC4626ClaimingFacet} from "../../../script/portfolio_account/facets/DeployERC4626ClaimingFacet.s.sol";
 import {DeployERC4626RewardsProcessingFacet} from "../../../script/portfolio_account/facets/DeployERC4626RewardsProcessingFacet.s.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -112,7 +114,7 @@ contract ERC4626RewardsProcessingFacetTest is Test {
         _portfolioFactory = factory;
         _facetRegistry = registry;
 
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        DeployPortfolioFactoryConfig configDeployer = new DeployERC4626PortfolioFactoryConfig();
         (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         _underlyingAsset = new MockERC20("Mock USDC", "mUSDC", 6);
@@ -147,6 +149,7 @@ contract ERC4626RewardsProcessingFacetTest is Test {
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
+        ERC4626PortfolioFactoryConfig(address(_portfolioFactoryConfig)).setCollateralVault(address(_mockVault));
 
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
 
@@ -549,7 +552,7 @@ contract ERC4626RewardsProcessingFacetTest is Test {
         _factory2 = f2;
         _registry2 = r2;
 
-        DeployPortfolioFactoryConfig cfg = new DeployPortfolioFactoryConfig();
+        DeployPortfolioFactoryConfig cfg = new DeployERC4626PortfolioFactoryConfig();
         VotingConfig vc2;
         (_pfc2, vc2, _lc2, _sc2) = cfg.deploy(address(_factory2), _owner);
 
@@ -604,6 +607,7 @@ contract ERC4626RewardsProcessingFacetTest is Test {
         _pfc2.setLoanContract(_lendingVault2);
         _pfc2.setLoanConfig(address(_lc2));
         _factory2.setPortfolioFactoryConfig(address(_pfc2));
+        ERC4626PortfolioFactoryConfig(address(_pfc2)).setCollateralVault(address(collatVault2));
 
         _pm2.setAuthorizedCaller(_authorizedCaller, true);
         vm.stopPrank();
@@ -669,5 +673,46 @@ contract ERC4626RewardsProcessingFacetTest is Test {
             expectedZBF,
             "base facet charged zero-balance fee, not protocol fee -> zero-balance branch"
         );
+    }
+
+    // ============================================================
+    // Swap guard: collateral (vault share) token must not be swappable
+    // ============================================================
+
+    /// @notice The vault/share token IS the collateral; it must never be an
+    ///         input token in a rewards swap. Otherwise a swap could drain
+    ///         collateral out of the account.
+    function test_swap_collateralVaultToken_isBlocked() public {
+        SwapMod.RouteParams memory p = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(0),
+            swapData: bytes(""),
+            inputToken: address(_mockVault), // collateral / share token
+            inputAmount: 1,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+        vm.prank(_authorizedCaller);
+        vm.expectRevert("Input token not allowed");
+        ERC4626RewardsProcessingFacet(_portfolioAccount).swapToRewardsToken(p);
+    }
+
+    /// @notice A non-collateral, non-rewards token stays swappable: the guard is
+    ///         scoped to the collateral, not a blanket block. It clears the guard
+    ///         and only fails later at the swap-target whitelist check.
+    function test_swap_arbitraryToken_clearsGuard() public {
+        MockERC20 other = new MockERC20("Other", "OTH", 18);
+        SwapMod.RouteParams memory p = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(0),
+            swapData: bytes(""),
+            inputToken: address(other),
+            inputAmount: 1,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+        vm.prank(_authorizedCaller);
+        vm.expectRevert(abi.encodeWithSelector(SwapMod.NotApprovedSwapTarget.selector, address(0)));
+        ERC4626RewardsProcessingFacet(_portfolioAccount).swapToRewardsToken(p);
     }
 }

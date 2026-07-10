@@ -57,6 +57,8 @@ import {DeployDynamicERC4626LendingFacet} from "../../../script/portfolio_accoun
 import {DeployDynamicERC4626ClaimingFacet} from "../../../script/portfolio_account/facets/DeployDynamicERC4626ClaimingFacet.s.sol";
 import {DeployDynamicERC4626RewardsProcessingFacet} from "../../../script/portfolio_account/facets/DeployDynamicERC4626RewardsProcessingFacet.s.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
+import {DeployERC4626PortfolioFactoryConfig} from "../../../script/portfolio_account/DeployERC4626PortfolioFactoryConfig.s.sol";
+import {ERC4626PortfolioFactoryConfig} from "../../../src/facets/account/erc4626/ERC4626PortfolioFactoryConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {VotingConfig} from "../../../src/facets/account/config/VotingConfig.sol";
@@ -121,7 +123,7 @@ contract DynamicERC4626RewardsProcessingFacetTest is Test {
         _portfolioFactory = factory;
         _facetRegistry = registry;
 
-        DeployPortfolioFactoryConfig configDeployer = new DeployPortfolioFactoryConfig();
+        DeployPortfolioFactoryConfig configDeployer = new DeployERC4626PortfolioFactoryConfig();
         (_portfolioFactoryConfig, _votingConfig, _loanConfig, _swapConfig) = configDeployer.deploy(address(_portfolioFactory), _owner);
 
         _underlyingAsset = new MockERC20("Mock USDC", "mUSDC", 6);
@@ -156,6 +158,7 @@ contract DynamicERC4626RewardsProcessingFacetTest is Test {
         _portfolioFactoryConfig.setLoanContract(_loanContract);
         _portfolioFactoryConfig.setLoanConfig(address(_loanConfig));
         _portfolioFactory.setPortfolioFactoryConfig(address(_portfolioFactoryConfig));
+        ERC4626PortfolioFactoryConfig(address(_portfolioFactoryConfig)).setCollateralVault(address(_mockVault));
 
         _portfolioManager.setAuthorizedCaller(_authorizedCaller, true);
 
@@ -660,5 +663,46 @@ contract DynamicERC4626RewardsProcessingFacetTest is Test {
 
         // Nothing stranded: the claimed balance was fully routed.
         assertEq(_underlyingAsset.balanceOf(_portfolioAccount), 0, "no claimed rewards stranded after processing");
+    }
+
+    // ============================================================
+    // Swap guard: collateral (vault share) token must not be swappable
+    // ============================================================
+
+    /// @notice The vault/share token IS the collateral; it must never be an
+    ///         input token in a rewards swap. Otherwise a swap could drain
+    ///         collateral out of the account.
+    function test_swap_collateralVaultToken_isBlocked() public {
+        SwapMod.RouteParams memory p = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(0),
+            swapData: bytes(""),
+            inputToken: address(_mockVault), // collateral / share token
+            inputAmount: 1,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+        vm.prank(_authorizedCaller);
+        vm.expectRevert("Input token not allowed");
+        DynamicERC4626RewardsProcessingFacet(_portfolioAccount).swapToRewardsToken(p);
+    }
+
+    /// @notice A non-collateral, non-rewards token stays swappable: the guard is
+    ///         scoped to the collateral, not a blanket block. It clears the guard
+    ///         and only fails later at the swap-target whitelist check.
+    function test_swap_arbitraryToken_clearsGuard() public {
+        MockERC20 other = new MockERC20("Other", "OTH", 18);
+        SwapMod.RouteParams memory p = SwapMod.RouteParams({
+            swapConfig: address(0),
+            swapTarget: address(0),
+            swapData: bytes(""),
+            inputToken: address(other),
+            inputAmount: 1,
+            outputToken: address(0),
+            minimumOutputAmount: 0
+        });
+        vm.prank(_authorizedCaller);
+        vm.expectRevert(abi.encodeWithSelector(SwapMod.NotApprovedSwapTarget.selector, address(0)));
+        DynamicERC4626RewardsProcessingFacet(_portfolioAccount).swapToRewardsToken(p);
     }
 }
