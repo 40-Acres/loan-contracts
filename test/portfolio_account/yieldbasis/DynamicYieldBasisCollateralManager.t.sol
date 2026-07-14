@@ -15,7 +15,8 @@ import {FacetRegistry} from "../../../src/accounts/FacetRegistry.sol";
 import {PortfolioFactoryConfig} from "../../../src/facets/account/config/PortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../src/facets/account/config/LoanConfig.sol";
 import {DeployPortfolioFactoryConfig} from "../../../script/portfolio_account/DeployPortfolioFactoryConfig.s.sol";
-import {LendingVault} from "../../../src/facets/account/vault/LendingVault.sol";
+import {DynamicFeesVault} from "../../../src/facets/account/vault/DynamicFeesVault.sol";
+import {FeeCalculator} from "../../../src/facets/account/vault/FeeCalculator.sol";
 
 // Interfaces
 import {ILendingPool} from "../../../src/interfaces/ILendingPool.sol";
@@ -267,7 +268,7 @@ contract DynamicYieldBasisCollateralManagerTest is Test {
     FacetRegistry internal registry;
     PortfolioFactoryConfig internal cfg;
     LoanConfig internal loanConfig;
-    LendingVault internal lendingVault;
+    DynamicFeesVault internal lendingVault;
 
     // Tokens
     MockYieldBasisLP internal ybLp;
@@ -298,15 +299,16 @@ contract DynamicYieldBasisCollateralManagerTest is Test {
         underlying = new MockERC20("WETH", "WETH", 18);
         usdc = underlying; // like-to-like
 
-        LendingVault impl = new LendingVault();
+        DynamicFeesVault impl = new DynamicFeesVault();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
-                LendingVault.initialize,
-                (address(usdc), address(factory), OWNER, "Lending Vault", "lVAULT", 0)
+                DynamicFeesVault.initialize,
+                (address(usdc), "Lending Vault", "lVAULT", address(factory), OWNER, 0)
             )
         );
-        lendingVault = LendingVault(address(proxy));
+        lendingVault = DynamicFeesVault(address(proxy));
+        lendingVault.setFeeCalculator(address(new FeeCalculator()));
         usdc.mint(address(lendingVault), VAULT_LIQUIDITY);
 
         loanConfig.setMultiplier(LTV_BPS);
@@ -761,13 +763,14 @@ contract DynamicYieldBasisCollateralManagerTest is Test {
         lp6.setPricePerShare(1e18);
 
         // New vault on the 6-dec asset.
-        LendingVault impl = new LendingVault();
+        DynamicFeesVault impl = new DynamicFeesVault();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
-            abi.encodeCall(LendingVault.initialize,
-                (address(usdc6), address(factory), OWNER, "Lending Vault 6", "lV6", 0))
+            abi.encodeCall(DynamicFeesVault.initialize,
+                (address(usdc6), "Lending Vault 6", "lV6", address(factory), OWNER, 0))
         );
-        LendingVault vault6 = LendingVault(address(proxy));
+        DynamicFeesVault vault6 = DynamicFeesVault(address(proxy));
+        vault6.setFeeCalculator(address(new FeeCalculator()));
         usdc6.mint(address(vault6), 1_000_000e6);
 
         cfg.setLoanContract(address(vault6));

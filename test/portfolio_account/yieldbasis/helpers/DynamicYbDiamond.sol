@@ -8,7 +8,8 @@ import {PortfolioManager} from "../../../../src/accounts/PortfolioManager.sol";
 import {FacetRegistry} from "../../../../src/accounts/FacetRegistry.sol";
 import {YieldBasisPortfolioFactoryConfig} from "../../../../src/facets/account/config/YieldBasisPortfolioFactoryConfig.sol";
 import {LoanConfig} from "../../../../src/facets/account/config/LoanConfig.sol";
-import {LendingVault} from "../../../../src/facets/account/vault/LendingVault.sol";
+import {DynamicFeesVault} from "../../../../src/facets/account/vault/DynamicFeesVault.sol";
+import {FeeCalculator} from "../../../../src/facets/account/vault/FeeCalculator.sol";
 
 import {DynamicYieldBasisLpFacet} from "../../../../src/facets/account/yieldbasislp/DynamicYieldBasisLpFacet.sol";
 import {DynamicYieldBasisLpClaimingFacet} from "../../../../src/facets/account/yieldbasislp/DynamicYieldBasisLpClaimingFacet.sol";
@@ -33,7 +34,7 @@ abstract contract DynamicYbDiamond is Test {
     FacetRegistry internal facetRegistry;
     YieldBasisPortfolioFactoryConfig internal portfolioFactoryConfig;
     LoanConfig internal loanConfig;
-    LendingVault internal lendingVault;
+    DynamicFeesVault internal lendingVault;
     MockERC20 internal underlying;
     MockERC20 internal ybToken;
 
@@ -74,16 +75,19 @@ abstract contract DynamicYbDiamond is Test {
         YbConfigDeployer deployer = new YbConfigDeployer();
         (portfolioFactoryConfig, , loanConfig, ) = deployer.deployYb(address(portfolioFactory), owner_);
 
-        // Default LendingVault.
-        LendingVault impl = new LendingVault();
+        // Production backing for the Dynamic YB collateral manager: a real
+        // DynamicFeesVault. With feeBps = 0 and no rewards deposited, totalAssets()
+        // and activeAssets() match what a funded LendingVault returned for these fixtures.
+        DynamicFeesVault impl = new DynamicFeesVault();
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(impl),
             abi.encodeCall(
-                LendingVault.initialize,
-                (address(underlying), address(portfolioFactory), owner_, "lvault", "lv", 0)
+                DynamicFeesVault.initialize,
+                (address(underlying), "lvault", "lv", address(portfolioFactory), owner_, 0)
             )
         );
-        lendingVault = LendingVault(address(proxy));
+        lendingVault = DynamicFeesVault(address(proxy));
+        lendingVault.setFeeCalculator(address(new FeeCalculator()));
         underlying.mint(address(lendingVault), VAULT_LIQ);
 
         loanConfig.setMultiplier(LTV_BPS);

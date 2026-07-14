@@ -39,7 +39,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event ExcessRewardsEscrowed(address indexed borrower, uint256 amount);
     event EscrowClaimed(address indexed borrower, uint256 amount);
     event Borrowed(address indexed borrower, uint256 amount);
-    event RewardsDepositCapped(address indexed borrower, uint256 requested, uint256 retained);
     event OriginationFeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event Repaid(address indexed borrower, uint256 amount, uint256 remainingDebt);
     event FeeAccrued(address indexed recipient, uint256 feeAssets, uint256 feeShares);
@@ -863,23 +862,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // doesn't treat the inflow as interest. Mirrors repay / borrow / payFromPortfolio.
         _settleRewards(msg.sender);
 
-        // Cap the pull at the worst-case stream needed to cover this borrower's own debt.
-        // At the highest possible lender share the borrower keeps the smallest credit fraction,
-        // so retain = debt / worstBorrowerFraction is the most a stream could need. Pulling only
-        // that leaves the excess in the depositor's wallet (Aave-style cap-the-pull) instead of
-        // routing it through the vault as pending credit that would later refund as excess.
-        uint256 retain = amount;
-        uint256 worstBorrowerBps = 10000 - getVaultRatioBps(10000);
-        if (worstBorrowerBps > 0) {
-            uint256 d = $.debtBalance[msg.sender];
-            uint256 maxNeeded = Math.ceilDiv(d * 10000, worstBorrowerBps);
-            if (maxNeeded < retain) retain = maxNeeded;
-        }
-        // Debt fully cleared by settlement: nothing to stream, pull nothing.
-        if (retain == 0) return;
-        if (retain < amount) emit RewardsDepositCapped(msg.sender, amount, retain);
-
-        IERC20(asset()).safeTransferFrom(msg.sender, address(this), retain);
+        // Pull the full amount; surplus over debt is refunded to the owner at settlement.
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
 
         // Compute remaining unsettled from existing stream
         uint256 remaining = 0;
@@ -888,8 +872,8 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.activeEpochRate -= $.userRewardRate[msg.sender]; // remove old rate from global
         }
 
-        // Create new stream combining remaining + retained amount
-        uint256 total = remaining + retain;
+        // Create new stream combining remaining + deposited amount
+        uint256 total = remaining + amount;
         uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
         uint256 duration = periodFinish - block.timestamp;
         uint256 newRate = total / duration;
@@ -907,12 +891,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
             $.globalLastUpdateTime = block.timestamp;
         }
 
-        $.totalUnsettledRewards += retain;
+        $.totalUnsettledRewards += amount;
 
         // Snapshot accumulator for the new stream rate
         $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;
 
-        emit RewardsMinted(msg.sender, retain);
+        emit RewardsMinted(msg.sender, amount);
     }
 
     /// @notice Permissionless lender-side incentive top-up. 100% to lender premium,
@@ -1002,11 +986,12 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         return address(this);
     }
 
+    /// @notice Outstanding loaned assets, excluding unsettled globalBorrowerPending, so borrow-cap
+    ///         consumers only ever over-state outstanding (never inflated headroom from pending credit).
     function activeAssets() external view returns (uint256) {
         DynamicFeesVaultStorage storage $ = _getStorage();
-        uint256 totalReduction = $.totalVestedRewardsApplied + $.globalBorrowerPending;
-        return $.totalLoanedAssets > totalReduction
-            ? $.totalLoanedAssets - totalReduction
+        return $.totalLoanedAssets > $.totalVestedRewardsApplied
+            ? $.totalLoanedAssets - $.totalVestedRewardsApplied
             : 0;
     }
 

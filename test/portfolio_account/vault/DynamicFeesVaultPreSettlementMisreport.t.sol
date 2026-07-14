@@ -33,31 +33,14 @@ contract MockPortfolioFactory is IPortfolioFactory {
     function getPortfolio(uint256) external pure override returns (address) { return address(0); }
 }
 
-// 0% lender / 100% borrower credit. Under Part A's cap-the-pull, worstBorrowerBps
-// = 10000 - getVaultRatioBps(10000) = 10000, so retain = ceilDiv(debt*10000, 10000)
-// = debt. The over-deposit is capped at the deposit step, so the depositor's stream
-// can never exceed their own debt.
+// 0% lender / 100% borrower credit.
 contract ZeroLenderFeeCalculator is IFeeCalculator {
     function getVaultRatioBps(uint256) external pure override returns (uint256) { return 0; }
 }
 
-/// @notice Regression guard for the totalAssets (NAV) invariant across the
-///         global-vesting -> per-user-settlement window.
-///
-///         History: this file was written earlier to CHARACTERIZE a
-///         pre-settlement misreport -- when a borrower's pending reward exceeded
-///         their own debt, the global subtraction over-counted debt reduction.
-///         Part A (cap-the-pull in depositRewards) eliminates that over-credit
-///         AT THE DEPOSIT STEP: with a 0% lender share, worstBorrowerBps = 10000,
-///         so the stream is capped to exactly the borrower's debt and the
-///         over-credit window never arises. The totalAssets invariant therefore
-///         still holds, and this test keeps guarding it.
-///
-///         The two companion tests that asserted getUtilizationPercent() and
-///         activeAssets() invariance across that window were REMOVED from this
-///         branch -- they characterize the deferred Part B fix (a separate PR),
-///         which restores the over-credit window via a different path and is the
-///         correct home for those view-consistency assertions.
+/// @notice Regression guard: totalAssets (NAV) is invariant across the global-vesting -> per-user-settlement window.
+///         depositRewards pulls the full amount; the surplus over debt is refunded to the owner at settlement, and NAV
+///         holds because that refunded excess was never lender assets (excluded by the conservative activeAssets()).
 contract DynamicFeesVaultPreSettlementMisreportTest is Test {
     DynamicFeesVault public vault;
     MockUSDC public usdc;
@@ -73,7 +56,7 @@ contract DynamicFeesVaultPreSettlementMisreportTest is Test {
 
     uint256 constant ALICE_DEBT = 10e6;
     uint256 constant BOB_DEBT = 100e6;
-    uint256 constant ALICE_REWARDS = 100e6; // >> ALICE_DEBT; cap retains only ALICE_DEBT
+    uint256 constant ALICE_REWARDS = 100e6; // >> ALICE_DEBT; full amount pulled, surplus refunded at settlement
 
     function setUp() public {
         vm.warp(EPOCH_2);
@@ -107,8 +90,7 @@ contract DynamicFeesVaultPreSettlementMisreportTest is Test {
         vm.prank(bob);
         vault.borrowFromPortfolio(BOB_DEBT);
 
-        // Alice's portfolio attempts to deposit rewards far exceeding her debt.
-        // Part A caps the pull to exactly ALICE_DEBT (worstBorrowerBps = 10000).
+        // Alice's portfolio deposits rewards far exceeding her debt; the full amount is pulled and streamed.
         usdc.mint(alice, ALICE_REWARDS);
         vm.startPrank(alice);
         usdc.approve(address(vault), ALICE_REWARDS);
@@ -124,11 +106,8 @@ contract DynamicFeesVaultPreSettlementMisreportTest is Test {
         vault.sync();
     }
 
-    /// CLAIM: totalAssets() (the vault NAV / share price basis) is invariant across
-    /// the global-vesting -> settlement window. Part A's cap means Alice's stream
-    /// equals her debt exactly, so settlement clears her debt with no excess refund;
-    /// the NAV must not move (LPs neither gain nor lose from settlement timing).
-    /// Expected: PASS.
+    /// CLAIM: totalAssets() is invariant across the global-vesting -> settlement window; the surplus refunded to Alice at
+    /// settlement was never lender assets, so NAV must not move (LPs neither gain nor lose from settlement timing).
     function test_totalAssets_invariant_acrossPreSettlementWindow() public {
         _enterPreSettlementWindow();
 

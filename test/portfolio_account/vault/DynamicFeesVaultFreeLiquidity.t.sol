@@ -107,9 +107,7 @@ contract DynamicFeesVaultFreeLiquidityTest is Test {
         vm.prank(owner);
         vault.acceptOwnership();
 
-        // Production fee curve. At this suite's low utilization the borrower share is
-        // high, so an over-deposit (capped at debt/worstBorrowerFraction by the pull cap)
-        // still pulls in full and vests into excess that reaches the reduction buckets.
+        // Production fee curve; at low utilization the borrower share is high, so an over-deposit vests into excess reaching the reduction buckets.
         FeeCalculator fc = new FeeCalculator();
         vm.prank(owner);
         vault.setFeeCalculator(address(fc));
