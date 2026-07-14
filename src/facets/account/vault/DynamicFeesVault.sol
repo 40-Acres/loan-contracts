@@ -39,7 +39,6 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
     event ExcessRewardsEscrowed(address indexed borrower, uint256 amount);
     event EscrowClaimed(address indexed borrower, uint256 amount);
     event Borrowed(address indexed borrower, uint256 amount);
-    event RewardsDepositCapped(address indexed borrower, uint256 requested, uint256 retained);
     event OriginationFeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event Repaid(address indexed borrower, uint256 amount, uint256 remainingDebt);
     event FeeAccrued(address indexed recipient, uint256 feeAssets, uint256 feeShares);
@@ -863,61 +862,41 @@ contract DynamicFeesVault is Initializable, ERC4626Upgradeable, UUPSUpgradeable,
         // doesn't treat the inflow as interest. Mirrors repay / borrow / payFromPortfolio.
         _settleRewards(msg.sender);
 
-        // Cap the streamed portion at the worst-case amount needed to cover this borrower's debt
-        // (smallest borrower credit fraction = highest lender share); the rest is excess to the owner.
-        uint256 retain = amount;
-        uint256 worstBorrowerBps = 10000 - getVaultRatioBps(10000);
-        if (worstBorrowerBps > 0) {
-            uint256 d = $.debtBalance[msg.sender];
-            uint256 maxNeeded = Math.ceilDiv(d * 10000, worstBorrowerBps);
-            if (maxNeeded < retain) retain = maxNeeded;
-        }
-        uint256 excess = amount - retain;
+        // Pull the full amount; surplus over debt is refunded to the owner at settlement.
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
 
-        // Stream the retained portion; skipped when settlement cleared the debt (retain == 0).
-        if (retain > 0) {
-            IERC20(asset()).safeTransferFrom(msg.sender, address(this), retain);
-
-            // Compute remaining unsettled from existing stream
-            uint256 remaining = 0;
-            if ($.userRewardRate[msg.sender] > 0 && $.userPeriodFinish[msg.sender] > block.timestamp) {
-                remaining = $.userRewardRate[msg.sender] * ($.userPeriodFinish[msg.sender] - block.timestamp);
-                $.activeEpochRate -= $.userRewardRate[msg.sender]; // remove old rate from global
-            }
-
-            // Create new stream combining remaining + retained amount
-            uint256 total = remaining + retain;
-            uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
-            uint256 duration = periodFinish - block.timestamp;
-            uint256 newRate = total / duration;
-            require(newRate > 0, "Amount too small");
-
-            $.userRewardRate[msg.sender] = newRate;
-            $.userPeriodFinish[msg.sender] = periodFinish;
-            $.userLastSettledTime[msg.sender] = block.timestamp;
-
-            $.activeEpochRate += newRate;
-            if ($.activeEpochEnd != periodFinish) {
-                $.activeEpochEnd = periodFinish;
-            }
-            if ($.globalLastUpdateTime < block.timestamp) {
-                $.globalLastUpdateTime = block.timestamp;
-            }
-
-            $.totalUnsettledRewards += retain;
-
-            // Snapshot accumulator for the new stream rate
-            $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;
-
-            emit RewardsMinted(msg.sender, retain);
+        // Compute remaining unsettled from existing stream
+        uint256 remaining = 0;
+        if ($.userRewardRate[msg.sender] > 0 && $.userPeriodFinish[msg.sender] > block.timestamp) {
+            remaining = $.userRewardRate[msg.sender] * ($.userPeriodFinish[msg.sender] - block.timestamp);
+            $.activeEpochRate -= $.userRewardRate[msg.sender]; // remove old rate from global
         }
 
-        // Excess is never streamed; forward it to the owner via _transferOrEscrow (CEI-last).
-        if (excess > 0) {
-            emit RewardsDepositCapped(msg.sender, amount, retain);
-            IERC20(asset()).safeTransferFrom(msg.sender, address(this), excess);
-            _transferOrEscrow($, msg.sender, excess);
+        // Create new stream combining remaining + deposited amount
+        uint256 total = remaining + amount;
+        uint256 periodFinish = ProtocolTimeLibrary.epochNext(block.timestamp);
+        uint256 duration = periodFinish - block.timestamp;
+        uint256 newRate = total / duration;
+        require(newRate > 0, "Amount too small");
+
+        $.userRewardRate[msg.sender] = newRate;
+        $.userPeriodFinish[msg.sender] = periodFinish;
+        $.userLastSettledTime[msg.sender] = block.timestamp;
+
+        $.activeEpochRate += newRate;
+        if ($.activeEpochEnd != periodFinish) {
+            $.activeEpochEnd = periodFinish;
         }
+        if ($.globalLastUpdateTime < block.timestamp) {
+            $.globalLastUpdateTime = block.timestamp;
+        }
+
+        $.totalUnsettledRewards += amount;
+
+        // Snapshot accumulator for the new stream rate
+        $.userBorrowerCreditPerRatePaid[msg.sender] = $.borrowerCreditPerRate;
+
+        emit RewardsMinted(msg.sender, amount);
     }
 
     /// @notice Permissionless lender-side incentive top-up. 100% to lender premium,

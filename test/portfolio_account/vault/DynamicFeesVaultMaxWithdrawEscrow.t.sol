@@ -145,9 +145,7 @@ contract DynamicFeesVaultMaxWithdrawEscrowTest is Test {
         vm.prank(owner);
         vault.acceptOwnership();
 
-        // Production fee curve. At this suite's ~1% utilization the borrower share is
-        // high, so an over-deposit (capped at debt/worstBorrowerFraction by the pull cap)
-        // still vests into excess that reaches the escrow path under test.
+        // Production fee curve; at ~1% utilization the borrower share is high, so an over-deposit vests into excess reaching the escrow path.
         FeeCalculator fc = new FeeCalculator();
         vm.prank(owner);
         vault.setFeeCalculator(address(fc));
