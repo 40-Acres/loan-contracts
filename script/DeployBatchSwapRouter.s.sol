@@ -26,8 +26,8 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  * KEY ADDRESSES
  *   deployer (FORTY_ACRES_DEPLOYER)  0x40FecA5f7156030b78200450852792ea93f7c6cd
  *   Safe (owner, 2-of-3)             0xfF16fd3D147220E6CC002a8e4a1f942ac41DBD23
- *   PREDICTED router proxy           0x9357E52260bd5A4c704c02a285608ba6698f405F
- *   PREDICTED router impl            0x6aA922Eb759C7Bc8586e5916d461a01517B93C99
+ *   LIVE router proxy                0x9357E52260bd5A4c704c02a285608ba6698f405F
+ *   LIVE router impl                 0x6aA922Eb759C7Bc8586e5916d461a01517B93C99
  *   Blackhole loan proxy             0x5122f5154DF20E5F29df53E633cE1ac5b6623558
  *   Blackhole live impl (baseline)   0x693ab037675b056730576892c214015990440cdb
  *   XPharaoh live facet              0xef74752d36e5f54b1a1f9f14e3c9845d74f38d49
@@ -37,9 +37,9 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  *   KyberSwap router (seed target)   0x6131B5fae19EA4f9D964eAc0408E4408b66337b5
  *
  * The router (plain CREATE, nonce-based) is ALREADY LIVE at the proxy above and is baked
- * into BlackholeLoanV2.odosRouter() (branch hotfix/blackhole-odos-router) and
- * XPharaohFacet._odosRouter (main). Both were byte-diff verified: each new build differs
- * from its baseline by ONLY the router address. STEP 1 IS DONE -- do not re-run it.
+ * into BlackholeLoanV2.odosRouter() (branch odos-blackhole-impl) and XPharaohFacet._odosRouter
+ * (main). Both were byte-diff verified: each new build differs from its baseline by ONLY the
+ * router address. STEP 1 IS DONE -- do not re-run it.
  *
  * ------------------------------------------------------------------------------------
  * STEP 1 -- DONE. Router live at 0x9357E52260bd5A4c704c02a285608ba6698f405F.
@@ -48,21 +48,13 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  *  --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
  *
  * ------------------------------------------------------------------------------------
- * STEP 2 -- Blackhole loan impl. MUST build from branch hotfix/blackhole-odos-router
- *   (deployed-commit b2baeab + the one-line router repoint), pinning the live LoanUtils
- *   so the only bytecode delta vs the live impl is the address.
+ * STEP 2 -- Blackhole loan impl. Build from branch odos-blackhole-impl (commit a794af6,
+ *   off deployed baseline b2baeab). That branch ALREADY carries the one-line router repoint
+ *   (BlackholeLoanV2.odosRouter() -> 0x9357E522..) and this deploy script. Byte-diff verified:
+ *   the runtime differs from live impl 0x693ab0.. by ONLY the router address (6 inlined
+ *   occurrences, since odosRouter() is pure-returns-constant). Pin the live LoanUtils.
  *
- *   NOTE: the repoint edit and its deploy script were UNCOMMITTED in a scratchpad worktree
- *   that got wiped -- both must be reconstructed. The committed branch still shows the old
- *   Odos router. Reconstruct exactly:
- *
- *   git worktree add <path> hotfix/blackhole-odos-router   # b2baeab
- *   # in src/Blackhole/BlackholeLoanV2.sol, odosRouter() line ~162:
- *   #   0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05  ->  0x9357E52260bd5A4c704c02a285608ba6698f405F
- *   # recreate script/DeployBlackholeOdosHotfixImpl.s.sol:
- *   #   vm.startBroadcast(vm.envUint("FORTY_ACRES_DEPLOYER")); new BlackholeLoanV2(); vm.stopBroadcast();
- *   # then byte-diff the new impl runtime vs live 0x693ab0.. -- ONLY the address may differ.
- *
+ *   git switch odos-blackhole-impl
  *   forge script script/DeployBlackholeOdosHotfixImpl.s.sol:DeployBlackholeOdosHotfixImpl \
  *     --libraries src/LoanUtils.sol:LoanUtils:0x8d428b881056bc2522fe2d9ccc2ef59f3b27fc2b \
  *     --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
