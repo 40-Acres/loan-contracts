@@ -34,33 +34,9 @@ import { Loan as Loanv2 } from "../../src/LoanV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IVoter} from "src/interfaces/IVoter.sol";
 import {XPharaohFacet} from "../../src/legacy/XPharaohFacet.sol";
-
-contract MockOdosRouterRL {
-    address public testContract;
-
-    address ODOS = 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05;
-    address USDC = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
-    address PHAR = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
-    
-    function initMock(address _testContract) external { testContract = _testContract; }
-    function executeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, address receiver) external returns (bool) {
-        IERC20(tokenIn).transferFrom(receiver, address(this), amountIn);
-        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(tokenOut).masterMinter(), receiver, amountOut));
-        require(success, "mint fail");
-        return true;
-    }
-
-
-    function executeSwapMultiOutput(uint256 amount1, uint256 amount2, address receiver) external returns (bool) {
-        (bool success,) = testContract.call(abi.encodeWithSignature("mintUsdc(address,address,uint256)", IUSDC(0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E).masterMinter(), receiver, amount1));
-        require(success, "mint fail");
-
-        (bool success2,) = testContract.call(abi.encodeWithSignature("mintPhar33(address,uint256)", receiver, amount2));
-        require(success2, "mint phar33 fail");
-
-        return true;
-    }
-}
+import {FortyAcresBatchRouter} from "../../src/swap/FortyAcresBatchRouter.sol";
+import {MockBatchSwapTarget} from "../mocks/MockBatchSwapTarget.sol";
+import {MockERC20} from "../mocks/MockERC20.sol";
 
 
 interface IUSDC {
@@ -118,6 +94,51 @@ contract XPharaohTest is Test {
     // Account Factory system
     PortfolioFactory public portfolioFactory;
 
+    // Absolute deadline. via-ir caches block.timestamp, so never derive this at call time.
+    uint256 constant SWAP_DEADLINE = 4102444800; // 2100-01-01
+
+    MockBatchSwapTarget public batchTarget;
+    MockERC20 public rewardToken;
+
+    /// Router storage: RouterData at P, approvedTargets at P+0, approvedCallers at P+3.
+    function _seedRouterTarget(address routerAddr, address target) internal {
+        uint256 base = uint256(keccak256("storage.FortyAcresBatchRouter"));
+        vm.store(routerAddr, keccak256(abi.encode(target, base)), bytes32(uint256(1)));
+        assertTrue(FortyAcresBatchRouter(routerAddr).isApprovedTarget(target), "target seed failed");
+    }
+
+    function _seedRouterCaller(address routerAddr, address caller) internal {
+        uint256 base = uint256(keccak256("storage.FortyAcresBatchRouter"));
+        vm.store(routerAddr, keccak256(abi.encode(caller, base + 3)), bytes32(uint256(1)));
+        assertTrue(FortyAcresBatchRouter(routerAddr).isApprovedCaller(caller), "caller seed failed");
+    }
+
+    /// Two-output blob mirroring the legacy multi-output fill: one input, USDC + PHAR out.
+    function _multiOutputTradeData(
+        address swapTarget,
+        address inputToken,
+        uint256 inputAmount,
+        uint256 usdcOut,
+        uint256 pharOut
+    ) internal view returns (bytes memory) {
+        FortyAcresBatchRouter.Swap[] memory swaps = new FortyAcresBatchRouter.Swap[](1);
+        swaps[0] = FortyAcresBatchRouter.Swap({
+            inputToken: inputToken,
+            inputAmount: inputAmount,
+            swapTarget: swapTarget,
+            swapData: abi.encodeCall(
+                MockBatchSwapTarget.swapTwo,
+                (inputToken, inputAmount, address(usdc), usdcOut, address(phar33), pharOut)
+            )
+        });
+        address[] memory outputTokens = new address[](2);
+        outputTokens[0] = address(usdc);
+        outputTokens[1] = address(phar33);
+        uint256[] memory minOuts = new uint256[](2);
+        minOuts[0] = usdcOut;
+        minOuts[1] = pharOut;
+        return abi.encodeCall(FortyAcresBatchRouter.swapMulti, (swaps, outputTokens, minOuts, SWAP_DEADLINE));
+    }
 
     function setUp() public {
         fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
@@ -190,15 +211,25 @@ contract XPharaohTest is Test {
 
 
 
-        // USDC minting for tests and mock Odos setup at canonical address
-        
-        vm.prank(IUSDC(usdc).masterMinter());
-        MockOdosRouterRL mock = new MockOdosRouterRL();
-        bytes memory code = address(mock).code;
-        vm.etch(ODOS, code);
-        MockOdosRouterRL(ODOS).initMock(address(this));
+        // Install the real batch router at the legacy aggregator address the facet calls.
+        batchTarget = new MockBatchSwapTarget();
+        vm.etch(ODOS, address(new FortyAcresBatchRouter()).code);
+        _seedRouterTarget(ODOS, address(batchTarget));
+        // The facet delegatecalls in account context, so the account is the router caller.
+        _seedRouterCaller(ODOS, userAccount);
+
         vm.prank(0x972698bF61E2377B5c45B3038D85d04981ddb48c);
         IERC20(PHAR).transfer(address(this), 10000e18);
+
+        // Stash the aggregator stand-in pays its fills out of.
+        usdc.mint(address(batchTarget), 100_000e6);
+        IERC20(PHAR).transfer(address(batchTarget), 5000e18);
+
+        // A claimed reward token the router may pull from the account.
+        rewardToken = new MockERC20("Reward", "RWD", 18);
+        rewardToken.mint(userAccount, 1000e18);
+        vm.prank(userAccount);
+        rewardToken.approve(ODOS, type(uint256).max);
     }
 
 
@@ -778,11 +809,12 @@ contract XPharaohTest is Test {
         vm.stopPrank();
 
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(userAccount));
-        bytes memory tradeData = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwapMultiOutput.selector,
+        bytes memory tradeData = _multiOutputTradeData(
+            address(batchTarget),
+            address(rewardToken),
+            10e18,
             10e6,
-            21919478169540, // send less to account for slippage
-            address(userAccount)
+            21919478169540 // send less to account for slippage
         );
 
         uint256[2] memory allocations = [
@@ -791,6 +823,9 @@ contract XPharaohTest is Test {
         ];
         address[] memory bribes = new address[](1);
         bribes[0] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+        // The live aggregator address carries balances that etching does not clear.
+        uint256 routerUsdcBefore = usdc.balanceOf(ODOS);
+        uint256 routerPharBefore = phar33.balanceOf(ODOS);
         uint256 rewards = _claimRewards(
             Loan(userAccount),
             bribes,
@@ -800,6 +835,129 @@ contract XPharaohTest is Test {
         // loan balance should be 0
         (balance, ) = loan.getLoanDetails(userAccount);
         assertEq(balance, 0, "Balance should be 0");
+
+        // The router consumed the declared input, forwarded only deltas, and left any
+        // stranded balance where it was.
+        assertEq(rewardToken.balanceOf(userAccount), 990e18, "input consumed");
+        assertEq(rewardToken.balanceOf(ODOS), 0, "router holds no input");
+        assertEq(usdc.balanceOf(ODOS), routerUsdcBefore, "stranded usdc untouched");
+        assertEq(phar33.balanceOf(ODOS), routerPharBefore, "stranded phar untouched");
+    }
+
+    /**
+     * @dev A swap leg that spends more than the newly-claimed delta must trip
+     * XPharaohFacet's pre-claim balance snapshot (`tokenBalance >= tokenBalances[i][j]`).
+     * This is the constraint most likely to bite a keeper that oversizes an input.
+     */
+    function testClaim_RevertsWhenSwapExceedsClaimedDelta() public {
+        vm.startPrank(user);
+        XPharaohFacet(userAccount).xPharRequestLoan(
+            IERC20(phar33).balanceOf(user),
+            address(loan),
+            1e6,
+            IXLoan.ZeroBalanceOption.PayToOwner,
+            0,
+            address(0),
+            false
+        );
+        vm.stopPrank();
+
+        address[] memory pools = new address[](1);
+        pools[0] = address(0x5cA009013F6B898D134b6798B336A4592f3B4aF2);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100e18;
+        vm.prank(user);
+        XPharaohFacet(userAccount).xPharUserVote(address(loan), pools, weights);
+
+        // Pre-existing USDC on the account. It is snapshotted before claimIncentives,
+        // so the swap may not eat into it.
+        usdc.mint(userAccount, 10_000e6);
+
+        // Input is USDC (a snapshotted, facet-approved reward token) and the leg spends
+        // far more than any incentive delta could replace.
+        FortyAcresBatchRouter.Swap[] memory swaps = new FortyAcresBatchRouter.Swap[](1);
+        swaps[0] = FortyAcresBatchRouter.Swap({
+            inputToken: address(usdc),
+            inputAmount: 10_000e6,
+            swapTarget: address(batchTarget),
+            swapData: abi.encodeCall(
+                MockBatchSwapTarget.swap, (address(usdc), 10_000e6, address(phar33), 21919478169540)
+            )
+        });
+        address[] memory outputTokens = new address[](1);
+        outputTokens[0] = address(phar33);
+        uint256[] memory minOuts = new uint256[](1);
+        minOuts[0] = 21919478169540;
+        bytes memory tradeData =
+            abi.encodeCall(FortyAcresBatchRouter.swapMulti, (swaps, outputTokens, minOuts, SWAP_DEADLINE));
+
+        address[] memory voterPools = voter.getAllUserVotedPoolsPerPeriod(address(user), 2908);
+        address[] memory fees = new address[](voterPools.length);
+        address[][] memory tokens = new address[][](voterPools.length);
+        for (uint256 i = 0; i < voterPools.length; i++) {
+            fees[i] = voter.feeDistributorForGauge(voter.gaugeForPool(voterPools[i]));
+            address[] memory rewardTokens = new address[](4);
+            rewardTokens[0] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+            rewardTokens[1] = 0xacA92E438df0B2401fF60dA7E4337B687a2435DA;
+            rewardTokens[2] = 0xA219439258ca9da29E9Cc4cE5596924745e12B93;
+            rewardTokens[3] = 0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f;
+            tokens[i] = rewardTokens;
+        }
+
+        uint256[2] memory allocations = [uint256(41349), uint256(0)];
+
+        vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
+        vm.expectRevert();
+        XPharaohFacet(userAccount).xPharClaim(address(loan), fees, tokens, tradeData, allocations);
+
+        assertEq(usdc.balanceOf(userAccount), 10_000e6, "account usdc untouched");
+    }
+
+    /// A caller the owner never approved cannot drive the router at all.
+    function testBatchRouter_RejectsUnapprovedCaller() public {
+        FortyAcresBatchRouter batchRouter = FortyAcresBatchRouter(ODOS);
+        assertFalse(batchRouter.isApprovedCaller(address(this)), "test contract not a caller");
+
+        address[] memory outputTokens = new address[](1);
+        outputTokens[0] = address(usdc);
+        uint256[] memory minOuts = new uint256[](1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(FortyAcresBatchRouter.CallerNotApproved.selector, address(this))
+        );
+        batchRouter.swapMulti(new FortyAcresBatchRouter.Swap[](0), outputTokens, minOuts, SWAP_DEADLINE);
+    }
+
+    /// Revoking the swap target is the production kill switch for the claim path.
+    function testClaim_RevertsWhenTargetNotApproved() public {
+        MockBatchSwapTarget rogue = new MockBatchSwapTarget();
+        usdc.mint(address(rogue), 1000e6);
+        IERC20(PHAR).transfer(address(rogue), 1e18);
+        assertFalse(FortyAcresBatchRouter(ODOS).isApprovedTarget(address(rogue)), "rogue must be unapproved");
+
+        FortyAcresBatchRouter.Swap[] memory swaps = new FortyAcresBatchRouter.Swap[](1);
+        swaps[0] = FortyAcresBatchRouter.Swap({
+            inputToken: address(rewardToken),
+            inputAmount: 10e18,
+            swapTarget: address(rogue),
+            swapData: abi.encodeCall(
+                MockBatchSwapTarget.swapTwo,
+                (address(rewardToken), 10e18, address(usdc), 10e6, address(phar33), 21919478169540)
+            )
+        });
+        address[] memory outputTokens = new address[](2);
+        outputTokens[0] = address(usdc);
+        outputTokens[1] = address(phar33);
+        uint256[] memory minOuts = new uint256[](2);
+        minOuts[0] = 10e6;
+        minOuts[1] = 21919478169540;
+
+        // The account is an approved caller, so only the target allowlist can stop this.
+        vm.prank(userAccount);
+        vm.expectRevert(abi.encodeWithSelector(FortyAcresBatchRouter.TargetNotApproved.selector, address(rogue)));
+        FortyAcresBatchRouter(ODOS).swapMulti(swaps, outputTokens, minOuts, SWAP_DEADLINE);
+
+        assertEq(rewardToken.balanceOf(userAccount), 1000e18, "account input untouched");
     }
 
 
@@ -856,11 +1014,12 @@ contract XPharaohTest is Test {
         vm.stopPrank();
 
         uint256 beginningUserUsdcBalance = usdc.balanceOf(address(userAccount));
-        bytes memory tradeData = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwapMultiOutput.selector,
+        bytes memory tradeData = _multiOutputTradeData(
+            address(batchTarget),
+            address(rewardToken),
+            10e18,
             10e6,
-            21919478169540, // send less to account for slippage
-            address(userAccount)
+            21919478169540 // send less to account for slippage
         );
 
         uint256[2] memory allocations = [

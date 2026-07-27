@@ -19,7 +19,9 @@ import { IMinter } from "src/interfaces/IMinter.sol";
 import { IRewardsDistributor } from "src/interfaces/IRewardsDistributor.sol";
 import {BlackholeLoanV2 as Loan} from "../../src/Blackhole/BlackholeLoanV2.sol";
 import { Loan as Loanv2 } from "../../src/LoanV2.sol";
-import { MockOdosRouterRL } from "../mocks/MockOdosRouter.sol";
+import { FortyAcresBatchRouter } from "../../src/swap/FortyAcresBatchRouter.sol";
+import { MockBatchSwapTarget } from "../mocks/MockBatchSwapTarget.sol";
+import { MockERC20 } from "../mocks/MockERC20.sol";
 
 interface IUSDC {
     function balanceOf(address account) external view returns (uint256);
@@ -68,6 +70,64 @@ contract BlackholeTest is Test {
 
     uint256 expectedRewards = 1269895;
 
+    // Absolute deadline. via-ir caches block.timestamp, so never derive this at call time.
+    uint256 constant SWAP_DEADLINE = 4102444800; // 2100-01-01
+
+    MockBatchSwapTarget public batchTarget;
+    MockERC20 public rewardToken;
+
+    /// Router storage: RouterData at P, approvedTargets at P+0, approvedCallers at P+3.
+    function _seedRouterTarget(address routerAddr, address target) internal {
+        uint256 base = uint256(keccak256("storage.FortyAcresBatchRouter"));
+        vm.store(routerAddr, keccak256(abi.encode(target, base)), bytes32(uint256(1)));
+        assertTrue(FortyAcresBatchRouter(routerAddr).isApprovedTarget(target), "target seed failed");
+    }
+
+    function _seedRouterCaller(address routerAddr, address caller) internal {
+        uint256 base = uint256(keccak256("storage.FortyAcresBatchRouter"));
+        vm.store(routerAddr, keccak256(abi.encode(caller, base + 3)), bytes32(uint256(1)));
+        assertTrue(FortyAcresBatchRouter(routerAddr).isApprovedCaller(caller), "caller seed failed");
+    }
+
+    /// Etch the real router runtime at the legacy aggregator address and seed its allowlists.
+    function _installBatchRouter(address routerAddr, address caller) internal returns (MockBatchSwapTarget mockTarget) {
+        mockTarget = new MockBatchSwapTarget();
+        vm.etch(routerAddr, address(new FortyAcresBatchRouter()).code);
+        _seedRouterTarget(routerAddr, address(mockTarget));
+        _seedRouterCaller(routerAddr, caller);
+    }
+
+    /// Give `holder` an input token the router may pull, mirroring a claimed reward.
+    function _fundSwapInput(address holder, address routerAddr, uint256 amount) internal returns (MockERC20 token) {
+        token = new MockERC20("Reward", "RWD", 18);
+        token.mint(holder, amount);
+        vm.prank(holder);
+        token.approve(routerAddr, type(uint256).max);
+    }
+
+    /// Encode a one-leg swapMulti blob that consumes `inputAmount` and delivers `outAmount` of `outputToken`.
+    function _oneLegTradeData(
+        address swapTarget,
+        address inputToken,
+        uint256 inputAmount,
+        address outputToken,
+        uint256 outAmount,
+        uint256 minOut
+    ) internal pure returns (bytes memory) {
+        FortyAcresBatchRouter.Swap[] memory swaps = new FortyAcresBatchRouter.Swap[](1);
+        swaps[0] = FortyAcresBatchRouter.Swap({
+            inputToken: inputToken,
+            inputAmount: inputAmount,
+            swapTarget: swapTarget,
+            swapData: abi.encodeCall(MockBatchSwapTarget.swap, (inputToken, inputAmount, outputToken, outAmount))
+        });
+        address[] memory outputTokens = new address[](1);
+        outputTokens[0] = outputToken;
+        uint256[] memory minOuts = new uint256[](1);
+        minOuts[0] = minOut;
+        return abi.encodeCall(FortyAcresBatchRouter.swapMulti, (swaps, outputTokens, minOuts, SWAP_DEADLINE));
+    }
+
     function setUp() public {
         fork = vm.createFork(vm.envString("AVAX_RPC_URL"));
         vm.selectFork(fork);
@@ -111,12 +171,11 @@ contract BlackholeTest is Test {
         usdc.mint(address(voter), 100e6);
         usdc.mint(address(vault), 100e6);
 
-        // Deploy and set up MockOdosRouter
+        // Install the real batch router at the legacy aggregator address the loan calls.
         address odosRouterAddress = loan.odosRouter();
-        vm.allowCheatcodes(odosRouterAddress);
-        MockOdosRouterRL mockRouter = new MockOdosRouterRL();
-        vm.etch(odosRouterAddress, address(mockRouter).code);
-        MockOdosRouterRL(odosRouterAddress).initMock(address(this));
+        batchTarget = _installBatchRouter(odosRouterAddress, address(loan));
+        usdc.mint(address(batchTarget), 100_000e6); // stash the aggregator pays out from
+        rewardToken = _fundSwapInput(address(loan), odosRouterAddress, 1_000e18);
 
         vm.prank(address(user));
         voter.reset(tokenId);
@@ -391,17 +450,18 @@ contract BlackholeTest is Test {
         vm.roll(block.number + 1);
         vm.warp(block.timestamp + 1);
 
-        // Use MockOdosRouter - give user 100 USDC after swap
+        // Batch router blob: sell 10 reward tokens for 100 USDC, delta forwarded to the loan.
         uint256 swapOutputAmount = 100e6; // 100 USDC
-        bytes memory data = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwap.selector,
-            address(aero),          // tokenIn
-            address(usdc),          // tokenOut
-            0,                      // amountIn (0 since we're mocking)
-            swapOutputAmount,       // amountOut - 100 USDC
-            address(loan)           // receiver
+        bytes memory data = _oneLegTradeData(
+            address(batchTarget), address(rewardToken), 10e18, address(usdc), swapOutputAmount, swapOutputAmount
         );
         uint256[2] memory allocations = [swapOutputAmount, uint256(0)];
+
+        uint256 loanRewardBefore = rewardToken.balanceOf(address(loan));
+        // The live aggregator address already holds USDC. Etching does not clear it, so
+        // this doubles as a real stranded-balance case.
+        uint256 routerUsdcBefore = usdc.balanceOf(loan.odosRouter());
+        assertGt(routerUsdcBefore, 0, "fork address should carry a stranded balance");
 
         address[] memory fees = new address[](4);
         fees[0] = 0xB6AC9192ED3F3d476F3e4692F5F87c7ca499bE78;
@@ -442,6 +502,113 @@ contract BlackholeTest is Test {
 
         assertTrue(rewards > 0, "Should claim rewards");
         assertTrue(rewards >= 95e6, "Should have received close to 100 USDC (minus fees)");
+
+        // The router really pulled the input and left nothing of its own behind, and the
+        // pre-existing stranded USDC was never paid out to the caller.
+        assertEq(rewardToken.balanceOf(address(loan)), loanRewardBefore - 10e18, "input consumed");
+        assertEq(rewardToken.balanceOf(loan.odosRouter()), 0, "router holds no input");
+        assertEq(usdc.balanceOf(loan.odosRouter()), routerUsdcBefore, "stranded balance untouched");
+    }
+
+    /// Fee distributors and reward tokens used by the rewards-claiming fork cases.
+    function _rewardsFeesAndTokens() internal pure returns (address[] memory fees, address[][] memory tokens) {
+        fees = new address[](4);
+        fees[0] = 0xB6AC9192ED3F3d476F3e4692F5F87c7ca499bE78;
+        fees[1] = 0xBED7aA4f2D9079A103f3927D2cC1736f2AAbFe2e;
+        fees[2] = 0x8Df11e38735659922AE7E2c7783576BEbde40b25;
+        fees[3] = 0x1718B43eB979F21de34534759A55f50E68D8B202;
+
+        tokens = new address[][](4);
+        tokens[0] = new address[](2);
+        tokens[0][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
+        tokens[0][1] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+
+        tokens[1] = new address[](5);
+        tokens[1][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
+        tokens[1][1] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+        tokens[1][2] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+        tokens[1][3] = 0x6Aa38eDd7f32a28b7b2c2dc86fC5b0bF2aE61579;
+        tokens[1][4] = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6;
+
+        tokens[2] = new address[](2);
+        tokens[2][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
+        tokens[2][1] = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6;
+
+        tokens[3] = new address[](5);
+        tokens[3][0] = 0x09Fa58228bB791ea355c90DA1e4783452b9Bd8C3;
+        tokens[3][1] = 0xcd94a87696FAC69Edae3a70fE5725307Ae1c43f6;
+        tokens[3][2] = 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E;
+        tokens[3][3] = 0x6Aa38eDd7f32a28b7b2c2dc86fC5b0bF2aE61579;
+        tokens[3][4] = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+    }
+
+    /**
+     * @dev Production kill switch: revoking the swap target must make claim() fail.
+     * Asserted twice -- precisely at the router, then end to end through claim(), where
+     * BlackholeLoanV2 swallows the revert data behind `require(success)`.
+     */
+    function testClaim_RevertsWhenTargetNotApproved() public {
+        uint256 _tokenId = 1011;
+        address _user = votingEscrow.ownerOf(_tokenId);
+        vm.startPrank(_user);
+        voter.reset(_tokenId);
+        IERC721(address(votingEscrow)).approve(address(loan), _tokenId);
+        loan.requestLoan(_tokenId, 0, Loanv2.ZeroBalanceOption.PayToOwner, 0, address(0), false, false);
+        vm.stopPrank();
+
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+
+        // A target the owner never allowlisted.
+        MockBatchSwapTarget rogue = new MockBatchSwapTarget();
+        usdc.mint(address(rogue), 1_000e6);
+        address routerAddr = loan.odosRouter();
+        assertFalse(FortyAcresBatchRouter(routerAddr).isApprovedTarget(address(rogue)), "rogue must be unapproved");
+
+        FortyAcresBatchRouter.Swap[] memory swaps = new FortyAcresBatchRouter.Swap[](1);
+        swaps[0] = FortyAcresBatchRouter.Swap({
+            inputToken: address(rewardToken),
+            inputAmount: 10e18,
+            swapTarget: address(rogue),
+            swapData: abi.encodeCall(
+                MockBatchSwapTarget.swap, (address(rewardToken), 10e18, address(usdc), 100e6)
+            )
+        });
+        address[] memory outputTokens = new address[](1);
+        outputTokens[0] = address(usdc);
+        uint256[] memory minOuts = new uint256[](1);
+        minOuts[0] = 100e6;
+
+        // Router-level: the exact error, from the loan itself.
+        vm.prank(address(loan));
+        vm.expectRevert(abi.encodeWithSelector(FortyAcresBatchRouter.TargetNotApproved.selector, address(rogue)));
+        FortyAcresBatchRouter(routerAddr).swapMulti(swaps, outputTokens, minOuts, SWAP_DEADLINE);
+
+        // End to end: the same blob makes claim() fail.
+        bytes memory data =
+            abi.encodeCall(FortyAcresBatchRouter.swapMulti, (swaps, outputTokens, minOuts, SWAP_DEADLINE));
+        uint256[2] memory allocations = [uint256(100e6), uint256(0)];
+        (address[] memory fees, address[][] memory tokens) = _rewardsFeesAndTokens();
+
+        vm.prank(0x40AC2E93d1257196a418fcE7D6eDAcDE65aAf2BA);
+        vm.expectRevert();
+        loan.claim(_tokenId, fees, tokens, data, allocations);
+    }
+
+    /// A caller the owner never approved cannot drive the router at all.
+    function testBatchRouter_RejectsUnapprovedCaller() public {
+        FortyAcresBatchRouter batchRouter = FortyAcresBatchRouter(loan.odosRouter());
+        assertFalse(batchRouter.isApprovedCaller(address(this)), "test contract not a caller");
+
+        FortyAcresBatchRouter.Swap[] memory swaps = new FortyAcresBatchRouter.Swap[](0);
+        address[] memory outputTokens = new address[](1);
+        outputTokens[0] = address(usdc);
+        uint256[] memory minOuts = new uint256[](1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(FortyAcresBatchRouter.CallerNotApproved.selector, address(this))
+        );
+        batchRouter.swapMulti(swaps, outputTokens, minOuts, SWAP_DEADLINE);
     }
 
     /**
@@ -633,22 +800,19 @@ contract BlackholeTest is Test {
             console.log("Claimable from rewardsDistributor2: REVERTED");
         }
 
-        // Set up mock odos router
+        // Install the batch router at the legacy aggregator address for this fork.
         address odosRouterAddress = Loan(loanContract).odosRouter();
-        vm.allowCheatcodes(odosRouterAddress);
-        MockOdosRouterRL mockRouter = new MockOdosRouterRL();
-        vm.etch(odosRouterAddress, address(mockRouter).code);
-        MockOdosRouterRL(odosRouterAddress).initMock(address(this));
+        MockBatchSwapTarget rebaseTarget = _installBatchRouter(odosRouterAddress, loanContract);
+        vm.prank(usdc.masterMinter());
+        usdc.configureMinter(address(this), type(uint256).max);
+        usdc.mint(address(rebaseTarget), 1_000e6);
+        // fees/tokens are empty here so the loan approves nothing; approve the input directly.
+        MockERC20 rebaseInput = _fundSwapInput(loanContract, odosRouterAddress, 100e18);
 
         // Prepare minimal claim data (this will trigger _claimRebase internally)
         uint256 swapOutputAmount = 1e6; // 1 USDC minimal
-        bytes memory data = abi.encodeWithSelector(
-            MockOdosRouterRL.executeSwap.selector,
-            address(aero),          // tokenIn
-            address(usdc),          // tokenOut
-            0,                      // amountIn
-            swapOutputAmount,       // amountOut
-            loanContract            // receiver
+        bytes memory data = _oneLegTradeData(
+            address(rebaseTarget), address(rebaseInput), 1e18, address(usdc), swapOutputAmount, swapOutputAmount
         );
         uint256[2] memory allocations = [swapOutputAmount, uint256(0)];
 
