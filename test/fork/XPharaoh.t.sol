@@ -73,7 +73,10 @@ contract XPharaohTest is Test {
     ProxyAdmin admin;
     address userAccount;
 
-    address ODOS = 0x0D05a7D3448512B78fa8A9e46c4872C88C4a0D05;
+    // Bound in setUp from the facet's own constant. Hardcoding it lets the facet repoint
+    // without the etch following, and a call to a codeless address returns success -- the
+    // swap then silently no-ops instead of failing loudly.
+    address ODOS;
     address PHAR = 0x26e9dbe75aed331E41272BEcE932Ff1B48926Ca9;
     // deployed contracts
     Vault vault;
@@ -211,9 +214,11 @@ contract XPharaohTest is Test {
 
 
 
-        // Install the real batch router at the legacy aggregator address the facet calls.
+        // Install the real batch router at whatever address the facet actually calls.
+        ODOS = loanFacet._odosRouter();
         batchTarget = new MockBatchSwapTarget();
         vm.etch(ODOS, address(new FortyAcresBatchRouter()).code);
+        assertGt(ODOS.code.length, 0, "router must have code at the address the facet calls");
         _seedRouterTarget(ODOS, address(batchTarget));
         // The facet delegatecalls in account context, so the account is the router caller.
         _seedRouterCaller(ODOS, userAccount);

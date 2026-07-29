@@ -458,8 +458,9 @@ contract BlackholeTest is Test {
         uint256[2] memory allocations = [swapOutputAmount, uint256(0)];
 
         uint256 loanRewardBefore = rewardToken.balanceOf(address(loan));
-        // The live aggregator address already holds USDC. Etching does not clear it, so
-        // this doubles as a real stranded-balance case.
+        // Seed the stranded balance rather than relying on the router address happening to
+        // hold dust on the fork -- the old Odos address did, a freshly deployed router does not.
+        usdc.mint(loan.odosRouter(), 42e6);
         uint256 routerUsdcBefore = usdc.balanceOf(loan.odosRouter());
         assertGt(routerUsdcBefore, 0, "fork address should carry a stranded balance");
 

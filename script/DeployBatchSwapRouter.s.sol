@@ -38,8 +38,26 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  *
  * The router (plain CREATE, nonce-based) is ALREADY LIVE at the proxy above and is baked
  * into BlackholeLoanV2.odosRouter() (branch odos-blackhole-impl) and XPharaohFacet._odosRouter
- * (main). Both were byte-diff verified: each new build differs from its baseline by ONLY the
- * router address. STEP 1 IS DONE -- do not re-run it.
+ * (main). STEP 1 IS DONE -- do not re-run it.
+ *
+ * DEPLOYED ARTIFACTS (verified on Snowtrace, solc 0.8.30, optimizer 500 runs, cancun)
+ *   NEW Blackhole impl    0xCe6fc22A63a0348a27B074476602823eE97c1D7E
+ *   NEW XPharaoh facet    0x121650C31ce82b13efb454Cceb1255e7abA40aA4
+ *
+ * BYTE-DIFF RESULT (deployed runtime, new vs live baseline)
+ *   Blackhole -- CLEAN. Source diff is the single odosRouter() line. Runtime differs in
+ *     8 places: 6 inlined router constants + 2 UUPS __self immutables (the impl's own
+ *     address; expected). LoanUtils pin 0x8d428b88.. identical in both. Same length.
+ *   XPharaoh  -- NOT a pure constant swap. 12186B vs live 12445B (-259). Beyond the 5
+ *     router constants the facet also picked up a SafeERC20 migration: transfer/transferFrom
+ *     -> safeTransfer/safeTransferFrom at 5 sites (_phar33 x3, preferredToken, vaultAsset).
+ *     Strictly hardening (reverts on false-returning tokens) but it IS a behavior delta.
+ *     Immutables unchanged (_portfolioFactory x10, _accountConfigStorage x14); ctor args
+ *     byte-identical to the live facet. The rest of the -259B is dependency drift from
+ *     moving src/facets/account/ -> src/legacy/ and main's churn in PortfolioFactory /
+ *     AccountConfigStorage / FacetRegistry / FortyAcresPortfolioAccount -- all separately
+ *     deployed contracts, so only their call signatures matter, and every change there is
+ *     additive (no removed/renamed function the facet calls).
  *
  * ------------------------------------------------------------------------------------
  * STEP 1 -- DONE. Router live at 0x9357E52260bd5A4c704c02a285608ba6698f405F.
@@ -55,28 +73,35 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  *   occurrences, since odosRouter() is pure-returns-constant). Pin the live LoanUtils.
  *
  *   git switch odos-blackhole-impl
- *   forge script script/DeployBlackholeOdosHotfixImpl.s.sol:DeployBlackholeOdosHotfixImpl \
- *     --libraries src/LoanUtils.sol:LoanUtils:0x8d428b881056bc2522fe2d9ccc2ef59f3b27fc2b \
- *     --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
+ *   forge script script/DeployBlackholeOdosHotfixImpl.s.sol:DeployBlackholeOdosHotfixImpl --libraries src/LoanUtils.sol:LoanUtils:0x8d428b881056bc2522fe2d9ccc2ef59f3b27fc2b --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
  *
  * ------------------------------------------------------------------------------------
  * STEP 3 -- XPharaoh facet (from main; constructor args read off the live facet).
  *
  *   git switch main
- *   forge script script/RedeployXPharaohFacet.s.sol:RedeployXPharaohFacet \
- *     --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
+ *   forge script script/RedeployXPharaohFacet.s.sol:RedeployXPharaohFacet --chain-id 43114 --rpc-url $AVAX_RPC_URL --broadcast --verify --via-ir
  *
  * ------------------------------------------------------------------------------------
  * STEP 4 -- build the Safe tx-builder batch (3 txs), then import + sign (2-of-3).
  *   Args: <ROUTER_PROXY> <NEW_BLACKHOLE_IMPL> <NEW_XPHARAOH_FACET>
  *
  *   ./script/odos-migration-safe-batch.sh \
- *     0x9357E52260bd5A4c704c02a285608ba6698f405F <NEW_BLACKHOLE_IMPL> <NEW_XPHARAOH_FACET>
+ *     0x9357E52260bd5A4c704c02a285608ba6698f405F 0xCe6fc22A63a0348a27B074476602823eE97c1D7E 0x121650C31ce82b13efb454Cceb1255e7abA40aA4
  *
  *   The batch executes, in order:
  *     tx1  router.acceptOwnership()                          @ router proxy
  *     tx2  proxy.upgradeToAndCall(newBlackholeImpl, "")      @ Blackhole loan proxy
  *     tx3  registry.replaceFacet(oldFacet,newFacet,sels,..)  @ FacetRegistry
+ *
+ *   PREFLIGHT (re-checked live 2026-07-27, all green):
+ *     router.owner()=deployer, pendingOwner()=Safe            -> tx1 succeeds
+ *     approved targets = [0x AllowanceHolder, KyberSwap]; old Odos NOT approved
+ *     router.getApprovedFactory()=Pharaoh factory 0x52d43C..; isApprovedCaller(BH proxy)=true
+ *     new impl proxiableUUID == old; proxy owner = Safe        -> tx2 succeeds
+ *     registry.owner()=Safe; old facet registered=true, new registered=false -> tx3 succeeds
+ *     registry.getSelectorsForFacet(oldFacet) returns exactly the 13 selectors hardcoded in
+ *       odos-migration-safe-batch.sh, same order; all 13 present in the new facet's dispatch
+ *       table. (The facet's 7 public immutable getters were never registered -- unchanged.)
  *
  * ROLLBACK
  *   - kill switch (no upgrade):  router.setApprovedTarget(<aggregator>, false) -> claims revert cleanly
