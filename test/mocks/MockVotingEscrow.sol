@@ -18,6 +18,7 @@ contract MockVotingEscrow {
 
     mapping(uint256 => address) private _owners;
     mapping(uint256 => address) private _approvals;
+    mapping(address => mapping(address => bool)) private _operatorApprovals;
     mapping(uint256 => IVotingEscrow.LockedBalance) private _locked;
     mapping(uint256 => bool) private _voted;
 
@@ -45,7 +46,19 @@ contract MockVotingEscrow {
 
     function isApprovedOrOwner(address spender, uint256 tokenId) public view returns (bool) {
         address owner = _owners[tokenId];
-        return (spender == owner || _approvals[tokenId] == spender);
+        return (spender == owner || _approvals[tokenId] == spender || _operatorApprovals[owner][spender]);
+    }
+
+    function getApproved(uint256 tokenId) external view returns (address) {
+        return _approvals[tokenId];
+    }
+
+    function setApprovalForAll(address operator, bool approved) external {
+        _operatorApprovals[msg.sender][operator] = approved;
+    }
+
+    function isApprovedForAll(address owner, address operator) external view returns (bool) {
+        return _operatorApprovals[owner][operator];
     }
 
     function transferFrom(address from, address to, uint256 tokenId) public {
