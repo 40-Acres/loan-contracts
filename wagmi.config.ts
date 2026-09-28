@@ -35,6 +35,9 @@ export default defineConfig({
         'PortfolioManager.sol/PortfolioManager.json',
         'PortfolioFactory.sol/PortfolioFactory.json',
         'FacetRegistry.sol/FacetRegistry.json',
+        // The single fixed spender users approve for deposits (one per chain).
+        // Frontend uses isApproved721 / allowance20 for the approval UI.
+        'FortyAcresDepositor.sol/FortyAcresDepositor.json',
 
         // Marketplaces
         'PortfolioMarketplace.sol/PortfolioMarketplace.json',

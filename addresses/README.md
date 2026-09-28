@@ -40,6 +40,7 @@ One file per `{network, platform}` pair. Network names match `viem/chains` (`bas
   "contracts": {
     "portfolioManager": { "dev": "0x...", "prod": "0x..." },
     "walletFactory":    { "dev": "0x...", "prod": "0x..." },
+    "depositor":        { "dev": "0x...", "prod": "0x..." },  // FortyAcresDepositor: one per chain, same address in every platform file of that chain
     "portfolioFactory": "0x...",                              // optional, only when no strategies (e.g. pharaoh)
 
     "marketplaces": {
